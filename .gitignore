@@ -83,6 +83,7 @@ test-*.js
 test-*.ts
 check-*.js
 check-*.ts
+!backend/src/middlewares/check-feature.middleware.ts
 debug-*.js
 debug-*.ts
 fix-*.js
