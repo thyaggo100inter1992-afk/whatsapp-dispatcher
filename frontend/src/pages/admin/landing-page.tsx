@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import AdminLayout from '@/components/admin/AdminLayout';
 import axios from 'axios';
+import { buildFileUrl, getApiBaseUrl } from '@/utils/urlHelpers';
 
 interface LandingStats {
   total_leads: number;
@@ -40,8 +41,9 @@ export default function AdminLandingPage() {
   const [screenshots, setScreenshots] = useState<any[]>([]);
   const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-  const FRONTEND_URL = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  const API_BASE_URL = getApiBaseUrl();
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || `${API_BASE_URL}/api`;
+  const FRONTEND_URL = typeof window !== 'undefined' ? window.location.origin : API_BASE_URL;
 
   useEffect(() => {
     loadStats();
@@ -53,7 +55,7 @@ export default function AdminLandingPage() {
 
   const loadSystemLogo = async () => {
     try {
-      const response = await axios.get(`${API_URL.replace('/api', '')}/api/public/logo`);
+      const response = await axios.get(`${API_URL.replace(/\/api$/, '')}/api/public/logo`);
       console.log('📥 Logo response:', response.data);
       
       if (response.data && response.data.logo) {
@@ -303,7 +305,7 @@ export default function AdminLandingPage() {
       // Criar uma instância do Axios sem interceptors para uploads
       const token = localStorage.getItem('@WhatsAppDispatcher:token');
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/admin/screenshots/upload`,
+        `${API_URL}/admin/screenshots/upload`,
         formData,
         {
           headers: {
@@ -449,7 +451,7 @@ export default function AdminLandingPage() {
             <div className="bg-gray-800 rounded-xl p-6 border-2 border-gray-700">
               {systemLogo ? (
                 <img
-                  src={`http://localhost:3001${systemLogo}`}
+                  src={buildFileUrl(systemLogo) || undefined}
                   alt="Logo do Sistema"
                   className="max-h-20 max-w-xs object-contain"
                 />
@@ -663,7 +665,7 @@ export default function AdminLandingPage() {
                       {/* Preview */}
                       <div className="w-40 h-24 bg-gray-800 rounded-lg overflow-hidden flex-shrink-0">
                         <img
-                          src={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001'}${screenshot.path}`}
+                          src={buildFileUrl(screenshot.path) || undefined}
                           alt={screenshot.titulo || 'Screenshot'}
                           className="w-full h-full object-cover"
                         />
@@ -981,4 +983,3 @@ export default function AdminLandingPage() {
     </AdminLayout>
   );
 }
-

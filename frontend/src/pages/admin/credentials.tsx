@@ -92,7 +92,7 @@ export default function AdminCredentials() {
 
   // Obter URL base da API
   const getApiBaseUrl = () => {
-    return process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001';
+    return process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, '') || 'http://localhost:3001';
   };
 
   // Obter webhooks URLs e tokens

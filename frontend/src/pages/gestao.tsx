@@ -6,6 +6,7 @@ import api from '@/services/api';
 import SystemLogo from '@/components/SystemLogo';
 import ToastContainer from '@/components/ToastContainer';
 import { useToast } from '@/hooks/useToast';
+import { buildFileUrl } from '@/utils/urlHelpers';
 
 interface TenantUser {
   id: number;
@@ -1430,7 +1431,13 @@ export default function Gestao() {
                 {user?.avatar ? (
                   <>
                     <img
-                      src={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001'}/uploads/avatars/${user.avatar}`}
+                      src={
+                        buildFileUrl(
+                          user.avatar.startsWith('/uploads')
+                            ? user.avatar
+                            : `/uploads/avatars/${user.avatar}`
+                        ) || undefined
+                      }
                       alt={user.nome || 'Admin'}
                       className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400 shadow-lg"
                       onError={(e) => {
@@ -1750,7 +1757,13 @@ export default function Gestao() {
                         {u.avatar ? (
                           <div className="relative">
                             <img
-                              src={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001'}/uploads/avatars/${u.avatar}`}
+                              src={
+                                buildFileUrl(
+                                  u.avatar.startsWith('/uploads')
+                                    ? u.avatar
+                                    : `/uploads/avatars/${u.avatar}`
+                                ) || undefined
+                              }
                               alt={u.nome}
                               className="w-20 h-20 rounded-2xl object-cover border-4 border-emerald-400 shadow-2xl group-hover:scale-110 transition-transform duration-300"
                               onError={(e) => {
@@ -2330,7 +2343,13 @@ export default function Gestao() {
                     ) : editingUser.avatar ? (
                       <>
                         <img
-                          src={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001'}/uploads/avatars/${editingUser.avatar}`}
+                          src={
+                            buildFileUrl(
+                              editingUser.avatar.startsWith('/uploads')
+                                ? editingUser.avatar
+                                : `/uploads/avatars/${editingUser.avatar}`
+                            ) || undefined
+                          }
                           alt={editingUser.nome}
                           className="w-32 h-32 rounded-full object-cover border-4 border-emerald-400 shadow-lg"
                           onError={(e) => {
@@ -2660,10 +2679,6 @@ export default function Gestao() {
     </>
   );
 }
-
-
-
-
 
 
 

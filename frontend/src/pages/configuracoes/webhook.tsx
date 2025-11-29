@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FaCopy, FaCheckCircle, FaExternalLinkAlt, FaServer, FaKey, FaLink, FaHome, FaArrowLeft, FaSignOutAlt, FaUser } from 'react-icons/fa';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
+import { buildFileUrl } from '@/utils/urlHelpers';
 
 export default function WebhookConfigPage() {
   const router = useRouter();
@@ -10,7 +11,7 @@ export default function WebhookConfigPage() {
   const [verifyToken, setVerifyToken] = useState('WhatsApp_Webhook_2025_Thyag_Secure_Token_9X7K2P4M');
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
-  const [backendUrl] = useState((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace('/api', ''));
+  const [backendUrl] = useState((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/api$/, ''));
   const [ngrokUrl, setNgrokUrl] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -126,7 +127,7 @@ export default function WebhookConfigPage() {
               >
                 {user?.avatar ? (
                   <img 
-                    src={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001'}/uploads/avatars/${user.avatar}`}
+                    src={buildFileUrl(user.avatar.startsWith('/uploads') ? user.avatar : `/uploads/avatars/${user.avatar}`) || undefined}
                     alt={user?.nome}
                     className="w-10 h-10 rounded-full object-cover border-2 border-green-400"
                   />

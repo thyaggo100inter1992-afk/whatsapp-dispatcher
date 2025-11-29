@@ -3,6 +3,7 @@ import { FaUser, FaEnvelope, FaLock, FaSave, FaUserCircle } from 'react-icons/fa
 import AdminLayout from '@/components/admin/AdminLayout';
 import api from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { buildFileUrl } from '@/utils/urlHelpers';
 
 export default function AdminProfile() {
   const { user, updateUser } = useAuth();
@@ -32,15 +33,7 @@ export default function AdminProfile() {
       
       // Configurar preview do avatar
       if (user.avatar) {
-        // Construir URL corretamente
-        let avatarUrl = user.avatar;
-        if (!avatarUrl.startsWith('http')) {
-          if (avatarUrl.startsWith('/uploads')) {
-            avatarUrl = `http://localhost:3001${avatarUrl}`;
-          } else {
-            avatarUrl = `http://localhost:3001/uploads/avatars/${avatarUrl}`;
-          }
-        }
+        const avatarUrl = buildFileUrl(user.avatar.startsWith('/uploads') ? user.avatar : `/uploads/avatars/${user.avatar}`);
         setAvatarPreview(avatarUrl);
       }
     }
@@ -86,10 +79,12 @@ export default function AdminProfile() {
       if (response.data.success) {
         // Usar avatarUrl que retorna o caminho completo
         const avatarPath = response.data.data.avatarUrl || `/uploads/avatars/${response.data.data.avatar}`;
+        const normalizedAvatarUrl = buildFileUrl(avatarPath);
         updateUser({
           ...user!,
           avatar: avatarPath
         });
+        setAvatarPreview(normalizedAvatarUrl);
         setSuccess('✅ Foto atualizada com sucesso!');
         setTimeout(() => setSuccess(''), 3000);
       }
@@ -203,7 +198,17 @@ export default function AdminProfile() {
               {avatarPreview || user?.avatar ? (
                 <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-purple-500 mx-auto mb-4">
                   <img
-                    src={avatarPreview || `http://localhost:3001${user?.avatar || ''}`}
+                    src={
+                      avatarPreview ||
+                      buildFileUrl(
+                        user?.avatar
+                          ? user.avatar.startsWith('/uploads')
+                            ? user.avatar
+                            : `/uploads/avatars/${user.avatar}`
+                          : null
+                      ) ||
+                      undefined
+                    }
                     alt={user?.nome}
                     className="w-full h-full object-cover"
                   />

@@ -4,6 +4,7 @@ import { FaWhatsapp, FaQrcode, FaRocket, FaCheckCircle, FaShieldAlt, FaSearch, F
 import { useAuth } from '../contexts/AuthContext';
 import { useFeatures } from '../hooks/useFeatures';
 import SystemLogo from '../components/SystemLogo';
+import { buildFileUrl } from '@/utils/urlHelpers';
 
 export default function ChooseIntegration() {
   const router = useRouter();
@@ -52,7 +53,13 @@ export default function ChooseIntegration() {
         >
           {user?.avatar ? (
             <img 
-              src={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001'}/uploads/avatars/${user.avatar}`}
+              src={
+                buildFileUrl(
+                  user.avatar.startsWith('/uploads')
+                    ? user.avatar
+                    : `/uploads/avatars/${user.avatar}`
+                ) || undefined
+              }
               alt={user.nome}
               className="w-10 h-10 rounded-full object-cover border-2 border-emerald-400"
             />

@@ -395,7 +395,7 @@ export default function LandingPage() {
                     <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out"></div>
                     
                     <img
-                      src={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001'}${screenshot.path}`}
+                      src={`${process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, '') || 'http://localhost:3001'}${screenshot.path}`}
                       alt={screenshot.titulo || 'Screenshot do sistema'}
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     />

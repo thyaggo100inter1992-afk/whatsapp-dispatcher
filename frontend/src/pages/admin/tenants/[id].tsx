@@ -12,6 +12,7 @@ import {
   FaTachometerAlt, FaHistory, FaSync, FaDollarSign, FaFileInvoice, FaCopy, FaSpinner,
   FaDatabase, FaInfoCircle, FaCoins, FaDownload, FaTimes
 } from 'react-icons/fa';
+import { buildFileUrl } from '@/utils/urlHelpers';
 
 interface Tenant {
   id: number;
@@ -2457,7 +2458,7 @@ export default function TenantDetailsPage() {
                         <div className="flex items-center gap-3 mb-2">
                           {user.avatar ? (
                             <img 
-                              src={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001'}/uploads/avatars/${user.avatar}`}
+                              src={buildFileUrl(user.avatar.startsWith('/uploads') ? user.avatar : `/uploads/avatars/${user.avatar}`) || undefined}
                               alt={user.nome}
                               className={`w-12 h-12 rounded-full object-cover border-2 ${
                                 user.role === 'admin' ? 'border-orange-500' : 'border-blue-500'
@@ -4665,8 +4666,6 @@ export default function TenantDetailsPage() {
     </div>
   );
 }
-
-
 
 
 

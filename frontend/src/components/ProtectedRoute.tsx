@@ -23,7 +23,12 @@ export default function ProtectedRoute({
 
   useEffect(() => {
     if (!isLoading && requireSuperAdmin) {
-      const isSuperAdmin = user?.role === 'super_admin';
+      // Se estiver saindo da aplicação (user null), não mostrar alerta
+      if (!user) {
+        return;
+      }
+
+      const isSuperAdmin = user.role === 'super_admin';
       if (!isSuperAdmin) {
         alert('❌ Apenas super administradores podem acessar esta área.');
         router.push(fallbackPath);

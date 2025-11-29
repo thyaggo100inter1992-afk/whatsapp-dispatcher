@@ -11,7 +11,7 @@ import AudioRecorder from '@/components/AudioRecorder';
 import EmojiPickerButton from '@/components/EmojiPickerButton';
 
 // Configuração da URL base da API
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '${API_BASE_URL}/api').replace('/api', '');
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '${API_BASE_URL}/api').replace(/\/api$/, '');
 
 type TemplateType = 'text' | 'image' | 'video' | 'audio' | 'audio_recorded' | 'document' | 'list' | 'buttons' | 'carousel' | 'poll' | 'combined';
 

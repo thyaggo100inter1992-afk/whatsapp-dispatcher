@@ -4,6 +4,7 @@ import { FaUser, FaEnvelope, FaLock, FaCamera, FaSave, FaArrowLeft, FaHome, FaSi
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import SystemLogo from '../components/SystemLogo';
+import { buildFileUrl, getApiBaseUrl } from '@/utils/urlHelpers';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -39,7 +40,7 @@ export default function ProfilePage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+  const API_URL = `${getApiBaseUrl()}/api`;
 
   // Redirecionar admins para a página de gestão
   useEffect(() => {
@@ -81,7 +82,13 @@ export default function ProfilePage() {
 
         if (userData.avatar) {
           setAvatar(userData.avatar);
-          setAvatarPreview(`${API_URL.replace('/api', '')}/uploads/avatars/${userData.avatar}`);
+          setAvatarPreview(
+            buildFileUrl(
+              userData.avatar.startsWith('/uploads')
+                ? userData.avatar
+                : `/uploads/avatars/${userData.avatar}`
+            )
+          );
         }
       }
     } catch (error) {
@@ -222,7 +229,7 @@ export default function ProfilePage() {
       if (response.data.success) {
         setMessage({ type: 'success', text: 'Foto atualizada com sucesso!' });
         setAvatar(response.data.data.avatar);
-        setAvatarPreview(`${API_URL.replace('/api', '')}${response.data.data.avatarUrl}`);
+        setAvatarPreview(buildFileUrl(response.data.data.avatarUrl || response.data.data.avatar));
 
         const storedUser = localStorage.getItem('@WhatsAppDispatcher:user');
         if (storedUser) {

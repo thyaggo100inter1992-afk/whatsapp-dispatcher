@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import { FaWhatsapp, FaCog, FaChartBar, FaHome, FaBan, FaMousePointer, FaGlobe, FaEnvelope, FaSignOutAlt, FaUser } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
+import { buildFileUrl } from '@/utils/urlHelpers';
 import SystemLogo from './SystemLogo';
 import TrialExpiringBanner from './TrialExpiringBanner';
 
@@ -79,6 +80,13 @@ export default function Layout({ children }: LayoutProps) {
   const navigation = [
     { name: 'Configurações', href: '/configuracoes', icon: FaCog },
   ];
+
+  const avatarPath = user?.avatar
+    ? user.avatar.startsWith('/uploads')
+      ? user.avatar
+      : `/uploads/avatars/${user.avatar}`
+    : null;
+  const avatarUrl = avatarPath ? buildFileUrl(avatarPath) : null;
 
   return (
     <>
@@ -161,10 +169,10 @@ export default function Layout({ children }: LayoutProps) {
                   className="bg-white/10 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/20 hover:bg-white/20 hover:border-white/30 transition-all flex items-center gap-3"
                   title="Editar perfil"
                 >
-                  {user?.avatar ? (
+                  {avatarUrl ? (
                     <img 
-                      src={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001'}/uploads/avatars/${user.avatar}`}
-                      alt={user.nome}
+                      src={avatarUrl}
+                      alt={user?.nome || 'Usuário'}
                       className="w-10 h-10 rounded-full object-cover border-2 border-emerald-400"
                     />
                   ) : (

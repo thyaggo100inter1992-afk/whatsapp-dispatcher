@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import axios from 'axios';
 import logger from '@/services/logger';
 import TrialExpiredModal from '@/components/TrialExpiredModal';
+import { buildFileUrl } from '@/utils/urlHelpers';
 
 // Tipos
 interface User {
@@ -69,6 +70,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [daysUntilDeletion, setDaysUntilDeletion] = useState<number | undefined>(undefined);
   const router = useRouter();
 
+  const normalizeAvatar = (avatar?: string) => {
+    if (!avatar) return undefined;
+    const path = avatar.startsWith('/uploads') ? avatar : `/uploads/avatars/${avatar}`;
+    return buildFileUrl(path) || path;
+  };
+
   // API base URL
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
@@ -80,7 +87,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     if (storedToken && storedUser && storedTenant) {
       setToken(storedToken);
-      setUser(JSON.parse(storedUser));
+      const parsedUser = JSON.parse(storedUser);
+      setUser({ ...parsedUser, avatar: normalizeAvatar(parsedUser.avatar) });
       setTenant(JSON.parse(storedTenant));
       
       // Configurar axios
@@ -103,7 +111,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Adicionar tenantId ao userData
       const userWithTenantId = {
         ...userData,
-        tenantId: tenantData.id
+        tenantId: tenantData.id,
+        avatar: normalizeAvatar(userData.avatar)
       };
 
       // Salvar no estado
@@ -174,7 +183,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Adicionar tenantId ao userData
       const userWithTenantId = {
         ...userData,
-        tenantId: tenantData.id
+        tenantId: tenantData.id,
+        avatar: normalizeAvatar(userData.avatar)
       };
 
       // Salvar no estado
@@ -232,7 +242,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Atualizar dados do usuário
   function updateUser(userData: Partial<User>) {
     if (user) {
-      const updatedUser = { ...user, ...userData };
+      const updatedUser = { ...user, ...userData, avatar: userData.avatar !== undefined ? normalizeAvatar(userData.avatar) : user.avatar };
       setUser(updatedUser);
       localStorage.setItem('@WhatsAppDispatcher:user', JSON.stringify(updatedUser));
     }
@@ -286,6 +296,3 @@ export function useAuth() {
 
   return context;
 }
-
-
-

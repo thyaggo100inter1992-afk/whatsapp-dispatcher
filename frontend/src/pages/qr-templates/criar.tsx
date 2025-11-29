@@ -16,7 +16,7 @@ import styles from '@/styles/AudioRecorder.module.css';
 import { detectVariables, categorizeVariables, getSystemVariables } from '@/utils/templateVariables';
 
 // Configuração da URL base da API
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace('/api', '');
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/api$/, '');
 
 interface UazInstance {
   id: number;

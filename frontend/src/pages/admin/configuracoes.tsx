@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/admin/AdminLayout';
 import { FaCog, FaUpload, FaTrash, FaSave, FaImage, FaPalette, FaWhatsapp } from 'react-icons/fa';
 import api from '@/services/api';
+import { buildFileUrl } from '@/utils/urlHelpers';
 
 interface SystemSettings {
   system_logo: string | null;
@@ -24,6 +25,7 @@ export default function SystemConfigPage() {
   const [primaryColor, setPrimaryColor] = useState('#10b981');
   const [secondaryColor, setSecondaryColor] = useState('#3b82f6');
   const [supportPhone, setSupportPhone] = useState('5562998449494');
+  const logoPreviewUrl = buildFileUrl(settings?.system_logo);
 
   useEffect(() => {
     fetchSettings();
@@ -181,7 +183,7 @@ export default function SystemConfigPage() {
               {settings?.system_logo ? (
                 <div className="flex flex-col items-center gap-4">
                   <img
-                    src={`http://localhost:3001${settings.system_logo}`}
+                    src={logoPreviewUrl || undefined}
                     alt="Logo do Sistema"
                     className="max-h-40 object-contain bg-white/5 p-4 rounded-lg"
                   />
@@ -379,4 +381,3 @@ export default function SystemConfigPage() {
     </AdminLayout>
   );
 }
-

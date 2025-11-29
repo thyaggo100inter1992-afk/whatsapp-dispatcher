@@ -56,10 +56,10 @@ const getFeatures = async (req, res) => {
     // Buscar se tenant tem algum pagamento confirmado
     const paymentCheck = await query(`
       SELECT COUNT(*) as payment_count
-      FROM payments
-      WHERE tenant_id = $1
-        AND status IN ('confirmed', 'received')
-        AND (metadata->>'tipo' IS NULL OR metadata->>'tipo' != 'consultas_avulsas')
+      FROM payments pay
+      WHERE pay.tenant_id = $1
+        AND pay.status IN ('confirmed', 'received')
+        AND (pay.metadata->>'tipo' IS NULL OR pay.metadata->>'tipo' != 'consultas_avulsas')
       LIMIT 1
     `, [tenantId]);
 

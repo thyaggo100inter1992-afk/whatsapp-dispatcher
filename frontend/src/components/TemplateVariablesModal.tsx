@@ -20,7 +20,7 @@ import {
 } from '@/utils/templateVariables';
 
 // Configuração da URL base da API
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '${API_BASE_URL}/api').replace('/api', '');
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '${API_BASE_URL}/api').replace(/\/api$/, '');
 
 interface TemplateVariablesModalProps {
   templateName: string;

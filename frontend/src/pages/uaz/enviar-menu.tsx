@@ -4,7 +4,7 @@ import { FaArrowLeft, FaPaperPlane, FaPlus, FaTrash, FaImage, FaList, FaPoll, Fa
 import api from '@/services/api';
 
 // Configuração da URL base da API
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '${API_BASE_URL}/api').replace('/api', '');
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '${API_BASE_URL}/api').replace(/\/api$/, '');
 import { uploadAPI } from '@/services/api';
 
 interface UazInstance {

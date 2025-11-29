@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import { FaQrcode, FaCog, FaHome, FaGlobe, FaWhatsapp, FaSignOutAlt, FaUser } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import SystemLogo from './SystemLogo';
+import { buildFileUrl } from '@/utils/urlHelpers';
 
 interface LayoutUazProps {
   children: React.ReactNode;
@@ -149,7 +150,7 @@ export default function LayoutUaz({ children }: LayoutUazProps) {
                 >
                   {user?.avatar ? (
                     <img 
-                      src={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001'}/uploads/avatars/${user.avatar}`}
+                      src={buildFileUrl(user.avatar.startsWith('/uploads') ? user.avatar : `/uploads/avatars/${user.avatar}`) || undefined}
                       alt={user.nome}
                       className="w-10 h-10 rounded-full object-cover border-2 border-blue-400"
                     />
@@ -194,4 +195,3 @@ export default function LayoutUaz({ children }: LayoutUazProps) {
     </div>
   );
 }
-

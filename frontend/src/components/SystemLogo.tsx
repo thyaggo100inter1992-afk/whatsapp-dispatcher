@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FaWhatsapp } from 'react-icons/fa';
 import api from '@/services/api';
+import { buildFileUrl, getApiBaseUrl } from '@/utils/urlHelpers';
 
 interface SystemLogoProps {
   className?: string;
@@ -23,10 +24,18 @@ export default function SystemLogo({ className = '', showFallback = true, size =
       const response = await api.get('/public/logo');
       console.log('🎨 SystemLogo: Resposta recebida:', response.data);
       
-      if (response.data && response.data.logo) {
-        const fullLogoUrl = `http://localhost:3001${response.data.logo}`;
-        console.log('🎨 SystemLogo: Logo encontrada:', fullLogoUrl);
-        setLogoUrl(fullLogoUrl);
+      if (response.data) {
+        if (response.data.logo) {
+          const assetsHost = getApiBaseUrl();
+          const fullLogoUrl = buildFileUrl(response.data.logo) || `${assetsHost}${response.data.logo}`;
+
+          console.log('🎨 SystemLogo: Logo encontrada:', fullLogoUrl);
+          setLogoUrl(fullLogoUrl);
+        }
+
+        if (response.data.systemName) {
+          setSystemName(response.data.systemName);
+        }
       } else {
         console.log('🎨 SystemLogo: Nenhuma logo configurada, usando fallback');
       }
@@ -88,4 +97,3 @@ export default function SystemLogo({ className = '', showFallback = true, size =
 
   return null;
 }
-

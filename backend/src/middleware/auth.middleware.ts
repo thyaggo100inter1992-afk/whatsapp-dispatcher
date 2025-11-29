@@ -1,15 +1,43 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt, { JwtPayload } from 'jsonwebtoken';
+import jwt, { JwtPayload, Secret, SignOptions } from 'jsonwebtoken';
 import { pool } from '../database/connection';
 
 // Serviços escritos em CommonJS
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const sessionService = require('../services/session.service');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'sua-chave-secreta-muito-forte-aqui-mude-isso';
+const JWT_SECRET: Secret = process.env.JWT_SECRET || 'sua-chave-secreta-muito-forte-aqui-mude-isso';
+const JWT_REFRESH_SECRET: Secret = process.env.JWT_REFRESH_SECRET || `${JWT_SECRET}-refresh`;
 
 const allowedRoutesForBlocked = ['/gestao', '/payments', '/logs', '/permissions', '/system-settings'];
 const validStatuses = ['active', 'trial'];
+
+const ACCESS_TOKEN_EXPIRATION = process.env.JWT_EXPIRATION || '7d';
+const REFRESH_TOKEN_EXPIRATION = process.env.JWT_REFRESH_EXPIRATION || '30d';
+
+export function generateToken(userId: number, tenantId: number) {
+  const options: SignOptions = {
+    expiresIn: ACCESS_TOKEN_EXPIRATION as any,
+  };
+
+  return jwt.sign(
+    { userId, tenantId },
+    JWT_SECRET,
+    options,
+  );
+}
+
+export function generateRefreshToken(userId: number, tenantId: number) {
+  const options: SignOptions = {
+    expiresIn: REFRESH_TOKEN_EXPIRATION as any,
+  };
+
+  return jwt.sign(
+    { userId, tenantId },
+    JWT_REFRESH_SECRET,
+    options,
+  );
+}
 
 const extractToken = (authHeader?: string) => {
   if (!authHeader) {
@@ -214,5 +242,7 @@ export const optionalAuth = async (
 module.exports = {
   authenticate,
   optionalAuth,
+  generateToken,
+  generateRefreshToken,
 };
 

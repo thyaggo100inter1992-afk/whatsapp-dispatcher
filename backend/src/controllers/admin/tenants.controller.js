@@ -214,10 +214,10 @@ const getAllTenants = async (req, res) => {
         (SELECT COUNT(*) FROM uaz_instances WHERE tenant_id = t.id) as total_contas_qr,
         (SELECT COUNT(*) FROM campaigns WHERE tenant_id = t.id) as total_campanhas,
         (SELECT COUNT(*) FROM qr_campaigns WHERE tenant_id = t.id) as total_campanhas_qr,
-        (SELECT COUNT(*) > 0 FROM payments 
-         WHERE tenant_id = t.id 
-         AND status IN ('confirmed', 'received')
-         AND (metadata->>'tipo' IS NULL OR metadata->>'tipo' != 'consultas_avulsas')
+        (SELECT COUNT(*) > 0 FROM payments pay
+         WHERE pay.tenant_id = t.id 
+         AND pay.status IN ('confirmed', 'received')
+         AND (pay.metadata->>'tipo' IS NULL OR pay.metadata->>'tipo' != 'consultas_avulsas')
         ) as has_paid_plan
       FROM tenants t
       LEFT JOIN plans p ON t.plan_id = p.id

@@ -7,6 +7,7 @@ import {
 } from 'react-icons/fa';
 import { useAuth } from '@/contexts/AuthContext';
 import SystemLogo from '@/components/SystemLogo';
+import { buildFileUrl } from '@/utils/urlHelpers';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -25,22 +26,19 @@ export default function AdminLayout({ children, title, subtitle, icon, currentPa
     router.push('/login');
   };
 
-  // Construir URL do avatar corretamente
+  // Construir URL do avatar sem gerar mixed-content
   const getAvatarUrl = () => {
     if (!user?.avatar) return null;
-    
-    // Se já começa com http, retornar como está
+
     if (user.avatar.startsWith('http')) {
       return user.avatar;
     }
-    
-    // Se já começa com /uploads, adicionar apenas o host
+
     if (user.avatar.startsWith('/uploads')) {
-      return `http://localhost:3001${user.avatar}`;
+      return buildFileUrl(user.avatar);
     }
-    
-    // Caso contrário, construir o caminho completo
-    return `http://localhost:3001/uploads/avatars/${user.avatar}`;
+
+    return buildFileUrl(`/uploads/avatars/${user.avatar}`);
   };
 
   const menuItems = [
@@ -143,4 +141,3 @@ export default function AdminLayout({ children, title, subtitle, icon, currentPa
     </div>
   );
 }
-

@@ -5,7 +5,7 @@ import api from '@/services/api';
 import { uploadAPI } from '@/services/api';
 
 // Configuração da URL base da API
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace('/api', '');
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/api$/, '');
 import AudioRecorder from '@/components/AudioRecorder';
 import MultiAudioRecorder from '@/components/MultiAudioRecorder';
 import MultiMediaUploader from '@/components/MultiMediaUploader';

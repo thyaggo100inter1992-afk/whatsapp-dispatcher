@@ -186,7 +186,7 @@ export default function EnviarMensagemImediata() {
     
     // Se a URL já começar com http, é uma URL externa
     // Caso contrário, usa a URL base da API ou fallback para localhost
-    const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace('/api', '');
+    const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/api$/, '');
     const finalUrl = data.url.startsWith('http') 
       ? data.url 
       : `${apiBaseUrl}${data.url}`;

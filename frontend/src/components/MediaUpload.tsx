@@ -4,7 +4,7 @@ import { FaCloudUploadAlt, FaTrash, FaFile, FaImage, FaVideo, FaMusic } from 're
 import { uploadAPI } from '@/services/api';
 
 // Configuração da URL base da API
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace('/api', '');
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/api$/, '');
 
 interface MediaUploadProps {
   onUploadSuccess: (data: any) => void;

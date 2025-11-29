@@ -1,5 +1,6 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import logger from './logger';
+import { getApiBaseUrl } from '@/utils/urlHelpers';
 
 // Estender o tipo AxiosRequestConfig para incluir metadata
 declare module 'axios' {
@@ -12,7 +13,10 @@ declare module 'axios' {
 
 // API_URL já deve incluir /api no .env.local
 // Exemplo: NEXT_PUBLIC_API_URL=http://localhost:3001/api
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || `${getApiBaseUrl()}/api`;
+const API_URL = (typeof window !== 'undefined' && window.location.protocol === 'https:' && rawApiUrl.startsWith('http://'))
+  ? rawApiUrl.replace(/^http:\/\//, 'https://')
+  : rawApiUrl;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -185,4 +189,3 @@ export const uploadAPI = {
 };
 
 export default api;
-

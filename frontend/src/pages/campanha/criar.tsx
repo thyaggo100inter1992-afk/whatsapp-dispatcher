@@ -15,7 +15,7 @@ import RestrictionCheckModal from '@/components/RestrictionCheckModal';
 import * as XLSX from 'xlsx';
 
 // Configuração da URL base da API
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace('/api', '');
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/api$/, '');
 
 interface WhatsAppAccount {
   id: number;
