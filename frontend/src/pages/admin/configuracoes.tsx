@@ -14,6 +14,16 @@ interface SystemSettings {
   support_phone: string;
 }
 
+const defaultSettings: SystemSettings = {
+  system_logo: null,
+  system_name: '',
+  system_primary_color: '#10b981',
+  system_secondary_color: '#3b82f6',
+  system_favicon: null,
+  login_background: null,
+  support_phone: '5562998449494',
+};
+
 export default function SystemConfigPage() {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,12 +43,38 @@ export default function SystemConfigPage() {
 
   const fetchSettings = async () => {
     try {
-      const response = await api.get('/system-settings/public');
-      setSettings(response.data.data);
-      setSystemName(response.data.data.system_name || '');
-      setPrimaryColor(response.data.data.system_primary_color || '#10b981');
-      setSecondaryColor(response.data.data.system_secondary_color || '#3b82f6');
-      setSupportPhone(response.data.data.support_phone || '5562998449494');
+      const response = await api.get('/admin/system-settings');
+      const rows = response.data?.data || [];
+      
+      const extractedSettings: SystemSettings = rows.reduce((acc: SystemSettings, row: any) => {
+        const value = row.setting_value;
+        switch (row.setting_key) {
+          case 'system_logo':
+            acc.system_logo = value;
+            break;
+          case 'system_name':
+            acc.system_name = value;
+            break;
+          case 'system_primary_color':
+            acc.system_primary_color = value;
+            break;
+          case 'system_secondary_color':
+            acc.system_secondary_color = value;
+            break;
+          case 'support_phone':
+            acc.support_phone = value;
+            break;
+          default:
+            break;
+        }
+        return acc;
+      }, { ...defaultSettings });
+
+      setSettings(extractedSettings);
+      setSystemName(extractedSettings.system_name || '');
+      setPrimaryColor(extractedSettings.system_primary_color || '#10b981');
+      setSecondaryColor(extractedSettings.system_secondary_color || '#3b82f6');
+      setSupportPhone(extractedSettings.support_phone || '5562998449494');
     } catch (error: any) {
       console.error('Erro ao buscar configurações:', error);
       showMessage('error', 'Erro ao carregar configurações');
@@ -80,6 +116,13 @@ export default function SystemConfigPage() {
       });
       
       showMessage('success', 'Logo atualizada com sucesso!');
+      if (response.data?.data?.logoUrl) {
+        const newLogoPath = response.data.data.logoUrl;
+        setSettings((prev) => ({
+          ...(prev || { ...defaultSettings }),
+          system_logo: newLogoPath
+        }));
+      }
       fetchSettings(); // Recarregar configurações
     } catch (error: any) {
       console.error('Erro ao fazer upload:', error);
