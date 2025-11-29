@@ -243,7 +243,7 @@ class QrTemplateController {
 
       // Se tem arquivos, processar upload
       const uploadedFiles = [];
-      if (req.files && req.files.length > 0) {
+      if (req.files && Array.isArray(req.files) && req.files.length > 0) {
         for (const file of req.files) {
           // Gerar nome único
           const timestamp = Date.now();
@@ -266,8 +266,8 @@ class QrTemplateController {
             filePath,
             file.size,
             file.mimetype,
-            file.caption || null,
-            file.carousel_card_index || null
+            (file as any).caption || null,
+            (file as any).carousel_card_index || null
           ]);
 
           uploadedFiles.push(mediaResult.rows[0]);
@@ -512,7 +512,7 @@ class QrTemplateController {
 
       // Se tem novos arquivos, adicionar
       const uploadedFiles = [];
-      if (req.files && req.files.length > 0) {
+      if (req.files && Array.isArray(req.files) && req.files.length > 0) {
         for (const file of req.files) {
           const timestamp = Date.now();
           const uniqueName = `${timestamp}_${file.originalname}`;
@@ -532,8 +532,8 @@ class QrTemplateController {
             filePath,
             file.size,
             file.mimetype,
-            file.caption || null,
-            file.carousel_card_index || null
+            (file as any).caption || null,
+            (file as any).carousel_card_index || null
           ]);
 
           uploadedFiles.push(mediaResult.rows[0]);

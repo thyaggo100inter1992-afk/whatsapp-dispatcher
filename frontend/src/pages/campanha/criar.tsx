@@ -562,7 +562,6 @@ export default function CriarCampanha() {
           
           // Converter para CSV mantendo valores raw
           const csv = XLSX.utils.sheet_to_csv(worksheet, {
-            raw: true,  // ✅ Manter valores originais
             blankrows: false  // Ignorar linhas vazias
           });
           

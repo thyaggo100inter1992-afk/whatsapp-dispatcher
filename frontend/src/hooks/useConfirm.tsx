@@ -1,12 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, ReactNode } from 'react';
 import ConfirmModal from '@/components/ui/ConfirmModal';
 
 interface ConfirmOptions {
   title: string;
-  message: string | React.ReactNode;
+  message: string | ReactNode;
   confirmText?: string;
   cancelText?: string;
-  type?: 'danger' | 'warning' | 'info';
+  type?: 'danger' | 'warning' | 'info' | 'success' | 'error';
+  showCancel?: boolean;
 }
 
 export function useConfirm() {
@@ -27,6 +28,7 @@ export function useConfirm() {
       confirmText: 'Confirmar',
       cancelText: 'Cancelar',
       type: 'warning',
+      showCancel: true,
       ...opts,
     });
     setIsOpen(true);
@@ -54,7 +56,8 @@ export function useConfirm() {
         message={options.message}
         confirmText={options.confirmText}
         cancelText={options.cancelText}
-        type={options.type || 'warning'}
+        type={(options.type === 'error' ? 'danger' : options.type) || 'warning'}
+        showCancelButton={options.showCancel !== false}
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />

@@ -15,6 +15,9 @@ interface Template {
   text_content: string;
   media_files: any[];
   variables_map?: any;
+  list_config?: any;
+  buttons_config?: any;
+  carousel_config?: any;
   created_at: string;
   updated_at: string;
 }

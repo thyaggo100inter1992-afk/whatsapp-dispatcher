@@ -670,7 +670,7 @@ export class RestrictionListController {
         console.log('📊 Lendo arquivo Excel...');
         // Ler Excel do buffer
         const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(req.file.buffer);
+        await workbook.xlsx.load(req.file.buffer as any);
         worksheet = workbook.getWorksheet(1);
       }
 

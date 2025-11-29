@@ -243,6 +243,7 @@ interface QrCampaign {
   id: number;
   name: string;
   status: string;
+  tenant_id?: number;
   schedule_config: WorkerConfig;
   pause_config: PauseConfig;
   sent_count: number;
@@ -348,7 +349,7 @@ class QrCampaignWorker {
       }
       
       // 🔒 SEGURANÇA: Buscar campanhas QR APENAS de tenants ativos
-      const campaigns = await query<QrCampaign>(
+      const campaigns = await query(
         `SELECT * FROM qr_campaigns 
          WHERE tenant_id = ANY($1)
          AND status IN ('pending', 'scheduled', 'running')
@@ -394,7 +395,7 @@ class QrCampaignWorker {
     }
 
     // Verificar horário de trabalho
-    const scheduleConfig = campaign.schedule_config || {};
+    const scheduleConfig = (campaign.schedule_config || {}) as WorkerConfig;
     if (scheduleConfig.work_start_time && scheduleConfig.work_end_time) {
       const now = new Date();
       const currentTime = now.toTimeString().slice(0, 5);
@@ -483,7 +484,7 @@ class QrCampaignWorker {
     await this.checkAndReactivateInstances(campaign.id);
     
     // ✅ Buscar APENAS templates/instâncias ATIVOS E CONECTADOS
-    const templatesResult = await query<CampaignTemplate>(
+    const templatesResult = await query(
       `SELECT ct.*, i.instance_token, i.name as instance_name, i.is_connected,
        t.name as template_name, t.type as template_type,
        t.text_content, t.list_config, t.buttons_config, t.carousel_config,
@@ -565,7 +566,7 @@ class QrCampaignWorker {
 
     // Buscar os próximos N contatos pendentes (N = número de instâncias)
     // Incluir contatos que nunca foram enviados OU que falharam e precisam ser reenviados
-    const contactsResult = await query<Contact>(
+    const contactsResult = await query(
       `SELECT DISTINCT c.* FROM contacts c
        INNER JOIN qr_campaign_contacts cc ON c.id = cc.contact_id
        WHERE cc.campaign_id = $1
@@ -614,13 +615,13 @@ class QrCampaignWorker {
     // ENVIAR MENSAGENS SEQUENCIALMENTE COM DELAY
     for (let index = 0; index < contacts.length; index++) {
       // ✅ VERIFICAR SE CAMPANHA FOI PAUSADA MANUALMENTE ANTES DE CADA ENVIO
-      const statusCheck = await query<QrCampaign>(
+      const statusCheck = await query(
         `SELECT status FROM qr_campaigns WHERE id = $1`,
         [campaign.id]
       );
       
       // ✅ VERIFICAR SE ESTÁ DENTRO DO HORÁRIO DE TRABALHO ANTES DE CADA ENVIO
-      const scheduleConfig = campaign.schedule_config || {};
+      const scheduleConfig = (campaign.schedule_config || {}) as WorkerConfig;
       if (scheduleConfig.work_start_time && scheduleConfig.work_end_time) {
         const now = new Date();
         const currentTime = now.toTimeString().slice(0, 5);
@@ -752,7 +753,7 @@ class QrCampaignWorker {
       await this.sendMessage(campaign, contact, template);
 
       // ✅ VERIFICAR NOVAMENTE SE CAMPANHA FOI PAUSADA APÓS O ENVIO
-      const statusCheck2 = await query<QrCampaign>(
+      const statusCheck2 = await query(
         `SELECT status FROM qr_campaigns WHERE id = $1`,
         [campaign.id]
       );
@@ -764,7 +765,7 @@ class QrCampaignWorker {
 
       // ⭐ RECARREGAR configurações da campanha antes de cada iteração
       // Isso garante que edições feitas durante a execução sejam respeitadas
-      const updatedCampaignResult = await query<QrCampaign>(
+      const updatedCampaignResult = await query(
         'SELECT pause_config, schedule_config FROM qr_campaigns WHERE id = $1',
         [campaign.id]
       );
@@ -788,7 +789,7 @@ class QrCampaignWorker {
         for (let sec = 0; sec < currentIntervalSeconds; sec++) {
           await this.sleep(1000); // 1 segundo
           
-          const statusCheckDelay = await query<QrCampaign>(
+          const statusCheckDelay = await query(
             `SELECT status FROM qr_campaigns WHERE id = $1`,
             [campaign.id]
           );
@@ -803,7 +804,7 @@ class QrCampaignWorker {
       // Verificar se precisa pausar (após X mensagens)
       if (currentPauseAfter > 0) {
         // Recarregar contador de mensagens enviadas
-        const campaignData = await query<QrCampaign>(
+        const campaignData = await query(
           `SELECT sent_count FROM qr_campaigns WHERE id = $1`,
           [campaign.id]
         );
@@ -823,7 +824,7 @@ class QrCampaignWorker {
           for (let sec = 0; sec < pauseTotalSeconds; sec += 5) {
             await this.sleep(5000); // 5 segundos
             
-            const statusCheckPause = await query<QrCampaign>(
+            const statusCheckPause = await query(
               `SELECT status FROM qr_campaigns WHERE id = $1`,
               [campaign.id]
             );
@@ -1571,7 +1572,7 @@ class QrCampaignWorker {
   }
 
   private async checkAutoPause(campaign: QrCampaign) {
-    const pauseConfig = campaign.pause_config || {};
+    const pauseConfig = (campaign.pause_config || {}) as PauseConfig;
     
     if (!pauseConfig.pause_after || pauseConfig.pause_after === 0) {
       return;

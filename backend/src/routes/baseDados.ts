@@ -376,8 +376,9 @@ router.get('/buscar', async (req: Request, res: Response) => {
     
     // 🔍 DEBUG: Mostrar telefones armazenados
     if (telefone) {
-      console.log('\n🔍 [DEBUG TELEFONES] Buscando por:', telefone);
-      console.log('🔍 [DEBUG TELEFONES] Apenas números:', telefone.replace(/\D/g, ''));
+      const telefoneStr = String(telefone);
+      console.log('\n🔍 [DEBUG TELEFONES] Buscando por:', telefoneStr);
+      console.log('🔍 [DEBUG TELEFONES] Apenas números:', telefoneStr.replace(/\D/g, ''));
       
       // Buscar TODOS os registros para comparação
       const todosQuery = 'SELECT id, nome, documento, telefones FROM base_dados_completa LIMIT 10';

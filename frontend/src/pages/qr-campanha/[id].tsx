@@ -1241,7 +1241,6 @@ export default function QrCampanhaDetalhes() {
             setManagingInstances(false);
             loadCampaign();
           }}
-          toast={toast}
         />
       )}
 

@@ -107,7 +107,7 @@ export default function HistoricoTemplates() {
         t.status === 'processing'
       );
       
-      console.log('📊 Status dos templates:', data.map(t => ({ name: t.template_name, status: t.status, error: t.error_message })));
+      console.log('📊 Status dos templates:', data.map((t: any) => ({ name: t.template_name, status: t.status, error: t.error_message })));
       
       const hasPendingTemplates = pending.length > 0;
       setHasPending(hasPendingTemplates);

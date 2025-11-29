@@ -466,7 +466,7 @@ export default function EditarTemplate() {
             });
             setMessageBlocks(blocksWithIds);
             console.log('✅ Blocos de mensagem combinada carregados:', blocksWithIds.length);
-            console.log('🎠 Cards com imagens:', blocksWithIds.flatMap(b => b.cards || []).filter((c: any) => c.image).length);
+            console.log('🎠 Cards com imagens:', blocksWithIds.flatMap((b: any) => b.cards || []).filter((c: any) => c.image).length);
           }
         }
 

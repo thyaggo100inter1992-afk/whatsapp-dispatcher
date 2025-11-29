@@ -21,7 +21,6 @@ export default function Layout({ children }: LayoutProps) {
     canAccessRestrictionList,
     canAccessWebhooks,
     canAccessNovaVida,
-    canAccessDashboard,
   } = usePermissions();
 
   // Definir título e subtítulo com base na rota

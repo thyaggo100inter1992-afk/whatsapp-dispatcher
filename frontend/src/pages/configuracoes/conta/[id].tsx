@@ -63,13 +63,13 @@ export default function ConfigurarConta() {
   const [experimentalTests, setExperimentalTests] = useState<any>(null);
   const [runningExperiments, setRunningExperiments] = useState(false);
   // Analytics removido - causava erros
-  // const [analytics, setAnalytics] = useState<any>(null);
-  // const [loadingAnalytics, setLoadingAnalytics] = useState(false);
-  // const [analyticsPeriod, setAnalyticsPeriod] = useState('30');
-  // const [filterType, setFilterType] = useState<'quick' | 'custom' | 'single'>('quick');
-  // const [customStartDate, setCustomStartDate] = useState('');
-  // const [customEndDate, setCustomEndDate] = useState('');
-  // const [singleDate, setSingleDate] = useState('');
+const [analytics, setAnalytics] = useState<any>(null);
+const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+const [analyticsPeriod, setAnalyticsPeriod] = useState('30');
+const [filterType, setFilterType] = useState<'quick' | 'custom' | 'single'>('quick');
+const [customStartDate, setCustomStartDate] = useState('');
+const [customEndDate, setCustomEndDate] = useState('');
+const [singleDate, setSingleDate] = useState('');
 
   // Estados para proxy
   const [proxyConfig, setProxyConfig] = useState<any>(null);
@@ -1294,7 +1294,7 @@ export default function ConfigurarConta() {
           )}
 
           {/* Analytics removido - estava causando erros */}
-          {false && activeTab === 'analytics' && (
+          {false && (
             <div className="space-y-8">
               {/* Título da Seção */}
               <div className="flex items-center gap-4 pb-6 border-b-2 border-white/10">

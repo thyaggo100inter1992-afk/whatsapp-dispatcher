@@ -26,6 +26,9 @@ interface UazInstance {
   name: string;
   phone_number: string;
   status: string;
+  profile_pic_url?: string | null;
+  profile_name?: string | null;
+  is_connected?: boolean;
 }
 
 interface HistoryMessage {

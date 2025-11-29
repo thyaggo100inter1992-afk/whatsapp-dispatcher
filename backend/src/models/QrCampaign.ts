@@ -8,6 +8,7 @@ export interface QrCampaign {
   scheduled_at?: Date;
   started_at?: Date;
   completed_at?: Date;
+  pause_started_at?: Date;
   total_contacts: number;
   sent_count: number;
   delivered_count: number;

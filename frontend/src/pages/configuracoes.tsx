@@ -509,6 +509,7 @@ export default function Configuracoes() {
       access_token: '',
       phone_number_id: '',
       business_account_id: '',
+      app_id: '',
       webhook_verify_token: '',
       is_active: true,
       proxy_id: null,

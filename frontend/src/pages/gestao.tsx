@@ -1074,8 +1074,8 @@ export default function Gestao() {
 
       // Buscar contas já associadas ao usuário
       const userAccountsResponse = await api.get(`/gestao/users/${userId}/whatsapp-accounts`);
-      const userApiIds = new Set(userAccountsResponse.data.apiAccounts?.map((acc: any) => acc.id) || []);
-      const userUazIds = new Set(userAccountsResponse.data.uazInstances?.map((inst: any) => inst.id) || []);
+      const userApiIds = new Set<number>(userAccountsResponse.data.apiAccounts?.map((acc: any) => acc.id) || []);
+      const userUazIds = new Set<number>(userAccountsResponse.data.uazInstances?.map((inst: any) => inst.id) || []);
       
       setSelectedApiAccounts(userApiIds);
       setSelectedUazInstances(userUazIds);
@@ -1143,13 +1143,13 @@ export default function Gestao() {
     if (!editingUser) return;
 
     try {
-      const updateData = { ...formData };
-      if (!updateData.senha) {
-        delete updateData.senha;
+      const updatePayload: Omit<typeof formData, 'senha'> & { senha?: string } = { ...formData };
+      if (!updatePayload.senha) {
+        delete updatePayload.senha;
       }
       
-      console.log('🔄 Atualizando usuário:', updateData);
-      await api.put(`/gestao/users/${editingUser.id}`, updateData);
+      console.log('🔄 Atualizando usuário:', updatePayload);
+      await api.put(`/gestao/users/${editingUser.id}`, updatePayload);
       toast.success('Usuário atualizado com sucesso!');
       setShowEditModal(false);
       setEditingUser(null);
@@ -1540,8 +1540,8 @@ export default function Gestao() {
                         <strong>Seu teste gratuito de 3 dias acabou.</strong>
                       </p>
                       <p className="text-lg text-red-200">
-                        {tenant?.days_until_deletion > 0 
-                          ? `Você tem ${tenant.days_until_deletion} dias para escolher um plano antes da conta ser deletada.`
+                        {(tenant?.days_until_deletion ?? 0) > 0 
+                          ? `Você tem ${tenant?.days_until_deletion} dias para escolher um plano antes da conta ser deletada.`
                           : 'Escolha um plano para continuar usando o sistema.'
                         }
                       </p>

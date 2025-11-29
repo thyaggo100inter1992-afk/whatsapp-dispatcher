@@ -18,6 +18,7 @@ interface Registro {
   emails: any[];
   enderecos: any[];
   whatsapp_verificado: boolean;
+  consultado_nova_vida?: boolean;
   data_adicao: string;
   observacoes?: string;
   tags?: string[];
@@ -64,10 +65,10 @@ export default function BaseDados() {
   const [dadosEdicao, setDadosEdicao] = useState<any>(null);
   
   // Estado para notificações toast
-  const [notifications, setNotifications] = useState<Array<{ id: number; message: string; type: 'success' | 'error' | 'info' }>>([]);
+  const [notifications, setNotifications] = useState<Array<{ id: number; message: string; type: 'success' | 'error' | 'info' | 'warning' }>>([]);
   
   // Função de notificação toast moderna
-  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const showNotification = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
     const id = Date.now();
     setNotifications(prev => [...prev, { id, message, type }]);
     
@@ -137,12 +138,14 @@ export default function BaseDados() {
       // Se é CPF/CNPJ, preenche o campo
       setFormCadastro({
         ...formCadastro,
-        cpf_cnpj: apenasNumeros
+        documento: apenasNumeros
       });
     } else {
       // Se não é documento, limpa o formulário
       setFormCadastro({
-        cpf_cnpj: '',
+        tipo_documento: 'CPF',
+        documento: '',
+        nome: '',
         telefones: [{ ddd: '', telefone: '' }]
       });
     }

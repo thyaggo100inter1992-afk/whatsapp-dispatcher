@@ -142,7 +142,12 @@ export default function MasterUsers() {
   return (
     <>
       <notification.NotificationContainer />
-      <AdminLayout>
+      <AdminLayout
+        title="Usuários Master"
+        subtitle="Gerenciamento de acesso master aos tenants"
+        currentPage="master-users"
+        icon={<FaShieldAlt className="text-3xl text-white" />}
+      >
         <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
         <div className="max-w-7xl mx-auto space-y-8">
           

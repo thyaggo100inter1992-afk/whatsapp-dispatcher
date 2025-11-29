@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { FaSmile } from 'react-icons/fa';
+import type { Theme } from 'emoji-picker-react';
 
 // Importação dinâmica para evitar erros de SSR
 const EmojiPicker = dynamic(() => import('emoji-picker-react'), { ssr: false });
@@ -64,7 +65,7 @@ export default function EmojiPickerButton({
             onEmojiClick={handleEmojiClick}
             width={350}
             height={450}
-            theme="dark"
+            theme={"dark" as Theme}
             searchPlaceHolder="Buscar emoji..."
             previewConfig={{
               showPreview: false

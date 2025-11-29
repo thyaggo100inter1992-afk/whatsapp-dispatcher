@@ -50,6 +50,8 @@ interface MessageBlock {
   type: Exclude<MessageType, 'combined'>;
   order: number;
   text?: string;
+  title?: string;
+  caption?: string;
   media?: any;
   buttons?: ButtonOption[];
   choices?: string[];
@@ -59,6 +61,10 @@ interface MessageBlock {
   selectableCount?: number;
   // Para lista com interface visual
   listSections?: Array<{
+    title: string;
+    rows: Array<{ id: string; title: string; description: string }>;
+  }>;
+  sections?: Array<{
     title: string;
     rows: Array<{ id: string; title: string; description: string }>;
   }>;
@@ -103,12 +109,13 @@ export default function CriarTemplate() {
   
   const [messageType, setMessageType] = useState<MessageType>('text');
   
-  const [formData, setFormData] = useState({
-    text: '',
-    footerText: '',
-    listButton: 'Ver Opções',
-    selectableCount: 1
-  });
+const [formData, setFormData] = useState({
+  type: 'text' as MessageType,
+  text: '',
+  footerText: '',
+  listButton: 'Ver Opções',
+  selectableCount: 1
+});
 
   // Estados para mídia
   const [uploadedMedia, setUploadedMedia] = useState<any>(null);
@@ -468,7 +475,7 @@ export default function CriarTemplate() {
               if (row.description) allText += row.description + ' ';
             });
           });
-        } else if (block.type === 'buttons') {
+        } else if (block.type === 'button') {
           if (block.text) allText += block.text + ' ';
           if (block.footerText) allText += block.footerText + ' ';
           // Extrair texto dos botões
@@ -497,7 +504,7 @@ export default function CriarTemplate() {
           if (row.description) allText += ' ' + row.description;
         });
       });
-    } else if (messageType === 'buttons') {
+    } else if (messageType === 'button') {
       // Para botões simples
       allText = formData.text || '';
       // Extrair texto dos botões
@@ -767,7 +774,7 @@ export default function CriarTemplate() {
           // Limpar campos para criar novo
           setTemplateName('');
           setTemplateDescription('');
-          setFormData({ text: '', footerText: '', listButton: 'Ver Opções', selectableCount: 1 });
+          setFormData({ type: messageType, text: '', footerText: '', listButton: 'Ver Opções', selectableCount: 1 });
           setUploadedMedia(null);
           setButtons([{ id: Date.now().toString(), text: '', type: 'REPLY' }]);
           setChoices(['']);
@@ -2548,7 +2555,7 @@ export default function CriarTemplate() {
                           )}
 
                           {/* Modo Múltiplos Arquivos */}
-                          {useMultipleFiles && messageType !== 'button' ? (
+                           {useMultipleFiles && messageType !== ('button' as MessageType) ? (
                             <MultiMediaUploader 
                               onFilesChange={handleMultipleFilesChange}
                               maxFiles={10}
@@ -2625,14 +2632,14 @@ export default function CriarTemplate() {
                             // ✅ FIX: Detectar tipo de arquivo por MIME type OU extensão
                             const filename = uploadedMedia.filename || uploadedMedia.originalname || uploadedMedia.url || '';
                             const isImage = uploadedMedia.mime_type?.startsWith('image/') || 
-                                          /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(filename) ||
-                                          formData.type === 'image';
+                                           /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(filename) ||
+                                           messageType === 'image';
                             const isVideo = uploadedMedia.mime_type?.startsWith('video/') || 
-                                          /\.(mp4|avi|mov|wmv|flv|webm)$/i.test(filename) ||
-                                          formData.type === 'video';
+                                           /\.(mp4|avi|mov|wmv|flv|webm)$/i.test(filename) ||
+                                           messageType === 'video';
                             const isAudio = uploadedMedia.mime_type?.startsWith('audio/') || 
-                                          /\.(mp3|wav|ogg|m4a|aac)$/i.test(filename) ||
-                                          formData.type === 'audio' || formData.type === 'audio_recorded';
+                                           /\.(mp3|wav|ogg|m4a|aac)$/i.test(filename) ||
+                                           (['audio', 'audio_recorded'] as MessageType[]).includes(messageType);
                             
                             if (isImage) return <FaImage className="text-3xl text-blue-400" />;
                             if (isVideo) return <FaVideo className="text-3xl text-purple-400" />;

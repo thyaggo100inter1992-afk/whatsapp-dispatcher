@@ -375,12 +375,13 @@ export default function AdminCredentials() {
   };
 
   const handleDeleteAsaas = async (id: number, name: string) => {
-    const confirmed = await confirm(
-      'Confirmar exclusão',
-      `Tem certeza que deseja excluir a credencial "${name}"?`,
-      'Excluir',
-      'Cancelar'
-    );
+    const confirmed = await confirm({
+      title: 'Confirmar exclusão',
+      message: `Tem certeza que deseja excluir a credencial "${name}"?`,
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+      type: 'danger',
+    });
 
     if (!confirmed) return;
 

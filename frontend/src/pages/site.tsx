@@ -20,6 +20,11 @@ interface Plan {
   limite_usuarios: number;
   limite_contas_whatsapp: number;
   limite_mensagens_dia: number;
+  limite_mensagens_mes?: number;
+  limite_contatos?: number;
+  limite_templates?: number;
+  limite_consultas_mes?: number;
+  permite_webhook?: boolean;
   limite_campanhas_mes: number;
   funcionalidades: any;
 }
@@ -671,20 +676,36 @@ export default function LandingPage() {
                             </div>
                             <div className="flex items-center gap-3 text-white bg-white/5 backdrop-blur-sm rounded-lg p-2.5">
                               <FaCheckCircle className="text-green-400 text-sm flex-shrink-0" />
-                              <span className="text-sm">{plan.limite_mensagens_mes === -1 ? '♾️ Mensagens ilimitadas' : `💬 ${plan.limite_mensagens_mes.toLocaleString()} mensagens/mês`}</span>
+                              <span className="text-sm">
+                                {(plan.limite_mensagens_mes ?? -1) === -1
+                                  ? '♾️ Mensagens ilimitadas'
+                                  : `💬 ${(plan.limite_mensagens_mes ?? 0).toLocaleString()} mensagens/mês`}
+                              </span>
                             </div>
                             <div className="flex items-center gap-3 text-white bg-white/5 backdrop-blur-sm rounded-lg p-2.5">
                               <FaCheckCircle className="text-green-400 text-sm flex-shrink-0" />
-                              <span className="text-sm">{plan.limite_contatos === -1 ? '♾️ Contatos ilimitados' : `📇 ${plan.limite_contatos.toLocaleString()} contatos`}</span>
+                              <span className="text-sm">
+                                {(plan.limite_contatos ?? -1) === -1
+                                  ? '♾️ Contatos ilimitados'
+                                  : `📇 ${(plan.limite_contatos ?? 0).toLocaleString()} contatos`}
+                              </span>
                             </div>
                             <div className="flex items-center gap-3 text-white bg-white/5 backdrop-blur-sm rounded-lg p-2.5">
                               <FaCheckCircle className="text-green-400 text-sm flex-shrink-0" />
-                              <span className="text-sm">{plan.limite_templates === -1 ? '♾️ Templates ilimitados' : `📄 ${plan.limite_templates} templates`}</span>
+                              <span className="text-sm">
+                                {(plan.limite_templates ?? -1) === -1
+                                  ? '♾️ Templates ilimitados'
+                                  : `📄 ${(plan.limite_templates ?? 0).toLocaleString()} templates`}
+                              </span>
                             </div>
-                            {plan.limite_consultas_mes && (
+                            {typeof plan.limite_consultas_mes === 'number' && (
                               <div className="flex items-center gap-3 text-white bg-white/5 backdrop-blur-sm rounded-lg p-2.5">
                                 <FaCheckCircle className="text-green-400 text-sm flex-shrink-0" />
-                                <span className="text-sm">{plan.limite_consultas_mes === -1 ? '♾️ Consultas ilimitadas' : `🔍 ${plan.limite_consultas_mes.toLocaleString()} consultas/mês`}</span>
+                                <span className="text-sm">
+                                  {plan.limite_consultas_mes === -1
+                                    ? '♾️ Consultas ilimitadas'
+                                    : `🔍 ${(plan.limite_consultas_mes ?? 0).toLocaleString()} consultas/mês`}
+                                </span>
                               </div>
                             )}
                           </div>

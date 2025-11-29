@@ -82,11 +82,14 @@ export default function Tutoriais() {
     }
   };
 
-  const categories = ['Todos', ...Array.from(new Set(tutorials.map(t => t.categoria).filter(Boolean)))];
+  const categories: string[] = [
+    'Todos',
+    ...Array.from(new Set(tutorials.map(t => t.categoria || 'Sem Categoria')))
+  ];
 
   const filteredTutorials = selectedCategory === 'Todos' 
     ? tutorials 
-    : tutorials.filter(t => t.categoria === selectedCategory);
+    : tutorials.filter(t => (t.categoria || 'Sem Categoria') === selectedCategory);
 
   return (
     <ProtectedRoute>

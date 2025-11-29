@@ -56,6 +56,7 @@ interface MessageBlock {
   type: Exclude<MessageType, 'combined'>;
   order: number;
   text?: string;
+  originalText?: string;
   media?: any;
   buttons?: ButtonOption[];
   choices?: string[];
@@ -1361,7 +1362,7 @@ export default function EnviarMensagemUnificado() {
     ));
   };
 
-  const getMessageTypeIcon = (type: MessageType) => {
+  const getMessageTypeIcon = (type: MessageType | '') => {
     switch (type) {
       case 'text': return '✉️';
       case 'image': return '🖼️';
@@ -1376,7 +1377,7 @@ export default function EnviarMensagemUnificado() {
     }
   };
 
-  const getMessageTypeLabel = (type: MessageType) => {
+  const getMessageTypeLabel = (type: MessageType | '') => {
     switch (type) {
       case 'text': return 'Texto';
       case 'image': return 'Imagem';
@@ -1388,6 +1389,7 @@ export default function EnviarMensagemUnificado() {
       case 'poll': return 'Enquete';
       case 'carousel': return 'Carrossel';
       case 'combined': return 'Mensagem Combinada';
+      default: return 'Mensagem';
     }
   };
 
@@ -1586,9 +1588,13 @@ export default function EnviarMensagemUnificado() {
   };
 
   // Mostrar notificação toast
-  const showNotification = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
+  const showNotification = (
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    duration = 3001
+  ) => {
     setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3001); // Auto-fechar após 5 segundos
+    setTimeout(() => setNotification(null), duration);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1699,7 +1705,7 @@ export default function EnviarMensagemUnificado() {
       targetNumber: formData.number,
       instanceId: formData.instance_id,
       startedAt: new Date(),
-      messageType: messageType,
+      messageType: messageType || undefined,
       blocks: messageType === 'combined' ? messageBlocks : undefined
     };
 

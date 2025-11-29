@@ -1,15 +1,16 @@
 import { FaCheckCircle, FaExclamationTriangle, FaInfoCircle, FaTimes } from 'react-icons/fa';
-import { useEffect } from 'react';
+import { useEffect, ReactNode } from 'react';
 
 interface ConfirmModalProps {
   isOpen: boolean;
   title: string;
-  message: string;
+  message: string | ReactNode;
   type?: 'warning' | 'danger' | 'info' | 'success';
   confirmText?: string;
   cancelText?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  showCancelButton?: boolean;
 }
 
 export default function ConfirmModal({
@@ -21,6 +22,7 @@ export default function ConfirmModal({
   cancelText = 'Cancelar',
   onConfirm,
   onCancel,
+  showCancelButton = true,
 }: ConfirmModalProps) {
   // Close on ESC key
   useEffect(() => {
@@ -100,21 +102,23 @@ export default function ConfirmModal({
 
           {/* Actions */}
           <div className="flex gap-3 p-6 pt-0">
-            <button
-              onClick={onCancel}
-              className="
-                flex-1 px-6 py-3 
-                bg-gray-700/50 hover:bg-gray-700
-                text-white font-semibold
-                rounded-xl
-                border border-gray-600
-                transition-all duration-200
-                active:scale-95
-                hover:shadow-lg
-              "
-            >
-              {cancelText}
-            </button>
+            {showCancelButton && (
+              <button
+                onClick={onCancel}
+                className="
+                  flex-1 px-6 py-3 
+                  bg-gray-700/50 hover:bg-gray-700
+                  text-white font-semibold
+                  rounded-xl
+                  border border-gray-600
+                  transition-all duration-200
+                  active:scale-95
+                  hover:shadow-lg
+                "
+              >
+                {cancelText}
+              </button>
+            )}
             <button
               onClick={onConfirm}
               className={`

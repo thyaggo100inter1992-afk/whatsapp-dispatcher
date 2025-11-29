@@ -173,21 +173,43 @@ class AsaasService {
   }
 
   /**
+   * Buscar cliente no Asaas por ID
+   */
+  async getCustomer(customerId: string, tenantId?: number): Promise<any> {
+    try {
+      await this.initializeApi(tenantId);
+      
+      console.log('🔍 Buscando cliente no Asaas:', customerId);
+      
+      const response = await this.api!.get(`/customers/${customerId}`);
+
+      console.log('✅ Cliente encontrado no Asaas:', response.data.name);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Erro ao buscar cliente no Asaas:', error.message);
+      throw new Error(`Erro ao buscar cliente no Asaas: ${error.message}`);
+    }
+  }
+
+  /**
    * Atualizar cliente no Asaas
    */
-  async updateCustomer(customerId: string, data: AsaasCustomer, tenantId?: number): Promise<any> {
+  async updateCustomer(customerId: string, data: Partial<AsaasCustomer>, tenantId?: number): Promise<any> {
     try {
       await this.initializeApi(tenantId);
       
       console.log('📝 Atualizando cliente no Asaas:', customerId);
       
-      const response = await this.api!.put(`/customers/${customerId}`, {
-        name: data.name,
-        email: data.email,
-        cpfCnpj: data.cpfCnpj,
-        phone: data.phone,
-        mobilePhone: data.mobilePhone || data.phone
-      });
+      const updateData: any = {};
+      if (data.name) updateData.name = data.name;
+      if (data.email) updateData.email = data.email;
+      if (data.cpfCnpj) updateData.cpfCnpj = data.cpfCnpj;
+      if (data.phone) {
+        updateData.phone = data.phone;
+        updateData.mobilePhone = data.mobilePhone || data.phone;
+      }
+
+      const response = await this.api!.put(`/customers/${customerId}`, updateData);
 
       console.log('✅ Cliente atualizado no Asaas:', response.data.id);
       return response.data;

@@ -24,6 +24,7 @@ interface Plan {
 
 interface UpgradeCalculation {
   is_upgrade: boolean;
+  is_first_purchase?: boolean;
   plano_atual: {
     id: number;
     nome: string;

@@ -951,7 +951,8 @@ export class WhatsAppSettingsController {
   async getAnalytics(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      let { start_date, end_date, period, granularity = 'DAY' } = req.query;
+      const { period, granularity = 'DAY' } = req.query;
+      let { start_date, end_date } = req.query;
 
       console.log('📊 Analytics - Parâmetros recebidos:', { id, start_date, end_date, period, granularity });
 
@@ -1015,9 +1016,13 @@ export class WhatsAppSettingsController {
       });
       
       // Retornar dados mockados em vez de erro 500 para não quebrar a página
-      const days = period ? parseInt(period as string) : 30;
-      const endDate = end_date || new Date().toISOString().split('T')[0];
-      const startDate = start_date || new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const queryPeriod = req.query.period as string | undefined;
+      const queryEndDate = req.query.end_date as string | undefined;
+      const queryStartDate = req.query.start_date as string | undefined;
+      
+      const days = queryPeriod ? parseInt(queryPeriod) : 30;
+      const endDate = queryEndDate || new Date().toISOString().split('T')[0];
+      const startDate = queryStartDate || new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       
       res.json({ 
         success: true, 
