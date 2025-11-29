@@ -252,52 +252,58 @@ async function startServer() {
     console.log('🗑️  Campanhas finalizadas há mais de 7 dias serão excluídas automaticamente');
     console.log('');
 
-    // Iniciar Campaign Worker
-    console.log('🚀 Iniciando Campaign Worker...');
-    campaignWorker.start();
-    console.log('✅ Campaign Worker iniciado e processando campanhas');
-    console.log('');
+    const workersDisabled = process.env.DISABLE_BACKGROUND_WORKERS === 'true';
 
-    // Iniciar QR Campaign Worker
-    console.log('🚀 Iniciando QR Campaign Worker...');
-    qrCampaignWorker.start();
-    console.log('✅ QR Campaign Worker iniciado e processando campanhas QR');
-    console.log('');
+    if (workersDisabled) {
+      console.log('⏸️ DISABLE_BACKGROUND_WORKERS=true -> Workers de campanha/pagamento não serão iniciados.');
+    } else {
+      // Iniciar Campaign Worker
+      console.log('🚀 Iniciando Campaign Worker...');
+      campaignWorker.start();
+      console.log('✅ Campaign Worker iniciado e processando campanhas');
+      console.log('');
 
-    // Iniciar Restriction Cleanup Worker
-    console.log('🚀 Iniciando Restriction Cleanup Worker...');
-    restrictionCleanupWorker.start();
-    console.log('✅ Restriction Cleanup Worker iniciado (executa a cada hora)');
-    console.log('🗑️  Listas expiradas serão removidas automaticamente');
-    console.log('');
+      // Iniciar QR Campaign Worker
+      console.log('🚀 Iniciando QR Campaign Worker...');
+      qrCampaignWorker.start();
+      console.log('✅ QR Campaign Worker iniciado e processando campanhas QR');
+      console.log('');
 
-    // Iniciar Trial Cleanup Worker
-    console.log('🚀 Iniciando Trial Cleanup Worker...');
-    // Executar imediatamente na inicialização
-    trialCleanupWorker.run();
-    // Agendar para executar a cada 6 horas
-    cron.schedule('0 */6 * * *', () => {
-      console.log('⏰ Executando Trial Cleanup Worker...');
+      // Iniciar Restriction Cleanup Worker
+      console.log('🚀 Iniciando Restriction Cleanup Worker...');
+      restrictionCleanupWorker.start();
+      console.log('✅ Restriction Cleanup Worker iniciado (executa a cada hora)');
+      console.log('🗑️  Listas expiradas serão removidas automaticamente');
+      console.log('');
+
+      // Iniciar Trial Cleanup Worker
+      console.log('🚀 Iniciando Trial Cleanup Worker...');
+      // Executar imediatamente na inicialização
       trialCleanupWorker.run();
-    });
-    console.log('✅ Trial Cleanup Worker iniciado (executa a cada 6 horas)');
-    console.log('🔒 Trials de 3 dias expirados serão bloqueados automaticamente');
-    console.log('🗑️  Tenants bloqueados há 7 dias serão deletados');
-    console.log('');
+      // Agendar para executar a cada 6 horas
+      cron.schedule('0 */6 * * *', () => {
+        console.log('⏰ Executando Trial Cleanup Worker...');
+        trialCleanupWorker.run();
+      });
+      console.log('✅ Trial Cleanup Worker iniciado (executa a cada 6 horas)');
+      console.log('🔒 Trials de 3 dias expirados serão bloqueados automaticamente');
+      console.log('🗑️  Tenants bloqueados há 7 dias serão deletados');
+      console.log('');
 
-    // Iniciar Payment Renewal Worker
-    console.log('🚀 Iniciando Payment Renewal Worker...');
-    // Executar imediatamente na inicialização
-    paymentRenewalWorker.run();
-    // Agendar para executar a cada 6 horas
-    cron.schedule('0 */6 * * *', () => {
-      console.log('⏰ Executando Payment Renewal Worker...');
+      // Iniciar Payment Renewal Worker
+      console.log('🚀 Iniciando Payment Renewal Worker...');
+      // Executar imediatamente na inicialização
       paymentRenewalWorker.run();
-    });
-    console.log('✅ Payment Renewal Worker iniciado (executa a cada 6 horas)');
-    console.log('💰 Vencimentos de pagamento serão verificados automaticamente');
-    console.log('🔄 Renovações mensais serão criadas automaticamente');
-    console.log('');
+      // Agendar para executar a cada 6 horas
+      cron.schedule('0 */6 * * *', () => {
+        console.log('⏰ Executando Payment Renewal Worker...');
+        paymentRenewalWorker.run();
+      });
+      console.log('✅ Payment Renewal Worker iniciado (executa a cada 6 horas)');
+      console.log('💰 Vencimentos de pagamento serão verificados automaticamente');
+      console.log('🔄 Renovações mensais serão criadas automaticamente');
+      console.log('');
+    }
 
   } catch (error) {
     console.error('❌ Failed to start server:', error);
