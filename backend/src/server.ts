@@ -94,6 +94,16 @@ app.use((req, res, next) => {
 // Servir arquivos estáticos (uploads)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
+// Healthcheck básico (antes dos middlewares de tenant)
+app.get('/api/health', (_req, res) => {
+  res.json({
+    success: true,
+    environment: process.env.NODE_ENV || 'development',
+    workersDisabled: process.env.DISABLE_BACKGROUND_WORKERS === 'true',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // 🔒 MIDDLEWARE DE PROTEÇÃO GLOBAL - TENANT ISOLATION
 const { ensureTenant, detectDangerousQueries } = require('./middleware/tenant-protection.middleware');
 
