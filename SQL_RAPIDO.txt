@@ -1,0 +1,14 @@
+-- ============================================
+-- SQL RÁPIDO - COPIE E COLE NO pgAdmin
+-- ============================================
+
+-- CRIAR TABELA LISTA_RESTRICAO
+CREATE TABLE IF NOT EXISTS lista_restricao (id SERIAL PRIMARY KEY, cpf VARCHAR(14) NOT NULL UNIQUE, motivo TEXT, ativo BOOLEAN DEFAULT true, data_adicao TIMESTAMP DEFAULT NOW(), adicionado_por VARCHAR(100), created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()); CREATE INDEX IF NOT EXISTS idx_lista_restricao_cpf ON lista_restricao(cpf); CREATE INDEX IF NOT EXISTS idx_lista_restricao_ativo ON lista_restricao(ativo);
+
+-- VERIFICAR SE FOI CRIADA
+SELECT 'Tabela criada com sucesso!' as status, COUNT(*) as total_cpfs FROM lista_restricao;
+
+
+
+
+

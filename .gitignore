@@ -1,0 +1,100 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+
+# Environment variables (NÃO COMITAR!)
+.env
+.env.local
+.env.production
+.env.development
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Uploads (locais)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Backups
+backup/
+backup-*/
+*.backup
+*.bak
+
+# Documentation temporária (REMOVER ANTES DE COMITAR)
+✅-*.md
+🚀-*! ( exceto os 4 essenciais)
+🎉-*.md
+🚨-*.md
+👉-*.md
+🔍-*.md
+📋-*.md
+⚠️-*.md
+🐛-*.md
+🔄-*.md
+🎨-*.md
+🔧-*.md
+FASE-*.md
+CORRECAO-*.md
+AUDITORIA-*.md
+IMPLEMENTACAO-*.md
+RESUMO-*.md
+STATUS-*.md
+
+# Scripts temporários
+TESTAR-*.bat
+DIAGNOSTICAR-*.bat
+VERIFICAR-*.bat
+CORRIGIR-*.bat
+APLICAR-*.bat
+DEBUG-*.bat
+test-*.js
+test-*.ts
+check-*.js
+check-*.ts
+debug-*.js
+debug-*.ts
+fix-*.js
+monitor-*.js
+
+# Arquivos de backup de listas
+BACKUP-*.txt
+LISTA-*.txt
+
+# Redis dump
+dump.rdb
+
+# PM2
+.pm2/
+

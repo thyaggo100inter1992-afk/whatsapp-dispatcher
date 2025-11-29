@@ -1,0 +1,150 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║   🗄️ CRIAR TABELAS MANUALMENTE                                   ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+
+Como o psql não está no PATH, execute o SQL manualmente:
+
+
+┌──────────────────────────────────────────────────────────────────┐
+│  OPÇÃO 1 - pgAdmin (Recomendado)                                │
+└──────────────────────────────────────────────────────────────────┘
+
+1. Abra o pgAdmin
+2. Conecte no servidor PostgreSQL
+3. Clique no banco "whatsapp_dispatcher"
+4. Clique em "Query Tool" (ícone de SQL)
+5. COPIE E COLE o SQL abaixo
+6. Clique em "Execute" (F5)
+
+
+┌──────────────────────────────────────────────────────────────────┐
+│  OPÇÃO 2 - DBeaver / Outro cliente                              │
+└──────────────────────────────────────────────────────────────────┘
+
+1. Conecte no banco "whatsapp_dispatcher"
+2. Abra uma nova query
+3. COPIE E COLE o SQL abaixo
+4. Execute
+
+
+┌──────────────────────────────────────────────────────────────────┐
+│  SQL PARA EXECUTAR:                                              │
+└──────────────────────────────────────────────────────────────────┘
+
+-- ============================================
+-- SISTEMA DE TEMPLATES QR CONNECT
+-- ============================================
+
+-- Tabela principal de templates QR Connect
+CREATE TABLE IF NOT EXISTS qr_templates (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT,
+    type VARCHAR(50) NOT NULL,
+    
+    -- Conteúdo de texto
+    text_content TEXT,
+    
+    -- Configurações de Menu Lista
+    list_config JSONB,
+    
+    -- Configurações de Menu Botões
+    buttons_config JSONB,
+    
+    -- Configurações de Carrossel
+    carousel_config JSONB,
+    
+    -- Metadados
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Índices para melhor performance
+CREATE INDEX IF NOT EXISTS idx_qr_templates_type ON qr_templates(type);
+CREATE INDEX IF NOT EXISTS idx_qr_templates_name ON qr_templates(name);
+
+-- Tabela de mídias dos templates
+CREATE TABLE IF NOT EXISTS qr_template_media (
+    id SERIAL PRIMARY KEY,
+    template_id INTEGER NOT NULL REFERENCES qr_templates(id) ON DELETE CASCADE,
+    media_type VARCHAR(50) NOT NULL,
+    
+    -- Arquivo salvo localmente
+    file_name VARCHAR(255) NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size BIGINT,
+    mime_type VARCHAR(100),
+    
+    -- Metadados opcionais
+    caption TEXT,
+    duration INTEGER,
+    
+    -- Específico para carrossel (qual card)
+    carousel_card_index INTEGER,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Índices
+CREATE INDEX IF NOT EXISTS idx_qr_template_media_template_id ON qr_template_media(template_id);
+CREATE INDEX IF NOT EXISTS idx_qr_template_media_type ON qr_template_media(media_type);
+
+-- Comentários explicativos
+COMMENT ON TABLE qr_templates IS 'Templates reutilizáveis do WhatsApp QR Connect';
+COMMENT ON COLUMN qr_templates.type IS 'Tipo de mensagem: text, image, video, audio, audio_recorded, document, list, buttons, carousel';
+COMMENT ON COLUMN qr_templates.list_config IS 'Configuração completa do menu tipo lista';
+COMMENT ON COLUMN qr_templates.buttons_config IS 'Configuração completa do menu tipo botões';
+COMMENT ON COLUMN qr_templates.carousel_config IS 'Configuração completa do carrossel';
+
+COMMENT ON TABLE qr_template_media IS 'Mídias anexadas aos templates (arquivos salvos no servidor)';
+COMMENT ON COLUMN qr_template_media.file_path IS 'Caminho físico do arquivo no servidor';
+COMMENT ON COLUMN qr_template_media.carousel_card_index IS 'Índice do card no carrossel (0-based), NULL se não for carrossel';
+
+-- ============================================
+-- VERIFICAR SE FOI CRIADO
+-- ============================================
+
+SELECT 'Tabelas criadas com sucesso!' as mensagem;
+SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'qr_%';
+
+
+┌──────────────────────────────────────────────────────────────────┐
+│  ✅ DEPOIS DE EXECUTAR:                                          │
+└──────────────────────────────────────────────────────────────────┘
+
+Você deve ver:
+  ✓ Query retornou sucesso
+  ✓ 2 tabelas listadas: qr_templates e qr_template_media
+
+
+┌──────────────────────────────────────────────────────────────────┐
+│  🔄 PRÓXIMO PASSO:                                               │
+└──────────────────────────────────────────────────────────────────┘
+
+Agora você precisa REINICIAR O BACKEND:
+
+  1. Vá no terminal do backend
+  2. Pressione Ctrl+C
+  3. Execute: .\INICIAR_BACKEND.bat
+  4. Aguarde 10 segundos
+  5. Atualize a página (F5)
+
+
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║  Depois disso, o erro 500 estará resolvido! ✅                  ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
+
+

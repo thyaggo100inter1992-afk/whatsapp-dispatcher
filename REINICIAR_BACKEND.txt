@@ -1,0 +1,33 @@
+==================================================
+⚠️ ATENÇÃO: REINICIAR O BACKEND
+==================================================
+
+O arquivo de rotas foi atualizado manualmente para incluir
+as rotas de administração que estavam faltando.
+
+🔄 AÇÃO NECESSÁRIA:
+==================================================
+
+1. Vá para o terminal onde o BACKEND está rodando
+2. Pressione Ctrl+C para parar o servidor
+3. Execute novamente: npm run dev
+4. Aguarde o servidor iniciar
+
+==================================================
+✅ DEPOIS DE REINICIAR:
+==================================================
+
+O dashboard do Super Admin funcionará corretamente!
+As rotas disponíveis serão:
+- GET /api/admin/plans/stats
+- GET /api/admin/plans
+- POST /api/admin/plans
+- PUT /api/admin/plans/:id
+- DELETE /api/admin/plans/:id
+- GET /api/admin/tenants
+- E todas as outras rotas admin...
+
+==================================================
+
+
+

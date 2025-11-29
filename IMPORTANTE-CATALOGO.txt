@@ -1,0 +1,83 @@
+╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║         ✅ CATÁLOGO CORRIGIDO - LEIA ISTO!              ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+
+🔧 O QUE FOI CORRIGIDO:
+
+  ✅ IDs locais falsos removidos do banco
+  ✅ Endpoint da API corrigido (agora usa Commerce Manager)
+  ✅ Logs detalhados para ver exatamente o que está acontecendo
+
+═══════════════════════════════════════════════════════════
+
+🚀 FAÇA AGORA:
+
+  1. PARE o backend (Ctrl+C)
+  2. EXECUTE: 3-iniciar-backend.bat
+  3. Pressione F5 no navegador
+  4. Clique em "Sincronizar Todos"
+
+═══════════════════════════════════════════════════════════
+
+📊 O QUE VAI ACONTECER:
+
+  • Sistema busca o catalog_id do Facebook Commerce Manager
+  • Cria o produto no catálogo
+  • Sincroniza com WhatsApp Business
+  • Produto aparece no perfil business do WhatsApp
+
+═══════════════════════════════════════════════════════════
+
+⚠️  POSSÍVEIS ERROS:
+
+1. "Nenhum catálogo encontrado"
+   → Você precisa criar um catálogo primeiro em:
+     https://business.facebook.com/commerce
+
+2. "Access token inválido"
+   → Gerar novo token com permissões de catálogo
+
+3. "Erro de permissões"
+   → Token precisa ter: catalog_management, business_management
+
+═══════════════════════════════════════════════════════════
+
+📱 ONDE APARECE NO WHATSAPP?
+
+  Depois de sincronizar com sucesso:
+  
+  • Abra WhatsApp Business
+  • Vá em: Configurações > Ferramentas Comerciais > Catálogo
+  • Produtos sincronizados aparecerão lá
+  
+  Para clientes:
+  • Ao abrir seu perfil business
+  • Botão "Ver Catálogo" visível
+  • Produtos aparecem nativamente
+
+═══════════════════════════════════════════════════════════
+
+🔍 MONITORAR LOGS:
+
+  No terminal do backend, você verá:
+  
+  🔍 Buscando catalog_id...
+  📦 Catalog ID encontrado: xxxxxx
+  ➕ Sincronizando produto...
+  ✅ Produto criado no catálogo: yyyyyy
+  
+  Se der erro, os logs mostrarão exatamente o problema!
+
+═══════════════════════════════════════════════════════════
+
+📖 MAIS DETALHES:
+
+  Leia: CATALOGO-CORRIGIDO.md (documentação completa)
+
+═══════════════════════════════════════════════════════════
+
+Data: 14/11/2025
+Status: ✅ CORRIGIDO E PRONTO PARA TESTAR
+

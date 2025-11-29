@@ -1,0 +1,81 @@
+========================================
+  O QUE ACONTECEU AGORA?
+========================================
+
+✅ ABRI AUTOMATICAMENTE:
+
+1. Página de Download do PostgreSQL
+2. Página do Redis Cloud (cadastro)
+3. Frontend do sistema (http://localhost:3000)
+
+========================================
+  O QUE VOCÊ DEVE FAZER AGORA:
+========================================
+
+PASSO 1: INSTALAR POSTGRESQL (10 min)
+--------------------------------------
+Na página que abriu:
+1. Baixe o instalador Windows x86-64
+2. Execute o instalador
+3. Defina senha: postgres123 (ou outra de sua escolha)
+4. Instale tudo (pgAdmin incluído)
+
+PASSO 2: CRIAR CONTA REDIS CLOUD (5 min)
+-----------------------------------------
+Na página que abriu:
+1. Clique "Get Started Free"
+2. Crie conta (ou use Google)
+3. Crie banco Redis FREE
+4. Copie as credenciais (host, porta, senha)
+
+PASSO 3: CONFIGURAR (2 min)
+----------------------------
+Abra: backend\.env
+
+Cole suas credenciais:
+DB_PASSWORD=sua_senha_postgres
+REDIS_HOST=seu_host_redis
+REDIS_PORT=sua_porta_redis
+REDIS_PASSWORD=sua_senha_redis
+
+PASSO 4: CRIAR BANCO (1 min)
+-----------------------------
+Execute: 2-criar-banco.bat
+
+PASSO 5: INICIAR BACKEND (1 min)
+---------------------------------
+Execute: 3-iniciar-backend.bat
+
+========================================
+  FRONTEND JÁ ESTÁ RODANDO!
+========================================
+
+Você pode ver a interface em:
+http://localhost:3000
+
+Mas para funcionar 100%, precisa do backend
+(que precisa do PostgreSQL e Redis).
+
+========================================
+  PRECISA DE AJUDA?
+========================================
+
+Abra o arquivo: INSTALAR-POSTGRES-REDIS.md
+Tem tudo explicado com prints!
+
+========================================
+  TEMPO TOTAL: ~20 minutos
+========================================
+
+PostgreSQL:  10 min
+Redis Cloud:  5 min  
+Configurar:   2 min
+Criar Banco:  1 min
+Iniciar:      1 min
+TOTAL:       ~20 min
+
+========================================
+
+Boa sorte! 🚀
+
+

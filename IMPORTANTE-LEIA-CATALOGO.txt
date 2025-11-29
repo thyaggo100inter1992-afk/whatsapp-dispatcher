@@ -1,0 +1,46 @@
+========================================
+  ⚠️  IMPORTANTE - LEIA ANTES DE USAR
+========================================
+
+O CATÁLOGO NATIVO DO WHATSAPP FOI IMPLEMENTADO!
+
+PORÉM, para funcionar você precisa:
+
+1. ✅ Access Token com permissões corretas:
+   - whatsapp_business_management  
+   - catalog_management
+   - business_management
+
+2. ✅ Business Account ID configurado
+   (você já tem isso)
+
+3. ✅ Imagens dos produtos devem ser:
+   - URLs públicas (não localhost!)
+   - Formato JPG ou PNG
+   - Mínimo 500x500 pixels
+
+========================================
+  📋 O QUE FAZER AGORA:
+========================================
+
+1. Execute: APLICAR-SYNC-CATALOG.bat
+
+2. Reinicie o backend (Ctrl+C + 3-iniciar-backend.bat)
+
+3. Adicione produtos com IMAGENS
+
+4. Clique em "Sincronizar Todos"
+
+5. PRONTO! Os produtos aparecerão no perfil do WhatsApp!
+
+========================================
+  📖 DOCUMENTAÇÃO COMPLETA:
+========================================
+
+Leia o arquivo:
+CATALOGO-WHATSAPP-NATIVO.md
+
+========================================
+
+Pressione qualquer tecla para continuar...
+

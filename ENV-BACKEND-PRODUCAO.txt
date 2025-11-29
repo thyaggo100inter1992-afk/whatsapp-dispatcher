@@ -1,0 +1,25 @@
+# ============================================
+# CONFIGURAÇÃO DO BACKEND - PRODUÇÃO
+# Servidor: 72.60.141.244
+# ============================================
+
+PORT=3001
+NODE_ENV=production
+
+# Banco de Dados
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=whatsapp_dispatcher
+DB_USER=whatsapp_user
+DB_PASSWORD=Senhaforte123!@#
+
+# JWT
+JWT_SECRET=chave-super-secreta-aleatoria-minimo-32-caracteres-mudar-em-producao
+
+# Frontend
+FRONTEND_URL=https://sistemasnettsistemas.com.br
+
+# Upload
+UPLOAD_DIR=./uploads
+MAX_FILE_SIZE=10485760
+

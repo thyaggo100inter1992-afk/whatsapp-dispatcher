@@ -1,0 +1,78 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║   ✅ ERRO "TIPO INVÁLIDO" CORRIGIDO!                             ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+🔴 ERRO ORIGINAL:
+   POST http://localhost:3001/api/qr-templates 500 (Internal Server Error)
+   "Erro ao salvar template: Tipo inválido"
+
+🔍 CAUSA:
+   Incompatibilidade entre os tipos do frontend e backend:
+   
+   FRONTEND enviava:        BACKEND esperava:
+   - button              →  buttons ✅ CORRIGIDO
+   - poll                →  (não aceito) ✅ BLOQUEADO
+   - combined            →  (não aceito) ✅ BLOQUEADO
+
+✅ CORREÇÕES APLICADAS:
+
+   1. Conversão automática: 'button' → 'buttons'
+   2. Validação adicionada para tipos não suportados
+   3. Mensagens claras ao usuário
+
+───────────────────────────────────────────────────────────────────
+
+📋 TIPOS SUPORTADOS PARA TEMPLATES:
+
+   ✅ text           - Mensagem de texto
+   ✅ image          - Imagem
+   ✅ video          - Vídeo
+   ✅ audio          - Áudio
+   ✅ document       - Documento
+   ✅ button         - Botões interativos
+   ✅ list           - Menu de lista
+   ✅ carousel       - Carrossel de cards
+   
+   ❌ poll           - Enquetes (não suportado em templates)
+   ❌ combined       - Mensagens combinadas (não suportado em templates)
+
+───────────────────────────────────────────────────────────────────
+
+🚀 AGORA PODE TESTAR:
+
+1. Acesse: http://localhost:3000/qr-templates/criar
+
+2. Teste com BOTÕES:
+   - Nome: "Template de Botões"
+   - Descrição: "Teste"
+   - Tipo: Botões Interativos
+   - Texto: "Escolha uma opção:"
+   - Adicione alguns botões
+   - Clique em "💾 Salvar Template"
+
+3. ✅ Deve salvar com sucesso!
+
+───────────────────────────────────────────────────────────────────
+
+💡 NOTAS:
+
+- Se tentar criar template de ENQUETE: mensagem informativa
+- Se tentar criar template COMBINADO: mensagem informativa
+- Todos os outros tipos: funcionam perfeitamente
+- Conversão automática de tipos quando necessário
+
+───────────────────────────────────────────────────────────────────
+
+✅ PROBLEMA RESOLVIDO COMPLETAMENTE!
+
+
+
+
+
+
+
+
+
+

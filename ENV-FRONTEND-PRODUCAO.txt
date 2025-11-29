@@ -1,0 +1,21 @@
+# ============================================
+# CONFIGURAÇÃO DO FRONTEND - PRODUÇÃO
+# Servidor: 72.60.141.244
+# ============================================
+
+# ⚠️ URL da API DEVE terminar com /api
+NEXT_PUBLIC_API_URL=https://api.sistemasnettsistemas.com.br/api
+
+# ⚠️ Socket URL NÃO deve ter /api
+NEXT_PUBLIC_SOCKET_URL=https://api.sistemasnettsistemas.com.br
+
+# Aplicação
+NEXT_PUBLIC_APP_NAME="Disparador NettSistemas"
+
+# Logs (desabilitar em produção)
+NEXT_PUBLIC_DISABLE_FRONTEND_LOGS=true
+
+# Recursos
+NEXT_PUBLIC_ENABLE_LANDING_PAGE=true
+NEXT_PUBLIC_ENABLE_PUBLIC_SIGNUP=false
+

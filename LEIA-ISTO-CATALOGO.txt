@@ -1,0 +1,109 @@
+╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║         ⚠️  VOCÊ PRECISA CRIAR UM CATÁLOGO!             ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+
+❌ PROBLEMA:
+
+  Nenhum catálogo encontrado na sua conta WhatsApp Business.
+  A API NÃO PODE criar catálogos automaticamente.
+  Você precisa criar MANUALMENTE no Facebook.
+
+═══════════════════════════════════════════════════════════
+
+📦 PASSO A PASSO (5 MINUTOS):
+
+  1. ACESSE:
+     https://business.facebook.com/commerce/catalogs/
+
+  2. CLIQUE EM:
+     "Criar Catálogo" ou "+ Adicionar Catálogo"
+
+  3. ESCOLHA:
+     Tipo: E-commerce / Comércio
+
+  4. NOMEIE:
+     Exemplo: "Catálogo WhatsApp - NETTCRED"
+
+  5. CLIQUE:
+     "Criar"
+
+═══════════════════════════════════════════════════════════
+
+🔗 CONECTAR AO WHATSAPP:
+
+  Depois de criar:
+
+  6. Vá em: Configurações do Catálogo (ícone engrenagem)
+
+  7. Procure: "Canais de Vendas" ou "Sales Channels"
+
+  8. Clique: "Adicionar Canal"
+
+  9. Selecione: WhatsApp
+
+  10. Escolha: NETTCRED FINANCEIRA692626 (556281045959)
+
+  11. Confirme
+
+═══════════════════════════════════════════════════════════
+
+✅ DEPOIS DE CRIAR:
+
+  1. REINICIE o backend
+     → Pressione Ctrl+C na janela do backend
+     → Execute: 3-iniciar-backend.bat
+
+  2. ATUALIZE o navegador
+     → Pressione F5
+
+  3. SINCRONIZE
+     → Clique em "Sincronizar Todos"
+
+  PRONTO! Agora vai funcionar!
+
+═══════════════════════════════════════════════════════════
+
+📊 VOCÊ VERÁ NO TERMINAL:
+
+  🔍 Buscando catálogo...
+  ✅ Catalog ID encontrado: 123456789
+  ➕ Sincronizando produto...
+  ✅ Produto criado: 987654321
+
+═══════════════════════════════════════════════════════════
+
+📱 ONDE APARECE:
+
+  No WhatsApp Business:
+  → Configurações > Ferramentas Comerciais > Catálogo
+
+  Para clientes:
+  → Botão "Ver Catálogo" no seu perfil
+
+═══════════════════════════════════════════════════════════
+
+🔗 LINKS:
+
+  • Criar Catálogo:
+    https://business.facebook.com/commerce/catalogs/
+
+  • Commerce Manager:
+    https://business.facebook.com/commerce
+
+  • WhatsApp Manager:
+    https://business.facebook.com/wa/manage/home/
+
+═══════════════════════════════════════════════════════════
+
+💡 IMPORTANTE:
+
+  • Só precisa criar UMA VEZ
+  • Depois disso, o sistema vai lembrar
+  • Todos os produtos vão sincronizar automaticamente
+
+═══════════════════════════════════════════════════════════
+
+📖 Guia completo: COMO-CRIAR-CATALOGO-FACEBOOK.md
+

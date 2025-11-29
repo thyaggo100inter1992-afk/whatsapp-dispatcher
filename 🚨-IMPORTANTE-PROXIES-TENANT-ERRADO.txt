@@ -1,0 +1,70 @@
+========================================================================
+🚨 IMPORTANTE - PROXIES NO TENANT ERRADO
+========================================================================
+
+SITUAÇÃO ENCONTRADA:
+
+O proxy "TESTE 03" (ID: 4) está no Tenant: nettcred222 (ID: 3)
+
+Mas você está logado como outro tenant!
+
+========================================================================
+📊 PROXIES NO BANCO:
+========================================================================
+
+1. ID: 4 | "TESTE 03"     → Tenant: nettcred222 (ID: 3)
+2. ID: 1 | "teste"        → Tenant: Minha Empresa (ID: 1)
+
+========================================================================
+👥 TENANTS NO SISTEMA:
+========================================================================
+
+1. Tenant ID: 1 - Minha Empresa
+2. Tenant ID: 3 - nettcred222
+3. Tenant ID: 4 - EMPRESA THYAGGO
+
+========================================================================
+⚠️ O QUE FAZER AGORA
+========================================================================
+
+OPÇÃO 1: Mover proxy para o tenant correto
+   → Execute: node mover-proxy-para-tenant-correto.js
+   → Escolha opção 1
+   → Mova o proxy ID 4 para o Tenant ID 4 (EMPRESA THYAGGO)
+
+OPÇÃO 2: Deletar e criar novamente
+   → Execute: node mover-proxy-para-tenant-correto.js
+   → Escolha opção 3 (deletar todos)
+   → Reinicie backend
+   → Crie proxy novamente (agora vai pro tenant correto!)
+
+========================================================================
+✅ CORREÇÃO JÁ APLICADA NO CÓDIGO
+========================================================================
+
+✅ O controller agora inclui tenant_id explicitamente
+✅ Novos proxies serão criados no tenant correto
+✅ DEFAULT removido da coluna tenant_id
+
+PRÓXIMO PROXY que você criar VAI para o TENANT CORRETO! ✅
+
+========================================================================
+🚀 AÇÃO NECESSÁRIA
+========================================================================
+
+1. Reinicie o backend (OBRIGATÓRIO)
+   → Ctrl+C
+   → 3-iniciar-backend.bat
+
+2. Execute o script de limpeza/movimentação
+   → cd backend
+   → node mover-proxy-para-tenant-correto.js
+
+3. Teste criando novo proxy
+   → Deve funcionar perfeitamente! ✅
+
+========================================================================
+Data: 27/11/2025
+========================================================================
+
+
