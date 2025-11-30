@@ -60,7 +60,8 @@ export default function MediaUpload({
 
       try {
         const response = await uploadAPI.uploadMedia(file);
-        const data = response.data; // ✅ Corrigido: backend retorna dados diretamente em response.data
+        // Backend retorna { success: true, data: { url, mimetype, ... } }
+        const data = response.data.data || response.data;
         
         setUploadedFile(data);
         onUploadSuccess(data);
