@@ -521,6 +521,7 @@ export class TemplateController {
     try {
       const { accountId, templateName } = req.params;
       const { useQueue = true } = req.body;
+      const tenantId = (req as any).tenant?.id || (req as any).tenantId;
 
       console.log(`\n🗑️ ===== DELETANDO TEMPLATE =====`);
       console.log('   Conta ID:', accountId);
@@ -549,7 +550,7 @@ export class TemplateController {
           accountId: account.id,
           accountPhone: account.phone_number,
           templateName: templateName,
-          tenantId: (req as any).tenantId,
+          tenantId,
         });
 
         const queueStatus = templateQueueService.getQueueStatus();
@@ -572,7 +573,7 @@ export class TemplateController {
         templateName: templateName,
         accountId: account.id,
         accountName: account.name,
-        tenantId: (req as any).tenant?.id,
+        tenantId,
       });
 
       if (result.success) {
