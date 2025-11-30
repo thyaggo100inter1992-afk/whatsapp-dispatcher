@@ -568,10 +568,8 @@ export class CampaignController {
   async cancel(req: Request, res: Response) {
     try {
       const campaignId = parseInt(req.params.id);
-      // Limpar pausa programada ao cancelar
       const campaign = await CampaignModel.update(campaignId, { 
-        status: 'cancelled',
-        pause_started_at: null 
+        status: 'cancelled'
       });
 
       console.log(`🛑 Campanha ${campaignId} cancelada manualmente`);
