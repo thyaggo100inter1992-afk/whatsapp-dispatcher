@@ -214,14 +214,14 @@ export default function CriarTemplate() {
         } else if (comp.type === 'BODY') {
           setBodyText(comp.text || '');
           
-          if (comp.example && comp.example.body_text && comp.example.body_text[0]) {
-            const examples = Array.isArray(comp.example.body_text[0])
-              ? comp.example.body_text[0]
-              : comp.example.body_text;
-
+          if (comp.example && comp.example.body_text) {
             const mappedExamples: Record<number, string> = {};
-            (examples as string[]).forEach((ex: string, i: number) => {
-              mappedExamples[i + 1] = ex;
+            (comp.example.body_text as (string | string[])[]).forEach((entry, i) => {
+              if (Array.isArray(entry)) {
+                mappedExamples[i + 1] = entry[0] || '';
+              } else {
+                mappedExamples[i + 1] = entry || '';
+              }
             });
             setBodyVariableExamples(mappedExamples);
           }
@@ -639,7 +639,9 @@ export default function CriarTemplate() {
     if (placeholderNumbersInText.length > 0) {
       const sortedPlaceholders = [...placeholderNumbersInText].sort((a, b) => a - b);
       bodyComponent.example = {
-        body_text: sortedPlaceholders.map((placeholder) => bodyVariableExamples[placeholder] || ''),
+        body_text: sortedPlaceholders.map((placeholder) => [
+          bodyVariableExamples[placeholder] || ''
+        ]),
       };
     }
 
