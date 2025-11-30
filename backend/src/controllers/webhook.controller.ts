@@ -88,25 +88,95 @@ export class WebhookController {
             console.log('   Phone Number ID:', phoneNumberId);
             console.log('   Display Phone:', displayPhoneNumber);
             
-            // Buscar conta pelo phone_number_id ou pelo número formatado
-            const accountQuery = `
-              SELECT id FROM whatsapp_accounts 
-              WHERE tenant_id = $1 
-              AND (phone_number_id = $2 OR phone_number = $3)
-              LIMIT 1
-            `;
+            // Primeiro: tentar buscar pelo phone_number_id (mais confiável)
+            if (phoneNumberId) {
+              const accountByIdQuery = `
+                SELECT id FROM whatsapp_accounts 
+                WHERE tenant_id = $1 AND phone_number_id = $2
+                LIMIT 1
+              `;
+              
+              const accountByIdResult = await queryNoTenant(accountByIdQuery, [
+                tenantId,
+                phoneNumberId
+              ]);
+              
+              if (accountByIdResult.rows.length > 0) {
+                whatsappAccountId = accountByIdResult.rows[0].id;
+                console.log('✅ Conta encontrada por phone_number_id:', whatsappAccountId);
+                break;
+              }
+            }
             
-            const accountResult = await queryNoTenant(accountQuery, [
-              tenantId,
-              phoneNumberId || '',
-              displayPhoneNumber || ''
-            ]);
-            
-            if (accountResult.rows.length > 0) {
-              whatsappAccountId = accountResult.rows[0].id;
-              console.log('✅ Conta WhatsApp encontrada:', whatsappAccountId);
-            } else {
-              console.log('⚠️ Conta WhatsApp não encontrada para este webhook');
+            // Segundo: buscar pelo número com múltiplas variações
+            if (displayPhoneNumber) {
+              // Normalizar: remover todos os caracteres não numéricos
+              const cleanNumber = displayPhoneNumber.replace(/\D/g, '');
+              console.log('   Número limpo:', cleanNumber);
+              
+              // Gerar variações do número para busca
+              const variations: string[] = [];
+              
+              // 1. Número original limpo
+              variations.push(cleanNumber);
+              
+              // 2. Se começar com 55, adicionar sem o DDI
+              if (cleanNumber.startsWith('55')) {
+                const withoutDDI = cleanNumber.substring(2);
+                variations.push(withoutDDI);
+                
+                // 3. Se tiver 11 dígitos após remover DDI (DDD + 9 dígitos), testar sem o 9
+                if (withoutDDI.length === 11) {
+                  const ddd = withoutDDI.substring(0, 2);
+                  const numberPart = withoutDDI.substring(2);
+                  if (numberPart.startsWith('9')) {
+                    variations.push(ddd + numberPart.substring(1)); // Remove o 9
+                  }
+                }
+              }
+              
+              // 4. Se NÃO começar com 55, adicionar COM o DDI
+              if (!cleanNumber.startsWith('55')) {
+                variations.push('55' + cleanNumber);
+                
+                // 5. Testar variações com/sem 9º dígito
+                if (cleanNumber.length === 11) {
+                  const ddd = cleanNumber.substring(0, 2);
+                  const numberPart = cleanNumber.substring(2);
+                  if (numberPart.startsWith('9')) {
+                    variations.push(ddd + numberPart.substring(1)); // Remove o 9
+                    variations.push('55' + ddd + numberPart.substring(1)); // Com DDI, sem 9
+                  }
+                } else if (cleanNumber.length === 10) {
+                  const ddd = cleanNumber.substring(0, 2);
+                  const numberPart = cleanNumber.substring(2);
+                  variations.push(ddd + '9' + numberPart); // Adiciona o 9
+                  variations.push('55' + ddd + '9' + numberPart); // Com DDI e 9
+                }
+              }
+              
+              console.log('   Variações de busca:', variations);
+              
+              // Buscar conta com qualquer uma das variações
+              const accountByPhoneQuery = `
+                SELECT id FROM whatsapp_accounts 
+                WHERE tenant_id = $1 
+                AND phone_number = ANY($2)
+                LIMIT 1
+              `;
+              
+              const accountByPhoneResult = await queryNoTenant(accountByPhoneQuery, [
+                tenantId,
+                variations
+              ]);
+              
+              if (accountByPhoneResult.rows.length > 0) {
+                whatsappAccountId = accountByPhoneResult.rows[0].id;
+                console.log('✅ Conta encontrada por phone_number:', whatsappAccountId);
+              } else {
+                console.log('⚠️ Conta WhatsApp não encontrada com nenhuma variação');
+                console.log('⚠️ Números no banco podem estar em formato diferente');
+              }
             }
             
             break; // Encontrou as informações, não precisa continuar o loop
