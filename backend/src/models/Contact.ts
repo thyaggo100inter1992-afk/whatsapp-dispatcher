@@ -37,10 +37,17 @@ export class ContactModel {
       return [];
     }
 
+    // 🔥 REMOVER DUPLICADOS (mesmo phone_number)
+    const uniqueContacts = contacts.filter((contact, index, self) =>
+      index === self.findIndex((c) => c.phone_number === contact.phone_number)
+    );
+    
+    console.log(`📞 Contatos únicos (após remover duplicados): ${uniqueContacts.length}`);
+
     const values: any[] = [];
     const placeholders: string[] = [];
     
-    contacts.forEach((contact, index) => {
+    uniqueContacts.forEach((contact, index) => {
       const offset = index * 4; // Agora são 4 campos
       placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
       values.push(
