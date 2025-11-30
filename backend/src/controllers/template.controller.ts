@@ -706,25 +706,35 @@ export class TemplateController {
       // Usar query direta ao invés de tenantQuery
       const { query } = await import('../database/connection');
       const result = await query(
-        `SELECT 
-          tqh.id,
-          tqh.queue_id,
-          tqh.type,
-          tqh.status,
-          tqh.whatsapp_account_id as account_id,
-          tqh.template_name,
-          tqh.error_message,
-          tqh.created_at,
-          tqh.processed_at,
-          tqh.template_data,
-          wa.name as account_name,
-          wa.phone_number,
-          wa.proxy_id
-        FROM template_queue_history tqh
-        LEFT JOIN whatsapp_accounts wa ON tqh.whatsapp_account_id = wa.id
-        WHERE tqh.tenant_id = $1 OR tqh.tenant_id IS NULL
-        ORDER BY tqh.created_at DESC
-        LIMIT 500`,
+        `WITH ranked_history AS (
+           SELECT 
+             tqh.*,
+             ROW_NUMBER() OVER (
+               PARTITION BY tqh.whatsapp_account_id, tqh.template_name 
+               ORDER BY tqh.created_at DESC
+             ) AS rn
+           FROM template_queue_history tqh
+           WHERE tqh.tenant_id = $1 OR tqh.tenant_id IS NULL
+         )
+         SELECT 
+           rh.id,
+           rh.queue_id,
+           rh.type,
+           rh.status,
+           rh.whatsapp_account_id AS account_id,
+           rh.template_name,
+           rh.error_message,
+           rh.created_at,
+           rh.processed_at,
+           rh.template_data,
+           wa.name AS account_name,
+           wa.phone_number,
+           wa.proxy_id
+         FROM ranked_history rh
+         LEFT JOIN whatsapp_accounts wa ON rh.whatsapp_account_id = wa.id
+         WHERE rh.rn = 1
+         ORDER BY rh.created_at DESC
+         LIMIT 500`,
         [(req as any).tenantId || 1]
       );
 
