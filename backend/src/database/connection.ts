@@ -12,6 +12,7 @@ export const pool = new Pool({
   max: 50, // ⚡ AUMENTADO DE 20 PARA 50 - Suporta mais tenants simultâneos
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
+  client_encoding: 'UTF8', // 🔤 Fix para caracteres especiais
 });
 
 export async function query(text: string, params?: any[]) {

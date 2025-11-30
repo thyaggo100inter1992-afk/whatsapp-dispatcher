@@ -11,6 +11,7 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'whatsapp_dispatcher',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
+  client_encoding: 'UTF8', // 🔤 Fix para caracteres especiais
 });
 
 /**

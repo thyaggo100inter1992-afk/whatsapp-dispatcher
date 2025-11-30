@@ -21,6 +21,7 @@ class TenantConnectionManager {
       max: 100, // ⚡ AUMENTADO DE 50 PARA 100 - Suporta mais tenants simultâneos
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,
+      client_encoding: 'UTF8', // 🔤 Fix para caracteres especiais
     });
 
     console.log('✅ Pool de conexões multi-tenant criado');
