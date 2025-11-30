@@ -128,10 +128,13 @@ export default function RestrictionConfig() {
       const keywordsText = newKeyword.keyword;
       let keywords: string[] = [];
       
+      // Se tem quebra de linha, divide por linha
+      // Se NÃO tem quebra de linha, considera como UMA ÚNICA palavra-chave
       if (keywordsText.includes('\n')) {
         keywords = keywordsText.split('\n').map(k => k.trim()).filter(k => k.length > 0);
       } else {
-        keywords = keywordsText.split(',').map(k => k.trim()).filter(k => k.length > 0);
+        // Cadastrar como uma única palavra-chave, SEM dividir por vírgula
+        keywords = [keywordsText.trim()];
       }
 
       keywords = [...new Set(keywords)];
