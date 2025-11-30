@@ -1,4 +1,4 @@
-import { query } from '../database/connection';
+import { queryWithTenantId } from '../database/tenant-query';
 
 export interface Contact {
   id?: number;
@@ -12,7 +12,11 @@ export interface Contact {
 
 export class ContactModel {
   static async create(contact: Contact) {
-    const result = await query(
+    if (!contact.tenant_id) {
+      throw new Error('tenant_id é obrigatório para criar contato');
+    }
+    const result = await queryWithTenantId(
+      contact.tenant_id,
       `INSERT INTO contacts (phone_number, name, variables, tenant_id)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
@@ -47,7 +51,8 @@ export class ContactModel {
       );
     });
 
-    const result = await query(
+    const result = await queryWithTenantId(
+      tenantId,
       `INSERT INTO contacts (phone_number, name, variables, tenant_id)
        VALUES ${placeholders.join(', ')}
        RETURNING *`,
@@ -61,7 +66,8 @@ export class ContactModel {
     if (!tenantId) {
       throw new Error('tenantId é obrigatório para findAll');
     }
-    const result = await query(
+    const result = await queryWithTenantId(
+      tenantId,
       'SELECT * FROM contacts WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
       [tenantId, limit, offset]
     );
@@ -73,7 +79,8 @@ export class ContactModel {
     if (!tenantId) {
       throw new Error('tenantId é obrigatório para findById');
     }
-    const result = await query(
+    const result = await queryWithTenantId(
+      tenantId,
       'SELECT * FROM contacts WHERE id = $1 AND tenant_id = $2',
       [id, tenantId]
     );
@@ -85,7 +92,8 @@ export class ContactModel {
     if (!tenantId) {
       throw new Error('tenantId é obrigatório para findByPhoneNumber');
     }
-    const result = await query(
+    const result = await queryWithTenantId(
+      tenantId,
       'SELECT * FROM contacts WHERE phone_number = $1 AND tenant_id = $2',
       [phone_number, tenantId]
     );
@@ -97,7 +105,7 @@ export class ContactModel {
     if (!tenantId) {
       throw new Error('tenantId é obrigatório para count');
     }
-    const result = await query('SELECT COUNT(*) as total FROM contacts WHERE tenant_id = $1', [tenantId]);
+    const result = await queryWithTenantId(tenantId, 'SELECT COUNT(*) as total FROM contacts WHERE tenant_id = $1', [tenantId]);
     return parseInt(result.rows[0].total);
   }
 }
