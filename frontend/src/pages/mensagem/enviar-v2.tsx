@@ -224,9 +224,11 @@ export default function EnviarMensagemImediataV2() {
                 : mimeType.startsWith('audio/') ? 'audio' 
                 : 'document';
     
+    // Remove /api do final da URL base para uploads de mídia
+    const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/api$/, '');
     const finalUrl = data.url.startsWith('http') 
       ? data.url 
-      : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}${data.url}`;
+      : `${apiBaseUrl}${data.url}`;
     
     console.log('✅ Setando mediaUrl:', finalUrl);
     console.log('✅ Setando mediaType:', type);
