@@ -789,7 +789,7 @@ export class RestrictionListController {
                (tenant_id, list_type, whatsapp_account_id, phone_number, phone_number_alt, contact_name, added_method, notes, expires_at)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
               [
-                req.tenantId,
+                (req as any).tenant,
                 list_type,
                 whatsapp_account_id || null,
                 phoneValidation.mainNumber,
@@ -824,7 +824,7 @@ export class RestrictionListController {
                  (tenant_id, list_type, whatsapp_account_id, phone_number, phone_number_alt, contact_name, added_method, notes, expires_at)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
                 [
-                  req.tenantId,
+                  (req as any).tenant,
                   list_type,
                   whatsapp_account_id || null,
                   phoneValidation.alternativeNumber,
