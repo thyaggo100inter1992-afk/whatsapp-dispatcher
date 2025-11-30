@@ -72,15 +72,58 @@ export class WebhookController {
       // Obter tenant_id da rota (se disponível)
       const tenantId = (req as any).tenantIdFromWebhook || null;
 
-      // Criar log inicial do webhook
+      // Tentar extrair o phone_number_id ou business_phone_number para identificar a conta
+      let whatsappAccountId: number | null = null;
+      
+      if (tenantId && body.entry && body.entry.length > 0) {
+        const entry = body.entry[0];
+        const changes = entry.changes || [];
+        
+        for (const change of changes) {
+          const phoneNumberId = change.value?.metadata?.phone_number_id;
+          const displayPhoneNumber = change.value?.metadata?.display_phone_number;
+          
+          if (phoneNumberId || displayPhoneNumber) {
+            console.log('🔍 Buscando conta WhatsApp...');
+            console.log('   Phone Number ID:', phoneNumberId);
+            console.log('   Display Phone:', displayPhoneNumber);
+            
+            // Buscar conta pelo phone_number_id ou pelo número formatado
+            const accountQuery = `
+              SELECT id FROM whatsapp_accounts 
+              WHERE tenant_id = $1 
+              AND (phone_number_id = $2 OR phone_number = $3)
+              LIMIT 1
+            `;
+            
+            const accountResult = await queryNoTenant(accountQuery, [
+              tenantId,
+              phoneNumberId || '',
+              displayPhoneNumber || ''
+            ]);
+            
+            if (accountResult.rows.length > 0) {
+              whatsappAccountId = accountResult.rows[0].id;
+              console.log('✅ Conta WhatsApp encontrada:', whatsappAccountId);
+            } else {
+              console.log('⚠️ Conta WhatsApp não encontrada para este webhook');
+            }
+            
+            break; // Encontrou as informações, não precisa continuar o loop
+          }
+        }
+      }
+
+      // Criar log inicial do webhook COM whatsapp_account_id
       const logResult = await queryNoTenant(
         `INSERT INTO webhook_logs 
-         (tenant_id, request_type, request_method, webhook_object, request_body, 
+         (tenant_id, whatsapp_account_id, request_type, request_method, webhook_object, request_body, 
           request_headers, ip_address, user_agent)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id`,
         [
           tenantId,
+          whatsappAccountId,
           'notification',
           'POST',
           body.object,
