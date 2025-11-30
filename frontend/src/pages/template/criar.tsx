@@ -18,6 +18,7 @@ interface WhatsAppAccount {
 
 interface TemplateVariable {
   id: string;
+  placeholder: number;
   example: string;
 }
 
@@ -201,7 +202,8 @@ export default function CriarTemplate() {
             const examples = comp.example.body_text[0];
             const vars: TemplateVariable[] = examples.map((ex: string, i: number) => ({
               id: `var_${i}`,
-              example: ex
+              placeholder: i + 1,
+              example: ex,
             }));
             setBodyVariables(vars);
           }
@@ -318,18 +320,34 @@ export default function CriarTemplate() {
   };
 
   const addVariable = () => {
+    const matches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
+    const placeholderNumbers = matches
+      .map((match) => parseInt(match.replace(/[{}]/g, ''), 10))
+      .filter((num) => !Number.isNaN(num));
+    const nextVarNumber =
+      placeholderNumbers.length > 0 ? Math.max(...placeholderNumbers) + 1 : 1;
+
     const newVariable: TemplateVariable = {
       id: `var_${Date.now()}`,
-      example: ''
+      placeholder: nextVarNumber,
+      example: '',
     };
+
     setBodyVariables([...bodyVariables, newVariable]);
-    
-    const nextVarNumber = bodyVariables.length + 1;
-    setBodyText(prev => prev + `{{${nextVarNumber}}}`);
+    setBodyText((prev) => `${prev}{{${nextVarNumber}}}`);
   };
 
   const removeVariable = (id: string) => {
-    setBodyVariables(bodyVariables.filter(v => v.id !== id));
+    setBodyVariables((prev) => {
+      const variableToRemove = prev.find((v) => v.id === id);
+
+      if (variableToRemove) {
+        const placeholderRegex = new RegExp(`\\{\\{${variableToRemove.placeholder}\\}\\}`);
+        setBodyText((current) => current.replace(placeholderRegex, ''));
+      }
+
+      return prev.filter((v) => v.id !== id);
+    });
   };
 
   const updateVariableExample = (id: string, example: string) => {
@@ -338,24 +356,47 @@ export default function CriarTemplate() {
     ));
   };
 
-  // Monitorar mudanças no bodyText e remover variáveis órfãs
+  // Monitorar mudanças no bodyText e manter exemplos sincronizados com as variáveis do texto
   useEffect(() => {
-    const variablesInText: number[] = [];
-    const matches = bodyText.match(/\{\{(\d+)\}\}/g);
-    
-    if (matches) {
-      matches.forEach(match => {
-        const num = parseInt(match.replace(/[{}]/g, ''));
-        if (!variablesInText.includes(num)) {
-          variablesInText.push(num);
-        }
-      });
-    }
+    const matches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
+    const placeholders = matches
+      .map((match) => parseInt(match.replace(/[{}]/g, ''), 10))
+      .filter((num) => !Number.isNaN(num));
 
-    // Remover variáveis que não existem mais no texto
-    if (bodyVariables.length > variablesInText.length) {
-      setBodyVariables(bodyVariables.slice(0, variablesInText.length));
-    }
+    setBodyVariables((prev) => {
+      if (placeholders.length === 0) {
+        return prev.length === 0 ? prev : [];
+      }
+
+      const usedIndices = new Set<number>();
+      const updatedVariables = placeholders.map((placeholder, index) => {
+        const existingIndex = prev.findIndex(
+          (variable, idx) =>
+            !usedIndices.has(idx) && variable.placeholder === placeholder
+        );
+
+        if (existingIndex !== -1) {
+          usedIndices.add(existingIndex);
+          return prev[existingIndex];
+        }
+
+        return {
+          id: `var_${placeholder}_${Date.now()}_${index}`,
+          placeholder,
+          example: '',
+        };
+      });
+
+      const hasChanges =
+        updatedVariables.length !== prev.length ||
+        updatedVariables.some(
+          (variable, index) =>
+            variable.id !== prev[index]?.id ||
+            variable.placeholder !== prev[index]?.placeholder
+        );
+
+      return hasChanges ? updatedVariables : prev;
+    });
   }, [bodyText]);
 
   const addQuickReplyButton = () => {
@@ -614,8 +655,11 @@ export default function CriarTemplate() {
     };
 
     if (bodyVariables.length > 0) {
+      const sortedVariables = [...bodyVariables].sort(
+        (a, b) => (a.placeholder || 0) - (b.placeholder || 0)
+      );
       bodyComponent.example = {
-        body_text: bodyVariables.map(v => v.example)
+        body_text: sortedVariables.map((v) => v.example),
       };
     }
 
@@ -1747,7 +1791,7 @@ export default function CriarTemplate() {
                     {bodyVariables.map((variable, index) => (
                       <div key={variable.id} className="flex items-center gap-4">
                         <div className="font-black text-blue-400 text-xl w-20">
-                          {`{{${index + 1}}}`}
+                          {`{{${variable.placeholder || index + 1}}}`}
                         </div>
                         <input
                           type="text"
