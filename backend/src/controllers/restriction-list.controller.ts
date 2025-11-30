@@ -786,9 +786,10 @@ export class RestrictionListController {
             console.log(`💾 Linha ${rowNumber}: Inserindo versão COM 9 (${phoneValidation.mainNumber})...`);
             await tenantQuery(req, 
               `INSERT INTO restriction_list_entries 
-               (list_type, whatsapp_account_id, phone_number, phone_number_alt, contact_name, added_method, notes, expires_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+               (tenant_id, list_type, whatsapp_account_id, phone_number, phone_number_alt, contact_name, added_method, notes, expires_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
               [
+                req.tenantId,
                 list_type,
                 whatsapp_account_id || null,
                 phoneValidation.mainNumber,
@@ -820,9 +821,10 @@ export class RestrictionListController {
               console.log(`💾 Linha ${rowNumber}: Inserindo versão SEM 9 (${phoneValidation.alternativeNumber})...`);
               await tenantQuery(req, 
                 `INSERT INTO restriction_list_entries 
-                 (list_type, whatsapp_account_id, phone_number, phone_number_alt, contact_name, added_method, notes, expires_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                 (tenant_id, list_type, whatsapp_account_id, phone_number, phone_number_alt, contact_name, added_method, notes, expires_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
                 [
+                  req.tenantId,
                   list_type,
                   whatsapp_account_id || null,
                   phoneValidation.alternativeNumber,
