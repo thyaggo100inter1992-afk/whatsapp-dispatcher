@@ -35,10 +35,10 @@ export class CampaignController {
       let scheduledDate = undefined;
       if (scheduled_at) {
         scheduledDate = new Date(scheduled_at);
-        // Se a data não tem informação de timezone, assumir que é horário local de Brasília
-        // e converter para UTC subtraindo 3 horas
+        // Se a data não tem informação de timezone, assumir que é horário de Brasília (UTC-3)
+        // e converter para UTC ADICIONANDO 3 horas (não subtraindo!)
         if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
-          scheduledDate = new Date(scheduledDate.getTime() - (3 * 60 * 60 * 1000));
+          scheduledDate = new Date(scheduledDate.getTime() + (3 * 60 * 60 * 1000));
         }
         console.log('🕐 Horário agendado ajustado:', {
           original: scheduled_at,
@@ -644,7 +644,7 @@ export class CampaignController {
           // Ajustar timezone para horário de Brasília (UTC-3)
           let scheduledDate = new Date(scheduled_at);
           if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
-            scheduledDate = new Date(scheduledDate.getTime() - (3 * 60 * 60 * 1000));
+            scheduledDate = new Date(scheduledDate.getTime() + (3 * 60 * 60 * 1000));
           }
           console.log('🕐 Horário agendado ajustado (EDIT):', {
             original: scheduled_at,
