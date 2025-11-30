@@ -206,5 +206,6 @@ router.post('/', (req, res) => webhookController.receive(req, res));
 router.get('/config', authenticate, setTenantContext, (req, res) => webhookController.getConfig(req, res));
 router.get('/stats', authenticate, setTenantContext, (req, res) => webhookController.getStats(req, res));
 router.get('/logs', authenticate, setTenantContext, (req, res) => webhookController.getLogs(req, res));
+router.get('/status', authenticate, setTenantContext, (req, res) => webhookController.getStatus(req, res));
 
 module.exports = router;

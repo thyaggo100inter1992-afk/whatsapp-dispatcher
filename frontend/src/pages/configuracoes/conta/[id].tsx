@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   FaArrowLeft, FaPhone, FaUser, FaLock, FaChartBar, FaBell,
   FaDollarSign, FaCog, FaSave, FaImage,
-  FaQrcode, FaHeartbeat, FaFacebook, FaCheckCircle, FaGlobe, FaShieldAlt, FaInfoCircle
+  FaQrcode, FaHeartbeat, FaFacebook, FaCheckCircle, FaGlobe, FaShieldAlt, FaInfoCircle, FaTimesCircle
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { useToast } from '@/hooks/useToast';
@@ -87,6 +87,7 @@ const [singleDate, setSingleDate] = useState('');
   const [webhookConfig, setWebhookConfig] = useState<any>(null);
   const [webhookStats, setWebhookStats] = useState<any>(null);
   const [webhookLogs, setWebhookLogs] = useState<any[]>([]);
+  const [webhookStatusCard, setWebhookStatusCard] = useState<any>(null);
   const [loadingWebhook, setLoadingWebhook] = useState(false);
   const [webhookPeriod, setWebhookPeriod] = useState('24h');
   const [showLogsDetails, setShowLogsDetails] = useState<number | null>(null);
@@ -201,6 +202,13 @@ const [singleDate, setSingleDate] = useState('');
       const logsResponse = await api.get(`/webhook/logs?account_id=${id}&limit=10`);
       if (logsResponse.data.success) {
         setWebhookLogs(logsResponse.data.data);
+      }
+
+      const statusResponse = await api.get(`/webhook/status?account_id=${id}&period=${webhookPeriod}`);
+      if (statusResponse.data.success) {
+        setWebhookStatusCard(statusResponse.data.data);
+      } else {
+        setWebhookStatusCard(null);
       }
     } catch (error) {
       console.error('Erro ao carregar dados de webhook:', error);
@@ -2151,6 +2159,60 @@ const [singleDate, setSingleDate] = useState('');
                 </div>
               ) : (
                 <>
+                  {webhookStatusCard && (
+                    <div
+                      className={`border-2 rounded-2xl p-6 flex flex-wrap items-center gap-6 ${
+                        webhookStatusCard.isActive
+                          ? 'bg-emerald-500/15 border-emerald-400/40'
+                          : 'bg-red-500/15 border-red-400/40'
+                      }`}
+                    >
+                      <div className="p-4 rounded-xl bg-white/10">
+                        {webhookStatusCard.isActive ? (
+                          <FaCheckCircle className="text-4xl text-emerald-300" />
+                        ) : (
+                          <FaTimesCircle className="text-4xl text-red-300" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-[220px]">
+                        <p className="text-white/60 text-sm font-semibold">
+                          Status do Webhook ({webhookPeriod === '7d' ? 'últimos 7 dias' : webhookPeriod === '30d' ? 'últimos 30 dias' : `últimas ${webhookPeriod}`})
+                        </p>
+                        <p className="text-2xl font-black text-white mt-1">
+                          {webhookStatusCard.isActive ? '🟢 Ativo' : '🔴 Inativo'}
+                        </p>
+                        <p className="text-white/70 text-sm mt-2">
+                          {webhookStatusCard.statusMessage}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2 text-white/70 text-sm min-w-[220px]">
+                        <div>
+                          <span className="font-bold text-white">Último Sucesso:</span>{' '}
+                          {webhookStatusCard.lastSuccess?.received_at
+                            ? new Date(webhookStatusCard.lastSuccess.received_at).toLocaleString('pt-BR')
+                            : 'Nunca'}
+                        </div>
+                        <div>
+                          <span className="font-bold text-white">Último Evento:</span>{' '}
+                          {webhookStatusCard.lastEvent?.received_at
+                            ? new Date(webhookStatusCard.lastEvent.received_at).toLocaleString('pt-BR')
+                            : 'Nunca'}
+                        </div>
+                        {webhookStatusCard.lastFailure?.received_at && (
+                          <div className="text-red-200">
+                            <span className="font-bold text-white">Última Falha:</span>{' '}
+                            {new Date(webhookStatusCard.lastFailure.received_at).toLocaleString('pt-BR')}
+                            {webhookStatusCard.lastError && (
+                              <span className="block text-xs text-red-200/80 mt-1">
+                                {webhookStatusCard.lastError}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Configuração do Webhook */}
                   <div className="bg-gradient-to-br from-indigo-500/10 to-purple-500/5 border-2 border-indigo-500/30 rounded-xl p-8 shadow-lg">
                     <div className="flex items-center gap-4 mb-6">

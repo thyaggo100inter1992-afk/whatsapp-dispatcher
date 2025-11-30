@@ -992,6 +992,93 @@ export class WebhookController {
   }
 
   /**
+   * GET /webhook/status - Status simplificado (ativo/inativo)
+   */
+  async getStatus(req: Request, res: Response) {
+    try {
+      const { account_id, period = '24h' } = req.query;
+
+      const periodMap: Record<string, number> = {
+        '1h': 1,
+        '6h': 6,
+        '24h': 24,
+        '7d': 24 * 7,
+        '30d': 24 * 30,
+      };
+
+      const periodHours = periodMap[String(period)] || 24;
+      const cutoffMs = periodHours * 60 * 60 * 1000;
+
+      const baseConditions: string[] = [];
+      const params: any[] = [];
+
+      if (account_id) {
+        baseConditions.push(`whatsapp_account_id = $${params.length + 1}`);
+        params.push(parseInt(String(account_id)));
+      }
+
+      const buildWhere = (...extra: string[]) => {
+        const all = [...baseConditions, ...extra.filter(Boolean)];
+        return all.length ? `WHERE ${all.join(' AND ')}` : '';
+      };
+
+      const latestResult = await queryNoTenant(
+        `SELECT id, request_type, processing_status, received_at, processing_error
+         FROM webhook_logs
+         ${buildWhere()}
+         ORDER BY received_at DESC
+         LIMIT 1`,
+        params
+      );
+
+      const lastSuccessResult = await queryNoTenant(
+        `SELECT id, request_type, processing_status, received_at
+         FROM webhook_logs
+         ${buildWhere(`processing_status = 'success'`)}
+         ORDER BY received_at DESC
+         LIMIT 1`,
+        params
+      );
+
+      const lastFailureResult = await queryNoTenant(
+        `SELECT id, request_type, processing_status, received_at, processing_error
+         FROM webhook_logs
+         ${buildWhere(`processing_status = 'failed'`)}
+         ORDER BY received_at DESC
+         LIMIT 1`,
+        params
+      );
+
+      const now = Date.now();
+      const lastSuccessAt = lastSuccessResult.rows[0]?.received_at
+        ? new Date(lastSuccessResult.rows[0].received_at).getTime()
+        : null;
+
+      const isActive =
+        lastSuccessAt !== null ? now - lastSuccessAt <= cutoffMs : false;
+
+      res.json({
+        success: true,
+        data: {
+          status: isActive ? 'active' : 'inactive',
+          isActive,
+          periodHours,
+          lastEvent: latestResult.rows[0] || null,
+          lastSuccess: lastSuccessResult.rows[0] || null,
+          lastFailure: lastFailureResult.rows[0] || null,
+          lastError: lastFailureResult.rows[0]?.processing_error || null,
+          statusMessage: isActive
+            ? 'Webhook recebendo eventos normalmente'
+            : 'Nenhum webhook bem-sucedido no período selecionado',
+        },
+      });
+    } catch (error: any) {
+      console.error('Erro ao buscar status do webhook:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
    * GET /webhook/stats - Estatísticas de webhooks
    */
   async getStats(req: Request, res: Response) {
