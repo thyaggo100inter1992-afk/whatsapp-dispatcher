@@ -665,6 +665,19 @@ export class WebhookController {
             continue;
           }
 
+          // Buscar tenant_id da conta WhatsApp
+          const accountResult = await queryNoTenant(
+            `SELECT tenant_id FROM whatsapp_accounts WHERE id = $1`,
+            [whatsappAccountId]
+          );
+
+          const tenantId = accountResult.rows[0]?.tenant_id;
+          
+          if (!tenantId) {
+            console.log('   ⚠️ Tenant ID não encontrado para a conta WhatsApp');
+            continue;
+          }
+
           // Buscar configuração de dias de retenção da lista
           const listTypeResult = await queryNoTenant(
             `SELECT retention_days FROM restriction_list_types WHERE id = $1`,
@@ -689,11 +702,12 @@ export class WebhookController {
           
           await queryNoTenant(
             `INSERT INTO restriction_list_entries 
-             (list_type, whatsapp_account_id, phone_number, phone_number_alt, 
+             (tenant_id, list_type, whatsapp_account_id, phone_number, phone_number_alt, 
               contact_name, keyword_matched, button_payload, button_text, 
               added_method, campaign_id, message_id, notes, expires_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
             [
+              tenantId,
               keyword.list_type,
               whatsappAccountId,
               version1,
@@ -732,11 +746,12 @@ export class WebhookController {
             
             await queryNoTenant(
               `INSERT INTO restriction_list_entries 
-               (list_type, whatsapp_account_id, phone_number, phone_number_alt, 
+               (tenant_id, list_type, whatsapp_account_id, phone_number, phone_number_alt, 
                 contact_name, keyword_matched, button_payload, button_text, 
                 added_method, campaign_id, message_id, notes, expires_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
               [
+                tenantId,
                 keyword.list_type,
                 whatsappAccountId,
                 version2,
