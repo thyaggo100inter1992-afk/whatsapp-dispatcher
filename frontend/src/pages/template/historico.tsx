@@ -97,7 +97,9 @@ export default function HistoricoTemplates() {
       // Depois, buscar os dados atualizados
       const response = await api.get('/templates/history');
       const data = response.data || [];
-      setTemplates(data);
+    // Ocultar templates que já foram deletados
+    const filteredData = (data || []).filter((item: TemplateHistory) => item.status !== 'DELETED');
+    setTemplates(filteredData);
       
       // Verificar se há templates pendentes ou na fila (aguardando aprovação do WhatsApp)
       const pending = data.filter((t: TemplateHistory) => 
@@ -125,7 +127,7 @@ export default function HistoricoTemplates() {
   };
 
   const applyFilters = () => {
-    let filtered = [...templates];
+    let filtered = templates.filter(t => t.status !== 'DELETED');
 
     // Filtro de período
     if (filterPeriod !== 'custom') {
