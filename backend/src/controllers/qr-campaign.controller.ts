@@ -145,17 +145,20 @@ export class QrCampaignController {
         });
       }
 
-      // Ajustar timezone para horário de Brasília (UTC-3)
+      // O frontend envia horário de Brasília, precisamos converter para UTC
       let scheduledDate = undefined;
       if (scheduled_at) {
-        scheduledDate = new Date(scheduled_at);
-        // Se a data não tem informação de timezone, assumir que é horário de Brasília (UTC-3)
-        // e converter para UTC ADICIONANDO 3 horas (não subtraindo!)
+        const localDate = new Date(scheduled_at);
+        
         if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
-          scheduledDate = new Date(scheduledDate.getTime() + (3 * 60 * 60 * 1000));
+          // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
+          scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+        } else {
+          scheduledDate = localDate;
         }
-        console.log('🕐 Horário agendado ajustado (QR):', {
-          original: scheduled_at,
+        
+        console.log('🕐 Horário agendado (QR):', {
+          recebido: scheduled_at,
           converted: scheduledDate.toISOString(),
           localString: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
         });
@@ -594,15 +597,21 @@ export class QrCampaignController {
       
       if (scheduled_at !== undefined) {
         if (scheduled_at) {
-          // Ajustar timezone para horário de Brasília (UTC-3)
-          let scheduledDate = new Date(scheduled_at);
+          // O frontend envia horário de Brasília, precisamos converter para UTC
+          const localDate = new Date(scheduled_at);
+          let scheduledDate;
+          
           if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
-            scheduledDate = new Date(scheduledDate.getTime() + (3 * 60 * 60 * 1000));
+            // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
+            scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+          } else {
+            scheduledDate = localDate;
           }
-          console.log('🕐 Horário agendado ajustado (QR EDIT):', {
-            original: scheduled_at,
-            converted: scheduledDate.toISOString(),
-            localString: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+          
+          console.log('🕐 Horário agendado (QR EDIT):', {
+            recebido: scheduled_at,
+            salvo_como_utc: scheduledDate.toISOString(),
+            vai_executar_em_brasilia: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
           });
           updateData.scheduled_at = scheduledDate;
         } else {

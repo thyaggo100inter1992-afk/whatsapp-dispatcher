@@ -34,16 +34,24 @@ export class CampaignController {
       // Ajustar timezone para horário de Brasília (UTC-3)
       let scheduledDate = undefined;
       if (scheduled_at) {
-        scheduledDate = new Date(scheduled_at);
-        // Se a data não tem informação de timezone, assumir que é horário de Brasília (UTC-3)
-        // e converter para UTC ADICIONANDO 3 horas (não subtraindo!)
+        // O frontend envia "2025-11-30T19:02:00" (horário de Brasília sem timezone)
+        // Precisamos interpretar como horário de Brasília e salvar como UTC
+        // Para isso, criamos a data e adicionamos o offset de Brasília (+3h para UTC)
+        const localDate = new Date(scheduled_at);
+        
+        // Se não tem timezone, assumir que é horário de Brasília e adicionar 3h para UTC
         if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
-          scheduledDate = new Date(scheduledDate.getTime() + (3 * 60 * 60 * 1000));
+          // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
+          scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+        } else {
+          scheduledDate = localDate;
         }
-        console.log('🕐 Horário agendado ajustado:', {
-          original: scheduled_at,
-          converted: scheduledDate.toISOString(),
-          localString: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+        
+        console.log('🕐 Horário agendado:', {
+          recebido: scheduled_at,
+          interpretado_como_brasilia: localDate.toISOString(),
+          salvo_como_utc: scheduledDate.toISOString(),
+          vai_executar_em_brasilia: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
         });
       }
 
@@ -641,15 +649,21 @@ export class CampaignController {
       // Uma vez iniciada, o agendamento não deve mais ser modificado
       if (scheduled_at !== undefined && currentCampaign.status !== 'running') {
         if (scheduled_at) {
-          // Ajustar timezone para horário de Brasília (UTC-3)
-          let scheduledDate = new Date(scheduled_at);
+          // O frontend envia horário de Brasília, precisamos converter para UTC
+          const localDate = new Date(scheduled_at);
+          let scheduledDate;
+          
           if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
-            scheduledDate = new Date(scheduledDate.getTime() + (3 * 60 * 60 * 1000));
+            // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
+            scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+          } else {
+            scheduledDate = localDate;
           }
-          console.log('🕐 Horário agendado ajustado (EDIT):', {
-            original: scheduled_at,
-            converted: scheduledDate.toISOString(),
-            localString: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+          
+          console.log('🕐 Horário agendado (EDIT):', {
+            recebido: scheduled_at,
+            salvo_como_utc: scheduledDate.toISOString(),
+            vai_executar_em_brasilia: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
           });
           updateData.scheduled_at = scheduledDate;
         } else {
