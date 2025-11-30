@@ -640,7 +640,21 @@ export class CampaignController {
       // ⚠️ IMPORTANTE: Não alterar scheduled_at se a campanha já está rodando
       // Uma vez iniciada, o agendamento não deve mais ser modificado
       if (scheduled_at !== undefined && currentCampaign.status !== 'running') {
-        updateData.scheduled_at = scheduled_at ? new Date(scheduled_at) : null;
+        if (scheduled_at) {
+          // Ajustar timezone para horário de Brasília (UTC-3)
+          let scheduledDate = new Date(scheduled_at);
+          if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
+            scheduledDate = new Date(scheduledDate.getTime() - (3 * 60 * 60 * 1000));
+          }
+          console.log('🕐 Horário agendado ajustado (EDIT):', {
+            original: scheduled_at,
+            converted: scheduledDate.toISOString(),
+            localString: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+          });
+          updateData.scheduled_at = scheduledDate;
+        } else {
+          updateData.scheduled_at = null;
+        }
       } else if (scheduled_at !== undefined && currentCampaign.status === 'running') {
         console.log(`⚠️ Ignorando alteração de scheduled_at pois campanha já está RUNNING`);
         // Se tentar agendar uma campanha running, remover o agendamento

@@ -591,7 +591,25 @@ export class QrCampaignController {
 
       const updateData: any = {};
       if (name) updateData.name = name;
-      if (scheduled_at !== undefined) updateData.scheduled_at = scheduled_at ? new Date(scheduled_at) : null;
+      
+      if (scheduled_at !== undefined) {
+        if (scheduled_at) {
+          // Ajustar timezone para horário de Brasília (UTC-3)
+          let scheduledDate = new Date(scheduled_at);
+          if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
+            scheduledDate = new Date(scheduledDate.getTime() - (3 * 60 * 60 * 1000));
+          }
+          console.log('🕐 Horário agendado ajustado (QR EDIT):', {
+            original: scheduled_at,
+            converted: scheduledDate.toISOString(),
+            localString: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+          });
+          updateData.scheduled_at = scheduledDate;
+        } else {
+          updateData.scheduled_at = null;
+        }
+      }
+      
       if (schedule_config) updateData.schedule_config = schedule_config;
       if (pause_config) updateData.pause_config = pause_config;
 
