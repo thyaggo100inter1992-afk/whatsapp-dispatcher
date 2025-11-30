@@ -1,4 +1,5 @@
 import { query } from '../database/connection';
+import { queryWithTenantId } from '../database/tenant-query';
 
 export interface Message {
   id?: number;
@@ -23,7 +24,11 @@ export interface Message {
 
 export class MessageModel {
   static async create(message: Message) {
-    const result = await query(
+    if (!message.tenant_id) {
+      throw new Error('tenant_id é obrigatório para criar mensagem');
+    }
+    const result = await queryWithTenantId(
+      message.tenant_id,
       `INSERT INTO messages 
        (campaign_id, campaign_template_id, contact_id, whatsapp_account_id, phone_number, template_name, status, media_url, tenant_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -60,7 +65,8 @@ export class MessageModel {
       params.push(tenantId);
     }
     
-    const result = await query(
+    const executor = tenantId ? queryWithTenantId.bind(null, tenantId) : query;
+    const result = await executor(
       `UPDATE messages 
        SET status = $1, 
            whatsapp_message_id = COALESCE($2, whatsapp_message_id),
@@ -84,7 +90,8 @@ export class MessageModel {
       params.push(tenantId);
     }
     
-    const result = await query(
+    const executor = tenantId ? queryWithTenantId.bind(null, tenantId) : query;
+    const result = await executor(
       `SELECT * FROM messages WHERE ${whereClause}`,
       params
     );
