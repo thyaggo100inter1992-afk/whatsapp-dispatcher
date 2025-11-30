@@ -185,16 +185,27 @@ export default function HistoricoTemplates() {
     setFilteredTemplates(filtered);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Tem certeza que deseja excluir este registro?')) return;
+  const handleDelete = async (template: TemplateHistory) => {
+    const confirmationMessage = `Tem certeza que deseja excluir o template "${template.template_name}" também lá na Meta?`;
+    if (!confirm(confirmationMessage)) return;
 
     try {
-      await api.delete(`/templates/history/${id}`);
-      toast.success('Registro excluído com sucesso!');
-      loadTemplates();
+      // Enviar para a fila de deleção (ou deletar imediatamente, dependendo do backend)
+      const response = await api.delete(`/templates/${template.account_id}/${template.template_name}`, {
+        data: { useQueue: true }
+      });
+
+      if (response.data?.queueId) {
+        toast.success('Template enviado para a fila de exclusão. Aguarde o processamento.');
+      } else {
+        toast.success('Template excluído com sucesso!');
+      }
+
+      await loadTemplates();
     } catch (error: any) {
-      console.error('Erro ao excluir:', error);
-      toast.error(error.response?.data?.error || 'Erro ao excluir registro');
+      console.error('Erro ao excluir template:', error);
+      const backendError = error.response?.data?.error || 'Erro ao excluir template na Meta';
+      toast.error(backendError);
     }
   };
 
@@ -578,7 +589,7 @@ export default function HistoricoTemplates() {
                       </td>
                       <td className="px-6 py-4 text-center">
                         <button
-                          onClick={() => handleDelete(template.id)}
+                          onClick={() => handleDelete(template)}
                           className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 border-2 border-red-500/40 rounded-lg font-bold transition-all flex items-center gap-2 mx-auto"
                         >
                           <FaTrash />
