@@ -145,12 +145,28 @@ export class QrCampaignController {
         });
       }
 
+      // Ajustar timezone para horário de Brasília (UTC-3)
+      let scheduledDate = undefined;
+      if (scheduled_at) {
+        scheduledDate = new Date(scheduled_at);
+        // Se a data não tem informação de timezone, assumir que é horário local de Brasília
+        // e converter para UTC subtraindo 3 horas
+        if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
+          scheduledDate = new Date(scheduledDate.getTime() - (3 * 60 * 60 * 1000));
+        }
+        console.log('🕐 Horário agendado ajustado (QR):', {
+          original: scheduled_at,
+          converted: scheduledDate.toISOString(),
+          localString: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+        });
+      }
+
       // Criar campanha (tenant_id já foi validado no início)
       const campaign = await QrCampaignModel.create({
         name,
         tenant_id: tenantId, // ✅ ADICIONAR TENANT_ID
         status: scheduled_at ? 'scheduled' : 'pending',
-        scheduled_at: scheduled_at ? new Date(scheduled_at) : undefined,
+        scheduled_at: scheduledDate,
         total_contacts: contacts?.length || 0,
         schedule_config: schedule_config || {},
         pause_config: pause_config || {},

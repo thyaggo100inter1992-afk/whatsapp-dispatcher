@@ -31,12 +31,28 @@ export class CampaignController {
         scheduled_at,
       });
 
+      // Ajustar timezone para horário de Brasília (UTC-3)
+      let scheduledDate = undefined;
+      if (scheduled_at) {
+        scheduledDate = new Date(scheduled_at);
+        // Se a data não tem informação de timezone, assumir que é horário local de Brasília
+        // e converter para UTC subtraindo 3 horas
+        if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
+          scheduledDate = new Date(scheduledDate.getTime() - (3 * 60 * 60 * 1000));
+        }
+        console.log('🕐 Horário agendado ajustado:', {
+          original: scheduled_at,
+          converted: scheduledDate.toISOString(),
+          localString: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+        });
+      }
+
       // Criar campanha
       const campaign = await CampaignModel.create({
         name,
         status: scheduled_at ? 'scheduled' : 'pending',
         tenant_id: tenantId,
-        scheduled_at: scheduled_at ? new Date(scheduled_at) : undefined,
+        scheduled_at: scheduledDate,
         total_contacts: contacts.length,
         schedule_config,
         pause_config,
