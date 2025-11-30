@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { 
   FaPlus, FaTrash, FaCheckCircle, FaExclamationTriangle,
@@ -14,12 +14,6 @@ interface WhatsAppAccount {
   name: string;
   phone_number: string;
   is_active: boolean;
-}
-
-interface TemplateVariable {
-  id: string;
-  placeholder: number;
-  example: string;
 }
 
 interface QuickReplyButton {
@@ -51,6 +45,23 @@ interface UploadedMedia {
   type: 'image' | 'video' | 'audio' | 'document';
 }
 
+const extractPlaceholderNumbers = (text: string): number[] => {
+  const regex = /\{\{\s*(\d+)\s*\}\}/g;
+  const numbers: number[] = [];
+  const seen = new Set<number>();
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    const num = parseInt(match[1], 10);
+    if (!Number.isNaN(num) && !seen.has(num)) {
+      seen.add(num);
+      numbers.push(num);
+    }
+  }
+
+  return numbers;
+};
+
 interface CreateResult {
   accountId: number;
   accountName?: string;
@@ -76,7 +87,7 @@ export default function CriarTemplate() {
   const [headerText, setHeaderText] = useState('');
   
   const [bodyText, setBodyText] = useState('');
-  const [bodyVariables, setBodyVariables] = useState<TemplateVariable[]>([]);
+  const [bodyVariableExamples, setBodyVariableExamples] = useState<Record<number, string>>({});
   
   const [hasFooter, setHasFooter] = useState(false);
   const [footerText, setFooterText] = useState('');
@@ -99,6 +110,11 @@ export default function CriarTemplate() {
   
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
+
+  const placeholderNumbersInText = useMemo(
+    () => extractPlaceholderNumbers(bodyText),
+    [bodyText]
+  );
   
   // Debug: Log o state atual das contas sempre que mudar
   useEffect(() => {
@@ -199,13 +215,15 @@ export default function CriarTemplate() {
           setBodyText(comp.text || '');
           
           if (comp.example && comp.example.body_text && comp.example.body_text[0]) {
-            const examples = comp.example.body_text[0];
-            const vars: TemplateVariable[] = examples.map((ex: string, i: number) => ({
-              id: `var_${i}`,
-              placeholder: i + 1,
-              example: ex,
-            }));
-            setBodyVariables(vars);
+            const examples = Array.isArray(comp.example.body_text[0])
+              ? comp.example.body_text[0]
+              : comp.example.body_text;
+
+            const mappedExamples: Record<number, string> = {};
+            (examples as string[]).forEach((ex: string, i: number) => {
+              mappedExamples[i + 1] = ex;
+            });
+            setBodyVariableExamples(mappedExamples);
           }
         } else if (comp.type === 'FOOTER') {
           setHasFooter(true);
@@ -320,84 +338,45 @@ export default function CriarTemplate() {
   };
 
   const addVariable = () => {
-    const matches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
-    const placeholderNumbers = matches
-      .map((match) => parseInt(match.replace(/[{}]/g, ''), 10))
-      .filter((num) => !Number.isNaN(num));
     const nextVarNumber =
-      placeholderNumbers.length > 0 ? Math.max(...placeholderNumbers) + 1 : 1;
+      placeholderNumbersInText.length > 0
+        ? Math.max(...placeholderNumbersInText) + 1
+        : 1;
 
-    const newVariable: TemplateVariable = {
-      id: `var_${Date.now()}`,
-      placeholder: nextVarNumber,
-      example: '',
-    };
-
-    setBodyVariables([...bodyVariables, newVariable]);
     setBodyText((prev) => `${prev}{{${nextVarNumber}}}`);
+    setBodyVariableExamples((prev) => ({
+      ...prev,
+      [nextVarNumber]: prev[nextVarNumber] || '',
+    }));
   };
 
-  const removeVariable = (id: string) => {
-    setBodyVariables((prev) => {
-      const variableToRemove = prev.find((v) => v.id === id);
-
-      if (variableToRemove) {
-        const placeholderRegex = new RegExp(`\\{\\{${variableToRemove.placeholder}\\}\\}`);
-        setBodyText((current) => current.replace(placeholderRegex, ''));
-      }
-
-      return prev.filter((v) => v.id !== id);
+  const removeVariable = (placeholder: number) => {
+    const regex = new RegExp(`\\{\\{\\s*${placeholder}\\s*\\}\\}`);
+    setBodyText((current) => current.replace(regex, ''));
+    setBodyVariableExamples((prev) => {
+      const updated = { ...prev };
+      delete updated[placeholder];
+      return updated;
     });
   };
 
-  const updateVariableExample = (id: string, example: string) => {
-    setBodyVariables(bodyVariables.map(v => 
-      v.id === id ? { ...v, example } : v
-    ));
+  const updateVariableExample = (placeholder: number, example: string) => {
+    setBodyVariableExamples((prev) => ({
+      ...prev,
+      [placeholder]: example,
+    }));
   };
 
-  // Monitorar mudanças no bodyText e manter exemplos sincronizados com as variáveis do texto
+  // Manter o dicionário de exemplos sincronizado com as variáveis presentes no texto
   useEffect(() => {
-    const matches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
-    const placeholders = matches
-      .map((match) => parseInt(match.replace(/[{}]/g, ''), 10))
-      .filter((num) => !Number.isNaN(num));
-
-    setBodyVariables((prev) => {
-      if (placeholders.length === 0) {
-        return prev.length === 0 ? prev : [];
-      }
-
-      const usedIndices = new Set<number>();
-      const updatedVariables = placeholders.map((placeholder, index) => {
-        const existingIndex = prev.findIndex(
-          (variable, idx) =>
-            !usedIndices.has(idx) && variable.placeholder === placeholder
-        );
-
-        if (existingIndex !== -1) {
-          usedIndices.add(existingIndex);
-          return prev[existingIndex];
-        }
-
-        return {
-          id: `var_${placeholder}_${Date.now()}_${index}`,
-          placeholder,
-          example: '',
-        };
+    setBodyVariableExamples((prev) => {
+      const updated: Record<number, string> = {};
+      placeholderNumbersInText.forEach((placeholder) => {
+        updated[placeholder] = prev[placeholder] || '';
       });
-
-      const hasChanges =
-        updatedVariables.length !== prev.length ||
-        updatedVariables.some(
-          (variable, index) =>
-            variable.id !== prev[index]?.id ||
-            variable.placeholder !== prev[index]?.placeholder
-        );
-
-      return hasChanges ? updatedVariables : prev;
+      return updated;
     });
-  }, [bodyText]);
+  }, [placeholderNumbersInText]);
 
   const addQuickReplyButton = () => {
     if (totalButtons >= 3) {
@@ -541,14 +520,14 @@ export default function CriarTemplate() {
     }
 
     // Validar regras de variáveis
-    const variableMatches = bodyText.match(/\{\{(\d+)\}\}/g);
-    
+    const numVariables = placeholderNumbersInText.length;
+
     // 1. Verificar comprimento mínimo TOTAL do texto (10 caracteres)
     if (bodyText.trim().length < 10) {
       errors.push(`❌ O texto deve ter no mínimo 10 caracteres no total (atual: ${bodyText.trim().length})`);
     }
     
-    if (variableMatches && variableMatches.length > 0) {
+    if (numVariables > 0) {
       // 2. Verificar se variável está COLADA no início (sem nenhum caractere antes)
       const trimmedText = bodyText.trim();
       if (trimmedText.startsWith('{{')) {
@@ -561,11 +540,14 @@ export default function CriarTemplate() {
       }
       
       // 4. VALIDAÇÃO CRÍTICA: Verificar se TODAS as variáveis do texto têm exemplos preenchidos
-      const numVariables = variableMatches.length;
-      if (bodyVariables.length !== numVariables) {
-        errors.push(`❌ Você tem ${numVariables} variável(is) no texto, mas só preencheu ${bodyVariables.length} exemplo(s). Preencha TODOS os exemplos!`);
-      } else if (bodyVariables.some(v => !v.example.trim())) {
-        errors.push('❌ TODAS as variáveis devem ter um exemplo preenchido');
+      const examplesCount = placeholderNumbersInText.filter(
+        (placeholder) => (bodyVariableExamples[placeholder] || '').trim()
+      ).length;
+
+      if (Object.keys(bodyVariableExamples).length !== numVariables) {
+        errors.push('❌ Ajuste o texto ou adicione os exemplos das variáveis novamente.');
+      } else if (examplesCount < numVariables) {
+        errors.push(`❌ Você tem ${numVariables} variável(is) no texto, mas só preencheu ${examplesCount} exemplo(s). Preencha TODOS os exemplos!`);
       }
     }
 
@@ -654,12 +636,10 @@ export default function CriarTemplate() {
       text: bodyText
     };
 
-    if (bodyVariables.length > 0) {
-      const sortedVariables = [...bodyVariables].sort(
-        (a, b) => (a.placeholder || 0) - (b.placeholder || 0)
-      );
+    if (placeholderNumbersInText.length > 0) {
+      const sortedPlaceholders = [...placeholderNumbersInText].sort((a, b) => a - b);
       bodyComponent.example = {
-        body_text: sortedVariables.map((v) => v.example),
+        body_text: sortedPlaceholders.map((placeholder) => bodyVariableExamples[placeholder] || ''),
       };
     }
 
@@ -1752,7 +1732,7 @@ export default function CriarTemplate() {
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <label className="block text-xl font-black text-white">
-                    Variáveis {bodyText.match(/\{\{(\d+)\}\}/g)?.length ? '(OBRIGATÓRIO PREENCHER EXEMPLOS!)' : '(Opcional)'}
+                    Variáveis {placeholderNumbersInText.length ? '(OBRIGATÓRIO PREENCHER EXEMPLOS!)' : '(Opcional)'}
                   </label>
                   <button
                     onClick={addVariable}
@@ -1765,8 +1745,10 @@ export default function CriarTemplate() {
                 
                 {/* AVISO quando há variáveis no texto mas exemplos não preenchidos */}
                 {(() => {
-                  const varsInText = bodyText.match(/\{\{(\d+)\}\}/g)?.length || 0;
-                  const varsWithExamples = bodyVariables.filter(v => v.example.trim()).length;
+                  const varsInText = placeholderNumbersInText.length;
+                  const varsWithExamples = placeholderNumbersInText.filter(
+                    (placeholder) => (bodyVariableExamples[placeholder] || '').trim()
+                  ).length;
                   const hasMissingExamples = varsInText > 0 && varsWithExamples < varsInText;
                   
                   return hasMissingExamples && (
@@ -1786,22 +1768,22 @@ export default function CriarTemplate() {
                   );
                 })()}
 
-                {bodyVariables.length > 0 && (
+                {placeholderNumbersInText.length > 0 && (
                   <div className="space-y-4">
-                    {bodyVariables.map((variable, index) => (
-                      <div key={variable.id} className="flex items-center gap-4">
+                    {placeholderNumbersInText.map((placeholder) => (
+                      <div key={placeholder} className="flex items-center gap-4">
                         <div className="font-black text-blue-400 text-xl w-20">
-                          {`{{${variable.placeholder || index + 1}}}`}
+                          {`{{${placeholder}}}`}
                         </div>
                         <input
                           type="text"
-                          value={variable.example}
-                          onChange={(e) => updateVariableExample(variable.id, e.target.value)}
+                          value={bodyVariableExamples[placeholder] || ''}
+                          onChange={(e) => updateVariableExample(placeholder, e.target.value)}
                           placeholder="Exemplo: João"
                           className="flex-1 px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all"
                         />
                         <button
-                          onClick={() => removeVariable(variable.id)}
+                          onClick={() => removeVariable(placeholder)}
                           className="px-4 py-4 bg-red-500/20 hover:bg-red-500/30 text-red-300 border-2 border-red-500/40 rounded-xl font-bold transition-all duration-200"
                         >
                           <FaTrash className="text-xl" />
