@@ -145,15 +145,22 @@ export class QrCampaignController {
         });
       }
 
-      // Salvar horário exatamente como recebido (sem conversão)
+      // O frontend envia horário de Brasília, precisamos converter para UTC
       let scheduledDate = undefined;
       if (scheduled_at) {
-        scheduledDate = new Date(scheduled_at);
+        const localDate = new Date(scheduled_at);
+        
+        if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
+          // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
+          scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+        } else {
+          scheduledDate = localDate;
+        }
         
         console.log('🕐 Horário agendado (QR):', {
           recebido: scheduled_at,
-          salvo_no_banco: scheduled_at,
-          nota: 'Salvo sem conversão - pg driver vai adicionar Z ao retornar'
+          converted: scheduledDate.toISOString(),
+          localString: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
         });
       }
 
@@ -590,13 +597,21 @@ export class QrCampaignController {
       
       if (scheduled_at !== undefined) {
         if (scheduled_at) {
-          // Salvar horário exatamente como recebido (sem conversão)
-          const scheduledDate = new Date(scheduled_at);
+          // O frontend envia horário de Brasília, precisamos converter para UTC
+          const localDate = new Date(scheduled_at);
+          let scheduledDate;
+          
+          if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
+            // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
+            scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+          } else {
+            scheduledDate = localDate;
+          }
           
           console.log('🕐 Horário agendado (QR EDIT):', {
             recebido: scheduled_at,
-            salvo_no_banco: scheduled_at,
-            nota: 'Salvo sem conversão - pg driver vai adicionar Z ao retornar'
+            salvo_como_utc: scheduledDate.toISOString(),
+            vai_executar_em_brasilia: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
           });
           updateData.scheduled_at = scheduledDate;
         } else {

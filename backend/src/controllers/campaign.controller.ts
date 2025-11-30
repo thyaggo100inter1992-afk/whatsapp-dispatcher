@@ -34,16 +34,24 @@ export class CampaignController {
       // Ajustar timezone para horário de Brasília (UTC-3)
       let scheduledDate = undefined;
       if (scheduled_at) {
-        // O frontend envia "2025-11-30T19:02:00" (horário de Brasília)
-        // Como a coluna é "timestamp without time zone" e o pg driver interpreta como UTC,
-        // precisamos salvar o horário EXATAMENTE como recebido (sem conversão)
-        // O pg driver vai adicionar 'Z' ao retornar, fazendo o frontend converter corretamente
-        scheduledDate = new Date(scheduled_at);
+        // O frontend envia "2025-11-30T19:02:00" (horário de Brasília sem timezone)
+        // Precisamos interpretar como horário de Brasília e salvar como UTC
+        // Para isso, criamos a data e adicionamos o offset de Brasília (+3h para UTC)
+        const localDate = new Date(scheduled_at);
+        
+        // Se não tem timezone, assumir que é horário de Brasília e adicionar 3h para UTC
+        if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
+          // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
+          scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+        } else {
+          scheduledDate = localDate;
+        }
         
         console.log('🕐 Horário agendado:', {
           recebido: scheduled_at,
-          salvo_no_banco: scheduled_at,
-          nota: 'Salvo sem conversão - pg driver vai adicionar Z ao retornar'
+          interpretado_como_brasilia: localDate.toISOString(),
+          salvo_como_utc: scheduledDate.toISOString(),
+          vai_executar_em_brasilia: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
         });
       }
 
@@ -641,13 +649,21 @@ export class CampaignController {
       // Uma vez iniciada, o agendamento não deve mais ser modificado
       if (scheduled_at !== undefined && currentCampaign.status !== 'running') {
         if (scheduled_at) {
-          // Salvar horário exatamente como recebido (sem conversão)
-          const scheduledDate = new Date(scheduled_at);
+          // O frontend envia horário de Brasília, precisamos converter para UTC
+          const localDate = new Date(scheduled_at);
+          let scheduledDate;
+          
+          if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
+            // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
+            scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+          } else {
+            scheduledDate = localDate;
+          }
           
           console.log('🕐 Horário agendado (EDIT):', {
             recebido: scheduled_at,
-            salvo_no_banco: scheduled_at,
-            nota: 'Salvo sem conversão - pg driver vai adicionar Z ao retornar'
+            salvo_como_utc: scheduledDate.toISOString(),
+            vai_executar_em_brasilia: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
           });
           updateData.scheduled_at = scheduledDate;
         } else {
