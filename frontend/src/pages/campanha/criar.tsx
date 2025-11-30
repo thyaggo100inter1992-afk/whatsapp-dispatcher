@@ -478,6 +478,7 @@ export default function CriarCampanha() {
   const parseContacts = (input: string): Contact[] => {
     const lines = input.trim().split('\n');
     const parsedContacts: Contact[] = [];
+    const seenPhones = new Set<string>(); // ✅ Para rastrear números já vistos
     
     console.log(`📊 Parseando ${lines.length} linhas de contatos...`);
     
@@ -504,6 +505,14 @@ export default function CriarCampanha() {
         // ✅ CORRIGIR: Converter notação científica do telefone
         const phone = fixScientificNotation(parts[0]);
         
+        // ✅ REMOVER DUPLICATAS: Pular se o número já foi visto
+        if (seenPhones.has(phone)) {
+          console.warn(`⚠️ Linha ${i + 1} ignorada (número duplicado): ${phone}`);
+          continue;
+        }
+        
+        seenPhones.add(phone);
+        
         // ✅ CORRIGIR: Converter notação científica das variáveis também
         const variables = parts.slice(1).map(v => fixScientificNotation(v));
         
@@ -518,7 +527,7 @@ export default function CriarCampanha() {
       }
     }
     
-    console.log(`✅ Total de contatos parseados: ${parsedContacts.length}`);
+    console.log(`✅ Total de contatos parseados: ${parsedContacts.length} (${seenPhones.size} únicos)`);
     return parsedContacts;
   };
 
