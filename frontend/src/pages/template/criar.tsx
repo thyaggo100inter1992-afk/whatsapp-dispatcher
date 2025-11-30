@@ -216,12 +216,24 @@ export default function CriarTemplate() {
           
           if (comp.example && comp.example.body_text) {
             const mappedExamples: Record<number, string> = {};
-            (comp.example.body_text as (string | string[])[]).forEach((entry, i) => {
-              if (Array.isArray(entry)) {
-                mappedExamples[i + 1] = entry[0] || '';
-              } else {
-                mappedExamples[i + 1] = entry || '';
-              }
+            const bodyTextExamples = comp.example.body_text;
+
+            let normalizedExamples: string[] = [];
+
+            if (
+              Array.isArray(bodyTextExamples) &&
+              bodyTextExamples.length === 1 &&
+              Array.isArray(bodyTextExamples[0])
+            ) {
+              normalizedExamples = bodyTextExamples[0] as string[];
+            } else if (Array.isArray(bodyTextExamples)) {
+              normalizedExamples = bodyTextExamples.map((entry: any) =>
+                Array.isArray(entry) ? entry[0] || '' : entry || ''
+              );
+            }
+
+            normalizedExamples.forEach((ex: string, i: number) => {
+              mappedExamples[i + 1] = ex || '';
             });
             setBodyVariableExamples(mappedExamples);
           }
@@ -638,10 +650,11 @@ export default function CriarTemplate() {
 
     if (placeholderNumbersInText.length > 0) {
       const sortedPlaceholders = [...placeholderNumbersInText].sort((a, b) => a - b);
+      const exampleValues = sortedPlaceholders.map(
+        (placeholder) => bodyVariableExamples[placeholder] || ''
+      );
       bodyComponent.example = {
-        body_text: sortedPlaceholders.map((placeholder) => [
-          bodyVariableExamples[placeholder] || ''
-        ]),
+        body_text: [exampleValues],
       };
     }
 
