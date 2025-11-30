@@ -1,0 +1,81 @@
+PASSO A PASSO PARA ATUALIZAR O SISTEMA
+======================================
+Pense que estamos cozinhando um bolo: primeiro fazemos a massa em casa (seu computador), depois levamos ao forno da padaria (o servidor). Siga esta ordem sempre.
+
+1. Preparar o código no computador (massa do bolo)
+--------------------------------------------------
+1.1. Abra a pasta do projeto no seu computador:  
+     `C:\Users\thyag\Videos\NOVO DISPARADOR DE API OFICIAL - 29-11-2025 - 09h33`
+
+1.2. Faça as mudanças que quiser (ex.: corrigir arquivos do frontend ou backend).
+
+1.3. Veja se o Git encontrou alterações:  
+     `git status -sb`
+
+1.4. Coloque os arquivos modificados na cestinha do Git:  
+     `git add caminho/do/arquivo`  
+     (se quiser adicionar tudo, use `git add backend frontend`)
+
+1.5. Crie o “ponto de salvamento” com uma mensagem clara:  
+     `git commit -m "Minha mudança importante"`
+
+2. Enviar o código para o GitHub (entregar a massa)
+---------------------------------------------------
+2.1. Empurre o commit para o repositório remoto:  
+     `git push`
+
+2.2. Pronto! O servidor poderá buscar essa versão mais nova.
+
+3. Atualizar o servidor (colocar o bolo no forno)
+-------------------------------------------------
+3.1. Abra o PowerShell e conecte-se ao servidor usando o plink:  
+     ```
+     & "$env:USERPROFILE\plink.exe" --% -ssh root@72.60.141.244 -pw Tg74108520963, -hostkey "ssh-ed25519 255 SHA256:mwH4j3imJiJAwSaKb1IxslHWE8OCPyzy8VOWB6qnWsM"
+     ```
+
+3.2. Dentro do servidor, vá para a pasta do projeto:  
+     `cd /root/whatsapp-dispatcher`
+
+3.3. Puxe o código que você acabou de enviar para o GitHub:  
+     `git pull`
+
+4. Preparar o backend no servidor
+---------------------------------
+4.1. Entre na pasta do backend:  
+     `cd /root/whatsapp-dispatcher/backend`
+
+4.2. Garanta que as dependências estão instaladas:  
+     `npm install`
+
+4.3. Apague a pasta antiga de builds para evitar arquivos velhos:  
+     `rm -rf dist`
+
+4.4. Gere o código TypeScript:  
+     `npm run build`
+
+5. Preparar o frontend no servidor
+----------------------------------
+5.1. Entre na pasta do frontend:  
+     `cd /root/whatsapp-dispatcher/frontend`
+
+5.2. Instale (ou confirme) as dependências:  
+     `npm install`
+
+5.3. Gere o build de produção do Next.js:  
+     `npm run build`
+
+6. Reiniciar os serviços com PM2 (servir o bolo quentinho)
+----------------------------------------------------------
+6.1. Reinicie o backend:  
+     `pm2 restart whatsapp-backend`
+
+6.2. Reinicie o frontend:  
+     `pm2 restart whatsapp-frontend`
+
+7. Testar no navegador
+----------------------
+7.1. Abra o site `https://sistemasnettsistemas.com.br`.
+
+7.2. Use `Ctrl + Shift + R` (ou navegação anônima) para garantir que está vendo o novo código.
+
+Pronto! Esse é todo o caminho: alterar → commit → push → git pull no servidor → build backend → build frontend → pm2 restart → testar. Repita sempre nessa ordem e nada aparece quebrado.

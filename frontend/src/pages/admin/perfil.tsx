@@ -21,6 +21,17 @@ export default function AdminProfile() {
     confirmar_senha: ''
   });
 
+  const resolveAvatarUrl = (avatar?: string | null) => {
+    if (!avatar) return null;
+    if (avatar.startsWith('http')) {
+      return avatar;
+    }
+    if (avatar.startsWith('/uploads')) {
+      return buildFileUrl(avatar);
+    }
+    return buildFileUrl(`/uploads/avatars/${avatar}`);
+  };
+
   useEffect(() => {
     if (user) {
       setFormData({
@@ -32,10 +43,7 @@ export default function AdminProfile() {
       });
       
       // Configurar preview do avatar
-      if (user.avatar) {
-        const avatarUrl = buildFileUrl(user.avatar.startsWith('/uploads') ? user.avatar : `/uploads/avatars/${user.avatar}`);
-        setAvatarPreview(avatarUrl);
-      }
+      setAvatarPreview(resolveAvatarUrl(user.avatar));
     }
   }, [user]);
 
@@ -198,17 +206,7 @@ export default function AdminProfile() {
               {avatarPreview || user?.avatar ? (
                 <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-purple-500 mx-auto mb-4">
                   <img
-                    src={
-                      avatarPreview ||
-                      buildFileUrl(
-                        user?.avatar
-                          ? user.avatar.startsWith('/uploads')
-                            ? user.avatar
-                            : `/uploads/avatars/${user.avatar}`
-                          : null
-                      ) ||
-                      undefined
-                    }
+                    src={avatarPreview || resolveAvatarUrl(user?.avatar) || undefined}
                     alt={user?.nome}
                     className="w-full h-full object-cover"
                   />
