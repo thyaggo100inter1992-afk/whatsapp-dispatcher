@@ -677,7 +677,7 @@ export class CampaignController {
       await tenantQuery(req, 'DELETE FROM campaign_contacts WHERE campaign_id = $1', [campaignId]);
       
       // Excluir a campanha
-      await CampaignModel.delete(campaignId);
+      await CampaignModel.delete(campaignId, tenantId);
 
       console.log(`✅ Campanha ${campaignId} excluída com sucesso`);
 
