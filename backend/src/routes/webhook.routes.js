@@ -6,6 +6,8 @@ const router = express.Router();
  * Endpoint para receber notificações de serviços externos
  */
 
+const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || 'seu_token_secreto_aqui';
+
 // Importar middlewares ANTES de usar
 let authenticate, setTenantContext;
 try {
@@ -29,8 +31,6 @@ router.get('/info', authenticate, setTenantContext, async (req, res) => {
       });
     }
 
-    const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || 'WhatsApp_Webhook_2025_Thyag_Secure_Token_9X7K2P4M';
-    
     // 🔍 BUSCAR WEBHOOK_URL ESPECÍFICA DO TENANT
     const tenantResult = await query('SELECT webhook_url FROM tenants WHERE id = $1', [tenantId]);
     const tenantWebhookUrl = tenantResult.rows[0]?.webhook_url;
@@ -122,8 +122,6 @@ router.get('/', (req, res) => {
     // Verificar se é uma requisição de verificação válida
     if (mode === 'subscribe' && token) {
       // Verificar se o token bate com o configurado
-      const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || 'WhatsApp_Webhook_2025_Thyag_Secure_Token_9X7K2P4M';
-      
       if (token === VERIFY_TOKEN) {
         console.log('✅ Webhook verificado com sucesso!');
         
@@ -168,8 +166,6 @@ router.get('/tenant-:tenantId', (req, res) => {
     console.log(`🔔 Verificação de webhook recebida para Tenant ${tenantId}:`, { mode, token });
 
     if (mode === 'subscribe' && token) {
-      const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || 'WhatsApp_Webhook_2025_Thyag_Secure_Token_9X7K2P4M';
-      
       if (token === VERIFY_TOKEN) {
         console.log(`✅ Webhook verificado com sucesso para Tenant ${tenantId}!`);
         return res.status(200).send(challenge);
