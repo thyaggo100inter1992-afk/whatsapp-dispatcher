@@ -967,7 +967,7 @@ export default function CriarTemplate() {
     setAutoRefresh(true);
     setTemplateName('');
     setBodyText('');
-    setBodyVariables([]);
+    setBodyVariableExamples({});
     setHeaderText('');
     setFooterText('');
     setQuickReplyButtons([]);
