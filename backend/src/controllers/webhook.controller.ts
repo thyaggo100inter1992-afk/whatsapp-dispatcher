@@ -69,14 +69,18 @@ export class WebhookController {
 
       const body = req.body;
 
+      // Obter tenant_id da rota (se disponível)
+      const tenantId = (req as any).tenantIdFromWebhook || null;
+
       // Criar log inicial do webhook
       const logResult = await queryNoTenant(
         `INSERT INTO webhook_logs 
-         (request_type, request_method, webhook_object, request_body, 
+         (tenant_id, request_type, request_method, webhook_object, request_body, 
           request_headers, ip_address, user_agent)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id`,
         [
+          tenantId,
           'notification',
           'POST',
           body.object,
