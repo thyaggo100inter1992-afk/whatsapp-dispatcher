@@ -1016,6 +1016,13 @@ export class WebhookController {
       const baseConditions: string[] = [];
       const params: any[] = [];
 
+      // SEMPRE filtrar por tenant_id (do contexto do usuário logado)
+      const tenantId = (req as any).tenantId;
+      if (tenantId) {
+        baseConditions.push(`tenant_id = $${params.length + 1}`);
+        params.push(tenantId);
+      }
+
       if (account_id) {
         baseConditions.push(`whatsapp_account_id = $${params.length + 1}`);
         params.push(parseInt(String(account_id)));
@@ -1100,8 +1107,15 @@ export class WebhookController {
       let whereClause = `WHERE received_at >= NOW() - INTERVAL '${periodHours} hours'`;
       let params: any[] = [];
 
+      // SEMPRE filtrar por tenant_id (do contexto do usuário logado)
+      const tenantId = (req as any).tenantId;
+      if (tenantId) {
+        whereClause += ` AND tenant_id = $${params.length + 1}`;
+        params.push(tenantId);
+      }
+
       if (account_id) {
-        whereClause += ` AND whatsapp_account_id = $1`;
+        whereClause += ` AND whatsapp_account_id = $${params.length + 1}`;
         params.push(account_id);
       }
 
