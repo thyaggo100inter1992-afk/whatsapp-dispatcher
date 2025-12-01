@@ -270,13 +270,12 @@ export default function QrCodeUaz() {
           await loadInstance();
         }
       } else if (response.data.success) {
-        // 🆕 VERIFICAR SE ACABOU DE CONECTAR (mudou de desconectado para conectado)
-        const wasDisconnected = !instanceData?.is_connected;
+        // 🆕 VERIFICAR SE ESTÁ CONECTADO e ainda não verificou duplicatas
         const isNowConnected = response.data.data?.is_connected;
         
-        if (wasDisconnected && isNowConnected) {
-          console.log('🎉 CONEXÃO ESTABELECIDA! Iniciando verificação de duplicatas...');
-          setAutoRefresh(false); // Para o auto-refresh
+        if (isNowConnected && autoRefresh) {
+          console.log('🎉 CONEXÃO DETECTADA! Iniciando verificação de duplicatas...');
+          setAutoRefresh(false); // Para o auto-refresh (usado como flag para não verificar novamente)
           await checkForDuplicatesAfterConnection(response.data.data);
         }
         
@@ -374,17 +373,32 @@ export default function QrCodeUaz() {
               </div>
             </div>
 
-            <button
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`flex items-center gap-3 px-6 py-4 rounded-xl text-lg font-bold transition-all duration-200 ${
-                autoRefresh 
-                  ? 'bg-green-500 hover:bg-green-600 text-white shadow-lg' 
-                  : 'bg-white/10 hover:bg-white/20 text-white/80 border-2 border-white/20'
-              }`}
-            >
-              <FaSync className={`${autoRefresh ? 'animate-spin' : ''}`} />
-              Auto-refresh
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={`flex items-center gap-3 px-6 py-4 rounded-xl text-lg font-bold transition-all duration-200 ${
+                  autoRefresh 
+                    ? 'bg-green-500 hover:bg-green-600 text-white shadow-lg' 
+                    : 'bg-white/10 hover:bg-white/20 text-white/80 border-2 border-white/20'
+                }`}
+              >
+                <FaSync className={`${autoRefresh ? 'animate-spin' : ''}`} />
+                Auto-refresh
+              </button>
+              
+              {instanceData?.is_connected && (
+                <button
+                  onClick={async () => {
+                    console.log('🔍 Verificação manual de duplicatas solicitada');
+                    await checkForDuplicatesAfterConnection(instanceData);
+                  }}
+                  className="flex items-center gap-3 px-6 py-4 rounded-xl text-lg font-bold transition-all duration-200 bg-blue-500 hover:bg-blue-600 text-white shadow-lg"
+                  title="Verificar e limpar duplicatas"
+                >
+                  🧹 Limpar Duplicatas
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
