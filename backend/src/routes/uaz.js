@@ -1563,10 +1563,10 @@ router.get('/instances/:id/status', async (req, res) => {
                 await tenantQuery(req, 'DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
                 console.log('   ✅ Instância NOVA deletada do banco local');
                 
-                // 3️⃣ VERIFICAR se a instância ANTIGA já está no banco
-                const existenteNoBanco = await pool.query(
-                  'SELECT id FROM uaz_instances WHERE instance_token = $1',
-                  [instanciaDuplicada.token]
+                // 3️⃣ VERIFICAR se a instância ANTIGA já está no banco (usando tenantQuery para respeitar RLS)
+                const existenteNoBanco = await tenantQuery(req,
+                  'SELECT id FROM uaz_instances WHERE instance_token = $1 AND tenant_id = $2',
+                  [instanciaDuplicada.token, tenantId]
                 );
                 
                 if (existenteNoBanco.rows.length === 0) {
@@ -1648,9 +1648,9 @@ router.get('/instances/:id/status', async (req, res) => {
                   console.warn('   ⚠️  Erro ao deletar da UAZ API:', deleteResult.error);
                 }
                 
-                // 2️⃣ DELETAR a instância ANTIGA do banco local (se existir) - COM filtro de tenant
+                // 2️⃣ DELETAR a instância ANTIGA do banco local (se existir) - COM filtro de tenant (usando tenantQuery para respeitar RLS)
                 console.log('🗑️  Verificando se instância ANTIGA existe no banco local...');
-                const antigaNoBanco = await pool.query(
+                const antigaNoBanco = await tenantQuery(req,
                   'SELECT id FROM uaz_instances WHERE instance_token = $1 AND tenant_id = $2',
                   [instanciaDuplicada.token, tenantId]
                 );
