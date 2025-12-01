@@ -210,6 +210,19 @@ export class ReportService {
         } else {
           // Contatos API Oficial
           console.log('🔍 Buscando contatos API Oficial...');
+          console.log(`   📋 Campaign ID: ${campaignId}`);
+          
+          // Primeiro verificar quantas mensagens existem para esta campanha
+          const messagesCountResult = await query(
+            `SELECT COUNT(*) as total, 
+                    COUNT(DISTINCT contact_id) as distinct_contacts,
+                    COUNT(CASE WHEN contact_id IS NOT NULL THEN 1 END) as with_contact_id
+             FROM messages 
+             WHERE campaign_id = $1`,
+            [campaignId]
+          );
+          console.log(`   📊 Mensagens da campanha:`, messagesCountResult.rows[0]);
+          
           const contactsResult = await query(
             `SELECT 
               c.id,
@@ -235,6 +248,11 @@ export class ReportService {
           );
           contacts = contactsResult.rows;
           console.log(`✅ ${contacts.length} contatos API Oficial encontrados`);
+          
+          if (contacts.length === 0 && messagesCountResult.rows[0].total > 0) {
+            console.error('⚠️ AVISO: Existem mensagens mas nenhum contato foi encontrado!');
+            console.error('   Isso pode indicar que contact_id não está sendo salvo corretamente');
+          }
         }
       } catch (contactsError) {
         console.error('❌ Erro ao buscar contatos:', contactsError.message);
