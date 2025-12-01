@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import fs from 'fs';
 import path from 'path';
 import { query } from '../database/connection';
+import { queryWithTenantId } from '../database/tenant-query';
 import { CampaignModel } from '../models/Campaign';
 
 const reportErrorLogPath = path.resolve(__dirname, '../..', 'report-errors.log');
@@ -226,8 +227,9 @@ export class ReportService {
           // LOG ARQUIVO: Garantir que aparece
           appendReportError(`[DEBUG] Campanha ${campaignId} - Mensagens`, messagesCountResult.rows[0]);
           
-          // DEBUG: Verificar se contact_ids existem na tabela contacts
-          const contactCheckResult = await query(
+          // DEBUG: Verificar se contact_ids existem na tabela contacts (COM RLS)
+          const contactCheckResult = await queryWithTenantId(
+            tenantId,
             `SELECT 
               m.contact_id,
               c.id as contact_exists,
@@ -239,10 +241,11 @@ export class ReportService {
              LIMIT 5`,
             [campaignId]
           );
-          appendReportError(`[DEBUG] Verificação de contact_id`, contactCheckResult.rows);
+          appendReportError(`[DEBUG] Verificação de contact_id (COM RLS)`, contactCheckResult.rows);
           
-          // 🔥 CORREÇÃO: Adicionar tenant_id na busca de contatos!
-          const contactsResult = await query(
+          // 🔥 CORREÇÃO: Usar queryWithTenantId para respeitar RLS!
+          const contactsResult = await queryWithTenantId(
+            tenantId,
             `SELECT 
               c.id,
               c.name,
@@ -262,9 +265,8 @@ export class ReportService {
                ORDER BY created_at DESC
                LIMIT 1
              ) m_latest ON true
-             WHERE c.tenant_id = $2
              ORDER BY c.name NULLS LAST, c.phone_number`,
-            [campaignId, tenantId]
+            [campaignId]
           );
           contacts = contactsResult.rows;
           console.log(`✅ ${contacts.length} contatos API Oficial encontrados`);
