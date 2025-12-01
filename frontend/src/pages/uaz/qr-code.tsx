@@ -87,12 +87,12 @@ export default function QrCodeUaz() {
           console.warn('⚠️ QR Code vazio ou inválido:', qr);
         }
       }
-    } catch (error: any) {
-      console.error('❌ Erro ao obter QR Code:', error);
-      console.error('📦 Response error:', error.response?.data);
+    } catch (err: any) {
+      console.error('❌ Erro ao obter QR Code:', err);
+      console.error('📦 Response error:', err.response?.data);
       
       // 🚨 Erro 404 = Instância foi deletada
-      if (error.response?.status === 404) {
+      if (err.response?.status === 404) {
         console.log('❌ Instância não encontrada (404) - Foi deletada durante carregamento do QR Code!');
         setAutoRefresh(false); // Para o auto-refresh
         
@@ -105,8 +105,8 @@ export default function QrCodeUaz() {
         }, 3000);
         
       // Erro 409 geralmente significa que já está conectado OU há conexão existente
-      } else if (error.response?.status === 409) {
-        const errorData = error.response?.data;
+      } else if (err.response?.status === 409) {
+        const errorData = err.response?.data;
         
         // Se for erro de conexão existente
         if (errorData?.existingConnection) {
@@ -134,7 +134,7 @@ export default function QrCodeUaz() {
         // Outros erros só mostram se o auto-refresh estiver ativo
         // (para não incomodar o usuário com erros repetidos)
         if (!autoRefresh) {
-          error('❌ Erro ao obter QR Code: ' + (error.response?.data?.error || error.message));
+          error('❌ Erro ao obter QR Code: ' + (err.response?.data?.error || err.message));
         } else {
           console.warn('⚠️ Erro ao obter QR Code (será tentado novamente no próximo refresh)');
         }
