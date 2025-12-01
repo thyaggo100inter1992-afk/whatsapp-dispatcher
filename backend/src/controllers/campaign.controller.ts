@@ -7,6 +7,7 @@ import { campaignWorker } from '../workers/campaign.worker';
 import { whatsappHealthService } from '../services/whatsapp-health.service';
 import { reportService } from '../services/report.service';
 import ExcelJS from 'exceljs';
+import { normalizeBrazilScheduleToUtc, getBrazilNow } from '../utils/timezone';
 // import { queueService } from '../services/queue.service'; // Temporariamente desabilitado
 
 export class CampaignController {
@@ -34,22 +35,12 @@ export class CampaignController {
       // Ajustar timezone para horário de Brasília (UTC-3)
       let scheduledDate = undefined;
       if (scheduled_at) {
-        // O frontend envia "2025-11-30T19:02:00" (horário de Brasília sem timezone)
-        // Precisamos interpretar como horário de Brasília e salvar como UTC
-        // Para isso, criamos a data e adicionamos o offset de Brasília (+3h para UTC)
-        const localDate = new Date(scheduled_at);
-        
-        // Se não tem timezone, assumir que é horário de Brasília e adicionar 3h para UTC
-        if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
-          // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
-          scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
-        } else {
-          scheduledDate = localDate;
-        }
-        
+        const { date, hadExplicitTimezone } = normalizeBrazilScheduleToUtc(scheduled_at);
+        scheduledDate = date;
+
         console.log('🕐 Horário agendado:', {
           recebido: scheduled_at,
-          interpretado_como_brasilia: localDate.toISOString(),
+          tinha_timezone_explicito: hadExplicitTimezone,
           salvo_como_utc: scheduledDate.toISOString(),
           vai_executar_em_brasilia: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
         });
@@ -182,7 +173,7 @@ export class CampaignController {
           
           // Verificar horário de trabalho
           if (scheduleConfig.work_start_time && scheduleConfig.work_end_time) {
-            const now = new Date();
+            const now = getBrazilNow();
             const currentTime = now.toTimeString().slice(0, 5); // HH:MM
             const startTime = scheduleConfig.work_start_time;
             const endTime = scheduleConfig.work_end_time;
@@ -351,14 +342,21 @@ export class CampaignController {
         [campaignId]
       );
 
-      // Verificar se está no horário de trabalho
-      const now = new Date();
-      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      // Verificar se está no horário de trabalho (considerando fuso de Brasília)
+      const nowUtc = new Date();
+      const brazilNow = getBrazilNow();
+      const currentTime = `${brazilNow.getHours().toString().padStart(2, '0')}:${brazilNow.getMinutes().toString().padStart(2, '0')}`;
       const scheduleConfig = campaign.schedule_config || {};
-      const isWithinWorkHours = 
-        !scheduleConfig.work_start_time || 
-        !scheduleConfig.work_end_time ||
-        (currentTime >= scheduleConfig.work_start_time && currentTime <= scheduleConfig.work_end_time);
+      
+      let isWithinWorkHours = true;
+      if (scheduleConfig.work_start_time && scheduleConfig.work_end_time) {
+        const currentMinutes = brazilNow.getHours() * 60 + brazilNow.getMinutes();
+        const [startHour, startMinute] = scheduleConfig.work_start_time.split(':').map(Number);
+        const [endHour, endMinute] = scheduleConfig.work_end_time.split(':').map(Number);
+        const startMinutes = startHour * 60 + startMinute;
+        const endMinutes = endHour * 60 + endMinute;
+        isWithinWorkHours = currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+      }
 
       // Verificar se está em pausa programada (agora busca do banco - persistente)
       const pauseConfig = campaign.pause_config || {};
@@ -395,7 +393,7 @@ export class CampaignController {
       if (lastMessage.rows[0] && campaign.status === 'running') {
         const lastSentAt = new Date(lastMessage.rows[0].sent_at || lastMessage.rows[0].created_at);
         const nextSendTime = new Date(lastSentAt.getTime() + (intervalSeconds * 1000));
-        const secondsUntilNext = Math.max(0, Math.floor((nextSendTime.getTime() - now.getTime()) / 1000));
+        const secondsUntilNext = Math.max(0, Math.floor((nextSendTime.getTime() - nowUtc.getTime()) / 1000));
         nextMessageIn = secondsUntilNext;
       }
 
@@ -649,23 +647,14 @@ export class CampaignController {
       // Uma vez iniciada, o agendamento não deve mais ser modificado
       if (scheduled_at !== undefined && currentCampaign.status !== 'running') {
         if (scheduled_at) {
-          // O frontend envia horário de Brasília, precisamos converter para UTC
-          const localDate = new Date(scheduled_at);
-          let scheduledDate;
-          
-          if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
-            // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
-            scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
-          } else {
-            scheduledDate = localDate;
-          }
-          
+          const { date, hadExplicitTimezone } = normalizeBrazilScheduleToUtc(scheduled_at);
           console.log('🕐 Horário agendado (EDIT):', {
             recebido: scheduled_at,
-            salvo_como_utc: scheduledDate.toISOString(),
-            vai_executar_em_brasilia: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+            tinha_timezone_explicito: hadExplicitTimezone,
+            salvo_como_utc: date.toISOString(),
+            vai_executar_em_brasilia: date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
           });
-          updateData.scheduled_at = scheduledDate;
+          updateData.scheduled_at = date;
         } else {
           updateData.scheduled_at = null;
         }

@@ -1,7 +1,9 @@
 import { query } from '../database/connection';
+import { queryWithTenantId } from '../database/tenant-query';
 import { whatsappService } from '../services/whatsapp.service';
 import { whatsappHealthService } from '../services/whatsapp-health.service';
 import { RestrictionListController } from '../controllers/restriction-list.controller';
+import { getBrazilNow } from '../utils/timezone';
 
 // ========================================
 // 🔄 FUNÇÕES AUXILIARES PARA SPIN TEXT
@@ -614,7 +616,8 @@ class CampaignWorker {
     // Buscar os próximos contatos para processar
     // ⚡ AJUSTE: Lote de apenas 1 mensagem por vez para permitir detecção rápida de novas campanhas
     const batchSize = 1;
-    const contactsResult = await query(
+    const contactsResult = await queryWithTenantId(
+      campaign.tenant_id,
       `SELECT c.*, cc.id as cc_id
        FROM contacts c
        JOIN campaign_contacts cc ON c.id = cc.contact_id
@@ -1067,7 +1070,8 @@ class CampaignWorker {
     }
 
     // Registrar mensagem enviada com informações de proxy
-    await query(
+    await queryWithTenantId(
+      campaign.tenant_id,
       `INSERT INTO messages 
        (campaign_id, campaign_template_id, contact_id, whatsapp_account_id, whatsapp_message_id, 
         phone_number, template_name, status, sent_at, media_url, proxy_used, proxy_host, proxy_type, tenant_id)
@@ -1096,8 +1100,8 @@ class CampaignWorker {
       return true;
     }
 
-    const now = new Date();
-    const currentTime = now.getHours() * 60 + now.getMinutes();
+    const brazilNow = getBrazilNow();
+    const currentTime = brazilNow.getHours() * 60 + brazilNow.getMinutes();
 
     const [startHour, startMin] = config.work_start_time.split(':').map(Number);
     const [endHour, endMin] = config.work_end_time.split(':').map(Number);
@@ -1105,9 +1109,11 @@ class CampaignWorker {
     const startTime = startHour * 60 + startMin;
     const endTime = endHour * 60 + endMin;
 
-    const inWorkingHours = currentTime >= startTime && currentTime < endTime;
+    const inWorkingHours = currentTime >= startTime && currentTime <= endTime;
     
-    console.log(`🔍 [DEBUG] Horário: ${now.getHours()}:${now.getMinutes()} - Trabalho: ${config.work_start_time} às ${config.work_end_time} - Dentro: ${inWorkingHours}`);
+    console.log(
+      `🔍 [DEBUG] Horário (Brasília): ${brazilNow.getHours()}:${brazilNow.getMinutes()} - Trabalho: ${config.work_start_time} às ${config.work_end_time} - Dentro: ${inWorkingHours}`
+    );
     
     return inWorkingHours;
   }
