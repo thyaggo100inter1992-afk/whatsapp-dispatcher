@@ -371,17 +371,20 @@ router.get('/instances', async (req, res) => {
             };
           }
         } catch (error) {
-          // 🚨 SINCRONIZAÇÃO: Se a instância não existe mais na UAZ API (404), deletar do banco local
+          // 🚨 SINCRONIZAÇÃO: Se a instância não existe mais na UAZ API (404 ou 401), deletar do banco local
           if (error.response?.status === 404 || 
+              error.response?.status === 401 ||
+              error.response?.data?.message?.toLowerCase().includes('invalid token') ||
               error.message?.toLowerCase().includes('not found') ||
               error.message?.toLowerCase().includes('instance not found')) {
             
             console.log(`\n🗑️  ========================================`);
-            console.log(`🗑️  SINCRONIZAÇÃO: Instância não encontrada na UAZ API`);
+            console.log(`🗑️  SINCRONIZAÇÃO: Instância não existe mais na UAZ API`);
             console.log(`🗑️  ========================================`);
             console.log(`📦 Instância: ${instance.name} (ID: ${instance.id})`);
             console.log(`🔑 Token: ${instance.instance_token?.substring(0, 20)}...`);
-            console.log(`📝 Status: Foi deletada na UAZ API, removendo do banco local...`);
+            console.log(`❌ Erro: ${error.response?.status || 'Unknown'} - ${error.response?.data?.message || error.message}`);
+            console.log(`📝 Status: Token inválido ou instância deletada na UAZ API, removendo do banco local...`);
             
             try {
               // Deletar do banco local
