@@ -105,141 +105,16 @@ export default function QrCodeUaz() {
           router.push('/configuracoes-uaz');
         }, 3000);
         
-      // Erro 409 geralmente significa que já está conectado OU há conexão existente
+      // 🆕 NOVO COMPORTAMENTO: Erro 409 = RETRY (tentar de novo até conseguir QR Code)
+      // Não faz tratativa aqui! Apenas continua tentando até conseguir o QR Code
+      // A tratativa será feita DEPOIS que a conexão for estabelecida
       } else if (err.response?.status === 409) {
-        const errorData = err.response?.data;
+        console.log('⚠️ Erro 409 detectado - "Connection attempt in progress"');
+        console.log('   └─ Ignorando e continuando tentativas automáticas...');
+        console.log('   └─ Objetivo: CONECTAR PRIMEIRO, tratativa depois!');
         
-        setAutoRefresh(false); // Para o auto-refresh IMEDIATAMENTE
-        
-        // ⚠️ Evitar processamento duplicado
-        if (processing409) {
-          console.log('⏭️ Erro 409 já está sendo processado, ignorando...');
-          return;
-        }
-        
-        // Se for erro de conexão existente
-        if (errorData?.existingConnection) {
-          setProcessing409(true); // Marca que está processando
-          
-          console.log('🔄 ERRO 409: Já existe uma conexão na UAZ API! Verificando status...');
-          console.log('   └─ Número detectado:', errorData?.phoneNumber);
-          console.log('   └─ Status da instância existente:', errorData?.instanceStatus);
-          
-          // 🎯 TRATATIVA AUTOMÁTICA E SILENCIOSA
-          try {
-            // Buscar pelo número do telefone da instância atual
-            let phoneToSearch = errorData?.phoneNumber || instanceData?.phone_number;
-            
-            if (!phoneToSearch) {
-              console.log('ℹ️ Erro 409 sem número detectado - Ignorando silenciosamente');
-              setProcessing409(false);
-              // Não faz nada, apenas ignora o erro silenciosamente
-              // Na próxima tentativa, se o QR Code for gerado com sucesso, vai funcionar
-              return;
-            }
-            
-            console.log(`🔍 Buscando instância existente com número: ${phoneToSearch}`);
-            const searchResponse = await api.get(`/uaz/fetch-instances?phoneNumber=${encodeURIComponent(phoneToSearch)}`);
-            
-            if (searchResponse.data.success && searchResponse.data.found) {
-              const foundInstance = searchResponse.data.instance;
-              const isConnected = foundInstance.isConnected || foundInstance.status === 'connected';
-              
-              console.log(`📊 Instância encontrada! Status: ${isConnected ? 'CONECTADA' : 'DESCONECTADA'}`);
-              
-              if (isConnected) {
-                // ✅ CASO 1: Instância está CONECTADA → IMPORTAR
-                console.log('✅ Conexão está CONECTADA! Importando para a plataforma...');
-                
-                const importResponse = await api.post('/uaz/import-instances', {
-                  instances: [foundInstance]
-                });
-                
-                if (importResponse.data.success) {
-                  console.log('✅ Instância importada automaticamente com sucesso!');
-                  success('✅ Conexão importada com sucesso!');
-                  
-                  setTimeout(() => {
-                    router.push('/configuracoes-uaz');
-                  }, 2000);
-                } else {
-                  console.error('❌ Falha ao importar instância:', importResponse.data.error);
-                  warning('⚠️ Não foi possível importar a conexão. Redirecionando...');
-                  setTimeout(() => router.push('/configuracoes-uaz'), 2000);
-                }
-              } else {
-                // 🗑️ CASO 2: Instância está DESCONECTADA → DELETAR + CONTINUAR
-                console.log('🗑️ Conexão está DESCONECTADA! Deletando antiga e continuando...');
-                
-                try {
-                  // Primeiro, buscar se essa instância já está no banco local
-                  const localInstancesResponse = await api.get('/uaz/instances');
-                  const localInstances = Array.isArray(localInstancesResponse.data) 
-                    ? localInstancesResponse.data 
-                    : (localInstancesResponse.data?.data || []);
-                  
-                  // Procurar instância pelo token
-                  const localInstance = localInstances.find((inst: any) => 
-                    inst.instance_token === foundInstance.token
-                  );
-                  
-                  if (localInstance) {
-                    // Se está no banco local, deletar usando o ID
-                    console.log(`🗑️ Instância encontrada no banco local (ID: ${localInstance.id}). Deletando...`);
-                    await api.delete(`/uaz/instances/${localInstance.id}`);
-                    console.log('✅ Instância antiga deletada com sucesso do banco e da UAZ API!');
-                  } else {
-                    // Se não está no banco, apenas logar
-                    console.log('ℹ️ Instância não está no banco local, apenas na UAZ API');
-                    console.log('⏩ A nova conexão irá substituir a antiga automaticamente');
-                  }
-                  
-                  // Aguardar 1 segundo para garantir que foi processado
-                  await new Promise(resolve => setTimeout(resolve, 1000));
-                  
-                  // Deletar a instância atual que está causando conflito
-                  if (instance) {
-                    console.log(`🗑️ Deletando instância conflitante atual (ID: ${instance})...`);
-                    try {
-                      await api.delete(`/uaz/instances/${instance}`);
-                      console.log('✅ Instância conflitante deletada!');
-                    } catch (delError: any) {
-                      console.warn('⚠️ Erro ao deletar instância conflitante:', delError.message);
-                    }
-                  }
-                  
-                  // Redirecionar para criar uma nova conexão
-                  console.log('✅ Redirecionando para criar nova conexão...');
-                  warning('⏩ Criando nova conexão...');
-                  setTimeout(() => {
-                    router.push('/configuracoes-uaz');
-                  }, 1500);
-                  
-                } catch (deleteError: any) {
-                  console.error('❌ Erro ao deletar instância antiga:', deleteError);
-                  // Em caso de erro, redireciona para configurações
-                  warning('⚠️ Redirecionando para gerenciar conexões...');
-                  setTimeout(() => router.push('/configuracoes-uaz'), 2000);
-                }
-              }
-            } else {
-              console.log('ℹ️ Instância não encontrada na busca, tentando continuar fluxo normal...');
-              // Se não encontrou, tenta continuar com o fluxo normal
-              await loadQRCode();
-            }
-          } catch (treatmentError: any) {
-            console.error('❌ Erro durante tratativa automática:', treatmentError);
-            // Em caso de erro, apenas para e não mostra nada (QR Code já foi gerado)
-            console.log('ℹ️ QR Code já foi gerado, parando processamento silencioso');
-            setProcessing409(false);
-          }
-        } else {
-          // Erro 409 genérico - provavelmente já conectado
-          console.log('ℹ️ Erro 409 - Instância já conectada, atualizando estado...');
-          await loadInstance();
-          setAutoRefresh(false);
-          setProcessing409(false);
-        }
+        // NÃO para o auto-refresh, deixa ele continuar tentando
+        // A tratativa será feita no checkStatus() quando detectar is_connected = true
       } else {
         // Outros erros só mostram se o auto-refresh estiver ativo
         // (para não incomodar o usuário com erros repetidos)
@@ -252,6 +127,107 @@ export default function QrCodeUaz() {
     } finally {
       setRefreshing(false);
     }
+  };
+
+  // 🆕 NOVA FUNÇÃO: Verifica duplicatas PÓS-CONEXÃO
+  const checkForDuplicatesAfterConnection = async (connectedInstance: UazInstance) => {
+    if (!connectedInstance.phone_number) {
+      console.log('⚠️ Instância conectada sem número, pulando verificação de duplicatas');
+      return;
+    }
+
+    console.log('\n🔍 ===============================================');
+    console.log('🔍 VERIFICAÇÃO PÓS-CONEXÃO: Buscando duplicatas');
+    console.log('🔍 ===============================================');
+    console.log('📱 Número conectado:', connectedInstance.phone_number);
+
+    try {
+      // Buscar na UAZ API se tem outra instância com este número
+      const searchResponse = await api.get(`/uaz/fetch-instances?phoneNumber=${encodeURIComponent(connectedInstance.phone_number)}`);
+      
+      if (searchResponse.data.success && searchResponse.data.found) {
+        const uazInstance = searchResponse.data.instance;
+        
+        // Se o token for o mesmo, não é duplicata (é a mesma instância)
+        const localInstancesResponse = await api.get('/uaz/instances');
+        const localInstances = localInstancesResponse.data?.data || [];
+        const currentInstance = localInstances.find((inst: any) => inst.id === connectedInstance.id);
+        
+        if (currentInstance && currentInstance.instance_token === uazInstance.token) {
+          console.log('✅ É a mesma instância, não há duplicata');
+          return;
+        }
+        
+        // Encontrou OUTRA instância com o mesmo número
+        const isOtherConnected = uazInstance.isConnected || uazInstance.status === 'connected';
+        
+        console.log('⚠️  DUPLICATA DETECTADA!');
+        console.log('   └─ Token da outra:', uazInstance.token?.substring(0, 20) + '...');
+        console.log('   └─ Status da outra:', isOtherConnected ? '🟢 CONECTADA' : '🔴 DESCONECTADA');
+        
+        if (isOtherConnected) {
+          // ✅ CASO 1: Outra instância está CONECTADA
+          // REGRA: Deletar a NOVA e importar a ANTIGA
+          console.log('🗑️  AÇÃO: Deletar a nova (atual) e importar a antiga');
+          
+          setAutoRefresh(false);
+          
+          try {
+            // 1. Importar a antiga
+            console.log('📥 Importando instância antiga conectada...');
+            await api.post('/uaz/import-instances', {
+              instances: [uazInstance]
+            });
+            
+            // 2. Deletar a nova (atual)
+            console.log('🗑️  Deletando instância nova (atual)...');
+            await api.delete(`/uaz/instances/${connectedInstance.id}`);
+            
+            console.log('✅ Tratativa concluída com sucesso!');
+            success('✅ Conexão antiga importada! A nova foi removida.');
+            
+            setTimeout(() => {
+              router.push('/configuracoes-uaz');
+            }, 2000);
+          } catch (err: any) {
+            console.error('❌ Erro na tratativa:', err);
+            error('Erro ao tratar duplicação');
+          }
+          
+        } else {
+          // 🗑️ CASO 2: Outra instância está DESCONECTADA
+          // REGRA: Manter a NOVA e deletar a ANTIGA
+          console.log('✅ AÇÃO: Manter a nova (atual) e deletar a antiga');
+          
+          try {
+            // Buscar se a antiga está no banco local
+            const oldLocalInstance = localInstances.find((inst: any) => 
+              inst.instance_token === uazInstance.token
+            );
+            
+            if (oldLocalInstance) {
+              console.log('🗑️  Deletando instância antiga desconectada...');
+              await api.delete(`/uaz/instances/${oldLocalInstance.id}`);
+              console.log('✅ Instância antiga deletada com sucesso!');
+            } else {
+              console.log('ℹ️  Instância antiga não está no banco local');
+            }
+            
+            success('✅ Conexão estabelecida! Instância antiga removida.');
+          } catch (err: any) {
+            console.error('❌ Erro ao deletar instância antiga:', err);
+            // Não é crítico, continua normal
+          }
+        }
+      } else {
+        console.log('✅ Nenhuma duplicata encontrada na UAZ API');
+      }
+    } catch (err: any) {
+      console.error('❌ Erro ao verificar duplicatas:', err);
+      // Não bloqueia a conexão, apenas loga o erro
+    }
+    
+    console.log('🔍 ===============================================\n');
   };
 
   const checkStatus = async () => {
@@ -294,6 +270,16 @@ export default function QrCodeUaz() {
           await loadInstance();
         }
       } else if (response.data.success) {
+        // 🆕 VERIFICAR SE ACABOU DE CONECTAR (mudou de desconectado para conectado)
+        const wasDisconnected = !instanceData?.is_connected;
+        const isNowConnected = response.data.data?.is_connected;
+        
+        if (wasDisconnected && isNowConnected) {
+          console.log('🎉 CONEXÃO ESTABELECIDA! Iniciando verificação de duplicatas...');
+          setAutoRefresh(false); // Para o auto-refresh
+          await checkForDuplicatesAfterConnection(response.data.data);
+        }
+        
         await loadInstance();
       }
     } catch (error: any) {
