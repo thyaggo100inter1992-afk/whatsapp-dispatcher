@@ -890,6 +890,12 @@ export default function CriarCampanha() {
           
           // ✅ Converter URL relativa para URL completa
           const data = uploadResponse.data; // ✅ Corrigido: backend retorna dados diretamente em response.data
+          
+          // ⚠️ Verificar se data.url existe antes de usar startsWith
+          if (!data || !data.url) {
+            throw new Error('Resposta inválida do servidor: URL da imagem não foi retornada');
+          }
+          
           const fullUrl = data.url.startsWith('http') || data.url.startsWith('data:') || data.url.startsWith('blob:')
             ? data.url 
             : `${API_BASE_URL}${data.url}`;
@@ -929,6 +935,12 @@ export default function CriarCampanha() {
           
           // ✅ Converter URL relativa para URL completa
           const data = uploadResponse.data; // ✅ Corrigido: backend retorna dados diretamente em response.data
+          
+          // ⚠️ Verificar se data.url existe antes de usar startsWith
+          if (!data || !data.url) {
+            throw new Error('Resposta inválida do servidor: URL do vídeo não foi retornada');
+          }
+          
           const fullUrl = data.url.startsWith('http') || data.url.startsWith('data:') || data.url.startsWith('blob:')
             ? data.url 
             : `${API_BASE_URL}${data.url}`;
@@ -963,6 +975,12 @@ export default function CriarCampanha() {
           
           // ✅ Converter URL relativa para URL completa
           const data = uploadResponse.data; // ✅ Corrigido: backend retorna dados diretamente em response.data
+          
+          // ⚠️ Verificar se data.url existe antes de usar startsWith
+          if (!data || !data.url) {
+            throw new Error('Resposta inválida do servidor: URL do áudio não foi retornada');
+          }
+          
           const fullUrl = data.url.startsWith('http') || data.url.startsWith('data:') || data.url.startsWith('blob:')
             ? data.url 
             : `${API_BASE_URL}${data.url}`;
@@ -997,6 +1015,12 @@ export default function CriarCampanha() {
           
           // ✅ Converter URL relativa para URL completa
           const data = uploadResponse.data; // ✅ Corrigido: backend retorna dados diretamente em response.data
+          
+          // ⚠️ Verificar se data.url existe antes de usar startsWith
+          if (!data || !data.url) {
+            throw new Error('Resposta inválida do servidor: URL do documento não foi retornada');
+          }
+          
           const fullUrl = data.url.startsWith('http') || data.url.startsWith('data:') || data.url.startsWith('blob:')
             ? data.url 
             : `${API_BASE_URL}${data.url}`;
