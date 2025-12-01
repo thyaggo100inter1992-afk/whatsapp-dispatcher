@@ -1,0 +1,29 @@
+========================================
+🔧 COMANDO ÚNICO PARA CORRIGIR WEBHOOK
+========================================
+
+Cole este comando COMPLETO no terminal SSH:
+
+PGPASSWORD='Tg130992*' psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "ALTER TABLE webhook_logs DISABLE ROW LEVEL SECURITY;"
+
+========================================
+
+Depois, verifique se funcionou com:
+
+PGPASSWORD='Tg130992*' psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "SELECT tablename, rowsecurity FROM pg_tables WHERE tablename = 'webhook_logs';"
+
+========================================
+RESULTADO ESPERADO:
+========================================
+
+  tablename   | rowsecurity 
+--------------+-------------
+ webhook_logs | f
+
+✅ Se rowsecurity = f → CORRIGIDO!
+
+========================================
+
+
+
+

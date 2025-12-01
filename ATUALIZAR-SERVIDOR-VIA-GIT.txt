@@ -1,0 +1,73 @@
+========================================
+🔄 ATUALIZAR SERVIDOR VIA GIT
+========================================
+
+Execute estes comandos NO TERMINAL SSH:
+
+========================================
+1. Ir para a pasta do projeto
+========================================
+
+cd /root/whatsapp-dispatcher
+
+========================================
+2. Baixar atualizações do GitHub
+========================================
+
+git pull
+
+========================================
+3. Recompilar o backend
+========================================
+
+cd backend
+rm -rf dist
+npm run build
+cd ..
+
+========================================
+4. Reiniciar o PM2
+========================================
+
+pm2 restart whatsapp-backend
+
+========================================
+5. Verificar se reiniciou
+========================================
+
+pm2 logs whatsapp-backend --lines 10
+
+========================================
+6. Enviar NOVA MENSAGEM de teste
+========================================
+
+Envie uma mensagem para o WhatsApp Business
+
+========================================
+7. Verificar se salvou com tenant_id
+========================================
+
+PGPASSWORD='Tg130992*' psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "SELECT id, tenant_id, request_type, processing_status, received_at FROM webhook_logs ORDER BY id DESC LIMIT 3;"
+
+========================================
+RESULTADO ESPERADO:
+========================================
+
+id | tenant_id | request_type | processing_status | received_at
+---+-----------+--------------+-------------------+------------
+XX |     4     | notification | success           | 2025-11-30...
+
+✅ tenant_id = 4!
+
+========================================
+8. Recarregar a página
+========================================
+
+Recarregue a página de configurações
+O status deve mudar para ATIVO! ✅
+
+========================================
+
+
+
+

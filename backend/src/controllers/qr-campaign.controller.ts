@@ -3,6 +3,7 @@ import { QrCampaignModel } from '../models/QrCampaign';
 import { ContactModel } from '../models/Contact';
 import { tenantQuery } from '../database/tenant-query';
 import ExcelJS from 'exceljs';
+import { normalizeBrazilScheduleToUtc, getBrazilNow } from '../utils/timezone';
 
 export class QrCampaignController {
   /**
@@ -148,17 +149,12 @@ export class QrCampaignController {
       // O frontend envia horário de Brasília, precisamos converter para UTC
       let scheduledDate = undefined;
       if (scheduled_at) {
-        const localDate = new Date(scheduled_at);
-        
-        if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
-          // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
-          scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
-        } else {
-          scheduledDate = localDate;
-        }
+        const { date, hadExplicitTimezone } = normalizeBrazilScheduleToUtc(scheduled_at);
+        scheduledDate = date;
         
         console.log('🕐 Horário agendado (QR):', {
           recebido: scheduled_at,
+          tinha_timezone_explicito: hadExplicitTimezone,
           converted: scheduledDate.toISOString(),
           localString: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
         });
@@ -369,7 +365,7 @@ export class QrCampaignController {
           
           // Verificar horário de trabalho
           if (scheduleConfig.work_start_time && scheduleConfig.work_end_time) {
-            const now = new Date();
+            const now = getBrazilNow();
             const currentTime = now.toTimeString().slice(0, 5); // HH:MM
             const startTime = scheduleConfig.work_start_time;
             const endTime = scheduleConfig.work_end_time;
@@ -597,23 +593,15 @@ export class QrCampaignController {
       
       if (scheduled_at !== undefined) {
         if (scheduled_at) {
-          // O frontend envia horário de Brasília, precisamos converter para UTC
-          const localDate = new Date(scheduled_at);
-          let scheduledDate;
-          
-          if (!scheduled_at.includes('Z') && !scheduled_at.includes('+') && !scheduled_at.includes('-')) {
-            // Adicionar 3 horas para converter de Brasília (UTC-3) para UTC
-            scheduledDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
-          } else {
-            scheduledDate = localDate;
-          }
+          const { date, hadExplicitTimezone } = normalizeBrazilScheduleToUtc(scheduled_at);
           
           console.log('🕐 Horário agendado (QR EDIT):', {
             recebido: scheduled_at,
-            salvo_como_utc: scheduledDate.toISOString(),
-            vai_executar_em_brasilia: scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+            tinha_timezone_explicito: hadExplicitTimezone,
+            salvo_como_utc: date.toISOString(),
+            vai_executar_em_brasilia: date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
           });
-          updateData.scheduled_at = scheduledDate;
+          updateData.scheduled_at = date;
         } else {
           updateData.scheduled_at = null;
         }

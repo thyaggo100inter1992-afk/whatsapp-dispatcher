@@ -1,0 +1,111 @@
+========================================
+✏️  EDITAR WEBHOOK CONTROLLER NO SERVIDOR
+========================================
+
+Execute estes comandos NO TERMINAL SSH:
+
+========================================
+1. Abrir o arquivo para edição
+========================================
+
+nano /root/whatsapp-dispatcher/backend/src/controllers/webhook.controller.ts
+
+========================================
+2. Encontrar a linha 70 (aproximadamente)
+========================================
+
+Pressione Ctrl+W (buscar) e digite:
+const body = req.body;
+
+========================================
+3. SUBSTITUIR o bloco de código
+========================================
+
+ENCONTRE ESTE BLOCO (linhas 70-88 aproximadamente):
+
+      const body = req.body;
+
+      // Criar log inicial do webhook
+      const logResult = await queryNoTenant(
+        `INSERT INTO webhook_logs 
+         (request_type, request_method, webhook_object, request_body, 
+          request_headers, ip_address, user_agent)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id`,
+        [
+          'notification',
+          'POST',
+          body.object,
+          JSON.stringify(body),
+          JSON.stringify(req.headers),
+          req.ip || req.socket.remoteAddress,
+          req.get('user-agent')
+        ]
+      );
+
+SUBSTITUA POR ESTE:
+
+      const body = req.body;
+
+      // Obter tenant_id da rota (se disponível)
+      const tenantId = (req as any).tenantIdFromWebhook || null;
+
+      // Criar log inicial do webhook
+      const logResult = await queryNoTenant(
+        `INSERT INTO webhook_logs 
+         (tenant_id, request_type, request_method, webhook_object, request_body, 
+          request_headers, ip_address, user_agent)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id`,
+        [
+          tenantId,
+          'notification',
+          'POST',
+          body.object,
+          JSON.stringify(body),
+          JSON.stringify(req.headers),
+          req.ip || req.socket.remoteAddress,
+          req.get('user-agent')
+        ]
+      );
+
+========================================
+4. Salvar e sair
+========================================
+
+Pressione:
+- Ctrl+O (salvar)
+- Enter (confirmar)
+- Ctrl+X (sair)
+
+========================================
+5. Recompilar e reiniciar
+========================================
+
+rm -rf dist
+npm run build
+pm2 restart whatsapp-backend
+
+========================================
+6. Testar
+========================================
+
+Envie uma mensagem e verifique:
+
+PGPASSWORD='Tg130992*' psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "SELECT id, tenant_id, request_type, processing_status, received_at FROM webhook_logs ORDER BY id DESC LIMIT 3;"
+
+========================================
+RESULTADO ESPERADO:
+========================================
+
+id | tenant_id | request_type | processing_status | received_at
+---+-----------+--------------+-------------------+------------
+XX |     4     | notification | success           | 2025-11-30...
+
+✅ tenant_id = 4!
+
+========================================
+
+
+
+

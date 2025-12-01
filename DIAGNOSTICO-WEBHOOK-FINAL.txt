@@ -1,0 +1,45 @@
+========================================
+🔍 DIAGNÓSTICO FINAL DO WEBHOOK
+========================================
+
+Cole estes comandos NO TERMINAL SSH para descobrir o problema:
+
+========================================
+1. Ver TODOS os webhooks (últimos 10)
+========================================
+
+PGPASSWORD='Tg130992*' psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "SELECT id, tenant_id, request_type, request_method, processing_status, received_at FROM webhook_logs ORDER BY id DESC LIMIT 10;"
+
+========================================
+2. Ver webhooks COM SUCESSO
+========================================
+
+PGPASSWORD='Tg130992*' psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "SELECT COUNT(*) as total, MAX(received_at) as ultimo FROM webhook_logs WHERE processing_status = 'success';"
+
+========================================
+3. Ver webhooks COM ERRO
+========================================
+
+PGPASSWORD='Tg130992*' psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "SELECT id, processing_status, processing_error, received_at FROM webhook_logs WHERE processing_status != 'success' OR processing_status IS NULL ORDER BY id DESC LIMIT 5;"
+
+========================================
+4. Ver tenant_id dos webhooks
+========================================
+
+PGPASSWORD='Tg130992*' psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "SELECT id, tenant_id, request_type, processing_status FROM webhook_logs ORDER BY id DESC LIMIT 5;"
+
+========================================
+IMPORTANTE:
+========================================
+
+O sistema verifica se há webhooks com:
+- processing_status = 'success'
+- received_at nas últimas 24 horas
+
+Se NÃO houver nenhum com 'success', o status fica INATIVO!
+
+========================================
+
+
+
+

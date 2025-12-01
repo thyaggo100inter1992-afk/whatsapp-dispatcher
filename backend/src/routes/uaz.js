@@ -1655,8 +1655,17 @@ router.post('/instances/:id/logout', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Busca instância
-    const instance = await pool.query(`
+    // 🔒 SEGURANÇA: Obter tenant_id
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Tenant não identificado'
+      });
+    }
+
+    // Busca instância usando tenantQuery para RLS
+    const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id

@@ -1,0 +1,48 @@
+========================================
+🔧 COMANDOS PARA CORRIGIR O WEBHOOK
+========================================
+
+Cole estes comandos NO TERMINAL SSH (linha por linha):
+
+========================================
+COMANDO 1: Conectar ao banco
+========================================
+
+export PGPASSWORD='Tg130992*'
+
+========================================
+COMANDO 2: Executar correção
+========================================
+
+psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "ALTER TABLE webhook_logs DISABLE ROW LEVEL SECURITY;"
+
+========================================
+COMANDO 3: Verificar se funcionou
+========================================
+
+psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "SELECT tablename, rowsecurity FROM pg_tables WHERE tablename = 'webhook_logs';"
+
+========================================
+RESULTADO ESPERADO:
+========================================
+
+  tablename   | rowsecurity 
+--------------+-------------
+ webhook_logs | f
+
+Se rowsecurity = f (false) = CORRIGIDO! ✅
+
+========================================
+PRÓXIMO PASSO:
+========================================
+
+1. Envie OUTRA MENSAGEM para o WhatsApp Business
+2. Observe os logs (não deve ter mais erro)
+3. Recarregue a página de configurações
+4. O status deve mudar para ATIVO! ✅
+
+========================================
+
+
+
+

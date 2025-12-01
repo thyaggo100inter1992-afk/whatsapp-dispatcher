@@ -1,0 +1,26 @@
+========================================
+🔍 VERIFICAR SE O CÓDIGO FOI APLICADO
+========================================
+
+Execute este comando NO TERMINAL SSH:
+
+========================================
+Verificar o código compilado
+========================================
+
+grep -A 5 "tenantIdFromWebhook" /root/whatsapp-dispatcher/backend/dist/controllers/webhook.controller.js
+
+========================================
+RESULTADO ESPERADO:
+========================================
+
+Deve aparecer algo como:
+const tenantId = req.tenantIdFromWebhook || null;
+
+Se NÃO aparecer nada = O código não foi aplicado!
+
+========================================
+
+
+
+

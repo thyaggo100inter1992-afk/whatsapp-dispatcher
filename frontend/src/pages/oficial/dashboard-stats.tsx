@@ -146,7 +146,7 @@ export default function DashboardStats() {
       outside_hours: { label: '🌙 Fora do Horário', color: 'bg-blue-500' },
       pause_programmed: { label: '⏸️ Pausa Programada', color: 'bg-orange-500' },
       sending: { label: '🔄 Enviando', color: 'bg-green-500' },
-      running: { label: 'Em Execução', color: 'bg-green-500' },
+      running: { label: 'Em Execucao', color: 'bg-green-500' },
       completed: { label: 'Concluída', color: 'bg-blue-500' },
       paused: { label: 'Pausada', color: 'bg-yellow-500' },
       cancelled: { label: 'Cancelada', color: 'bg-red-500' },

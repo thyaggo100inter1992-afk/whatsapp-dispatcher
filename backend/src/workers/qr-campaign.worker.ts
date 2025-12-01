@@ -2,6 +2,7 @@ import { query } from '../database/connection';
 import * as fs from 'fs';
 import * as path from 'path';
 import { RestrictionListController } from '../controllers/restriction-list.controller';
+import { getBrazilNow } from '../utils/timezone';
 const UazService = require('../services/uazService');
 const { getTenantUazapCredentials } = require('../helpers/uaz-credentials.helper');
 
@@ -397,9 +398,11 @@ class QrCampaignWorker {
     // Verificar horário de trabalho
     const scheduleConfig = (campaign.schedule_config || {}) as WorkerConfig;
     if (scheduleConfig.work_start_time && scheduleConfig.work_end_time) {
-      const now = new Date();
-      const currentTime = now.toTimeString().slice(0, 5);
-      console.log(`   🕐 Horário atual: ${currentTime} | Horário de trabalho: ${scheduleConfig.work_start_time} - ${scheduleConfig.work_end_time}`);
+      const brazilNow = getBrazilNow();
+      const currentTime = brazilNow.toTimeString().slice(0, 5);
+      console.log(
+        `   🕐 Horário atual (Brasília): ${currentTime} | Horário de trabalho: ${scheduleConfig.work_start_time} - ${scheduleConfig.work_end_time}`
+      );
       
       if (currentTime < scheduleConfig.work_start_time || currentTime > scheduleConfig.work_end_time) {
         // Fora do horário de trabalho
@@ -748,6 +751,73 @@ class QrCampaignWorker {
       console.log(`   📞 Número: ${contact.phone_number}`);
       console.log(`   ✅ PROSSEGUINDO COM ENVIO...`);
       console.log('═══════════════════════════════════════════════════\n');
+      
+      // 📱 VERIFICAR SE O NÚMERO TEM WHATSAPP ANTES DE ENVIAR
+      console.log('📱 ═══════════════════════════════════════════════════');
+      console.log('📱 VERIFICANDO SE NÚMERO TEM WHATSAPP...');
+      console.log('📱 ═══════════════════════════════════════════════════');
+      console.log(`   📞 Número: ${contact.phone_number}`);
+      
+      const hasWhatsAppCheck = await this.checkIfNumberHasWhatsApp(
+        template.instance_token,
+        contact.phone_number,
+        template.proxy_host ? {
+          host: template.proxy_host,
+          port: template.proxy_port,
+          username: template.proxy_username,
+          password: template.proxy_password
+        } : null,
+        campaign.tenant_id
+      );
+      
+      if (!hasWhatsAppCheck.success) {
+        console.log('⚠️ ═══════════════════════════════════════════════════');
+        console.log('⚠️ ERRO AO VERIFICAR WHATSAPP - ENVIANDO MESMO ASSIM');
+        console.log('⚠️ ═══════════════════════════════════════════════════');
+        console.log(`   Erro: ${hasWhatsAppCheck.error}`);
+        console.log('═══════════════════════════════════════════════════\n');
+        // Continuar com envio mesmo se a verificação falhar
+      } else if (!hasWhatsAppCheck.hasWhatsApp) {
+        console.log('📵 ═══════════════════════════════════════════════════');
+        console.log('📵 NÚMERO NÃO TEM WHATSAPP!');
+        console.log('📵 ═══════════════════════════════════════════════════');
+        console.log(`   📞 Número: ${contact.phone_number}`);
+        console.log(`   ❌ ENVIO CANCELADO - Marcando como "sem WhatsApp"`);
+        console.log('═══════════════════════════════════════════════════\n');
+        
+        // Marcar como "sem WhatsApp" SEM ENVIAR
+        await query(
+          `INSERT INTO qr_campaign_messages 
+           (campaign_id, contact_id, instance_id, qr_template_id, phone_number, template_name, status, error_message, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'no_whatsapp', 'SEM WHATSAPP', NOW())`,
+          [
+            campaign.id,
+            contact.id,
+            template.instance_id,
+            template.qr_template_id,
+            contact.phone_number,
+            template.template_name || 'Template QR'
+          ]
+        );
+        
+        // Atualizar contador
+        await query(
+          `UPDATE qr_campaigns SET sent_count = sent_count + 1, no_whatsapp_count = no_whatsapp_count + 1, updated_at = NOW() WHERE id = $1`,
+          [campaign.id]
+        );
+        
+        console.log(`📊 [QR Worker] Número marcado como "sem WhatsApp" (não foi enviado)`);
+        
+        // ⭐ NÃO aguardar intervalo após número sem WhatsApp - continuar imediatamente
+        continue; // Pular para o próximo contato
+      } else {
+        console.log('✅ ═══════════════════════════════════════════════════');
+        console.log('✅ NÚMERO TEM WHATSAPP - PROSSEGUINDO COM ENVIO');
+        console.log('✅ ═══════════════════════════════════════════════════');
+        console.log(`   📞 Número: ${contact.phone_number}`);
+        console.log(`   ✅ Nome verificado: ${hasWhatsAppCheck.verifiedName || 'N/A'}`);
+        console.log('═══════════════════════════════════════════════════\n');
+      }
       
       // Enviar mensagem
       await this.sendMessage(campaign, contact, template);
@@ -1675,6 +1745,65 @@ class QrCampaignWorker {
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 📱 VERIFICAR SE NÚMERO TEM WHATSAPP ANTES DE ENVIAR
+   * Retorna objeto com success, hasWhatsApp e verifiedName
+   */
+  private async checkIfNumberHasWhatsApp(
+    instanceToken: string,
+    phoneNumber: string,
+    proxyConfig: any,
+    tenantId: number | null | undefined
+  ): Promise<{ success: boolean; hasWhatsApp: boolean; verifiedName?: string; error?: string }> {
+    try {
+      console.log(`   🔎 [QR] Verificando se ${phoneNumber} tem WhatsApp...`);
+      
+      // Buscar credenciais do tenant
+      const credentials = await getTenantUazapCredentials(tenantId || 1);
+      const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
+      
+      // Chamar checkNumber do UAZ Service
+      const result = await uazService.checkNumber(instanceToken, phoneNumber, proxyConfig);
+      
+      if (!result.success) {
+        console.log(`   ⚠️ [QR] Erro ao verificar: ${result.error}`);
+        return {
+          success: false,
+          hasWhatsApp: false,
+          error: result.error
+        };
+      }
+      
+      const hasWhatsApp = result.exists || false;
+      const verifiedName = result.data?.verifiedName || null;
+      
+      console.log(`   ${hasWhatsApp ? '✅' : '❌'} [QR] ${phoneNumber}: ${hasWhatsApp ? 'TEM WhatsApp' : 'NÃO tem WhatsApp'}`);
+      if (verifiedName) {
+        console.log(`   👤 [QR] Nome verificado: ${verifiedName}`);
+      }
+      
+      return {
+        success: true,
+        hasWhatsApp: hasWhatsApp,
+        verifiedName: verifiedName
+      };
+    } catch (error: any) {
+      console.error('❌ ═══════════════════════════════════════════════════');
+      console.error('❌ ERRO AO VERIFICAR SE NÚMERO TEM WHATSAPP!');
+      console.error('❌ ═══════════════════════════════════════════════════');
+      console.error('   Erro:', error.message);
+      console.error('   Stack:', error.stack);
+      console.error('═══════════════════════════════════════════════════\n');
+      
+      // Se der erro, retornar que não conseguiu verificar (mas não bloquear)
+      return {
+        success: false,
+        hasWhatsApp: false,
+        error: error.message
+      };
+    }
   }
 
   /**

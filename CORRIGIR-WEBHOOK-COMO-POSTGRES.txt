@@ -1,0 +1,49 @@
+========================================
+🔧 CORRIGIR WEBHOOK COMO SUPERUSUÁRIO
+========================================
+
+O problema: whatsapp_user não é dono da tabela!
+
+SOLUÇÃO: Usar o usuário postgres (superusuário)
+
+========================================
+COMANDO 1: Verificar quem é o dono
+========================================
+
+PGPASSWORD='Tg130992*' psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "SELECT tablename, tableowner FROM pg_tables WHERE tablename = 'webhook_logs';"
+
+========================================
+COMANDO 2: Conectar como postgres
+========================================
+
+sudo -u postgres psql whatsapp_dispatcher
+
+========================================
+COMANDO 3: Desabilitar RLS
+========================================
+
+ALTER TABLE webhook_logs DISABLE ROW LEVEL SECURITY;
+
+========================================
+COMANDO 4: Verificar
+========================================
+
+SELECT tablename, rowsecurity FROM pg_tables WHERE tablename = 'webhook_logs';
+
+========================================
+COMANDO 5: Sair
+========================================
+
+\q
+
+========================================
+OU TUDO EM UM COMANDO:
+========================================
+
+sudo -u postgres psql whatsapp_dispatcher -c "ALTER TABLE webhook_logs DISABLE ROW LEVEL SECURITY;"
+
+========================================
+
+
+
+

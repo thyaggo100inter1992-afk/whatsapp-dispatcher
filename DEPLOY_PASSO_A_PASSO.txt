@@ -80,3 +80,5 @@ Pense que estamos cozinhando um bolo: primeiro fazemos a massa em casa (seu comp
 
 Pronto! Esse é todo o caminho: alterar → commit → push → git pull no servidor → build backend → build frontend → pm2 restart → testar. Repita sempre nessa ordem e nada aparece quebrado.
 
+
+

@@ -1,0 +1,66 @@
+========================================
+🔧 APLICAR CORREÇÃO DO TENANT_ID
+========================================
+
+Execute estes comandos NO TERMINAL SSH:
+
+========================================
+1. Ir para o diretório do backend
+========================================
+
+cd /root/whatsapp-dispatcher/backend
+
+========================================
+2. Recompilar o TypeScript
+========================================
+
+npm run build
+
+========================================
+3. Reiniciar o PM2
+========================================
+
+pm2 restart whatsapp-backend
+
+========================================
+4. Verificar se reiniciou
+========================================
+
+pm2 logs whatsapp-backend --lines 20
+
+========================================
+5. Enviar NOVA MENSAGEM de teste
+========================================
+
+Envie uma mensagem para o WhatsApp Business
+
+========================================
+6. Verificar se salvou com tenant_id
+========================================
+
+PGPASSWORD='Tg130992*' psql -h localhost -U whatsapp_user -d whatsapp_dispatcher -c "SELECT id, tenant_id, request_type, processing_status, received_at FROM webhook_logs ORDER BY id DESC LIMIT 5;"
+
+========================================
+RESULTADO ESPERADO:
+========================================
+
+Agora deve aparecer:
+
+id | tenant_id | request_type | processing_status | received_at
+---+-----------+--------------+-------------------+------------
+XX |     4     | notification | success           | 2025-11-30...
+
+✅ tenant_id = 4 (não mais vazio!)
+
+========================================
+7. Recarregar a página
+========================================
+
+Recarregue a página de configurações do webhook
+O status deve mudar para ATIVO! ✅
+
+========================================
+
+
+
+
