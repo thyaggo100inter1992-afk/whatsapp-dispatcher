@@ -211,17 +211,26 @@ export class ReportService {
           // Contatos API Oficial
           console.log('🔍 Buscando contatos API Oficial...');
           const contactsResult = await query(
-            `SELECT DISTINCT 
+            `SELECT 
+              c.id,
               c.name,
               c.phone_number,
-              m.status,
-              m.template_name
+              m_latest.status,
+              m_latest.template_name
              FROM contacts c
-             LEFT JOIN messages m ON m.contact_id = c.id AND m.campaign_id = $1
-             WHERE c.id IN (
-               SELECT DISTINCT contact_id FROM messages WHERE campaign_id = $1
-             )
-             ORDER BY c.name`,
+             INNER JOIN (
+               SELECT DISTINCT contact_id 
+               FROM messages 
+               WHERE campaign_id = $1 AND contact_id IS NOT NULL
+             ) cm ON cm.contact_id = c.id
+             LEFT JOIN LATERAL (
+               SELECT status, template_name
+               FROM messages
+               WHERE contact_id = c.id AND campaign_id = $1
+               ORDER BY created_at DESC
+               LIMIT 1
+             ) m_latest ON true
+             ORDER BY c.name NULLS LAST, c.phone_number`,
             [campaignId]
           );
           contacts = contactsResult.rows;
