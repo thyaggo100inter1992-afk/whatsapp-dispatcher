@@ -226,6 +226,21 @@ export class ReportService {
           // LOG ARQUIVO: Garantir que aparece
           appendReportError(`[DEBUG] Campanha ${campaignId} - Mensagens`, messagesCountResult.rows[0]);
           
+          // DEBUG: Verificar se contact_ids existem na tabela contacts
+          const contactCheckResult = await query(
+            `SELECT 
+              m.contact_id,
+              c.id as contact_exists,
+              c.tenant_id as contact_tenant_id,
+              m.phone_number
+             FROM messages m
+             LEFT JOIN contacts c ON c.id = m.contact_id
+             WHERE m.campaign_id = $1 AND m.contact_id IS NOT NULL
+             LIMIT 5`,
+            [campaignId]
+          );
+          appendReportError(`[DEBUG] Verificação de contact_id`, contactCheckResult.rows);
+          
           // 🔥 CORREÇÃO: Adicionar tenant_id na busca de contatos!
           const contactsResult = await query(
             `SELECT 
