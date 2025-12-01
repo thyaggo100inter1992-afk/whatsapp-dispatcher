@@ -772,109 +772,16 @@ class CampaignWorker {
         console.log(`   ✅ PROSSEGUINDO COM ENVIO...`);
         console.log('═══════════════════════════════════════════════════\n');
         
-        // 📱 VERIFICAR SE O NÚMERO TEM WHATSAPP ANTES DE ENVIAR (API OFICIAL)
-        console.log('📱 ═══════════════════════════════════════════════════');
-        console.log('📱 VERIFICANDO SE NÚMERO TEM WHATSAPP (API OFICIAL)...');
-        console.log('📱 ═══════════════════════════════════════════════════');
+        // 📱 VERIFICAÇÃO DE WHATSAPP DESABILITADA
+        // Motivo: Endpoint /contacts é mais restritivo que /messages
+        // Algumas contas conseguem enviar mas não conseguem verificar
+        // Sistema agora funciona igual ao "Envio Único" - envia direto
+        console.log('📤 ═══════════════════════════════════════════════════');
+        console.log('📤 ENVIANDO MENSAGEM (SEM VERIFICAÇÃO PRÉVIA)');
+        console.log('📤 ═══════════════════════════════════════════════════');
         console.log(`   📞 Número: ${contact.phone_number}`);
-        
-        const hasWhatsAppCheck = await this.checkIfNumberHasWhatsAppOfficial(
-          template.access_token,
-          template.phone_number_id,
-          contact.phone_number,
-          campaign.tenant_id
-        );
-        
-        if (!hasWhatsAppCheck.success) {
-          console.log('❌ ═══════════════════════════════════════════════════');
-          console.log('❌ ERRO AO VERIFICAR WHATSAPP - CANCELANDO ENVIO!');
-          console.log('❌ ═══════════════════════════════════════════════════');
-          console.log(`   Erro: ${hasWhatsAppCheck.error}`);
-          console.log(`   📞 Número: ${contact.phone_number}`);
-          console.log(`   ❌ ENVIO CANCELADO - Marcando como erro`);
-          console.log('═══════════════════════════════════════════════════\n');
-          
-          // Marcar como ERRO SEM ENVIAR
-          await query(
-            `INSERT INTO messages 
-             (campaign_id, campaign_template_id, contact_id, whatsapp_account_id, phone_number, template_name, status, error_message, tenant_id)
-             VALUES ($1, $2, $3, $4, $5, $6, 'failed', $7, $8)`,
-            [
-              campaign.id,
-              template.id,
-              contact.id,
-              template.whatsapp_account_id,
-              contact.phone_number,
-              template.template_name,
-              `Erro na verificação: ${hasWhatsAppCheck.error}`,
-              campaign.tenant_id
-            ]
-          );
-          
-          // Atualizar contador
-          await query(
-            'UPDATE campaigns SET sent_count = sent_count + 1, failed_count = failed_count + 1, updated_at = NOW() WHERE id = $1 AND tenant_id = $2',
-            [campaign.id, campaign.tenant_id]
-          );
-          
-          campaign.sent_count++;
-          console.log(`📊 [API Oficial] Marcado como erro (verificação falhou - não foi enviado)`);
-          console.log(`📊 Progresso: ${campaign.sent_count}/${totalMessages} (${Math.round(campaign.sent_count/totalMessages*100)}%)`);
-          
-          // Aguardar intervalo antes do próximo
-          if (campaign.schedule_config && campaign.schedule_config.interval_seconds > 0) {
-            console.log(`⏳ Aguardando ${campaign.schedule_config.interval_seconds}s até próxima mensagem...`);
-            await this.sleep(campaign.schedule_config.interval_seconds * 1000);
-          }
-          
-          continue; // Pular para próximo contato
-        } else if (!hasWhatsAppCheck.hasWhatsApp) {
-          console.log('📵 ═══════════════════════════════════════════════════');
-          console.log('📵 NÚMERO NÃO TEM WHATSAPP!');
-          console.log('📵 ═══════════════════════════════════════════════════');
-          console.log(`   📞 Número: ${contact.phone_number}`);
-          console.log(`   ❌ ENVIO CANCELADO - Marcando como "sem WhatsApp"`);
-          console.log('═══════════════════════════════════════════════════\n');
-          
-          // Marcar como "sem WhatsApp" SEM ENVIAR
-          await query(
-            `INSERT INTO messages 
-             (campaign_id, campaign_template_id, contact_id, whatsapp_account_id, phone_number, template_name, status, error_message, tenant_id)
-             VALUES ($1, $2, $3, $4, $5, $6, 'no_whatsapp', 'SEM WHATSAPP', $7)`,
-            [
-              campaign.id,
-              template.id,
-              contact.id,
-              template.whatsapp_account_id,
-              contact.phone_number,
-              template.template_name,
-              campaign.tenant_id
-            ]
-          );
-          
-          // Atualizar contador
-          await query(
-            'UPDATE campaigns SET sent_count = sent_count + 1, failed_count = failed_count + 1, updated_at = NOW() WHERE id = $1 AND tenant_id = $2',
-            [campaign.id, campaign.tenant_id]
-          );
-          
-          campaign.sent_count++;
-          console.log(`📊 [API Oficial] Número marcado como "sem WhatsApp" (não foi enviado)`);
-          console.log(`📊 Progresso: ${campaign.sent_count}/${totalMessages} (${Math.round(campaign.sent_count/totalMessages*100)}%)`);
-          
-          // Aguardar intervalo antes do próximo
-          await this.sleep(campaign.schedule_config.interval_seconds * 1000);
-          continue; // Pular para o próximo contato
-        } else {
-          console.log('✅ ═══════════════════════════════════════════════════');
-          console.log('✅ NÚMERO TEM WHATSAPP - PROSSEGUINDO COM ENVIO');
-          console.log('✅ ═══════════════════════════════════════════════════');
-          console.log(`   📞 Número: ${contact.phone_number}`);
-          if (hasWhatsAppCheck.verifiedName) {
-            console.log(`   ✅ Nome verificado: ${hasWhatsAppCheck.verifiedName}`);
-          }
-          console.log('═══════════════════════════════════════════════════\n');
-        }
+        console.log(`   ✅ Modo: Envio direto (igual envio único)`);
+        console.log('═══════════════════════════════════════════════════\n');
         
         // Enviar mensagem
         await this.sendMessage(campaign, template, contact);
