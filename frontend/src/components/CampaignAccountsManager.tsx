@@ -55,7 +55,12 @@ export const CampaignAccountsManager: React.FC<CampaignAccountsManagerProps> = (
 
   const fetchAccountsStatus = async () => {
     try {
-      const response = await fetch(`${API_URL}/campaigns/${campaignId}/accounts-status`);
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/campaigns/${campaignId}/accounts-status`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const data = await response.json();
 
       if (data.success) {
@@ -82,9 +87,13 @@ export const CampaignAccountsManager: React.FC<CampaignAccountsManagerProps> = (
     setRemovingAccount(accountId);
 
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/campaigns/${campaignId}/remove-account`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ accountId })
       });
 
@@ -129,9 +138,13 @@ export const CampaignAccountsManager: React.FC<CampaignAccountsManagerProps> = (
     setAddingAccount(accountId);
 
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/campaigns/${campaignId}/add-account`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ accountId })
       });
 
@@ -161,9 +174,13 @@ export const CampaignAccountsManager: React.FC<CampaignAccountsManagerProps> = (
     setSavingConfig(true);
 
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/campaigns/${campaignId}/auto-remove-config`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ auto_remove_account_failures: autoRemoveLimit })
       });
 
