@@ -1358,7 +1358,20 @@ export default function CriarCampanha() {
                   setSelectedAccountIds([]);
                 } else {
                   // Selecionar todos
-                  setSelectedAccountIds(accounts.map(acc => acc.id));
+                  const allAccountIds = accounts.map(acc => acc.id);
+                  setSelectedAccountIds(allAccountIds);
+                  
+                  // Inicializar selectedTemplates para todas as contas
+                  const newSelectedTemplates = { ...selectedTemplates };
+                  allAccountIds.forEach(accountId => {
+                    if (!newSelectedTemplates[accountId]) {
+                      newSelectedTemplates[accountId] = new Set<string>();
+                    }
+                  });
+                  setSelectedTemplates(newSelectedTemplates);
+                  
+                  // Carregar templates de todas as contas
+                  loadTemplatesForAccounts(allAccountIds);
                 }
               }}
               className="px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white font-bold rounded-xl shadow-lg hover:shadow-primary-500/50 transition-all duration-200 flex items-center gap-2"
