@@ -920,11 +920,8 @@ class CampaignWorker {
           console.log(`🔄 Config atualizada: intervalo=${campaign.schedule_config.interval_seconds}s, pause_after=${campaign.pause_config.pause_after}, pause_duration=${campaign.pause_config.pause_duration_minutes}min`);
         }
 
-        // Aguardar intervalo configurado (agora com valor atualizado)
-        console.log(`⏳ [Campanha ${campaign.id}] Aguardando ${campaign.schedule_config.interval_seconds}s antes da próxima mensagem...`);
-        await this.sleep(campaign.schedule_config.interval_seconds * 1000);
-
         // 🔥 CORREÇÃO: Verificar pause_config usando contador ISOLADO do ciclo atual
+        // IMEDIATAMENTE após o envio, ANTES do intervalo!
         // Agora cada campanha tem seu próprio contador independente!
         if (campaign.pause_config.pause_after > 0 && currentCycleCount >= campaign.pause_config.pause_after) {
           console.log('');
@@ -961,6 +958,10 @@ class CampaignWorker {
           console.log(`⏸️  Pausa termina em: ${new Date(Date.now() + campaign.pause_config.pause_duration_minutes * 60 * 1000).toLocaleString('pt-BR')}`);
           return; // ✅ SAIR do método sem bloquear outras campanhas
         }
+
+        // ⏳ Aguardar intervalo configurado APENAS se NÃO houver pausa
+        console.log(`⏳ [Campanha ${campaign.id}] Aguardando ${campaign.schedule_config.interval_seconds}s antes da próxima mensagem...`);
+        await this.sleep(campaign.schedule_config.interval_seconds * 1000);
 
       } catch (error: any) {
         console.error(`❌ Erro ao enviar para ${contact.phone_number}:`, error.message);
