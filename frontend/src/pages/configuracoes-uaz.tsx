@@ -4,7 +4,7 @@ import {
   FaPlus, FaEdit, FaTrash, FaQrcode, FaCheckCircle, FaTimesCircle,
   FaSpinner, FaArrowLeft, FaSync, FaCog, FaWhatsapp, FaExclamationTriangle,
   FaTrashAlt, FaInfoCircle, FaTimes, FaUser, FaImage, FaPause, FaPlay,
-  FaSquare, FaCheckSquare, FaBan, FaCheck
+  FaSquare, FaCheckSquare, FaBan, FaCheck, FaSearch, FaKey, FaCalendar, FaPhone
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { InstanceAvatar } from '@/components/InstanceAvatar';
@@ -62,7 +62,10 @@ export default function ConfiguracoesUaz() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showPhoneInputModal, setShowPhoneInputModal] = useState(false);
+  const [phoneNumberInput, setPhoneNumberInput] = useState('');
   const [availableInstances, setAvailableInstances] = useState<any[]>([]);
+  const [foundInstance, setFoundInstance] = useState<any>(null);
   const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
   const [loadingInstances, setLoadingInstances] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -488,47 +491,65 @@ export default function ConfiguracoesUaz() {
   };
 
   const handleFetchInstances = async () => {
+    // Abre o modal para pedir o número de telefone
+    setPhoneNumberInput('');
+    setFoundInstance(null);
+    setShowPhoneInputModal(true);
+  };
+
+  const handleSearchByPhoneNumber = async () => {
+    if (!phoneNumberInput.trim()) {
+      warning('⚠️ Digite um número de telefone');
+      return;
+    }
+
     setLoadingInstances(true);
     try {
-      const response = await api.get('/uaz/fetch-instances');
+      console.log(`🔍 Buscando instância com número: ${phoneNumberInput}`);
+      const response = await api.get(`/uaz/fetch-instances?phoneNumber=${encodeURIComponent(phoneNumberInput)}`);
       
-      if (response.data.success) {
-        setAvailableInstances(response.data.instances);
-        setSelectedInstances(new Set());
-        setShowImportModal(true);
+      if (response.data.success && response.data.found) {
+        setFoundInstance(response.data.instance);
         
-        if (response.data.available === 0) {
-          info(`ℹ️ Nenhuma instância nova disponível. Total: ${response.data.total}, Já importadas: ${response.data.alreadyImported}`);
+        if (response.data.alreadyImported) {
+          warning('⚠️ Esta instância já está importada no sistema');
+        } else {
+          success('✅ Instância encontrada! Você deseja importá-la?');
         }
+      } else if (response.data.success && !response.data.found) {
+        error(`❌ ${response.data.message}`);
+        setFoundInstance(null);
       } else {
         error('❌ Erro: ' + response.data.error);
+        setFoundInstance(null);
       }
     } catch (err: any) {
-      error('❌ Erro ao buscar instâncias: ' + (err.response?.data?.error || err.message));
+      console.error('❌ Erro ao buscar instância:', err);
+      error('❌ Erro ao buscar instância: ' + (err.response?.data?.error || err.message));
+      setFoundInstance(null);
     } finally {
       setLoadingInstances(false);
     }
   };
 
   const handleImportInstances = async () => {
-    if (selectedInstances.size === 0) {
-      warning('⚠️ Selecione pelo menos uma instância para importar');
+    if (!foundInstance) {
+      warning('⚠️ Nenhuma instância encontrada para importar');
       return;
     }
-
-    const instancesToImport = availableInstances.filter(inst => selectedInstances.has(inst.token));
 
     setImporting(true);
     try {
       const response = await api.post('/uaz/import-instances', {
-        instances: instancesToImport
+        instances: [foundInstance]
       });
 
       if (response.data.success) {
-        success(`✅ Importação concluída! Importadas: ${response.data.imported}, Erros: ${response.data.errors}`);
+        success(`✅ Instância importada com sucesso!`);
         
-        setShowImportModal(false);
-        setSelectedInstances(new Set());
+        setShowPhoneInputModal(false);
+        setPhoneNumberInput('');
+        setFoundInstance(null);
         await loadInstances();
       } else {
         error('❌ Erro: ' + response.data.error);
@@ -1531,6 +1552,159 @@ export default function ConfiguracoesUaz() {
           </div>
         )}
       </div>
+
+      {/* MODAL PARA BUSCAR INSTÂNCIA POR NÚMERO */}
+      {showPhoneInputModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gradient-to-br from-dark-800 to-dark-900 rounded-2xl border-2 border-purple-500/30 shadow-2xl max-w-2xl w-full">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <FaSearch className="text-3xl text-white" />
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Buscar Instância por Número</h2>
+                  <p className="text-purple-100 text-sm">Digite o número de telefone da conexão que deseja importar</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPhoneInputModal(false);
+                  setPhoneNumberInput('');
+                  setFoundInstance(null);
+                }}
+                className="text-white hover:bg-white/20 rounded-lg p-2 transition-all"
+              >
+                <FaTimes className="text-2xl" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-6">
+              {/* Input de Número */}
+              <div>
+                <label className="block text-white/80 font-bold mb-3 text-lg">
+                  📱 Número de Telefone
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={phoneNumberInput}
+                    onChange={(e) => setPhoneNumberInput(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && !loadingInstances) {
+                        handleSearchByPhoneNumber();
+                      }
+                    }}
+                    placeholder="Ex: 5562981045992 ou 62981045992"
+                    className="w-full px-4 py-4 bg-dark-700 border-2 border-white/20 rounded-xl text-white text-lg focus:border-purple-500 focus:outline-none transition-all"
+                    disabled={loadingInstances}
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40">
+                    <FaPhone />
+                  </div>
+                </div>
+                <p className="text-white/40 text-sm mt-2">
+                  ℹ️ Aceita formatos: com/sem 55, com/sem 9º dígito
+                </p>
+              </div>
+
+              {/* Botão de Buscar */}
+              <button
+                onClick={handleSearchByPhoneNumber}
+                disabled={loadingInstances || !phoneNumberInput.trim()}
+                className="w-full px-6 py-4 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white text-lg font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg"
+              >
+                {loadingInstances ? (
+                  <>
+                    <FaSpinner className="animate-spin text-xl" />
+                    Buscando...
+                  </>
+                ) : (
+                  <>
+                    <FaSearch className="text-xl" />
+                    Buscar Instância
+                  </>
+                )}
+              </button>
+
+              {/* Resultado da Busca */}
+              {foundInstance && (
+                <div className="bg-dark-700/50 rounded-xl border-2 border-green-500/30 p-6 space-y-4 animate-fade-in">
+                  <div className="flex items-center gap-3 text-green-300 text-xl font-bold">
+                    <FaCheckCircle className="text-2xl" />
+                    Instância Encontrada!
+                  </div>
+
+                  <div className="bg-dark-800/50 rounded-lg p-4 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-2xl font-bold text-white">
+                        {foundInstance.name || foundInstance.owner || 'Sem nome'}
+                      </h3>
+                      {foundInstance.isConnected ? (
+                        <span className="px-3 py-1 bg-green-500/20 text-green-300 rounded-full text-sm font-bold border border-green-500/30">
+                          ✅ Conectada
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 bg-gray-500/20 text-gray-300 rounded-full text-sm font-bold border border-gray-500/30">
+                          ⭕ Desconectada
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3">
+                      {foundInstance.owner && (
+                        <div className="flex items-center gap-2 text-white/60">
+                          <FaPhone className="text-purple-400" />
+                          <span className="text-white/80 font-mono">{foundInstance.owner}</span>
+                        </div>
+                      )}
+                      {foundInstance.profileName && (
+                        <div className="flex items-center gap-2 text-white/60">
+                          <FaUser className="text-blue-400" />
+                          <span className="text-white/80">{foundInstance.profileName}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 text-white/60">
+                        <FaKey className="text-yellow-400" />
+                        <span className="text-white/40 font-mono text-sm break-all">
+                          {foundInstance.token}
+                        </span>
+                      </div>
+                      {foundInstance.created && (
+                        <div className="flex items-center gap-2 text-white/60">
+                          <FaCalendar className="text-green-400" />
+                          <span className="text-white/80">
+                            {new Date(foundInstance.created).toLocaleString('pt-BR')}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Botão de Importar */}
+                  <button
+                    onClick={handleImportInstances}
+                    disabled={importing}
+                    className="w-full px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-lg font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg"
+                  >
+                    {importing ? (
+                      <>
+                        <FaSpinner className="animate-spin text-xl" />
+                        Importando...
+                      </>
+                    ) : (
+                      <>
+                        <FaCheckCircle className="text-xl" />
+                        Importar Esta Instância
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE IMPORTAÇÃO DE INSTÂNCIAS */}
       {showImportModal && (
