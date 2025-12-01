@@ -1,0 +1,126 @@
+════════════════════════════════════════════════════════════════
+🔍 COMANDOS PARA VERIFICAR SERVIDOR
+════════════════════════════════════════════════════════════════
+
+📋 PASSO 1: CONECTAR AO SERVIDOR
+────────────────────────────────────────────────────────────────
+
+ssh root@72.60.141.244
+
+Senha: Tg74108520963,
+
+
+════════════════════════════════════════════════════════════════
+📋 PASSO 2: COPIE E COLE ESTE BLOCO COMPLETO NO TERMINAL SSH
+════════════════════════════════════════════════════════════════
+
+echo '╔══════════════════════════════════════════════════════════════╗'
+echo '║  🔍 STATUS DO SISTEMA - WhatsApp Dispatcher                  ║'
+echo '╚══════════════════════════════════════════════════════════════╝'
+echo ''
+
+echo '1️⃣  STATUS DOS SERVIÇOS PM2'
+echo '────────────────────────────────────────────────────────────'
+pm2 list
+echo ''
+
+echo '════════════════════════════════════════════════════════════════'
+echo ''
+
+echo '2️⃣  STATUS DO NGINX'
+echo '────────────────────────────────────────────────────────────'
+systemctl status nginx --no-pager | head -15
+echo ''
+
+echo '════════════════════════════════════════════════════════════════'
+echo ''
+
+echo '3️⃣  TESTANDO API LOCALMENTE'
+echo '────────────────────────────────────────────────────────────'
+curl -s http://localhost:3001/api/health
+echo ''
+echo ''
+
+echo '════════════════════════════════════════════════════════════════'
+echo ''
+
+echo '4️⃣  TESTANDO API EXTERNAMENTE'
+echo '────────────────────────────────────────────────────────────'
+curl -s https://api.sistemasnettsistemas.com.br/api/health
+echo ''
+echo ''
+
+echo '════════════════════════════════════════════════════════════════'
+echo ''
+
+echo '5️⃣  LOGS RECENTES DO BACKEND (últimas 20 linhas)'
+echo '────────────────────────────────────────────────────────────'
+pm2 logs whatsapp-backend --lines 20 --nostream
+echo ''
+
+echo '════════════════════════════════════════════════════════════════'
+echo ''
+
+echo '6️⃣  INFORMAÇÕES DO SISTEMA'
+echo '────────────────────────────────────────────────────────────'
+echo '💾 Memória:'
+free -h
+echo ''
+echo '💿 Disco:'
+df -h /
+echo ''
+echo '⚡ Uptime:'
+uptime
+echo ''
+
+echo '════════════════════════════════════════════════════════════════'
+echo ''
+
+echo '7️⃣  PROCESSOS NODE.JS RODANDO'
+echo '────────────────────────────────────────────────────────────'
+ps aux | grep node | grep -v grep
+echo ''
+
+echo '════════════════════════════════════════════════════════════════'
+echo ''
+echo '✅ VERIFICAÇÃO CONCLUÍDA!'
+echo ''
+
+
+════════════════════════════════════════════════════════════════
+📋 RESULTADO ESPERADO
+════════════════════════════════════════════════════════════════
+
+✅ PM2: Deve mostrar 2 processos rodando (whatsapp-backend e whatsapp-frontend)
+✅ NGINX: Deve mostrar "active (running)" em verde
+✅ API Local: Deve retornar {"status":"ok","message":"Backend is running"}
+✅ API Externa: Deve retornar a mesma mensagem
+✅ Logs: Não deve ter erros críticos recentes
+
+════════════════════════════════════════════════════════════════
+💡 COMANDOS ÚTEIS EXTRAS
+════════════════════════════════════════════════════════════════
+
+# Ver logs em tempo real:
+pm2 logs
+
+# Reiniciar serviços:
+pm2 restart all
+
+# Monitorar recursos:
+pm2 monit
+
+# Status detalhado do backend:
+pm2 show whatsapp-backend
+
+# Ver últimos 50 logs:
+pm2 logs whatsapp-backend --lines 50 --nostream
+
+# Verificar portas em uso:
+netstat -tulpn | grep LISTEN
+
+# Ver conexões ao banco:
+ps aux | grep postgres
+
+════════════════════════════════════════════════════════════════
+
