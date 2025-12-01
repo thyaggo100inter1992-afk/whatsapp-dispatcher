@@ -4643,8 +4643,22 @@ router.get('/fetch-instances', async (req, res) => {
     console.log('📥 BUSCANDO INSTÂNCIAS DA UAZ API');
     console.log('📥 ========================================\n');
 
-    // Buscar instâncias da UAZ API
-    const fetchResult = await uazService.fetchInstances();
+    // 🔒 Verificar tenant ANTES de tudo
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Tenant não identificado'
+      });
+    }
+
+    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    console.log(`🔑 Buscando credenciais UAZAP para tenant ${tenantId}...`);
+    const credentials = await getTenantUazapCredentials(tenantId);
+    const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
+
+    // Buscar instâncias da UAZ API usando as credenciais do tenant
+    const fetchResult = await tenantUazService.fetchInstances();
 
     if (!fetchResult.success) {
       return res.status(500).json({
@@ -4668,13 +4682,6 @@ router.get('/fetch-instances', async (req, res) => {
     }
 
     // 🔒 Buscar instâncias já cadastradas no banco local DO TENANT
-    const tenantId = req.tenant?.id;
-    if (!tenantId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Tenant não identificado'
-      });
-    }
     
     const localInstances = await tenantQuery(req, 'SELECT instance_token FROM uaz_instances WHERE tenant_id = $1', [tenantId]);
     const localTokens = new Set(localInstances.rows.map(i => i.instance_token));
