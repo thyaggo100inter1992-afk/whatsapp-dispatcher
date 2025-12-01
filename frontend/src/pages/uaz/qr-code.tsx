@@ -23,6 +23,7 @@ export default function QrCodeUaz() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [processing409, setProcessing409] = useState(false); // Flag para evitar processamento duplicado
 
   const loadInstance = async () => {
     if (!instance) return;
@@ -108,13 +109,21 @@ export default function QrCodeUaz() {
       } else if (err.response?.status === 409) {
         const errorData = err.response?.data;
         
+        setAutoRefresh(false); // Para o auto-refresh IMEDIATAMENTE
+        
+        // ⚠️ Evitar processamento duplicado
+        if (processing409) {
+          console.log('⏭️ Erro 409 já está sendo processado, ignorando...');
+          return;
+        }
+        
         // Se for erro de conexão existente
         if (errorData?.existingConnection) {
+          setProcessing409(true); // Marca que está processando
+          
           console.log('🔄 ERRO 409: Já existe uma conexão na UAZ API! Verificando status...');
           console.log('   └─ Número detectado:', errorData?.phoneNumber);
           console.log('   └─ Status da instância existente:', errorData?.instanceStatus);
-          
-          setAutoRefresh(false); // Para o auto-refresh
           
           // 🎯 TRATATIVA AUTOMÁTICA E SILENCIOSA
           try {
@@ -122,10 +131,9 @@ export default function QrCodeUaz() {
             let phoneToSearch = errorData?.phoneNumber || instanceData?.phone_number;
             
             if (!phoneToSearch) {
-              console.warn('⚠️ Nenhum número de telefone disponível para busca automática');
-              // Se não tem número, tenta continuar com o fluxo normal
-              console.log('⏩ Continuando fluxo normal sem número...');
-              await loadQRCode(); // Tenta buscar QR Code novamente
+              console.log('ℹ️ Erro 409 sem número detectado - QR Code já foi gerado, parando processamento');
+              // O QR Code já foi gerado na primeira tentativa, apenas para aqui
+              setProcessing409(false);
               return;
             }
             
@@ -220,21 +228,16 @@ export default function QrCodeUaz() {
             }
           } catch (treatmentError: any) {
             console.error('❌ Erro durante tratativa automática:', treatmentError);
-            // Em caso de erro, tenta continuar com o fluxo normal
-            console.log('⏩ Tentando continuar fluxo normal após erro...');
-            try {
-              await loadQRCode();
-            } catch (retryError) {
-              console.error('❌ Falha ao retomar fluxo normal:', retryError);
-              warning('⚠️ Redirecionando para gerenciar conexões...');
-              setTimeout(() => router.push('/configuracoes-uaz'), 2000);
-            }
+            // Em caso de erro, apenas para e não mostra nada (QR Code já foi gerado)
+            console.log('ℹ️ QR Code já foi gerado, parando processamento silencioso');
+            setProcessing409(false);
           }
         } else {
           // Erro 409 genérico - provavelmente já conectado
           console.log('ℹ️ Erro 409 - Instância já conectada, atualizando estado...');
           await loadInstance();
           setAutoRefresh(false);
+          setProcessing409(false);
         }
       } else {
         // Outros erros só mostram se o auto-refresh estiver ativo
