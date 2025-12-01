@@ -1,121 +1,304 @@
 import ExcelJS from 'exceljs';
+import fs from 'fs';
+import path from 'path';
 import { query } from '../database/connection';
 import { CampaignModel } from '../models/Campaign';
 
+const reportErrorLogPath = path.resolve(__dirname, '../..', 'report-errors.log');
+
+function appendReportError(message: string, data?: any) {
+  try {
+    const timestamp = new Date().toISOString();
+    const payload = data ? `${message} ${JSON.stringify(data, null, 2)}` : message;
+    fs.appendFileSync(reportErrorLogPath, `${timestamp} ${payload}\n`);
+  } catch (logError) {
+    console.error('❌ Falha ao registrar erro de relatório:', logError);
+  }
+}
+
 export class ReportService {
   async generateCampaignReport(campaignId: number, tenantId?: number): Promise<ExcelJS.Buffer> {
-    console.log(`📊 Gerando relatório Excel para campanha ${campaignId}...`);
+    try {
+      console.log(`📊 Gerando relatório Excel para campanha ${campaignId}...`);
 
-    // Buscar dados da campanha
-    const campaign = tenantId 
-      ? await CampaignModel.findById(campaignId, tenantId)
-      : await CampaignModel.findById(campaignId);
-    
-    if (!campaign) {
-      throw new Error('Campanha não encontrada');
-    }
+      // 🔒 SEGURANÇA: tenant_id é OBRIGATÓRIO
+      if (!tenantId) {
+        throw new Error('tenant_id é obrigatório para gerar relatório');
+      }
 
-    // Buscar templates da campanha
-    const templatesQuery = tenantId
-      ? `SELECT ct.*, t.template_name, w.name as account_name, w.phone_number
-         FROM campaign_templates ct
-         LEFT JOIN templates t ON ct.template_id = t.id
-         LEFT JOIN whatsapp_accounts w ON ct.whatsapp_account_id = w.id
-         WHERE ct.campaign_id = $1 AND (ct.tenant_id = $2 OR ct.tenant_id IS NULL)
-         ORDER BY ct.order_index`
-      : `SELECT ct.*, t.template_name, w.name as account_name, w.phone_number
-         FROM campaign_templates ct
-         LEFT JOIN templates t ON ct.template_id = t.id
-         LEFT JOIN whatsapp_accounts w ON ct.whatsapp_account_id = w.id
-         WHERE ct.campaign_id = $1
-         ORDER BY ct.order_index`;
-    
-    const templatesResult = tenantId
-      ? await query(templatesQuery, [campaignId, tenantId])
-      : await query(templatesQuery, [campaignId]);
-    
-    const templates = templatesResult.rows;
+      // Buscar dados da campanha
+      const campaign = await CampaignModel.findById(campaignId, tenantId);
+      
+      if (!campaign) {
+        throw new Error('Campanha não encontrada');
+      }
 
-    // Buscar mensagens da campanha
-    const messagesResult = await query(
-      `SELECT m.*, c.name as contact_name, c.phone_number as contact_phone,
-              w.name as account_name, w.phone_number as account_phone
-       FROM messages m
-       LEFT JOIN contacts c ON m.contact_id = c.id
-       LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id
-       WHERE m.campaign_id = $1
-       ORDER BY m.created_at`,
-      [campaignId]
-    );
-    const messages = messagesResult.rows;
+      console.log(`📋 Tipo de campanha: ${campaign.campaign_type || 'oficial (null)'}`);
 
-    // Buscar estatísticas por conta
-    const accountStatsResult = await query(
-      `SELECT 
-        w.id,
-        w.name,
-        w.phone_number,
-        COUNT(DISTINCT m.id) as total_messages,
-        COUNT(DISTINCT CASE WHEN m.status = 'sent' THEN m.id END) as sent_count,
-        COUNT(DISTINCT CASE WHEN m.status = 'delivered' THEN m.id END) as delivered_count,
-        COUNT(DISTINCT CASE WHEN m.status = 'read' THEN m.id END) as read_count,
-        COUNT(DISTINCT CASE WHEN m.status = 'failed' THEN m.id END) as failed_count,
-        STRING_AGG(DISTINCT m.template_name, ', ') as templates_used
-       FROM whatsapp_accounts w
-       LEFT JOIN messages m ON m.whatsapp_account_id = w.id AND m.campaign_id = $1
-       WHERE w.id IN (SELECT DISTINCT whatsapp_account_id FROM campaign_templates WHERE campaign_id = $1)
-       GROUP BY w.id, w.name, w.phone_number`,
-      [campaignId]
-    );
-    const accountStats = accountStatsResult.rows;
+      // Buscar templates da campanha
+      // ⚠️ IMPORTANTE: campaign_templates pode ter whatsapp_account_id (Oficial) ou instance_id (QR Connect)
+      let templates = [];
+      
+      try {
+        if (campaign.campaign_type === 'qr_connect') {
+          // Templates QR Connect
+          console.log('🔍 Buscando templates QR Connect...');
+          const templatesQuery = `
+            SELECT ct.id, ct.campaign_id, ct.template_id, ct.instance_id, 
+                   ct.order_index, ct.created_at, ct.updated_at,
+                   t.template_name, i.name as account_name, i.instance_name as phone_number
+            FROM campaign_templates ct
+            LEFT JOIN templates t ON ct.template_id = t.id
+            LEFT JOIN qr_instances i ON ct.instance_id = i.id
+            WHERE ct.campaign_id = $1
+            ORDER BY ct.order_index`;
+          const templatesResult = await query(templatesQuery, [campaignId]);
+          templates = templatesResult.rows;
+          console.log(`✅ ${templates.length} templates QR Connect encontrados`);
+        } else {
+          // Templates API Oficial
+          console.log('🔍 Buscando templates API Oficial...');
+          const templatesQuery = `
+            SELECT ct.id, ct.campaign_id, ct.template_id, ct.whatsapp_account_id, 
+                   ct.order_index, ct.created_at, ct.updated_at,
+                   t.template_name, w.name as account_name, w.phone_number
+            FROM campaign_templates ct
+            LEFT JOIN templates t ON ct.template_id = t.id
+            LEFT JOIN whatsapp_accounts w ON ct.whatsapp_account_id = w.id
+            WHERE ct.campaign_id = $1
+            ORDER BY ct.order_index`;
+          const templatesResult = await query(templatesQuery, [campaignId]);
+          templates = templatesResult.rows;
+          console.log(`✅ ${templates.length} templates API Oficial encontrados`);
+        }
+      } catch (templatesError) {
+        console.error('❌ Erro ao buscar templates:', templatesError.message);
+        appendReportError(`Erro ao buscar templates da campanha ${campaignId}`, {
+          type: campaign.campaign_type || 'oficial',
+          error: templatesError.message,
+          stack: templatesError.stack
+        });
+        throw new Error(`Erro ao buscar templates: ${templatesError.message}`);
+      }
 
-    // Buscar contatos únicos
-    const contactsResult = await query(
-      `SELECT DISTINCT 
-        c.name,
-        c.phone_number,
-        m.status,
-        m.template_name
-       FROM contacts c
-       LEFT JOIN messages m ON m.contact_id = c.id AND m.campaign_id = $1
-       WHERE c.id IN (
-         SELECT DISTINCT contact_id FROM messages WHERE campaign_id = $1
-       )
-       ORDER BY c.name`,
-      [campaignId]
-    );
-    const contacts = contactsResult.rows;
+      // Buscar mensagens da campanha
+      // ⚠️ IMPORTANTE: API Oficial usa tabela 'messages', QR Connect usa 'qr_campaign_messages'
+      let messages = [];
+      
+      try {
+        if (campaign.campaign_type === 'qr_connect') {
+          // Mensagens QR Connect
+          console.log('🔍 Buscando mensagens QR Connect...');
+          const messagesResult = await query(
+            `SELECT m.*, c.name as contact_name, c.phone_number as contact_phone,
+                    i.name as account_name, i.instance_name as account_phone
+             FROM qr_campaign_messages m
+             LEFT JOIN qr_campaign_contacts c ON m.contact_id = c.id
+             LEFT JOIN qr_instances i ON m.instance_id = i.id
+             WHERE m.campaign_id = $1
+             ORDER BY m.created_at`,
+            [campaignId]
+          );
+          messages = messagesResult.rows;
+          console.log(`✅ ${messages.length} mensagens QR Connect encontradas`);
+        } else {
+          // Mensagens API Oficial
+          console.log('🔍 Buscando mensagens API Oficial...');
+          const messagesResult = await query(
+            `SELECT m.*, c.name as contact_name, c.phone_number as contact_phone,
+                    w.name as account_name, w.phone_number as account_phone
+             FROM messages m
+             LEFT JOIN contacts c ON m.contact_id = c.id
+             LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id
+             WHERE m.campaign_id = $1
+             ORDER BY m.created_at`,
+            [campaignId]
+          );
+          messages = messagesResult.rows;
+          console.log(`✅ ${messages.length} mensagens API Oficial encontradas`);
+        }
+      } catch (messagesError) {
+        console.error('❌ Erro ao buscar mensagens:', messagesError.message);
+        appendReportError(`Erro ao buscar mensagens da campanha ${campaignId}`, {
+          type: campaign.campaign_type || 'oficial',
+          error: messagesError.message,
+          stack: messagesError.stack
+        });
+        throw new Error(`Erro ao buscar mensagens: ${messagesError.message}`);
+      }
 
-    // Buscar apenas falhas
-    const failedMessages = messages.filter(m => m.status === 'failed');
+      // Buscar estatísticas por conta
+      let accountStats = [];
+      
+      try {
+        if (campaign.campaign_type === 'qr_connect') {
+          // Estatísticas QR Connect
+          console.log('🔍 Buscando estatísticas QR Connect...');
+          const accountStatsResult = await query(
+            `SELECT 
+              i.id,
+              i.name,
+              i.instance_name as phone_number,
+              COUNT(DISTINCT m.id) as total_messages,
+              COUNT(DISTINCT CASE WHEN m.status = 'sent' THEN m.id END) as sent_count,
+              COUNT(DISTINCT CASE WHEN m.status = 'delivered' THEN m.id END) as delivered_count,
+              COUNT(DISTINCT CASE WHEN m.status = 'read' THEN m.id END) as read_count,
+              COUNT(DISTINCT CASE WHEN m.status = 'failed' THEN m.id END) as failed_count,
+              STRING_AGG(DISTINCT m.template_name, ', ') as templates_used
+             FROM qr_instances i
+             LEFT JOIN qr_campaign_messages m ON m.instance_id = i.id AND m.campaign_id = $1
+             WHERE i.id IN (SELECT DISTINCT instance_id FROM qr_campaign_contacts WHERE campaign_id = $1)
+             GROUP BY i.id, i.name, i.instance_name`,
+            [campaignId]
+          );
+          accountStats = accountStatsResult.rows;
+          console.log(`✅ ${accountStats.length} instâncias QR Connect encontradas`);
+        } else {
+          // Estatísticas API Oficial
+          console.log('🔍 Buscando estatísticas API Oficial...');
+          const accountStatsResult = await query(
+            `SELECT 
+              w.id,
+              w.name,
+              w.phone_number,
+              COUNT(DISTINCT m.id) as total_messages,
+              COUNT(DISTINCT CASE WHEN m.status = 'sent' THEN m.id END) as sent_count,
+              COUNT(DISTINCT CASE WHEN m.status = 'delivered' THEN m.id END) as delivered_count,
+              COUNT(DISTINCT CASE WHEN m.status = 'read' THEN m.id END) as read_count,
+              COUNT(DISTINCT CASE WHEN m.status = 'failed' THEN m.id END) as failed_count,
+              STRING_AGG(DISTINCT m.template_name, ', ') as templates_used
+             FROM whatsapp_accounts w
+             LEFT JOIN messages m ON m.whatsapp_account_id = w.id AND m.campaign_id = $1
+             WHERE w.id IN (SELECT DISTINCT whatsapp_account_id FROM campaign_templates WHERE campaign_id = $1)
+             GROUP BY w.id, w.name, w.phone_number`,
+            [campaignId]
+          );
+          accountStats = accountStatsResult.rows;
+          console.log(`✅ ${accountStats.length} contas API Oficial encontradas`);
+        }
+      } catch (statsError) {
+        console.error('❌ Erro ao buscar estatísticas:', statsError.message);
+        appendReportError(`Erro ao buscar estatísticas da campanha ${campaignId}`, {
+          type: campaign.campaign_type || 'oficial',
+          error: statsError.message,
+          stack: statsError.stack
+        });
+        throw new Error(`Erro ao buscar estatísticas: ${statsError.message}`);
+      }
 
-    // Buscar cliques em botões
-    const buttonClicksResult = await query(
-      `SELECT 
-        bc.id,
-        bc.phone_number,
-        bc.contact_name,
-        bc.button_text,
-        bc.button_payload,
-        bc.clicked_at,
-        c.name as contact_name_full,
-        m.template_name,
-        m.sent_at as message_sent_at,
-        w.name as account_name
-       FROM button_clicks bc
-       LEFT JOIN contacts c ON bc.contact_id = c.id
-       LEFT JOIN messages m ON bc.message_id = m.id
-       LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id
-       WHERE bc.campaign_id = $1
-       ORDER BY bc.clicked_at DESC`,
-      [campaignId]
-    );
-    const buttonClicks = buttonClicksResult.rows;
+      // Buscar contatos únicos
+      let contacts = [];
+      
+      try {
+        if (campaign.campaign_type === 'qr_connect') {
+          // Contatos QR Connect
+          console.log('🔍 Buscando contatos QR Connect...');
+          const contactsResult = await query(
+            `SELECT DISTINCT 
+              c.name,
+              c.phone_number,
+              m.status,
+              m.template_name
+             FROM qr_campaign_contacts c
+             LEFT JOIN qr_campaign_messages m ON m.contact_id = c.id AND m.campaign_id = $1
+             WHERE c.campaign_id = $1
+             ORDER BY c.name`,
+            [campaignId]
+          );
+          contacts = contactsResult.rows;
+          console.log(`✅ ${contacts.length} contatos QR Connect encontrados`);
+        } else {
+          // Contatos API Oficial
+          console.log('🔍 Buscando contatos API Oficial...');
+          const contactsResult = await query(
+            `SELECT DISTINCT 
+              c.name,
+              c.phone_number,
+              m.status,
+              m.template_name
+             FROM contacts c
+             LEFT JOIN messages m ON m.contact_id = c.id AND m.campaign_id = $1
+             WHERE c.id IN (
+               SELECT DISTINCT contact_id FROM messages WHERE campaign_id = $1
+             )
+             ORDER BY c.name`,
+            [campaignId]
+          );
+          contacts = contactsResult.rows;
+          console.log(`✅ ${contacts.length} contatos API Oficial encontrados`);
+        }
+      } catch (contactsError) {
+        console.error('❌ Erro ao buscar contatos:', contactsError.message);
+        appendReportError(`Erro ao buscar contatos da campanha ${campaignId}`, {
+          type: campaign.campaign_type || 'oficial',
+          error: contactsError.message,
+          stack: contactsError.stack
+        });
+        throw new Error(`Erro ao buscar contatos: ${contactsError.message}`);
+      }
 
-    // Criar workbook
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Disparador WhatsApp API';
-    workbook.created = new Date();
+      // Buscar apenas falhas
+      const failedMessages = messages.filter(m => m.status === 'failed');
+
+      // Buscar cliques em botões
+      let buttonClicks = [];
+      try {
+        if (campaign.campaign_type === 'qr_connect') {
+          // Button clicks para QR Connect (se implementado)
+          const buttonClicksResult = await query(
+            `SELECT 
+              bc.id,
+              bc.phone_number,
+              bc.contact_name,
+              bc.button_text,
+              bc.button_payload,
+              bc.clicked_at,
+              c.name as contact_name_full,
+              m.template_name,
+              m.sent_at as message_sent_at,
+              i.name as account_name
+             FROM button_clicks bc
+             LEFT JOIN qr_campaign_contacts c ON bc.contact_id = c.id
+             LEFT JOIN qr_campaign_messages m ON bc.message_id = m.id
+             LEFT JOIN qr_instances i ON m.instance_id = i.id
+             WHERE bc.campaign_id = $1
+             ORDER BY bc.clicked_at DESC`,
+            [campaignId]
+          );
+          buttonClicks = buttonClicksResult.rows;
+        } else {
+          // Button clicks para API Oficial
+          const buttonClicksResult = await query(
+            `SELECT 
+              bc.id,
+              bc.phone_number,
+              bc.contact_name,
+              bc.button_text,
+              bc.button_payload,
+              bc.clicked_at,
+              c.name as contact_name_full,
+              m.template_name,
+              m.sent_at as message_sent_at,
+              w.name as account_name
+             FROM button_clicks bc
+             LEFT JOIN contacts c ON bc.contact_id = c.id
+             LEFT JOIN messages m ON bc.message_id = m.id
+             LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id
+             WHERE bc.campaign_id = $1
+             ORDER BY bc.clicked_at DESC`,
+            [campaignId]
+          );
+          buttonClicks = buttonClicksResult.rows;
+        }
+      } catch (buttonError) {
+        console.warn('⚠️ Erro ao buscar cliques de botões (pode ser normal se não houver cliques):', buttonError.message);
+        buttonClicks = [];
+      }
+
+      // Criar workbook
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Disparador WhatsApp API';
+      workbook.created = new Date();
 
     // ========================================
     // ABA 1: Resumo da Campanha
@@ -385,11 +568,19 @@ export class ReportService {
       });
     });
 
-    console.log('✅ Relatório Excel gerado com sucesso!');
+      console.log('✅ Relatório Excel gerado com sucesso!');
 
-    // Gerar buffer
-    const buffer = await workbook.xlsx.writeBuffer();
-    return buffer as ExcelJS.Buffer;
+      // Gerar buffer
+      const buffer = await workbook.xlsx.writeBuffer();
+      return buffer as ExcelJS.Buffer;
+    } catch (error: any) {
+      appendReportError(`Erro ao gerar relatório da campanha ${campaignId}`, {
+        tenantId,
+        message: error.message,
+        stack: error.stack
+      });
+      throw error;
+    }
   }
 
   private formatDate(date: any): string {
