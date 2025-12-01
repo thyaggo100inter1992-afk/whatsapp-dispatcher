@@ -1499,7 +1499,8 @@ router.get('/instances/:id/status', async (req, res) => {
       console.log('🔍 DEBUG - statusResult.data completo:', JSON.stringify(statusResult.data, null, 2));
       console.log('============================================\n');
 
-      await pool.query(`
+      // ✅ Usando tenantQuery para respeitar RLS e garantir tenant correto
+      await tenantQuery(req, `
         UPDATE uaz_instances 
         SET is_connected = $1,
             status = $2,
@@ -1508,8 +1509,8 @@ router.get('/instances/:id/status', async (req, res) => {
             profile_pic_url = COALESCE($5, profile_pic_url),
             last_connected_at = CASE WHEN $1 = true THEN NOW() ELSE last_connected_at END,
             updated_at = NOW()
-        WHERE id = $6
-      `, [isConnected, statusState, phoneNumber, profileName, profilePicUrl, id]);
+        WHERE id = $6 AND tenant_id = $7
+      `, [isConnected, statusState, phoneNumber, profileName, profilePicUrl, id, tenantId]);
 
       // 🔍 VERIFICAÇÃO DE DUPLICAÇÃO AUTOMÁTICA
       // Se acabou de conectar E tem número, verificar se já existe em outra instância
@@ -1704,13 +1705,14 @@ router.get('/instances/:id/status', async (req, res) => {
       // Se o erro for "Invalid token", marcar a instância como desconectada no banco
       if (statusResult.error && statusResult.error.toLowerCase().includes('invalid token')) {
         console.log('⚠️ Token inválido detectado! Marcando instância como desconectada no banco...');
-        await pool.query(`
+        // ✅ Usando tenantQuery para respeitar RLS e garantir tenant correto
+        await tenantQuery(req, `
           UPDATE uaz_instances 
           SET is_connected = false,
               status = 'disconnected',
               updated_at = NOW()
-          WHERE id = $1
-        `, [id]);
+          WHERE id = $1 AND tenant_id = $2
+        `, [id, tenantId]);
         console.log('✅ Instância marcada como desconectada no banco de dados');
       }
       
