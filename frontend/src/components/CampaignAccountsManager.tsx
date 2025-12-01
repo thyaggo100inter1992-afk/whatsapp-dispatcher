@@ -55,7 +55,7 @@ export const CampaignAccountsManager: React.FC<CampaignAccountsManagerProps> = (
 
   const fetchAccountsStatus = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('@WhatsAppDispatcher:token');
       console.log('🔐 Token sendo usado:', token ? `${token.substring(0, 20)}...` : 'NENHUM TOKEN!');
       
       const response = await fetch(`${API_URL}/campaigns/${campaignId}/accounts-status`, {
@@ -94,7 +94,7 @@ export const CampaignAccountsManager: React.FC<CampaignAccountsManagerProps> = (
     setRemovingAccount(accountId);
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('@WhatsAppDispatcher:token');
       const response = await fetch(`${API_URL}/campaigns/${campaignId}/remove-account`, {
         method: 'POST',
         headers: { 
@@ -145,7 +145,7 @@ export const CampaignAccountsManager: React.FC<CampaignAccountsManagerProps> = (
     setAddingAccount(accountId);
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('@WhatsAppDispatcher:token');
       const response = await fetch(`${API_URL}/campaigns/${campaignId}/add-account`, {
         method: 'POST',
         headers: { 
@@ -181,7 +181,7 @@ export const CampaignAccountsManager: React.FC<CampaignAccountsManagerProps> = (
     setSavingConfig(true);
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('@WhatsAppDispatcher:token');
       const response = await fetch(`${API_URL}/campaigns/${campaignId}/auto-remove-config`, {
         method: 'PUT',
         headers: { 
