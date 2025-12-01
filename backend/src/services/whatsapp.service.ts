@@ -761,6 +761,110 @@ export class WhatsAppService {
       };
     }
   }
+
+  /**
+   * 📱 Verifica se um número tem WhatsApp usando a API Oficial do WhatsApp Business
+   * @param phoneNumberId - ID do número de telefone da API do WhatsApp
+   * @param phoneNumber - Número de telefone para verificar (formato internacional)
+   * @param accessToken - Token de acesso da API do WhatsApp
+   * @param tenantId - ID do tenant (para proxy)
+   * @returns Objeto com success, exists e wa_id
+   */
+  async checkPhoneNumber(
+    phoneNumberId: string,
+    phoneNumber: string,
+    accessToken: string,
+    tenantId?: number
+  ): Promise<{ success: boolean; exists: boolean; wa_id?: string; error?: string }> {
+    try {
+      console.log(`📱 [WhatsApp API] Verificando número: ${phoneNumber}`);
+      
+      // Limpar número (remover caracteres especiais, manter apenas dígitos e +)
+      const cleanPhone = phoneNumber.replace(/[^\d+]/g, '');
+      
+      // Endpoint da API do WhatsApp para verificar números
+      const url = `${this.baseUrl}/${phoneNumberId}/contacts`;
+      
+      const requestConfig: AxiosRequestConfig = {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000, // 30 segundos
+      };
+      
+      // Aplicar proxy se configurado
+      if (tenantId) {
+        const proxyConfig = await getProxyConfigFromAccount(null, tenantId);
+        if (proxyConfig) {
+          applyProxyToRequest(requestConfig, proxyConfig, 'WhatsApp API');
+          console.log(`🌐 [WhatsApp API] Usando proxy: ${formatProxyInfo(proxyConfig)}`);
+        }
+      }
+      
+      const payload = {
+        blocking: 'wait', // Aguardar resposta
+        contacts: [cleanPhone],
+        force_check: true // Forçar verificação mesmo se já estiver em cache
+      };
+      
+      console.log(`📤 [WhatsApp API] Enviando requisição para: ${url}`);
+      console.log(`📦 [WhatsApp API] Payload:`, payload);
+      
+      const response = await axios.post(url, payload, requestConfig);
+      
+      console.log(`📬 [WhatsApp API] Resposta recebida:`, JSON.stringify(response.data, null, 2));
+      
+      // A resposta vem no formato:
+      // {
+      //   "contacts": [
+      //     {
+      //       "input": "5511999887766",
+      //       "wa_id": "5511999887766",
+      //       "status": "valid"
+      //     }
+      //   ]
+      // }
+      
+      const contacts = response.data?.contacts || [];
+      
+      if (contacts.length === 0) {
+        console.log(`❌ [WhatsApp API] Nenhum contato retornado`);
+        return {
+          success: true,
+          exists: false
+        };
+      }
+      
+      const contact = contacts[0];
+      const exists = contact.status === 'valid' && !!contact.wa_id;
+      const wa_id = contact.wa_id || null;
+      
+      console.log(`${exists ? '✅' : '❌'} [WhatsApp API] ${phoneNumber}: ${exists ? 'TEM WhatsApp' : 'NÃO tem WhatsApp'}`);
+      if (wa_id) {
+        console.log(`   📱 [WhatsApp API] WA ID: ${wa_id}`);
+      }
+      
+      return {
+        success: true,
+        exists: exists,
+        wa_id: wa_id
+      };
+    } catch (error: any) {
+      console.error(`❌ [WhatsApp API] Erro ao verificar número ${phoneNumber}:`, error.message);
+      
+      if (error.response) {
+        console.error(`   Status: ${error.response.status}`);
+        console.error(`   Resposta:`, JSON.stringify(error.response.data, null, 2));
+      }
+      
+      return {
+        success: false,
+        exists: false,
+        error: error.response?.data?.error?.message || error.message
+      };
+    }
+  }
 }
 
 export const whatsappService = new WhatsAppService();
