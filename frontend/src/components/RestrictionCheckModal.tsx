@@ -50,8 +50,9 @@ export default function RestrictionCheckModal({
   if (!isOpen || !result) return null;
 
   // Calcular impacto na campanha
-  const messagesWithRestricted = result.total_checked * totalTemplates;
-  const messagesWithoutRestricted = result.clean_count * totalTemplates;
+  // CORREÇÃO: 1 contato = 1 mensagem (sistema rotaciona entre templates automaticamente)
+  const messagesWithRestricted = result.total_checked;
+  const messagesWithoutRestricted = result.clean_count;
   const messagesSaved = messagesWithRestricted - messagesWithoutRestricted;
 
   const timeWithRestricted = Math.ceil(
@@ -270,8 +271,11 @@ export default function RestrictionCheckModal({
                 <p className="text-sm font-bold text-green-300 mb-3">✅ SE EXCLUIR os restritos:</p>
                 <ul className="space-y-2 text-sm text-white/80">
                   <li>
-                    • <strong>{result.clean_count}</strong> contatos × <strong>{totalTemplates}</strong> templates ={' '}
+                    • <strong>{result.clean_count}</strong> contatos ={' '}
                     <strong className="text-green-400">{messagesWithoutRestricted} mensagens</strong>
+                  </li>
+                  <li className="text-white/60 text-xs">
+                    (Sistema rotaciona entre {totalTemplates} template{totalTemplates > 1 ? 's' : ''} automaticamente)
                   </li>
                   <li>
                     • Tempo estimado: <strong className="text-green-400">~{timeWithoutRestricted} min</strong>
@@ -287,8 +291,11 @@ export default function RestrictionCheckModal({
                 <p className="text-sm font-bold text-yellow-300 mb-3">⚠️ SE MANTER todos:</p>
                 <ul className="space-y-2 text-sm text-white/80">
                   <li>
-                    • <strong>{result.total_checked}</strong> contatos × <strong>{totalTemplates}</strong> templates ={' '}
+                    • <strong>{result.total_checked}</strong> contatos ={' '}
                     <strong className="text-yellow-400">{messagesWithRestricted} mensagens</strong>
+                  </li>
+                  <li className="text-white/60 text-xs">
+                    (Sistema rotaciona entre {totalTemplates} template{totalTemplates > 1 ? 's' : ''} automaticamente)
                   </li>
                   <li>
                     • Tempo estimado: <strong className="text-yellow-400">~{timeWithRestricted} min</strong>
