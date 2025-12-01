@@ -1360,53 +1360,132 @@ router.post('/instances/:id/clean-duplicates', async (req, res) => {
       return res.json({ success: true, message: 'Nenhuma duplicata encontrada', deleted: 0 });
     }
     
-    // Deletar TODAS as duplicatas
+    // Analisar e tratar duplicatas de acordo com o status
     let deletedCount = 0;
+    let keptOldConnected = false;
+    
     for (const duplicate of duplicates) {
-      const isConnected = duplicate.status === 'connected' || duplicate.state === 'open';
+      const isConnected = duplicate.status === 'connected' || duplicate.state === 'open' || duplicate.connected === true;
       
       console.log('\n📋 Duplicata encontrada:');
       console.log('   └─ Token:', duplicate.token?.substring(0, 20) + '...');
       console.log('   └─ Status:', isConnected ? '🟢 CONECTADA' : '🔴 DESCONECTADA');
       console.log('   └─ Nome:', duplicate.name);
       
-      try {
-        // Deletar da UAZ API
-        console.log('🗑️  Deletando da UAZ API...');
-        const deleteResult = await tenantUazService.deleteInstance(duplicate.token, null);
+      if (isConnected) {
+        // ✅ CASO 1: Duplicata está CONECTADA
+        // REGRA: Deletar a instância ATUAL e importar a ANTIGA
+        console.log('✅ Duplicata está CONECTADA! Mantendo a antiga e removendo a atual...');
         
-        if (deleteResult.success) {
-          console.log('✅ Deletada da UAZ API com sucesso!');
-          deletedCount++;
-          
-          // Se estiver no banco local, deletar também
+        try {
+          // 1. Verificar se a duplicata já está no banco local
           const localDuplicate = await tenantQuery(req, `
             SELECT id FROM uaz_instances 
             WHERE instance_token = $1 AND tenant_id = $2
           `, [duplicate.token, tenantId]);
           
-          if (localDuplicate.rows.length > 0) {
+          // 2. Se NÃO estiver, importar
+          if (localDuplicate.rows.length === 0) {
+            console.log('📥 Importando instância conectada para o banco local...');
+            
+            const proxyConfig = instance.proxy_id ? await tenantQuery(req, `
+              SELECT * FROM proxies WHERE id = $1
+            `, [instance.proxy_id]) : null;
+            
+            const proxyId = proxyConfig && proxyConfig.rows.length > 0 ? proxyConfig.rows[0].id : null;
+            
             await tenantQuery(req, `
-              DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2
-            `, [localDuplicate.rows[0].id, tenantId]);
-            console.log('✅ Deletada do banco local também!');
+              INSERT INTO uaz_instances (
+                tenant_id, name, session_name, instance_token, 
+                phone_number, is_connected, webhook_url, proxy_id, created_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+            `, [
+              tenantId,
+              duplicate.name,
+              duplicate.name,
+              duplicate.token,
+              duplicate.owner || duplicate.phoneNumber || null,
+              true,
+              instance.webhook_url || null,
+              proxyId
+            ]);
+            
+            console.log('✅ Instância conectada importada com sucesso!');
+          } else {
+            console.log('ℹ️  Instância conectada já existe no banco local');
           }
-        } else {
-          console.warn('⚠️  Falha ao deletar:', deleteResult.error);
+          
+          // 3. Deletar a instância ATUAL (nova) do banco local
+          console.log('🗑️  Deletando instância atual (nova) do banco local...');
+          await tenantQuery(req, `
+            DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2
+          `, [id, tenantId]);
+          console.log('✅ Instância atual deletada!');
+          
+          keptOldConnected = true;
+          deletedCount++; // Conta como "tratada"
+          
+        } catch (err) {
+          console.error('❌ Erro ao tratar duplicata conectada:', err.message);
         }
-      } catch (err) {
-        console.error('❌ Erro ao deletar duplicata:', err.message);
+        
+      } else {
+        // 🗑️ CASO 2: Duplicata está DESCONECTADA
+        // REGRA: Deletar a duplicata antiga e manter a atual
+        console.log('🗑️  Duplicata está DESCONECTADA! Deletando antiga...');
+        
+        try {
+          // Deletar da UAZ API
+          const deleteResult = await tenantUazService.deleteInstance(duplicate.token, null);
+          
+          if (deleteResult.success) {
+            console.log('✅ Deletada da UAZ API com sucesso!');
+            
+            // Se estiver no banco local, deletar também
+            const localDuplicate = await tenantQuery(req, `
+              SELECT id FROM uaz_instances 
+              WHERE instance_token = $1 AND tenant_id = $2
+            `, [duplicate.token, tenantId]);
+            
+            if (localDuplicate.rows.length > 0) {
+              await tenantQuery(req, `
+                DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2
+              `, [localDuplicate.rows[0].id, tenantId]);
+              console.log('✅ Deletada do banco local também!');
+            }
+            
+            deletedCount++;
+          } else {
+            console.warn('⚠️  Falha ao deletar:', deleteResult.error);
+          }
+        } catch (err) {
+          console.error('❌ Erro ao deletar duplicata desconectada:', err.message);
+        }
       }
     }
     
-    console.log(`\n✅ Limpeza concluída! ${deletedCount} duplicata(s) deletada(s)`);
+    console.log(`\n✅ Limpeza concluída! ${deletedCount} duplicata(s) tratada(s)`);
     console.log('🧹 ========================================\n');
     
-    res.json({
-      success: true,
-      message: `${deletedCount} duplicata(s) deletada(s) com sucesso`,
-      deleted: deletedCount
-    });
+    if (keptOldConnected) {
+      // Se manteve uma duplicata conectada, a instância atual foi deletada
+      res.json({
+        success: true,
+        message: 'Duplicata conectada encontrada e mantida. Instância atual foi removida.',
+        deleted: deletedCount,
+        keptOldConnected: true,
+        redirect: true
+      });
+    } else {
+      // Se deletou duplicatas desconectadas
+      res.json({
+        success: true,
+        message: `${deletedCount} duplicata(s) desconectada(s) removida(s) com sucesso`,
+        deleted: deletedCount,
+        keptOldConnected: false,
+        redirect: false
+      });
+    }
     
   } catch (error) {
     console.error('❌ Erro na limpeza de duplicatas:', error);

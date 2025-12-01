@@ -396,9 +396,17 @@ export default function QrCodeUaz() {
                       console.log('📋 Resposta da limpeza:', response.data);
                       
                       if (response.data.success) {
-                        if (response.data.deleted > 0) {
-                          success(`✅ ${response.data.deleted} duplicata(s) removida(s) com sucesso!`);
+                        if (response.data.keptOldConnected) {
+                          // CASO 1: Manteve duplicata conectada e deletou a atual
+                          warning('⚠️ ' + response.data.message);
+                          setTimeout(() => {
+                            router.push('/configuracoes-uaz');
+                          }, 2000);
+                        } else if (response.data.deleted > 0) {
+                          // CASO 2: Deletou duplicatas desconectadas
+                          success('✅ ' + response.data.message);
                         } else {
+                          // CASO 3: Nenhuma duplicata encontrada
                           success('✅ Nenhuma duplicata encontrada!');
                         }
                       } else {
