@@ -223,6 +223,9 @@ export class ReportService {
           );
           console.log(`   📊 Mensagens da campanha:`, messagesCountResult.rows[0]);
           
+          // LOG ARQUIVO: Garantir que aparece
+          appendReportError(`[DEBUG] Campanha ${campaignId} - Mensagens`, messagesCountResult.rows[0]);
+          
           const contactsResult = await query(
             `SELECT 
               c.id,
@@ -249,9 +252,15 @@ export class ReportService {
           contacts = contactsResult.rows;
           console.log(`✅ ${contacts.length} contatos API Oficial encontrados`);
           
+          // LOG ARQUIVO: Resultado
+          appendReportError(`[DEBUG] Campanha ${campaignId} - ${contacts.length} contatos encontrados`);
+          
           if (contacts.length === 0 && messagesCountResult.rows[0].total > 0) {
             console.error('⚠️ AVISO: Existem mensagens mas nenhum contato foi encontrado!');
             console.error('   Isso pode indicar que contact_id não está sendo salvo corretamente');
+            
+            // LOG ARQUIVO: Problema detectado!
+            appendReportError(`[PROBLEMA] Campanha ${campaignId} - ${messagesCountResult.rows[0].total} mensagens mas 0 contatos! contact_id pode estar NULL`);
           }
         }
       } catch (contactsError) {
