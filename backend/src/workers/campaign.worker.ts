@@ -95,6 +95,10 @@ class CampaignWorker {
   // ⚡ NOVO: Cache de Health Check para evitar chamadas duplicadas na mesma conta
   private healthCheckCache: Map<number, { timestamp: number; checking: Promise<void> | null }> = new Map();
   private readonly HEALTH_CHECK_CACHE_TTL = 30000; // 30 segundos
+  
+  // 🔥 CORREÇÃO: Contador de mensagens do ciclo atual POR CAMPANHA
+  // Cada campanha tem seu próprio contador isolado para a pausa programada
+  private campaignCycleCounters: Map<number, number> = new Map();
 
   /**
    * ⭐ VERSÃO ASSÍNCRONA: Busca estado da pausa do banco (persistente)
@@ -491,6 +495,11 @@ class CampaignWorker {
       console.log(`🔍 [DEBUG] Status da campanha ${campaign.id}: ${campaign.status}`);
       if (campaign.status === 'pending' || campaign.status === 'scheduled') {
         console.log(`🚀 [DEBUG] Iniciando campanha ${campaign.id}: ${campaign.name}`);
+        
+        // 🔥 CORREÇÃO: Inicializar contador do ciclo em 0 para nova campanha
+        this.campaignCycleCounters.set(campaign.id, 0);
+        console.log(`🔢 [Campanha ${campaign.id}] Contador do ciclo inicializado em 0`);
+        
         await this.updateCampaignStatus(campaign.id, 'running', campaign.tenant_id);
         await query('UPDATE campaigns SET started_at = NOW() WHERE id = $1 AND tenant_id = $2', [campaign.id, campaign.tenant_id]);
         campaign.status = 'running'; // ⭐ CORRIGIDO: Atualizar objeto local também!
@@ -512,6 +521,15 @@ class CampaignWorker {
         console.log(`⏸️  ✅ OUTRAS campanhas continuam rodando normalmente!`);
         console.log(`⏸️ ═══════════════════════════════════════════════════`);
         return; // ✅ Sair sem processar, deixar outras campanhas rodarem
+      }
+      
+      // 🔥 CORREÇÃO: Se a pausa acabou, garantir que o contador do ciclo está zerado
+      if (!pauseState || pauseState.remainingSeconds <= 0) {
+        const cycleCount = this.campaignCycleCounters.get(campaign.id) || 0;
+        if (cycleCount > 0) {
+          console.log(`✅ [Campanha ${campaign.id}] Pausa concluída! Resetando contador do ciclo (era ${cycleCount}, agora 0)`);
+          this.campaignCycleCounters.set(campaign.id, 0);
+        }
       }
       
       console.log(`✅ [DEBUG] Campanha ${campaign.id} não está em pausa programada`);
@@ -608,6 +626,11 @@ class CampaignWorker {
     if (campaign.sent_count >= totalMessages) {
       console.log(`✅ Campanha ${campaign.id} CONCLUÍDA!`);
       console.log(`   ✅ Todas as ${totalMessages} mensagens foram enviadas!`);
+      
+      // 🔥 CORREÇÃO: Limpar contador do ciclo ao completar campanha
+      this.campaignCycleCounters.delete(campaign.id);
+      console.log(`🧹 [Campanha ${campaign.id}] Contador do ciclo removido (campanha concluída)`);
+      
       await this.updateCampaignStatus(campaign.id, 'completed', campaign.tenant_id);
       await query('UPDATE campaigns SET completed_at = NOW() WHERE id = $1 AND tenant_id = $2', [campaign.id, campaign.tenant_id]);
       return;
@@ -654,6 +677,10 @@ class CampaignWorker {
       // Verificar se ainda está no horário de trabalho
       if (!this.isWorkingHours(campaign.schedule_config)) {
         console.log(`⏸️ Campanha ${campaign.id} saiu do horário de trabalho`);
+        
+        // 🔥 CORREÇÃO: Manter contador do ciclo ao pausar por horário (será retomado depois)
+        // NÃO deletar o contador, apenas deixar pausado
+        
         await this.updateCampaignStatus(campaign.id, 'paused', campaign.tenant_id);
         return;
       }
@@ -745,6 +772,74 @@ class CampaignWorker {
         console.log(`   ✅ PROSSEGUINDO COM ENVIO...`);
         console.log('═══════════════════════════════════════════════════\n');
         
+        // 📱 VERIFICAR SE O NÚMERO TEM WHATSAPP ANTES DE ENVIAR (API OFICIAL)
+        console.log('📱 ═══════════════════════════════════════════════════');
+        console.log('📱 VERIFICANDO SE NÚMERO TEM WHATSAPP (API OFICIAL)...');
+        console.log('📱 ═══════════════════════════════════════════════════');
+        console.log(`   📞 Número: ${contact.phone_number}`);
+        
+        const hasWhatsAppCheck = await this.checkIfNumberHasWhatsAppOfficial(
+          template.access_token,
+          template.phone_number_id,
+          contact.phone_number,
+          campaign.tenant_id
+        );
+        
+        if (!hasWhatsAppCheck.success) {
+          console.log('⚠️ ═══════════════════════════════════════════════════');
+          console.log('⚠️ ERRO AO VERIFICAR WHATSAPP - ENVIANDO MESMO ASSIM');
+          console.log('⚠️ ═══════════════════════════════════════════════════');
+          console.log(`   Erro: ${hasWhatsAppCheck.error}`);
+          console.log('═══════════════════════════════════════════════════\n');
+          // Continuar com envio mesmo se a verificação falhar
+        } else if (!hasWhatsAppCheck.hasWhatsApp) {
+          console.log('📵 ═══════════════════════════════════════════════════');
+          console.log('📵 NÚMERO NÃO TEM WHATSAPP!');
+          console.log('📵 ═══════════════════════════════════════════════════');
+          console.log(`   📞 Número: ${contact.phone_number}`);
+          console.log(`   ❌ ENVIO CANCELADO - Marcando como "sem WhatsApp"`);
+          console.log('═══════════════════════════════════════════════════\n');
+          
+          // Marcar como "sem WhatsApp" SEM ENVIAR
+          await query(
+            `INSERT INTO messages 
+             (campaign_id, campaign_template_id, contact_id, whatsapp_account_id, phone_number, template_name, status, error_message, tenant_id)
+             VALUES ($1, $2, $3, $4, $5, $6, 'no_whatsapp', 'SEM WHATSAPP', $7)`,
+            [
+              campaign.id,
+              template.id,
+              contact.id,
+              template.whatsapp_account_id,
+              contact.phone_number,
+              template.template_name,
+              campaign.tenant_id
+            ]
+          );
+          
+          // Atualizar contador
+          await query(
+            'UPDATE campaigns SET sent_count = sent_count + 1, failed_count = failed_count + 1, updated_at = NOW() WHERE id = $1 AND tenant_id = $2',
+            [campaign.id, campaign.tenant_id]
+          );
+          
+          campaign.sent_count++;
+          console.log(`📊 [API Oficial] Número marcado como "sem WhatsApp" (não foi enviado)`);
+          console.log(`📊 Progresso: ${campaign.sent_count}/${totalMessages} (${Math.round(campaign.sent_count/totalMessages*100)}%)`);
+          
+          // Aguardar intervalo antes do próximo
+          await this.sleep(campaign.schedule_config.interval_seconds * 1000);
+          continue; // Pular para o próximo contato
+        } else {
+          console.log('✅ ═══════════════════════════════════════════════════');
+          console.log('✅ NÚMERO TEM WHATSAPP - PROSSEGUINDO COM ENVIO');
+          console.log('✅ ═══════════════════════════════════════════════════');
+          console.log(`   📞 Número: ${contact.phone_number}`);
+          if (hasWhatsAppCheck.verifiedName) {
+            console.log(`   ✅ Nome verificado: ${hasWhatsAppCheck.verifiedName}`);
+          }
+          console.log('═══════════════════════════════════════════════════\n');
+        }
+        
         // Enviar mensagem
         await this.sendMessage(campaign, template, contact);
 
@@ -765,11 +860,16 @@ class CampaignWorker {
         // Atualizar o contador local da campanha para próxima iteração
         campaign.sent_count++;
         
+        // 🔥 CORREÇÃO: Incrementar contador do ciclo atual ISOLADO por campanha
+        const currentCycleCount = (this.campaignCycleCounters.get(campaign.id) || 0) + 1;
+        this.campaignCycleCounters.set(campaign.id, currentCycleCount);
+        
         // A rotação é automática baseada no sent_count
         const nextAccountIndex = campaign.sent_count % totalAccounts;
         const nextAccountId = accountIds[nextAccountIndex];
         console.log(`🔄 Próximo envio usará: Conta ${nextAccountIndex + 1} (ID: ${nextAccountId})`);
         console.log(`📊 Progresso: ${campaign.sent_count}/${totalMessages} (${Math.round(campaign.sent_count/totalMessages*100)}%)`);
+        console.log(`🔢 Contador do ciclo atual (Campanha ${campaign.id}): ${currentCycleCount} mensagens`);
 
         // ⭐ RECARREGAR configurações da campanha antes de cada iteração
         // Isso garante que edições feitas durante a execução sejam respeitadas
@@ -785,19 +885,26 @@ class CampaignWorker {
         }
 
         // Aguardar intervalo configurado (agora com valor atualizado)
+        console.log(`⏳ [Campanha ${campaign.id}] Aguardando ${campaign.schedule_config.interval_seconds}s antes da próxima mensagem...`);
         await this.sleep(campaign.schedule_config.interval_seconds * 1000);
 
-        // Verificar pause_config (agora com valores atualizados)
-        if (campaign.pause_config.pause_after > 0 && campaign.sent_count % campaign.pause_config.pause_after === 0) {
+        // 🔥 CORREÇÃO: Verificar pause_config usando contador ISOLADO do ciclo atual
+        // Agora cada campanha tem seu próprio contador independente!
+        if (campaign.pause_config.pause_after > 0 && currentCycleCount >= campaign.pause_config.pause_after) {
           console.log('');
           console.log('⏸️ ═══════════════════════════════════════════');
           console.log(`⏸️  PAUSA AUTOMÁTICA - NÃO-BLOQUEANTE`);
-          console.log(`⏸️  Mensagens enviadas: ${campaign.sent_count}`);
+          console.log(`⏸️  Campanha ID: ${campaign.id}`);
+          console.log(`⏸️  Mensagens no ciclo atual: ${currentCycleCount}`);
+          console.log(`⏸️  Total enviadas: ${campaign.sent_count}/${totalMessages}`);
           console.log(`⏸️  Duração da pausa: ${campaign.pause_config.pause_duration_minutes} minutos`);
           console.log(`⏸️  ✅ Esta campanha será retomada automaticamente em ${campaign.pause_config.pause_duration_minutes} min`);
           console.log(`⏸️  ✅ OUTRAS campanhas continuarão rodando normalmente!`);
           console.log('⏸️ ═══════════════════════════════════════════');
           console.log('');
+          
+          // 🔥 RESETAR contador do ciclo para zero (novo ciclo após a pausa)
+          this.campaignCycleCounters.set(campaign.id, 0);
           
           // ⭐ Registrar início da pausa NO BANCO DE DADOS (persistente)
           await query(
@@ -1135,6 +1242,69 @@ class CampaignWorker {
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 📱 VERIFICAR SE NÚMERO TEM WHATSAPP ANTES DE ENVIAR (API OFICIAL)
+   * Retorna objeto com success, hasWhatsApp e verifiedName
+   */
+  private async checkIfNumberHasWhatsAppOfficial(
+    accessToken: string,
+    phoneNumberId: string,
+    phoneNumber: string,
+    tenantId: number
+  ): Promise<{ success: boolean; hasWhatsApp: boolean; verifiedName?: string; error?: string }> {
+    try {
+      console.log(`   🔎 [API Oficial] Verificando se ${phoneNumber} tem WhatsApp...`);
+      
+      // Limpar número (remover caracteres especiais, manter apenas dígitos e +)
+      const cleanPhone = phoneNumber.replace(/[^\d+]/g, '');
+      
+      // Chamar API do WhatsApp Business para verificar número
+      const result = await whatsappService.checkPhoneNumber(
+        phoneNumberId,
+        cleanPhone,
+        accessToken,
+        tenantId
+      );
+      
+      if (!result.success) {
+        console.log(`   ⚠️ [API Oficial] Erro ao verificar: ${result.error}`);
+        return {
+          success: false,
+          hasWhatsApp: false,
+          error: result.error
+        };
+      }
+      
+      const hasWhatsApp = result.exists || false;
+      const verifiedName = result.wa_id || null;
+      
+      console.log(`   ${hasWhatsApp ? '✅' : '❌'} [API Oficial] ${phoneNumber}: ${hasWhatsApp ? 'TEM WhatsApp' : 'NÃO tem WhatsApp'}`);
+      if (verifiedName) {
+        console.log(`   📱 [API Oficial] WA ID: ${verifiedName}`);
+      }
+      
+      return {
+        success: true,
+        hasWhatsApp: hasWhatsApp,
+        verifiedName: verifiedName
+      };
+    } catch (error: any) {
+      console.error('❌ ═══════════════════════════════════════════════════');
+      console.error('❌ ERRO AO VERIFICAR SE NÚMERO TEM WHATSAPP (API OFICIAL)!');
+      console.error('❌ ═══════════════════════════════════════════════════');
+      console.error('   Erro:', error.message);
+      console.error('   Stack:', error.stack);
+      console.error('═══════════════════════════════════════════════════\n');
+      
+      // Se der erro, retornar que não conseguiu verificar (mas não bloquear)
+      return {
+        success: false,
+        hasWhatsApp: false,
+        error: error.message
+      };
+    }
   }
 
   /**
