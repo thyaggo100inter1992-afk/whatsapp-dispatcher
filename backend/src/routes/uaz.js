@@ -2559,8 +2559,8 @@ router.post('/instances/:id/send-text', checkMessageLimit, async (req, res) => {
       });
     }
 
-    // Busca instância
-    const instance = await pool.query(`
+    // Busca instância (usando tenantQuery para RLS)
+    const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id
