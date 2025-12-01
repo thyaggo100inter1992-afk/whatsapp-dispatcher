@@ -309,7 +309,7 @@ router.get('/instances', async (req, res) => {
       const credentials = await getTenantUazapCredentials(tenantId);
       const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
       
-      const updatedInstances = await Promise.all(result.rows.map(async (instance) => {
+      const instancesWithSync = await Promise.all(result.rows.map(async (instance) => {
         // Só verifica se tiver token
         if (!instance.instance_token) {
           return instance;
@@ -371,13 +371,45 @@ router.get('/instances', async (req, res) => {
             };
           }
         } catch (error) {
-          // Se der erro ao verificar, mantém dados do banco
-          console.error(`⚠️ Erro ao verificar status de ${instance.name}:`, error.message);
+          // 🚨 SINCRONIZAÇÃO: Se a instância não existe mais na UAZ API (404), deletar do banco local
+          if (error.response?.status === 404 || 
+              error.message?.toLowerCase().includes('not found') ||
+              error.message?.toLowerCase().includes('instance not found')) {
+            
+            console.log(`\n🗑️  ========================================`);
+            console.log(`🗑️  SINCRONIZAÇÃO: Instância não encontrada na UAZ API`);
+            console.log(`🗑️  ========================================`);
+            console.log(`📦 Instância: ${instance.name} (ID: ${instance.id})`);
+            console.log(`🔑 Token: ${instance.instance_token?.substring(0, 20)}...`);
+            console.log(`📝 Status: Foi deletada na UAZ API, removendo do banco local...`);
+            
+            try {
+              // Deletar do banco local
+              await tenantQuery(req, 
+                'DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2', 
+                [instance.id, instance.tenant_id]
+              );
+              
+              console.log(`✅ Instância ${instance.name} (${instance.id}) removida do banco local com sucesso!`);
+              console.log(`========================================\n`);
+              
+              // Retornar null para filtrar depois
+              return null;
+            } catch (deleteError) {
+              console.error(`❌ Erro ao deletar instância do banco:`, deleteError.message);
+            }
+          } else {
+            // Outros erros apenas loga e mantém no banco
+            console.error(`⚠️ Erro ao verificar status de ${instance.name}:`, error.message);
+          }
         }
 
         return instance;
       }));
 
+      // Filtrar instâncias null (que foram deletadas na UAZ API)
+      const updatedInstances = instancesWithSync.filter(instance => instance !== null);
+      
       return res.json({
         success: true,
         data: updatedInstances
