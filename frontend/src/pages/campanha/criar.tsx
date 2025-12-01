@@ -1334,18 +1334,47 @@ export default function CriarCampanha() {
 
         {/* 🔹 SEÇÃO 2: NÚMEROS DE ORIGEM */}
         <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-primary-500/30 rounded-2xl p-8 shadow-xl hover:border-primary-500/50 transition-all duration-300">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="bg-gradient-to-br from-primary-500 to-primary-600 text-white text-2xl font-black w-14 h-14 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/50">
-              2
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-4">
+              <div className="bg-gradient-to-br from-primary-500 to-primary-600 text-white text-2xl font-black w-14 h-14 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/50">
+                2
+              </div>
+              <div>
+                <h2 className="text-3xl font-black text-white">
+                  Números de Origem
+                </h2>
+                <p className="text-base text-white/70 mt-1">
+                  Selecione as contas WhatsApp que serão usadas na rotação de envio
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-3xl font-black text-white">
-                Números de Origem
-              </h2>
-              <p className="text-base text-white/70 mt-1">
-                Selecione as contas WhatsApp que serão usadas na rotação de envio
-              </p>
-            </div>
+            
+            {/* Botão Selecionar Todos */}
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedAccountIds.length === accounts.length) {
+                  // Desselecionar todos
+                  setSelectedAccountIds([]);
+                } else {
+                  // Selecionar todos
+                  setSelectedAccountIds(accounts.map(acc => acc.id));
+                }
+              }}
+              className="px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white font-bold rounded-xl shadow-lg hover:shadow-primary-500/50 transition-all duration-200 flex items-center gap-2"
+            >
+              {selectedAccountIds.length === accounts.length ? (
+                <>
+                  <FaTimesCircle className="text-xl" />
+                  Desmarcar Todos
+                </>
+              ) : (
+                <>
+                  <FaCheckCircle className="text-xl" />
+                  Selecionar Todos
+                </>
+              )}
+            </button>
           </div>
           
           <div className="grid gap-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
