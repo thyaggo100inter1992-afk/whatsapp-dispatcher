@@ -1,5 +1,6 @@
 const { pool } = require('../database/connection');
 const { query } = require('../database/connection');
+const { queryWithTenantId } = require('../database/tenant-query');
 const UazService = require('../services/uazService');
 const { getTenantUazapCredentials } = require('./uaz-credentials.helper');
 
@@ -20,8 +21,8 @@ async function getInstanceWithCredentials(instanceId, tenantId) {
   console.log(`📋 Instância ID: ${instanceId}`);
   console.log(`👤 Tenant ID: ${tenantId}`);
 
-  // Buscar instância com todas as informações (incluindo credential_id)
-  const instanceResult = await pool.query(`
+  // Buscar instância com todas as informações (incluindo credential_id) - usando queryWithTenantId para respeitar RLS
+  const instanceResult = await queryWithTenantId(tenantId, `
     SELECT 
       ui.*,
       p.host as proxy_host,
@@ -102,15 +103,16 @@ async function getInstanceWithCredentials(instanceId, tenantId) {
  * Atualiza o credential_id de uma instância
  * Útil para corrigir instâncias antigas
  */
-async function updateInstanceCredential(instanceId, credentialId) {
+async function updateInstanceCredential(instanceId, credentialId, tenantId) {
   console.log(`🔄 Atualizando credential_id da instância ${instanceId} para ${credentialId}...`);
   
-  await pool.query(`
+  // ✅ Usando queryWithTenantId para respeitar RLS
+  await queryWithTenantId(tenantId, `
     UPDATE uaz_instances
     SET credential_id = $1,
         updated_at = NOW()
-    WHERE id = $2
-  `, [credentialId, instanceId]);
+    WHERE id = $2 AND tenant_id = $3
+  `, [credentialId, instanceId, tenantId]);
   
   console.log(`✅ Credential_id atualizado!`);
 }
@@ -119,7 +121,8 @@ async function updateInstanceCredential(instanceId, credentialId) {
  * Busca todas as instâncias de um tenant que estão sem credential_id
  */
 async function findInstancesWithoutCredential(tenantId) {
-  const result = await query(`
+  // ✅ Usando queryWithTenantId para respeitar RLS
+  const result = await queryWithTenantId(tenantId, `
     SELECT 
       id,
       name,
@@ -148,7 +151,7 @@ async function fixInstancesCredentials(tenantId) {
   
   if (!credentials.credentialId) {
     console.log(`❌ Tenant não tem credencial específica! Usando padrão.`);
-    // Buscar credencial padrão
+    // Buscar credencial padrão (credenciais não têm RLS, pode usar query diretamente)
     const defaultCred = await query(`
       SELECT id FROM uazap_credentials 
       WHERE is_default = true AND is_active = true 
@@ -175,8 +178,8 @@ async function fixInstancesCredentials(tenantId) {
     return 0;
   }
   
-  // Atualizar todas
-  const updateResult = await query(`
+  // Atualizar todas - usando queryWithTenantId para respeitar RLS
+  const updateResult = await queryWithTenantId(tenantId, `
     UPDATE uaz_instances
     SET credential_id = $1,
         updated_at = NOW()
