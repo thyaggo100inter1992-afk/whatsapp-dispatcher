@@ -377,14 +377,24 @@ router.get('/instances', async (req, res) => {
               profile_name: profileName,
               profile_pic_url: profilePicUrl
             };
+          } else {
+            // ⚠️ Se getStatus retornou success=false, lançar exceção para acionar a lógica de sincronização
+            const error = new Error(statusResult.error || 'Falha ao verificar status');
+            error.isUazApiError = true;
+            error.originalError = statusResult.error;
+            throw error;
           }
         } catch (error) {
           // 🚨 SINCRONIZAÇÃO: Se a instância não existe mais na UAZ API (404 ou 401), deletar do banco local
-          if (error.response?.status === 404 || 
-              error.response?.status === 401 ||
-              error.response?.data?.message?.toLowerCase().includes('invalid token') ||
-              error.message?.toLowerCase().includes('not found') ||
-              error.message?.toLowerCase().includes('instance not found')) {
+          const isInvalidToken = error.response?.status === 404 || 
+                                 error.response?.status === 401 ||
+                                 error.response?.data?.message?.toLowerCase().includes('invalid token') ||
+                                 error.message?.toLowerCase().includes('invalid token') ||
+                                 error.originalError?.toLowerCase().includes('invalid token') ||
+                                 error.message?.toLowerCase().includes('not found') ||
+                                 error.message?.toLowerCase().includes('instance not found');
+          
+          if (isInvalidToken) {
             
             console.log(`\n🗑️  ========================================`);
             console.log(`🗑️  SINCRONIZAÇÃO: Instância não existe mais na UAZ API`);
