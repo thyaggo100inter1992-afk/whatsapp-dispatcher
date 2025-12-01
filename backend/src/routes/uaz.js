@@ -349,7 +349,7 @@ router.get('/instances', async (req, res) => {
             // Atualiza no banco se mudou
             if (instance.is_connected !== isConnected || instance.status !== status) {
               // 🔒 SEGURANÇA: Filtrar por tenant_id
-              await pool.query(
+              await tenantQuery(req,
                 `UPDATE uaz_instances 
                  SET is_connected = $1, status = $2, phone_number = $3, 
                      profile_name = $4, profile_pic_url = $5, updated_at = NOW()
@@ -405,7 +405,7 @@ router.get('/instances/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // 🔒 SEGURANÇA: Filtrar por tenant_id
+    // 🔒 SEGURANÇA: Filtrar por tenant_id (usando tenantQuery para respeitar RLS)
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
@@ -414,7 +414,7 @@ router.get('/instances/:id', async (req, res) => {
       });
     }
     
-    const result = await pool.query(`
+    const result = await tenantQuery(req, `
       SELECT 
         ui.*,
         p.name as proxy_name,
@@ -738,7 +738,7 @@ router.put('/instances/:id', async (req, res) => {
     }
 
     // 🔒 SEGURANÇA: Atualiza no banco de dados local COM filtro tenant_id
-    const result = await pool.query(`
+    const result = await tenantQuery(req, `
       UPDATE uaz_instances 
       SET name = COALESCE($1, name),
           profile_name = COALESCE($2, profile_name),
@@ -849,7 +849,7 @@ router.put('/instances/:id/sync-profile', async (req, res) => {
     }
 
     // 🔒 SEGURANÇA: Atualiza no banco de dados COM tenant_id
-    await pool.query(`
+    await tenantQuery(req, `
       UPDATE uaz_instances 
       SET profile_name = $1,
           updated_at = NOW()
@@ -1354,7 +1354,7 @@ router.post('/instances/:id/logout', async (req, res) => {
     const logoutResult = await tenantUazService.logout(inst.instance_token, proxyConfig);
 
     console.log('📊 Resultado do logout:', logoutResult);
-    await pool.query(`
+    await tenantQuery(req, `
       UPDATE uaz_instances 
       SET is_connected = false,
           status = 'disconnected',
@@ -1817,7 +1817,7 @@ router.post('/instances/:id/toggle-active', async (req, res) => {
     const inst = instance.rows[0];
     const newActiveState = !inst.is_active;
 
-    await pool.query(`
+    await tenantQuery(req, `
       UPDATE uaz_instances 
       SET is_active = $1,
           updated_at = NOW()
@@ -1890,7 +1890,7 @@ router.post('/instances/pause-all', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Tenant não identificado' });
     }
     
-    const result = await pool.query(`
+    const result = await tenantQuery(req, `
       UPDATE uaz_instances 
       SET is_active = false,
           updated_at = NOW()
@@ -1953,7 +1953,7 @@ router.post('/instances/activate-all', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Tenant não identificado' });
     }
     
-    const result = await pool.query(`
+    const result = await tenantQuery(req, `
       UPDATE uaz_instances 
       SET is_active = true,
           updated_at = NOW()
@@ -1998,7 +1998,7 @@ router.post('/instances/deactivate-multiple', async (req, res) => {
     // Converter para números para garantir
     const ids = instance_ids.map(id => parseInt(id, 10));
 
-    const result = await pool.query(`
+    const result = await tenantQuery(req, `
       UPDATE uaz_instances 
       SET is_active = false,
           updated_at = NOW()
@@ -2053,7 +2053,7 @@ router.post('/instances/deactivate-all', async (req, res) => {
   try {
     console.log(`⏸️ Desativando TODAS as instâncias`);
 
-    const result = await pool.query(`
+    const result = await tenantQuery(req, `
       UPDATE uaz_instances 
       SET is_active = false,
           updated_at = NOW()
@@ -2117,7 +2117,7 @@ router.post('/instances/activate-multiple', async (req, res) => {
     // Converter para números para garantir
     const ids = instance_ids.map(id => parseInt(id, 10));
 
-    const result = await pool.query(`
+    const result = await tenantQuery(req, `
       UPDATE uaz_instances
       SET is_active = true, updated_at = NOW()
       WHERE id = ANY($1::int[])
@@ -2149,7 +2149,7 @@ router.post('/instances/activate-all', async (req, res) => {
   try {
     console.log(`✅ Ativando TODAS as instâncias`);
 
-    const result = await pool.query(`
+    const result = await tenantQuery(req, `
       UPDATE uaz_instances
       SET is_active = true, updated_at = NOW()
       RETURNING id, name
