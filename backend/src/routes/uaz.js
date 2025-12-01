@@ -770,8 +770,8 @@ router.put('/instances/:id', async (req, res) => {
       });
     }
 
-    // Busca a instância atual para obter o token e proxy
-    const currentInstance = await pool.query(`
+    // Busca a instância atual para obter o token e proxy (usando tenantQuery para RLS)
+    const currentInstance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id
@@ -908,15 +908,24 @@ router.put('/instances/:id/sync-profile', async (req, res) => {
   try {
     const { id } = req.params;
 
+    // 🔒 SEGURANÇA: Obter tenant_id
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Tenant não identificado'
+      });
+    }
+
     console.log(`🔄 Sincronizando nome do perfil da instância ID: ${id}`);
 
-    // Busca a instância atual
-    const currentInstance = await pool.query(`
+    // Busca a instância atual (usando tenantQuery para RLS)
+    const currentInstance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id
-      WHERE ui.id = $1
-    `, [id]);
+      WHERE ui.id = $1 AND ui.tenant_id = $2
+    `, [id, tenantId]);
 
     if (currentInstance.rows.length === 0) {
       return res.status(404).json({
