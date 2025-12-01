@@ -131,9 +131,10 @@ export default function QrCodeUaz() {
             let phoneToSearch = errorData?.phoneNumber || instanceData?.phone_number;
             
             if (!phoneToSearch) {
-              console.log('ℹ️ Erro 409 sem número detectado - QR Code já foi gerado, parando processamento');
-              // O QR Code já foi gerado na primeira tentativa, apenas para aqui
+              console.log('ℹ️ Erro 409 sem número detectado - Ignorando silenciosamente');
               setProcessing409(false);
+              // Não faz nada, apenas ignora o erro silenciosamente
+              // Na próxima tentativa, se o QR Code for gerado com sucesso, vai funcionar
               return;
             }
             

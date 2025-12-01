@@ -1425,10 +1425,87 @@ router.get('/instances/:id/qrcode', async (req, res) => {
     console.log('❌ Falha ao obter QR Code:', qrResult.error);
     console.log('============================================\n');
 
-    // 🚨 Se for erro 409 (conexão já existente), retornar com status HTTP 409
+    // 🚨 Se for erro 409 (conexão já existente), fazer TRATATIVA AUTOMÁTICA
     if (qrResult.errorCode === 409 && qrResult.existingConnection) {
-      console.warn('⚠️  ERRO 409: Retornando mensagem de conexão existente para o frontend');
-      return res.status(409).json(qrResult);
+      console.log('\n🔄 ========================================');
+      console.log('🔄 ERRO 409 DETECTADO - INICIANDO TRATATIVA AUTOMÁTICA');
+      console.log('🔄 ========================================');
+      console.log('📱 Número detectado:', qrResult.phoneNumber);
+      console.log('📊 Status:', qrResult.instanceStatus);
+      
+      // 🎯 TRATATIVA: Buscar instância existente pelo número
+      if (qrResult.phoneNumber) {
+        try {
+          // Buscar TODAS as instâncias da UAZ API
+          const fetchResult = await tenantUazService.fetchInstances();
+          
+          if (fetchResult.success && fetchResult.instances?.length > 0) {
+            // Procurar a instância com o número do erro
+            const existingInstance = fetchResult.instances.find(uazInst => {
+              const uazPhone = uazInst.owner || uazInst.phoneNumber || '';
+              return phonesMatch(qrResult.phoneNumber, uazPhone);
+            });
+            
+            if (existingInstance) {
+              const isConnected = existingInstance.status === 'connected' || 
+                                 existingInstance.state === 'open' || 
+                                 existingInstance.connected === true;
+              
+              console.log(`✅ Instância existente encontrada! Status: ${isConnected ? 'CONECTADA' : 'DESCONECTADA'}`);
+              
+              if (isConnected) {
+                // 📥 CASO 1: Está CONECTADA → Retornar erro para importar
+                console.log('✅ Conexão está CONECTADA! Retornando para importação...');
+                return res.status(409).json(qrResult);
+              } else {
+                // 🗑️ CASO 2: Está DESCONECTADA → Deletar antiga e tentar novamente
+                console.log('🗑️ Conexão está DESCONECTADA! Deletando antiga da UAZ API...');
+                
+                try {
+                  // Deletar da UAZ API usando o token da instância existente
+                  await tenantUazService.deleteInstance(existingInstance.token, proxyConfig);
+                  console.log('✅ Instância antiga deletada da UAZ API!');
+                  
+                  // Aguardar 2 segundos
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  
+                  // Tentar gerar QR Code novamente
+                  console.log('🔄 Tentando gerar QR Code novamente após deletar antiga...');
+                  const newQrResult = await tenantUazService.getQRCode(inst.instance_token, inst.phone_number, proxyConfig);
+                  
+                  if (newQrResult.success) {
+                    console.log('✅ QR Code gerado com sucesso após deletar antiga!');
+                    return res.json(newQrResult);
+                  } else {
+                    console.error('❌ Ainda com erro após deletar:', newQrResult.error);
+                    // Retorna o erro mas sem status 409
+                    return res.json(newQrResult);
+                  }
+                } catch (deleteError) {
+                  console.error('❌ Erro ao deletar instância antiga:', deleteError.message);
+                  // Continua e retorna o erro original
+                  return res.json(qrResult);
+                }
+              }
+            } else {
+              console.log('⚠️ Instância não encontrada na busca, retornando erro original');
+              return res.json(qrResult);
+            }
+          } else {
+            console.log('⚠️ Falha ao buscar instâncias, retornando erro original');
+            return res.json(qrResult);
+          }
+        } catch (treatmentError) {
+          console.error('❌ Erro durante tratativa automática:', treatmentError.message);
+          // Em caso de erro, retorna o erro original
+          return res.json(qrResult);
+        }
+      } else {
+        // Sem número, não pode fazer tratativa automática
+        console.log('⚠️ Erro 409 sem número, ignorando...');
+        // Retorna SEM status 409 para não bloquear o frontend
+        return res.json({ ...qrResult, errorCode: null });
+      }
     }
 
     // Outros erros retornam com sucesso false mas status 200
