@@ -786,12 +786,48 @@ class CampaignWorker {
         );
         
         if (!hasWhatsAppCheck.success) {
-          console.log('⚠️ ═══════════════════════════════════════════════════');
-          console.log('⚠️ ERRO AO VERIFICAR WHATSAPP - ENVIANDO MESMO ASSIM');
-          console.log('⚠️ ═══════════════════════════════════════════════════');
+          console.log('❌ ═══════════════════════════════════════════════════');
+          console.log('❌ ERRO AO VERIFICAR WHATSAPP - CANCELANDO ENVIO!');
+          console.log('❌ ═══════════════════════════════════════════════════');
           console.log(`   Erro: ${hasWhatsAppCheck.error}`);
+          console.log(`   📞 Número: ${contact.phone_number}`);
+          console.log(`   ❌ ENVIO CANCELADO - Marcando como erro`);
           console.log('═══════════════════════════════════════════════════\n');
-          // Continuar com envio mesmo se a verificação falhar
+          
+          // Marcar como ERRO SEM ENVIAR
+          await query(
+            `INSERT INTO messages 
+             (campaign_id, campaign_template_id, contact_id, whatsapp_account_id, phone_number, template_name, status, error_message, tenant_id)
+             VALUES ($1, $2, $3, $4, $5, $6, 'failed', $7, $8)`,
+            [
+              campaign.id,
+              template.id,
+              contact.id,
+              template.whatsapp_account_id,
+              contact.phone_number,
+              template.template_name,
+              `Erro na verificação: ${hasWhatsAppCheck.error}`,
+              campaign.tenant_id
+            ]
+          );
+          
+          // Atualizar contador
+          await query(
+            'UPDATE campaigns SET sent_count = sent_count + 1, failed_count = failed_count + 1, updated_at = NOW() WHERE id = $1 AND tenant_id = $2',
+            [campaign.id, campaign.tenant_id]
+          );
+          
+          campaign.sent_count++;
+          console.log(`📊 [API Oficial] Marcado como erro (verificação falhou - não foi enviado)`);
+          console.log(`📊 Progresso: ${campaign.sent_count}/${totalMessages} (${Math.round(campaign.sent_count/totalMessages*100)}%)`);
+          
+          // Aguardar intervalo antes do próximo
+          if (campaign.schedule_config && campaign.schedule_config.interval_seconds > 0) {
+            console.log(`⏳ Aguardando ${campaign.schedule_config.interval_seconds}s até próxima mensagem...`);
+            await this.sleep(campaign.schedule_config.interval_seconds * 1000);
+          }
+          
+          continue; // Pular para próximo contato
         } else if (!hasWhatsAppCheck.hasWhatsApp) {
           console.log('📵 ═══════════════════════════════════════════════════');
           console.log('📵 NÚMERO NÃO TEM WHATSAPP!');
