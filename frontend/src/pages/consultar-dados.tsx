@@ -568,7 +568,7 @@ export default function ConsultarDados() {
         // CAMPOS CADASTRAIS
         row['CPF'] = r.documento;
         row['NOME'] = cad.NOME || '';
-        row['NOME_MAE'] = cad.MAE || cad.NOME_MAE || cad.NOMEMAE || cad.MÃE || ''; // Múltiplas variações
+        row['NOME_MAE'] = cad.MAE || cad.NOME_MAE || cad.NOMEMAE || ''; // Múltiplas variações
         row['SEXO'] = cad.SEXO || '';
         row['NASC'] = cad.NASC || '';
         row['RENDA'] = cad.RENDA || '';
@@ -2135,7 +2135,7 @@ export default function ConsultarDados() {
                             ? 'bg-green-500/20 text-green-300' 
                             : 'bg-yellow-500/20 text-yellow-300'
                         }`}>
-                          {job.status === 'running' ? '▶️ Em Execução' : '⏸️ Pausado'}
+                          {job.status === 'running' ? '▶️ Em Execucao' : '⏸️ Pausado'}
                         </span>
                       </div>
                       
@@ -2366,7 +2366,7 @@ export default function ConsultarDados() {
                               }`}>
                                 {consulta.status === 'completed' && '✅ Completo'}
                                 {consulta.status === 'error' && '❌ Erro'}
-                                {consulta.status === 'running' && '▶️ Em Execução'}
+                                {consulta.status === 'running' && '▶️ Em Execucao'}
                                 {consulta.status === 'paused' && '⏸️ Pausado'}
                                 {consulta.status === 'cancelled' && '🚫 Cancelado'}
                               </span>
