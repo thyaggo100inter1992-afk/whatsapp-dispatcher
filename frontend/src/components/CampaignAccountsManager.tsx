@@ -56,18 +56,25 @@ export const CampaignAccountsManager: React.FC<CampaignAccountsManagerProps> = (
   const fetchAccountsStatus = async () => {
     try {
       const token = localStorage.getItem('token');
+      console.log('🔐 Token sendo usado:', token ? `${token.substring(0, 20)}...` : 'NENHUM TOKEN!');
+      
       const response = await fetch(`${API_URL}/campaigns/${campaignId}/accounts-status`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
+      
+      console.log('📡 Resposta do servidor:', response.status, response.statusText);
+      
       const data = await response.json();
 
       if (data.success) {
         setAccounts(data.data);
+      } else {
+        console.error('❌ Erro na resposta:', data.error);
       }
     } catch (error) {
-      console.error('Erro ao buscar status das contas:', error);
+      console.error('❌ Erro ao buscar status das contas:', error);
     } finally {
       setLoading(false);
     }
