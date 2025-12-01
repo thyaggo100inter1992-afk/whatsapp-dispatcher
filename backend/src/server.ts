@@ -62,6 +62,12 @@ app.use((req, res, next) => {
   });
 });
 
+// 🔤 Garantir que todas as respostas sejam UTF-8
+app.use((req, res, next) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  next();
+});
+
 // Middleware para upload de arquivos (express-fileupload)
 // ⚠️ ATENÇÃO: Aplicar APENAS em rotas específicas que não usam Multer
 app.use((req, res, next) => {
