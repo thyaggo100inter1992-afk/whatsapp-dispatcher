@@ -389,10 +389,30 @@ export default function QrCodeUaz() {
               {instanceData?.is_connected && (
                 <button
                   onClick={async () => {
-                    console.log('🔍 Verificação manual de duplicatas solicitada');
-                    await checkForDuplicatesAfterConnection(instanceData);
+                    console.log('🧹 Limpeza manual de duplicatas solicitada');
+                    setLoading(true);
+                    try {
+                      const response = await api.post(`/uaz/instances/${instance}/clean-duplicates`);
+                      console.log('📋 Resposta da limpeza:', response.data);
+                      
+                      if (response.data.success) {
+                        if (response.data.deleted > 0) {
+                          success(`✅ ${response.data.deleted} duplicata(s) removida(s) com sucesso!`);
+                        } else {
+                          success('✅ Nenhuma duplicata encontrada!');
+                        }
+                      } else {
+                        error('❌ ' + (response.data.error || 'Erro ao limpar duplicatas'));
+                      }
+                    } catch (err: any) {
+                      console.error('❌ Erro ao limpar duplicatas:', err);
+                      error('❌ Erro ao limpar duplicatas: ' + (err.response?.data?.error || err.message));
+                    } finally {
+                      setLoading(false);
+                    }
                   }}
-                  className="flex items-center gap-3 px-6 py-4 rounded-xl text-lg font-bold transition-all duration-200 bg-blue-500 hover:bg-blue-600 text-white shadow-lg"
+                  disabled={loading}
+                  className="flex items-center gap-3 px-6 py-4 rounded-xl text-lg font-bold transition-all duration-200 bg-blue-500 hover:bg-blue-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Verificar e limpar duplicatas"
                 >
                   🧹 Limpar Duplicatas

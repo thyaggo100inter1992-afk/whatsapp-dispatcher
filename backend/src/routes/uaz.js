@@ -1293,6 +1293,128 @@ router.delete('/instances/:id', async (req, res) => {
 });
 
 /**
+ * POST /api/uaz/instances/:id/clean-duplicates
+ * Limpa duplicatas de uma instância conectada
+ */
+router.post('/instances/:id/clean-duplicates', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenantId = req.tenant?.id;
+    
+    if (!tenantId) {
+      return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+    }
+    
+    console.log('\n🧹 ========================================');
+    console.log('🧹 LIMPEZA DE DUPLICATAS - INICIANDO');
+    console.log('🧹 ========================================');
+    console.log('📋 Instância ID:', id);
+    
+    // Buscar instância no banco local
+    const localInstance = await tenantQuery(req, `
+      SELECT * FROM uaz_instances WHERE id = $1 AND tenant_id = $2
+    `, [id, tenantId]);
+    
+    if (localInstance.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Instância não encontrada' });
+    }
+    
+    const instance = localInstance.rows[0];
+    const phoneNumber = instance.phone_number;
+    
+    if (!phoneNumber) {
+      return res.json({ success: false, error: 'Instância sem número de telefone' });
+    }
+    
+    console.log('📱 Número da instância:', phoneNumber);
+    console.log('🔑 Token da instância:', instance.instance_token?.substring(0, 20) + '...');
+    
+    // Buscar credenciais
+    const credentials = await getTenantUazapCredentials(tenantId);
+    const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
+    
+    // Buscar TODAS as instâncias na UAZ API
+    console.log('🔍 Buscando todas as instâncias na UAZ API...');
+    const fetchResult = await tenantUazService.fetchInstances();
+    
+    if (!fetchResult.success) {
+      return res.json({ success: false, error: 'Falha ao buscar instâncias da UAZ API' });
+    }
+    
+    const allInstances = fetchResult.instances || [];
+    console.log(`📊 Total de instâncias na UAZ API: ${allInstances.length}`);
+    
+    // Procurar duplicatas com o mesmo número
+    const duplicates = allInstances.filter(uazInst => {
+      const uazPhone = uazInst.owner || uazInst.phoneNumber || '';
+      const match = phonesMatch(phoneNumber, uazPhone);
+      const isDifferent = uazInst.token !== instance.instance_token;
+      return match && isDifferent;
+    });
+    
+    console.log(`🔍 Duplicatas encontradas: ${duplicates.length}`);
+    
+    if (duplicates.length === 0) {
+      console.log('✅ Nenhuma duplicata encontrada!');
+      console.log('🧹 ========================================\n');
+      return res.json({ success: true, message: 'Nenhuma duplicata encontrada', deleted: 0 });
+    }
+    
+    // Deletar TODAS as duplicatas
+    let deletedCount = 0;
+    for (const duplicate of duplicates) {
+      const isConnected = duplicate.status === 'connected' || duplicate.state === 'open';
+      
+      console.log('\n📋 Duplicata encontrada:');
+      console.log('   └─ Token:', duplicate.token?.substring(0, 20) + '...');
+      console.log('   └─ Status:', isConnected ? '🟢 CONECTADA' : '🔴 DESCONECTADA');
+      console.log('   └─ Nome:', duplicate.name);
+      
+      try {
+        // Deletar da UAZ API
+        console.log('🗑️  Deletando da UAZ API...');
+        const deleteResult = await tenantUazService.deleteInstance(duplicate.token, null);
+        
+        if (deleteResult.success) {
+          console.log('✅ Deletada da UAZ API com sucesso!');
+          deletedCount++;
+          
+          // Se estiver no banco local, deletar também
+          const localDuplicate = await tenantQuery(req, `
+            SELECT id FROM uaz_instances 
+            WHERE instance_token = $1 AND tenant_id = $2
+          `, [duplicate.token, tenantId]);
+          
+          if (localDuplicate.rows.length > 0) {
+            await tenantQuery(req, `
+              DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2
+            `, [localDuplicate.rows[0].id, tenantId]);
+            console.log('✅ Deletada do banco local também!');
+          }
+        } else {
+          console.warn('⚠️  Falha ao deletar:', deleteResult.error);
+        }
+      } catch (err) {
+        console.error('❌ Erro ao deletar duplicata:', err.message);
+      }
+    }
+    
+    console.log(`\n✅ Limpeza concluída! ${deletedCount} duplicata(s) deletada(s)`);
+    console.log('🧹 ========================================\n');
+    
+    res.json({
+      success: true,
+      message: `${deletedCount} duplicata(s) deletada(s) com sucesso`,
+      deleted: deletedCount
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro na limpeza de duplicatas:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /api/uaz/instances/:id/qrcode
  * Obtém QR Code de uma instância
  */
