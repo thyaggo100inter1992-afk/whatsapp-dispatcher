@@ -277,7 +277,7 @@ router.get('/instances', async (req, res) => {
   try {
     const { refresh } = req.query;
     
-    // 🔒 SEGURANÇA: Filtrar por tenant_id
+    // 🔒 SEGURANÇA: Filtrar por tenant_id (usando tenantQuery para respeitar RLS)
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
@@ -286,7 +286,7 @@ router.get('/instances', async (req, res) => {
       });
     }
     
-    const result = await pool.query(`
+    const result = await tenantQuery(req, `
       SELECT 
         ui.*,
         p.name as proxy_name,
@@ -1051,8 +1051,8 @@ router.delete('/instances/delete-all', async (req, res) => {
     );
     console.log(`   ├─ Atualizadas ${qrCampaignMessagesResult.rowCount} mensagens em qr_campaign_messages`);
     
-    // 3. Deleta todas do banco de dados local DO TENANT
-    const deleteResult = await pool.query('DELETE FROM uaz_instances WHERE tenant_id = $1', [tenantId]);
+    // 3. Deleta todas do banco de dados local DO TENANT (usando tenantQuery para respeitar RLS)
+    const deleteResult = await tenantQuery(req, 'DELETE FROM uaz_instances WHERE tenant_id = $1', [tenantId]);
     const deletedLocal = deleteResult.rowCount || 0;
 
     console.log('\n📊 ========================================');
@@ -1097,7 +1097,7 @@ router.delete('/instances/:id', async (req, res) => {
       });
     }
     
-    const instance = await pool.query('SELECT * FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+    const instance = await tenantQuery(req, 'SELECT * FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
@@ -1145,7 +1145,7 @@ router.delete('/instances/:id', async (req, res) => {
     console.log(`   ├─ Atualizadas ${qrCampaignMessagesResult.rowCount} mensagens em qr_campaign_messages`);
     
     // 3. Remove do banco de dados local (já com tenant_id validado acima)
-    await pool.query('DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+    await tenantQuery(req, 'DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     
     console.log(`✅ Instância ${inst.name} (ID: ${id}) removida do banco de dados local`);
 
@@ -1560,7 +1560,7 @@ router.get('/instances/:id/status', async (req, res) => {
                 
                 // 2️⃣ DELETAR a instância NOVA do banco local (COM filtro de tenant)
                 console.log('🗑️  Deletando instância NOVA do banco local...');
-                await pool.query('DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+                await tenantQuery(req, 'DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
                 console.log('   ✅ Instância NOVA deletada do banco local');
                 
                 // 3️⃣ VERIFICAR se a instância ANTIGA já está no banco
@@ -1656,7 +1656,7 @@ router.get('/instances/:id/status', async (req, res) => {
                 );
                 
                 if (antigaNoBanco.rows.length > 0) {
-                  await pool.query('DELETE FROM uaz_instances WHERE instance_token = $1 AND tenant_id = $2', [instanciaDuplicada.token, tenantId]);
+                  await tenantQuery(req, 'DELETE FROM uaz_instances WHERE instance_token = $1 AND tenant_id = $2', [instanciaDuplicada.token, tenantId]);
                   console.log('   ✅ Instância ANTIGA deletada do banco local (ID:', antigaNoBanco.rows[0].id, ')');
                 } else {
                   console.log('   ℹ️  Instância ANTIGA não estava no banco local');
@@ -1744,7 +1744,7 @@ router.post('/instances/:id/disconnect', async (req, res) => {
       });
     }
 
-    const instance = await pool.query('SELECT * FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+    const instance = await tenantQuery(req, 'SELECT * FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
@@ -1806,7 +1806,7 @@ router.post('/instances/:id/toggle-active', async (req, res) => {
     }
 
     // Busca instância atual
-    const instance = await pool.query('SELECT * FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+    const instance = await tenantQuery(req, 'SELECT * FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
@@ -4158,7 +4158,7 @@ router.get('/instances/:id/history', async (req, res) => {
       });
     }
     
-    const instance = await pool.query('SELECT * FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+    const instance = await tenantQuery(req, 'SELECT * FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
@@ -4614,7 +4614,7 @@ router.get('/fetch-instances', async (req, res) => {
       });
     }
     
-    const localInstances = await pool.query('SELECT instance_token FROM uaz_instances WHERE tenant_id = $1', [tenantId]);
+    const localInstances = await tenantQuery(req, 'SELECT instance_token FROM uaz_instances WHERE tenant_id = $1', [tenantId]);
     const localTokens = new Set(localInstances.rows.map(i => i.instance_token));
 
     // Filtrar apenas instâncias que NÃO estão no banco local
