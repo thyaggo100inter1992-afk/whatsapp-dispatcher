@@ -303,18 +303,26 @@ router.get('/instances', async (req, res) => {
 
     // Se refresh=true, atualiza o status de cada instância
     if (refresh === 'true') {
-      console.log('🔄 Atualizando status de todas as instâncias...');
+      console.log('\n🔄 ========================================');
+      console.log('🔄 INICIANDO SINCRONIZAÇÃO DE INSTÂNCIAS UAZ');
+      console.log('🔄 ========================================');
+      console.log(`📊 Total de instâncias no banco: ${result.rows.length}`);
       
       // 🔑 BUSCAR CREDENCIAIS DO TENANT
       const credentials = await getTenantUazapCredentials(tenantId);
       const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
       
       const instancesWithSync = await Promise.all(result.rows.map(async (instance) => {
+        console.log(`\n🔍 Verificando: ${instance.name} (ID: ${instance.id})`);
+        
         // Só verifica se tiver token
         if (!instance.instance_token) {
+          console.log(`   ⚠️  Sem token, pulando verificação`);
           return instance;
         }
 
+        console.log(`   🔑 Token: ${instance.instance_token?.substring(0, 20)}...`);
+        
         try {
           const proxyConfig = instance.proxy_host ? {
             host: instance.proxy_host,
