@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import { 
   FaChartBar, FaPlus, FaEye, FaClock, FaCheckCircle, FaTimesCircle, 
   FaPause, FaPlay, FaBan, FaEdit, FaTrash, FaTrashAlt, FaDownload,
-  FaUserSlash, FaMousePointer, FaServer, FaArrowLeft
+  FaUserSlash, FaMousePointer, FaServer, FaArrowLeft, FaRocket
 } from 'react-icons/fa';
 import { qrCampaignsAPI } from '@/services/api';
 import { format } from 'date-fns';
@@ -78,7 +78,7 @@ export default function QrCampanhas() {
     const badges: Record<string, { color: string; icon: any; text: string }> = {
       pending: { color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', icon: '⏳', text: 'Pendente' },
       scheduled: { color: 'bg-blue-500/20 text-blue-300 border-blue-500/30', icon: '📅', text: 'Agendada' },
-      running: { color: 'bg-green-500/20 text-green-300 border-green-500/30', icon: '🚀', text: 'Em Execução' },
+      running: { color: 'bg-green-500/20 text-green-300 border-green-500/30', icon: <FaRocket className="text-lg" />, text: 'Em Execucao' },
       paused: { color: 'bg-orange-500/20 text-orange-300 border-orange-500/30', icon: '⏸️', text: 'Pausada' },
       completed: { color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: '✅', text: 'Concluída' },
       cancelled: { color: 'bg-red-500/20 text-red-300 border-red-500/30', icon: '🚫', text: 'Cancelada' },
@@ -104,8 +104,9 @@ export default function QrCampanhas() {
 
   const getProgress = (campaign: QrCampaign) => {
     if (campaign.total_contacts === 0) return 0;
-    const processed = campaign.sent_count + campaign.failed_count + campaign.no_whatsapp_count;
-    return Math.round((processed / campaign.total_contacts) * 100);
+    const processed = (campaign.sent_count || 0) + (campaign.failed_count || 0) + (campaign.no_whatsapp_count || 0);
+    const progress = Math.round((processed / campaign.total_contacts) * 100);
+    return Math.min(100, Math.max(0, progress)); // Garantir que fique entre 0 e 100
   };
 
   const handlePause = async (campaignId: number) => {
@@ -550,7 +551,7 @@ export default function QrCampanhas() {
                   </div>
                   
                   <div className="bg-gradient-to-br from-yellow-500/10 to-yellow-600/5 backdrop-blur-md border-2 border-yellow-500/20 rounded-xl p-5 text-center hover:border-yellow-500/40 transition-all">
-                    <div className="text-4xl font-black text-yellow-400 mb-2">{campaign.total_contacts - campaign.sent_count - campaign.failed_count - campaign.no_whatsapp_count}</div>
+                    <div className="text-4xl font-black text-yellow-400 mb-2">{Math.max(0, campaign.total_contacts - (campaign.sent_count || 0) - (campaign.failed_count || 0) - (campaign.no_whatsapp_count || 0))}</div>
                     <div className="text-sm font-bold text-yellow-300">⏳ Pendentes</div>
                   </div>
                   

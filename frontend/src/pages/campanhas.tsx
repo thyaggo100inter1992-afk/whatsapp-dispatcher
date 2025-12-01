@@ -4,7 +4,9 @@ import { useRouter } from 'next/router';
 import { 
   FaChartBar, FaPlus, FaEye, FaClock, FaCheckCircle, FaTimesCircle, 
   FaPause, FaPlay, FaBan, FaEdit, FaUsers, FaTrash, FaTrashAlt, 
-  FaFileExcel, FaDownload, FaRocket, FaBolt, FaArrowLeft
+  FaFileExcel, FaDownload, FaRocket, FaBolt, FaArrowLeft, FaCalendarAlt,
+  FaPauseCircle, FaHourglassHalf, FaMoon, FaHandPointer, FaWhatsapp,
+  FaPaperPlane, FaInbox, FaExclamationTriangle
 } from 'react-icons/fa';
 import { campaignsAPI } from '@/services/api';
 import { format } from 'date-fns';
@@ -74,24 +76,24 @@ export default function Campanhas() {
   };
 
   const getStatusBadge = (status: string) => {
-    const badges: Record<string, { color: string; icon: any; text: string }> = {
-      outside_hours: { color: 'bg-blue-500/20 text-blue-300 border-blue-500/30', icon: '🌙', text: 'Fora do Horário' },
-      pause_programmed: { color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', icon: '⏸️', text: 'Pausa Programada' },
-      sending: { color: 'bg-green-500/20 text-green-300 border-green-500/30', icon: '🔄', text: 'Enviando' },
-      pending: { color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', icon: '⏳', text: 'Pendente' },
-      scheduled: { color: 'bg-blue-500/20 text-blue-300 border-blue-500/30', icon: '📅', text: 'Agendada' },
-      running: { color: 'bg-green-500/20 text-green-300 border-green-500/30', icon: '🚀', text: 'Em Execução' },
-      paused: { color: 'bg-orange-500/20 text-orange-300 border-orange-500/30', icon: '⏸️', text: 'Pausada' },
-      completed: { color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: '✅', text: 'Concluída' },
-      cancelled: { color: 'bg-red-500/20 text-red-300 border-red-500/30', icon: '🚫', text: 'Cancelada' },
-      failed: { color: 'bg-red-500/20 text-red-300 border-red-500/30', icon: '❌', text: 'Falhou' },
+    const badges: Record<string, { color: string; icon: JSX.Element; text: string }> = {
+      outside_hours: { color: 'bg-blue-500/20 text-blue-300 border-blue-500/30', icon: <FaMoon className="text-lg" />, text: 'Fora do Horário' },
+      pause_programmed: { color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', icon: <FaPauseCircle className="text-lg" />, text: 'Pausa Programada' },
+      sending: { color: 'bg-green-500/20 text-green-300 border-green-500/30', icon: <FaBolt className="text-lg" />, text: 'Enviando' },
+      pending: { color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', icon: <FaHourglassHalf className="text-lg" />, text: 'Pendente' },
+      scheduled: { color: 'bg-blue-500/20 text-blue-300 border-blue-500/30', icon: <FaCalendarAlt className="text-lg" />, text: 'Agendada' },
+      running: { color: 'bg-green-500/20 text-green-300 border-green-500/30', icon: <FaRocket className="text-lg" />, text: 'Em Execucao' },
+      paused: { color: 'bg-orange-500/20 text-orange-300 border-orange-500/30', icon: <FaPauseCircle className="text-lg" />, text: 'Pausada' },
+      completed: { color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: <FaCheckCircle className="text-lg" />, text: 'Concluída' },
+      cancelled: { color: 'bg-red-500/20 text-red-300 border-red-500/30', icon: <FaBan className="text-lg" />, text: 'Cancelada' },
+      failed: { color: 'bg-red-500/20 text-red-300 border-red-500/30', icon: <FaTimesCircle className="text-lg" />, text: 'Falhou' },
     };
 
     const badge = badges[status] || badges.pending;
 
     return (
       <span className={`px-4 py-2 rounded-xl text-sm font-bold border-2 ${badge.color} inline-flex items-center gap-2`}>
-        <span className="text-lg">{badge.icon}</span>
+        {badge.icon}
         {badge.text}
       </span>
     );
@@ -104,8 +106,10 @@ export default function Campanhas() {
 
   const getProgress = (campaign: Campaign) => {
     if (campaign.total_contacts === 0) return 0;
-    const processed = campaign.sent_count + campaign.failed_count + campaign.no_whatsapp_count;
-    return Math.round((processed / campaign.total_contacts) * 100);
+    // Somar todos os contatos processados (enviados + falhas + sem WhatsApp)
+    const processed = (campaign.sent_count || 0) + (campaign.failed_count || 0) + (campaign.no_whatsapp_count || 0);
+    const progress = Math.round((processed / campaign.total_contacts) * 100);
+    return Math.min(100, Math.max(0, progress)); // Garantir que fique entre 0 e 100
   };
 
   const handlePause = async (campaignId: number) => {
@@ -121,10 +125,10 @@ export default function Campanhas() {
     
     try {
       await campaignsAPI.pause(campaignId);
-      toast.success('✅ Campanha pausada com sucesso!');
+      toast.success('Campanha pausada com sucesso!');
       loadCampaigns();
     } catch (error: any) {
-      toast.error('❌ Erro ao pausar campanha: ' + (error.response?.data?.error || error.message));
+      toast.error('Erro ao pausar campanha: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -141,17 +145,17 @@ export default function Campanhas() {
     
     try {
       await campaignsAPI.resume(campaignId);
-      toast.success('✅ Campanha retomada com sucesso!');
+      toast.success('Campanha retomada com sucesso!');
       loadCampaigns();
     } catch (error: any) {
-      toast.error('❌ Erro ao retomar campanha: ' + (error.response?.data?.error || error.message));
+      toast.error('Erro ao retomar campanha: ' + (error.response?.data?.error || error.message));
     }
   };
 
   const handleCancel = async (campaignId: number) => {
     const confirmed = await confirm({
-      title: '⚠️ ATENÇÃO: Cancelar Campanha',
-      message: 'Deseja CANCELAR esta campanha?\n\n❌ Esta ação não pode ser desfeita!',
+      title: 'ATENÇÃO: Cancelar Campanha',
+      message: 'Deseja CANCELAR esta campanha?\n\nEsta ação não pode ser desfeita!',
       type: 'danger',
       confirmText: 'Sim, Cancelar Campanha',
       cancelText: 'Não'
@@ -161,23 +165,23 @@ export default function Campanhas() {
     
     try {
       await campaignsAPI.cancel(campaignId);
-      toast.success('✅ Campanha cancelada com sucesso!');
+      toast.success('Campanha cancelada com sucesso!');
       loadCampaigns();
     } catch (error: any) {
-      toast.error('❌ Erro ao cancelar campanha: ' + (error.response?.data?.error || error.message));
+      toast.error('Erro ao cancelar campanha: ' + (error.response?.data?.error || error.message));
     }
   };
 
   const handleDelete = async (campaignId: number, campaignName: string) => {
     const confirmed = await confirm({
-      title: '🗑️ EXCLUIR PERMANENTEMENTE',
+      title: 'EXCLUIR PERMANENTEMENTE',
       message: (
         <div>
           <p className="mb-4 text-lg font-bold">
             Deseja EXCLUIR PERMANENTEMENTE a campanha "{campaignName}"?
           </p>
           <div className="bg-dark-700/50 rounded-lg p-4 mb-4">
-            <p className="font-bold mb-2 text-yellow-300">🗑️ Esta ação irá remover:</p>
+            <p className="font-bold mb-2 text-yellow-300">Esta ação irá remover:</p>
             <ul className="list-disc list-inside space-y-1 text-white/80">
               <li>A campanha</li>
               <li>Todas as mensagens</li>
@@ -185,7 +189,7 @@ export default function Campanhas() {
             </ul>
           </div>
           <p className="text-red-400 font-black text-lg">
-            ❌ ESTA AÇÃO NÃO PODE SER DESFEITA!
+            ESTA AÇÃO NÃO PODE SER DESFEITA!
           </p>
         </div>
       ),
@@ -198,10 +202,10 @@ export default function Campanhas() {
     
     try {
       await campaignsAPI.delete(campaignId);
-      toast.success('✅ Campanha excluída com sucesso!');
+      toast.success('Campanha excluída com sucesso!');
       loadCampaigns();
     } catch (error: any) {
-      toast.error('❌ Erro ao excluir campanha: ' + (error.response?.data?.error || error.message));
+      toast.error('Erro ao excluir campanha: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -214,14 +218,14 @@ export default function Campanhas() {
     }
 
     const confirmed = await confirm({
-      title: '🗑️ EXCLUIR TODAS CAMPANHAS FINALIZADAS',
+      title: 'EXCLUIR TODAS CAMPANHAS FINALIZADAS',
       message: (
         <div>
           <p className="mb-4 text-lg font-bold">
             Deseja EXCLUIR TODAS as {finishedCampaigns.length} campanha(s) finalizada(s)?
           </p>
           <div className="bg-dark-700/50 rounded-lg p-4 mb-4">
-            <p className="font-bold mb-2 text-yellow-300">🗑️ Esta ação irá remover:</p>
+            <p className="font-bold mb-2 text-yellow-300">Esta ação irá remover:</p>
             <ul className="list-disc list-inside space-y-1 text-white/80">
               <li>{finishedCampaigns.length} campanha(s) concluída(s) ou cancelada(s)</li>
               <li>Todas as mensagens destas campanhas</li>
@@ -229,7 +233,7 @@ export default function Campanhas() {
             </ul>
           </div>
           <p className="text-red-400 font-black text-lg">
-            ❌ ESTA AÇÃO NÃO PODE SER DESFEITA!
+            ESTA AÇÃO NÃO PODE SER DESFEITA!
           </p>
         </div>
       ),
@@ -243,10 +247,10 @@ export default function Campanhas() {
     try {
       const response = await campaignsAPI.deleteAllFinished();
       const deletedCount = response.data.data.deleted_count;
-      toast.success(`✅ ${deletedCount} campanha(s) excluída(s) com sucesso!`);
+      toast.success(`${deletedCount} campanha(s) excluída(s) com sucesso!`);
       loadCampaigns();
     } catch (error: any) {
-      toast.error('❌ Erro ao excluir campanhas: ' + (error.response?.data?.error || error.message));
+      toast.error('Erro ao excluir campanhas: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -270,9 +274,9 @@ export default function Campanhas() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       
-      toast.success('✅ Relatório baixado com sucesso!');
+      toast.success('Relatório baixado com sucesso!');
     } catch (error: any) {
-      toast.error('❌ Erro ao gerar relatório: ' + (error.response?.data?.error || error.message));
+      toast.error('Erro ao gerar relatório: ' + (error.response?.data?.error || error.message));
     } finally {
       setDownloadingReport(null);
     }
@@ -318,11 +322,11 @@ export default function Campanhas() {
       };
 
       await campaignsAPI.edit(editingCampaign.id, data);
-      toast.success('✅ Campanha editada com sucesso!');
+      toast.success('Campanha editada com sucesso!');
       handleCloseEdit();
       loadCampaigns();
     } catch (error: any) {
-      toast.error('❌ Erro ao editar campanha: ' + (error.response?.data?.error || error.message));
+      toast.error('Erro ao editar campanha: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -398,7 +402,9 @@ export default function Campanhas() {
         {/* LISTA DE CAMPANHAS */}
         {campaigns.length === 0 ? (
           <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-white/10 rounded-2xl p-20 text-center shadow-xl">
-            <div className="text-6xl mb-6">📭</div>
+            <div className="text-6xl mb-6 text-white/70 flex justify-center">
+              <FaInbox />
+            </div>
             <p className="text-2xl text-white/70 font-medium mb-8">
               Nenhuma campanha criada ainda
             </p>
@@ -422,24 +428,24 @@ export default function Campanhas() {
                     
                     <div className="space-y-2 text-base text-white/70">
                       <p className="flex items-center gap-2">
-                        <span>📅</span>
+                        <FaCalendarAlt className="text-primary-300" />
                         <strong className="text-white">Criada:</strong> {formatDate(campaign.created_at)}
                       </p>
                       {campaign.scheduled_at && (
                         <p className="flex items-center gap-2">
-                          <span>⏰</span>
+                          <FaClock className="text-blue-300" />
                           <strong className="text-white">Agendada:</strong> {formatDate(campaign.scheduled_at)}
                         </p>
                       )}
                       {campaign.started_at && (
                         <p className="flex items-center gap-2">
-                          <span>🚀</span>
+                          <FaRocket className="text-green-300" />
                           <strong className="text-white">Iniciada:</strong> {formatDate(campaign.started_at)}
                         </p>
                       )}
                       {campaign.completed_at && (
                         <p className="flex items-center gap-2">
-                          <span>✅</span>
+                          <FaCheckCircle className="text-emerald-300" />
                           <strong className="text-white">Concluída:</strong> {formatDate(campaign.completed_at)}
                         </p>
                       )}
@@ -505,11 +511,11 @@ export default function Campanhas() {
                         className="px-4 py-3 bg-green-500/20 hover:bg-green-500/30 text-green-300 border-2 border-green-500/40 rounded-xl font-bold transition-all duration-200 disabled:opacity-50"
                         title="Baixar relatório"
                       >
-                        {downloadingReport === campaign.id ? (
-                          <span className="text-xl">⏳</span>
-                        ) : (
-                          <FaFileExcel className="text-xl" />
-                        )}
+                    {downloadingReport === campaign.id ? (
+                      <FaHourglassHalf className="text-xl animate-pulse" />
+                    ) : (
+                      <FaFileExcel className="text-xl" />
+                    )}
                       </button>
                     )}
 
@@ -551,42 +557,66 @@ export default function Campanhas() {
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
                   <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-md border-2 border-white/10 rounded-xl p-5 text-center hover:border-white/20 transition-all">
                     <div className="text-4xl font-black text-white mb-2">{campaign.total_contacts}</div>
-                    <div className="text-sm font-bold text-white/70">👥 Total</div>
+                    <div className="text-sm font-bold text-white/70 flex items-center justify-center gap-1">
+                      <FaUsers />
+                      Total
+                    </div>
                   </div>
                   
                   <div className="bg-gradient-to-br from-yellow-500/10 to-yellow-600/5 backdrop-blur-md border-2 border-yellow-500/20 rounded-xl p-5 text-center hover:border-yellow-500/40 transition-all">
-                    <div className="text-4xl font-black text-yellow-400 mb-2">{campaign.total_contacts - campaign.sent_count - campaign.failed_count - campaign.no_whatsapp_count}</div>
-                    <div className="text-sm font-bold text-yellow-300">⏳ Pendentes</div>
+                    <div className="text-4xl font-black text-yellow-400 mb-2">{Math.max(0, campaign.total_contacts - (campaign.sent_count || 0) - (campaign.failed_count || 0) - (campaign.no_whatsapp_count || 0))}</div>
+                    <div className="text-sm font-bold text-yellow-300 flex items-center justify-center gap-1">
+                      <FaHourglassHalf />
+                      Pendentes
+                    </div>
                   </div>
                   
                   <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 backdrop-blur-md border-2 border-blue-500/20 rounded-xl p-5 text-center hover:border-blue-500/40 transition-all">
                     <div className="text-4xl font-black text-blue-400 mb-2">{campaign.sent_count}</div>
-                    <div className="text-sm font-bold text-blue-300">📤 Enviadas</div>
+                    <div className="text-sm font-bold text-blue-300 flex items-center justify-center gap-1">
+                      <FaPaperPlane />
+                      Enviadas
+                    </div>
                   </div>
                   
                   <div className="bg-gradient-to-br from-green-500/10 to-green-600/5 backdrop-blur-md border-2 border-green-500/20 rounded-xl p-5 text-center hover:border-green-500/40 transition-all">
                     <div className="text-4xl font-black text-green-400 mb-2">{campaign.delivered_count + campaign.read_count}</div>
-                    <div className="text-sm font-bold text-green-300">✅ Entregues</div>
+                    <div className="text-sm font-bold text-green-300 flex items-center justify-center gap-1">
+                      <FaCheckCircle />
+                      Entregues
+                    </div>
                   </div>
                   
                   <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 backdrop-blur-md border-2 border-purple-500/20 rounded-xl p-5 text-center hover:border-purple-500/40 transition-all">
                     <div className="text-4xl font-black text-purple-400 mb-2">{campaign.read_count}</div>
-                    <div className="text-sm font-bold text-purple-300">👁️ Lidas</div>
+                    <div className="text-sm font-bold text-purple-300 flex items-center justify-center gap-1">
+                      <FaEye />
+                      Lidas
+                    </div>
                   </div>
                   
                   <div className="bg-gradient-to-br from-red-500/10 to-red-600/5 backdrop-blur-md border-2 border-red-500/20 rounded-xl p-5 text-center hover:border-red-500/40 transition-all">
                     <div className="text-4xl font-black text-red-400 mb-2">{campaign.failed_count}</div>
-                    <div className="text-sm font-bold text-red-300">❌ Falhas</div>
+                    <div className="text-sm font-bold text-red-300 flex items-center justify-center gap-1">
+                      <FaTimesCircle />
+                      Falhas
+                    </div>
                   </div>
                   
                   <div className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 backdrop-blur-md border-2 border-orange-500/20 rounded-xl p-5 text-center hover:border-orange-500/40 transition-all">
                     <div className="text-4xl font-black text-orange-400 mb-2">{campaign.no_whatsapp_count || 0}</div>
-                    <div className="text-sm font-bold text-orange-300">📵 Sem WhatsApp</div>
+                    <div className="text-sm font-bold text-orange-300 flex items-center justify-center gap-1">
+                      <FaWhatsapp />
+                      Sem WhatsApp
+                    </div>
                   </div>
                   
                   <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 backdrop-blur-md border-2 border-cyan-500/20 rounded-xl p-5 text-center hover:border-cyan-500/40 transition-all">
                     <div className="text-4xl font-black text-cyan-400 mb-2">{campaign.button_clicks_count || 0}</div>
-                    <div className="text-sm font-bold text-cyan-300">👆 Cliques</div>
+                    <div className="text-sm font-bold text-cyan-300 flex items-center justify-center gap-1">
+                      <FaHandPointer />
+                      Cliques
+                    </div>
                   </div>
                 </div>
               </div>
@@ -706,8 +736,11 @@ export default function Campanhas() {
                 </div>
 
                 <div className="p-4 bg-yellow-500/10 border-2 border-yellow-500/30 rounded-xl">
-                  <p className="text-base text-yellow-300 font-medium">
-                    ⚠️ <span className="font-bold">Atenção:</span> Não é possível alterar templates, contatos ou mídias de uma campanha já criada.
+                  <p className="text-base text-yellow-300 font-medium flex items-center gap-2">
+                    <FaExclamationTriangle />
+                    <span>
+                      <span className="font-bold">Atenção:</span> Não é possível alterar templates, contatos ou mídias de uma campanha já criada.
+                    </span>
                   </p>
                 </div>
 
