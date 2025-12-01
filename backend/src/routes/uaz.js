@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../database/connection');
+const { tenantQuery } = require('../database/tenant-query');
 const UazService = require('../services/uazService');
 const fs = require('fs');
 const path = require('path');
@@ -589,9 +590,9 @@ router.post('/instances', checkWhatsAppQR, checkWhatsAppLimit, async (req, res) 
       }
     }
 
-    // 🔒 SEGURANÇA: Salva no banco com tenant_id E credential_id
+    // 🔒 SEGURANÇA: Salva no banco com tenant_id E credential_id (usando tenantQuery para respeitar RLS)
     console.log(`💾 Salvando instância com credencial ID: ${usedCredentialId || 'NULL (token manual)'}`);
-    const insertResult = await pool.query(`
+    const insertResult = await tenantQuery(req, `
       INSERT INTO uaz_instances (
         name, session_name, instance_token, webhook_url, proxy_id, 
         is_active, status, tenant_id, credential_id
@@ -1569,10 +1570,10 @@ router.get('/instances/:id/status', async (req, res) => {
                 );
                 
                 if (existenteNoBanco.rows.length === 0) {
-                  // 4️⃣ IMPORTAR a instância ANTIGA
+                  // 4️⃣ IMPORTAR a instância ANTIGA (usando tenantQuery para respeitar RLS)
                   console.log('📥 Importando instância ANTIGA para o banco local...');
                   
-                  const importResult = await pool.query(`
+                  const importResult = await tenantQuery(req, `
                     INSERT INTO uaz_instances (
                       name, 
                       session_name, 
@@ -1582,8 +1583,9 @@ router.get('/instances/:id/status', async (req, res) => {
                       profile_pic_url, 
                       is_connected, 
                       status,
-                      is_active
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                      is_active,
+                      tenant_id
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                     RETURNING *
                   `, [
                     instanciaDuplicada.name || phoneNumber,
@@ -1594,7 +1596,8 @@ router.get('/instances/:id/status', async (req, res) => {
                     instanciaDuplicada.profilePicUrl,
                     instanciaDuplicada.status === 'connected',
                     instanciaDuplicada.status,
-                    true
+                    true,
+                    tenantId
                   ]);
                   
                   const instanciaImportada = importResult.rows[0];
@@ -4658,6 +4661,7 @@ router.get('/fetch-instances', async (req, res) => {
 router.post('/import-instances', async (req, res) => {
   try {
     const { instances } = req.body;
+    const tenantId = req.tenant.id; // ✅ Obter tenant_id do request
 
     if (!instances || !Array.isArray(instances) || instances.length === 0) {
       return res.status(400).json({
@@ -4681,8 +4685,8 @@ router.post('/import-instances', async (req, res) => {
         console.log(`   └─ Status: ${inst.status}`);
         console.log(`   └─ Owner: ${inst.owner || 'não informado'}`);
 
-        // Inserir no banco
-        const result = await pool.query(`
+        // Inserir no banco (usando tenantQuery para respeitar RLS)
+        const result = await tenantQuery(req, `
           INSERT INTO uaz_instances (
             name, 
             session_name, 
@@ -4692,8 +4696,9 @@ router.post('/import-instances', async (req, res) => {
             profile_pic_url, 
             is_connected, 
             status,
-            is_active
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            is_active,
+            tenant_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
           RETURNING *
         `, [
           inst.name || inst.owner || `instancia_${Date.now()}`,
@@ -4704,7 +4709,8 @@ router.post('/import-instances', async (req, res) => {
           inst.profilePicUrl || null,
           inst.status === 'connected',
           inst.status || 'disconnected',
-          true
+          true,
+          tenantId
         ]);
 
         const importedInstance = result.rows[0];

@@ -4,6 +4,7 @@
  */
 
 const { pool } = require('../database/connection');
+const { queryWithTenantId } = require('../database/tenant-query');
 
 /**
  * Buscar todas as instâncias UAZ do tenant
@@ -64,7 +65,9 @@ async function createInstance(data, tenantId) {
     throw new Error('🔒 SEGURANÇA: tenantId é obrigatório');
   }
 
-  const result = await pool.query(
+  // ✅ Usando queryWithTenantId para respeitar RLS
+  const result = await queryWithTenantId(
+    tenantId,
     `INSERT INTO uaz_instances (
       name, session_name, instance_token, tenant_id, proxy_id, webhook_url, is_active
     ) VALUES ($1, $2, $3, $4, $5, $6, $7)
