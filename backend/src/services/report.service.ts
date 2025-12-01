@@ -226,6 +226,7 @@ export class ReportService {
           // LOG ARQUIVO: Garantir que aparece
           appendReportError(`[DEBUG] Campanha ${campaignId} - Mensagens`, messagesCountResult.rows[0]);
           
+          // 🔥 CORREÇÃO: Adicionar tenant_id na busca de contatos!
           const contactsResult = await query(
             `SELECT 
               c.id,
@@ -246,8 +247,9 @@ export class ReportService {
                ORDER BY created_at DESC
                LIMIT 1
              ) m_latest ON true
+             WHERE c.tenant_id = $2
              ORDER BY c.name NULLS LAST, c.phone_number`,
-            [campaignId]
+            [campaignId, tenantId]
           );
           contacts = contactsResult.rows;
           console.log(`✅ ${contacts.length} contatos API Oficial encontrados`);
