@@ -62,9 +62,13 @@ app.use((req, res, next) => {
   });
 });
 
-// 🔤 Garantir que todas as respostas sejam UTF-8
+// 🔤 Garantir que todas as respostas JSON sejam UTF-8
 app.use((req, res, next) => {
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  const originalJson = res.json;
+  res.json = function(data) {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return originalJson.call(this, data);
+  };
   next();
 });
 
