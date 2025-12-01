@@ -287,6 +287,9 @@ class UazService {
             errorCode: 409,
             existingConnection: true,
             phoneNumber: errorResponse?.instance?.owner || null,
+            instanceToken: errorResponse?.instance?.token || null,
+            instanceId: errorResponse?.instance?.id || null,
+            instanceName: errorResponse?.instance?.name || null,
             instanceStatus: errorResponse?.instance?.status || 'unknown'
           };
         }
