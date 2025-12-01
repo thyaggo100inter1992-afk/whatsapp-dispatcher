@@ -27,6 +27,83 @@ const { getTenantUazapCredentials, getDefaultUazapCredentials } = require('../he
 const { getInstanceWithCredentials } = require('../helpers/instance-credentials.helper');
 
 /**
+ * 📞 Normaliza número de telefone para comparação
+ * Remove caracteres especiais e testa diferentes formatos:
+ * - Com/sem código do país (55)
+ * - Com/sem 9º dígito em celulares
+ * 
+ * @param {string} phone - Número a ser normalizado
+ * @returns {Array<string>} Array com todas as variações possíveis do número
+ */
+function normalizePhoneNumber(phone) {
+  if (!phone) return [];
+  
+  // Remove tudo que não é número
+  const cleaned = phone.replace(/\D/g, '');
+  
+  const variations = [cleaned];
+  
+  // Se tem 55 no início (código do Brasil)
+  if (cleaned.startsWith('55') && cleaned.length >= 12) {
+    const withoutCountryCode = cleaned.substring(2); // Remove 55
+    variations.push(withoutCountryCode);
+    
+    // Se o número tem 11 dígitos após o 55 (celular com 9º dígito)
+    if (withoutCountryCode.length === 11) {
+      // Remove o 9º dígito (3º caractere)
+      const without9 = withoutCountryCode.substring(0, 2) + withoutCountryCode.substring(3);
+      variations.push(without9);
+      variations.push('55' + without9); // Com 55 mas sem 9º dígito
+    }
+  } 
+  // Se NÃO tem 55 no início
+  else {
+    // Tenta adicionar 55
+    variations.push('55' + cleaned);
+    
+    // Se tem 11 dígitos (celular com 9º dígito)
+    if (cleaned.length === 11) {
+      // Remove o 9º dígito
+      const without9 = cleaned.substring(0, 2) + cleaned.substring(3);
+      variations.push(without9);
+      variations.push('55' + without9);
+    }
+    // Se tem 10 dígitos (sem 9º dígito)
+    else if (cleaned.length === 10) {
+      // Adiciona o 9º dígito
+      const with9 = cleaned.substring(0, 2) + '9' + cleaned.substring(2);
+      variations.push(with9);
+      variations.push('55' + with9);
+    }
+  }
+  
+  // Remove duplicatas e retorna
+  return [...new Set(variations)];
+}
+
+/**
+ * 🔍 Verifica se dois números de telefone são equivalentes
+ * Compara considerando diferentes formatos (com/sem 55, com/sem 9º dígito)
+ * 
+ * @param {string} phone1 - Primeiro número
+ * @param {string} phone2 - Segundo número
+ * @returns {boolean} true se os números são equivalentes
+ */
+function phonesMatch(phone1, phone2) {
+  const variations1 = normalizePhoneNumber(phone1);
+  const variations2 = normalizePhoneNumber(phone2);
+  
+  console.log(`      🔢 Variações de "${phone1}": ${JSON.stringify(variations1)}`);
+  console.log(`      🔢 Variações de "${phone2}": ${JSON.stringify(variations2)}`);
+  
+  // Verifica se alguma variação do phone1 existe nas variações do phone2
+  const hasMatch = variations1.some(v1 => variations2.includes(v1));
+  console.log(`      🎯 Match encontrado? ${hasMatch}`);
+  
+  return hasMatch;
+}
+
+/**
  * Substitui variáveis no formato {{nome}} pelos valores fornecidos
  * Exemplo: "Olá {{nome}}" + {nome: "João"} → "Olá João"
  * @param {string} text - Texto com variáveis
@@ -4634,13 +4711,15 @@ async function processVerificationJob(jobId) {
 }
 
 /**
- * GET /api/uaz/fetch-instances
- * Busca todas as instâncias disponíveis na UAZ API
+ * GET /api/uaz/fetch-instances?phoneNumber=5562981045992
+ * Busca UMA instância específica na UAZ API filtrando por número de telefone
+ * 
+ * @query {string} phoneNumber - Número de telefone para buscar (obrigatório)
  */
 router.get('/fetch-instances', async (req, res) => {
   try {
     console.log('\n📥 ========================================');
-    console.log('📥 BUSCANDO INSTÂNCIAS DA UAZ API');
+    console.log('📥 BUSCANDO INSTÂNCIA ESPECÍFICA NA UAZ API');
     console.log('📥 ========================================\n');
 
     // 🔒 Verificar tenant ANTES de tudo
@@ -4652,12 +4731,23 @@ router.get('/fetch-instances', async (req, res) => {
       });
     }
 
+    // 📞 OBRIGATÓRIO: Receber número de telefone
+    const { phoneNumber } = req.query;
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        error: 'Número de telefone é obrigatório'
+      });
+    }
+
+    console.log(`📞 Buscando instância com número: ${phoneNumber}`);
+
     // 🔑 BUSCAR CREDENCIAIS DO TENANT
     console.log(`🔑 Buscando credenciais UAZAP para tenant ${tenantId}...`);
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    // Buscar instâncias da UAZ API usando as credenciais do tenant
+    // Buscar TODAS as instâncias da UAZ API (mas vamos filtrar depois)
     const fetchResult = await tenantUazService.fetchInstances();
 
     if (!fetchResult.success) {
@@ -4667,51 +4757,82 @@ router.get('/fetch-instances', async (req, res) => {
       });
     }
 
-    const uazInstances = fetchResult.instances || [];
-    console.log(`📊 Total de instâncias na UAZ API: ${uazInstances.length}`);
+    const allInstances = fetchResult.instances || [];
+    console.log(`📊 Total de instâncias na UAZ API: ${allInstances.length}`);
 
-    if (uazInstances.length === 0) {
+    if (allInstances.length === 0) {
       console.log('⚠️  Nenhuma instância encontrada na UAZ API');
       return res.json({
         success: true,
-        total: 0,
-        available: 0,
-        alreadyImported: 0,
-        instances: []
+        found: false,
+        message: 'Nenhuma instância encontrada na UAZ API',
+        instance: null
       });
     }
 
-    // 🔒 Buscar instâncias já cadastradas no banco local DO TENANT
+    // 🔍 FILTRAR: Buscar APENAS a instância com o número informado
+    console.log(`🔍 Filtrando instâncias pelo número: ${phoneNumber}`);
+    console.log(`📊 Testando ${allInstances.length} instâncias...`);
     
-    const localInstances = await tenantQuery(req, 'SELECT instance_token FROM uaz_instances WHERE tenant_id = $1', [tenantId]);
-    const localTokens = new Set(localInstances.rows.map(i => i.instance_token));
-
-    // Filtrar apenas instâncias que NÃO estão no banco local
-    const availableInstances = uazInstances.filter(inst => {
-      const token = inst.token;
-      return token && !localTokens.has(token);
+    const matchedInstance = allInstances.find(inst => {
+      const instancePhone = inst.owner || inst.phoneNumber || '';
+      console.log(`   🔎 Testando: ${instancePhone} (owner) vs ${phoneNumber} (buscado)`);
+      
+      const matches = phonesMatch(phoneNumber, instancePhone);
+      console.log(`      └─ Resultado: ${matches ? '✅ MATCH!' : '❌ Não bateu'}`);
+      
+      if (matches) {
+        console.log(`   ✅✅✅ ENCONTRADO: ${instancePhone} corresponde a ${phoneNumber}`);
+      }
+      
+      return matches;
     });
 
-    console.log(`✅ Instâncias disponíveis para importação: ${availableInstances.length}`);
-    console.log(`ℹ️  Instâncias já cadastradas: ${uazInstances.length - availableInstances.length}`);
+    if (!matchedInstance) {
+      console.log(`❌ Nenhuma instância encontrada com o número: ${phoneNumber}`);
+      console.log('========================================\n');
+      return res.json({
+        success: true,
+        found: false,
+        message: `Nenhuma instância encontrada com o número ${phoneNumber}`,
+        instance: null
+      });
+    }
+
+    console.log(`✅ Instância encontrada: ${matchedInstance.name || matchedInstance.id}`);
+    
+    // 🔒 Verificar se já está cadastrada no banco local DO TENANT
+    const localInstances = await tenantQuery(req, 
+      'SELECT instance_token FROM uaz_instances WHERE tenant_id = $1 AND instance_token = $2', 
+      [tenantId, matchedInstance.token]
+    );
+    
+    const alreadyImported = localInstances.rows.length > 0;
+
+    if (alreadyImported) {
+      console.log(`⚠️  Esta instância já está importada no sistema`);
+    }
+
     console.log('========================================\n');
 
     res.json({
       success: true,
-      total: uazInstances.length,
-      available: availableInstances.length,
-      alreadyImported: uazInstances.length - availableInstances.length,
-      instances: availableInstances.map(inst => ({
-        token: inst.token,
-        id: inst.id,
-        name: inst.name,
-        status: inst.status,
-        owner: inst.owner,
-        profileName: inst.profileName,
-        profilePicUrl: inst.profilePicUrl,
-        created: inst.created,
-        isConnected: inst.status === 'connected'
-      }))
+      found: true,
+      alreadyImported,
+      message: alreadyImported 
+        ? 'Esta instância já está importada no sistema' 
+        : 'Instância encontrada! Deseja importá-la?',
+      instance: {
+        token: matchedInstance.token,
+        id: matchedInstance.id,
+        name: matchedInstance.name,
+        status: matchedInstance.status,
+        owner: matchedInstance.owner,
+        profileName: matchedInstance.profileName,
+        profilePicUrl: matchedInstance.profilePicUrl,
+        created: matchedInstance.created,
+        isConnected: matchedInstance.status === 'connected'
+      }
     });
 
   } catch (error) {
