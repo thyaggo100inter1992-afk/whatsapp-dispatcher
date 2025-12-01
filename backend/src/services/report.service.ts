@@ -45,7 +45,7 @@ export class ReportService {
           console.log('🔍 Buscando templates QR Connect...');
           const templatesQuery = `
             SELECT ct.id, ct.campaign_id, ct.template_id, ct.instance_id, 
-                   ct.order_index, ct.created_at, ct.updated_at,
+                   ct.order_index, ct.created_at,
                    t.template_name, i.name as account_name, i.instance_name as phone_number
             FROM campaign_templates ct
             LEFT JOIN templates t ON ct.template_id = t.id
@@ -60,7 +60,7 @@ export class ReportService {
           console.log('🔍 Buscando templates API Oficial...');
           const templatesQuery = `
             SELECT ct.id, ct.campaign_id, ct.template_id, ct.whatsapp_account_id, 
-                   ct.order_index, ct.created_at, ct.updated_at,
+                   ct.order_index, ct.created_at,
                    t.template_name, w.name as account_name, w.phone_number
             FROM campaign_templates ct
             LEFT JOIN templates t ON ct.template_id = t.id
