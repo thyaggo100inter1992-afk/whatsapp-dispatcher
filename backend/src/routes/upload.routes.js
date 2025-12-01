@@ -118,16 +118,14 @@ router.post('/media', (req, res, next) => {
       
       res.json({
         success: true,
-        data: { // ← Adicionar wrapper "data" para consistência
-          url: fileUrl,
-          filename: req.file.filename,
-          originalname: req.file.originalname,
-          original_name: req.file.originalname, // ← Alias com underscore
-          size: req.file.size,
-          mimetype: req.file.mimetype,
-          mime_type: req.file.mimetype, // ← Alias com underscore para compatibilidade
-          path: fileUrl // ← Adicionar path para compatibilidade
-        }
+        url: fileUrl, // ✅ Direto na raiz para acesso via uploadResponse.data.url
+        filename: req.file.filename,
+        originalname: req.file.originalname,
+        original_name: req.file.originalname, // ← Alias com underscore
+        size: req.file.size,
+        mimetype: req.file.mimetype,
+        mime_type: req.file.mimetype, // ← Alias com underscore para compatibilidade
+        path: fileUrl // ← Adicionar path para compatibilidade
       });
     } catch (error) {
       console.error('❌ Erro ao processar resposta:', error);
