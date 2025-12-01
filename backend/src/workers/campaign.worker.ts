@@ -554,7 +554,7 @@ class CampaignWorker {
   }
 
   private async processCampaign(campaign: Campaign) {
-    // Buscar templates da campanha (APENAS ATIVOS)
+    // Buscar templates da campanha (APENAS ATIVOS e com CONTA ATIVA)
     const templatesResult = await query(
       `SELECT 
         ct.*,
@@ -566,7 +566,9 @@ class CampaignWorker {
        FROM campaign_templates ct
        JOIN templates t ON ct.template_id = t.id
        JOIN whatsapp_accounts w ON ct.whatsapp_account_id = w.id
-       WHERE ct.campaign_id = $1 AND ct.is_active = true
+       WHERE ct.campaign_id = $1 
+         AND ct.is_active = true 
+         AND w.is_active = true
        ORDER BY ct.order_index`,
       [campaign.id]
     );

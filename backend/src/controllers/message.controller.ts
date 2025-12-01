@@ -152,7 +152,13 @@ export class MessageController {
         throw new Error('WhatsApp account not found');
       }
 
-      console.log('✅ Conta encontrada:', account.name);
+      // ⚠️ VERIFICAR SE A CONTA ESTÁ ATIVA
+      if (!account.is_active) {
+        console.log('❌ Conta desativada:', account.name);
+        throw new Error('❌ Esta conta WhatsApp está desativada. Ative-a nas configurações para poder enviar mensagens.');
+      }
+
+      console.log('✅ Conta encontrada e ativa:', account.name);
 
       // Enviar mensagem REAL via WhatsApp API
       console.log('📱 Enviando mensagem REAL via WhatsApp API...');
