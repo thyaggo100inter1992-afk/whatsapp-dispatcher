@@ -1270,16 +1270,16 @@ router.get('/instances/:id/qrcode', async (req, res) => {
       console.log('   └─ 📌 STATUS:', status);
       console.log('============================================\n');
       
-      // Atualiza no banco (incluindo is_connected!)
-      await pool.query(`
+      // Atualiza no banco (incluindo is_connected!) - usando tenantQuery para respeitar RLS
+      await tenantQuery(req, `
         UPDATE uaz_instances 
         SET qr_code = $1, 
             status = $2, 
             is_connected = $3,
             last_connected_at = CASE WHEN $3 = true THEN NOW() ELSE last_connected_at END,
             updated_at = NOW()
-        WHERE id = $4
-      `, [qrResult.qrcode || '', status, isConnected, id]);
+        WHERE id = $4 AND tenant_id = $5
+      `, [qrResult.qrcode || '', status, isConnected, id, tenantId]);
       
       // Retorna com o QR Code formatado
       return res.json({
@@ -1295,6 +1295,13 @@ router.get('/instances/:id/qrcode', async (req, res) => {
     console.log('❌ Falha ao obter QR Code:', qrResult.error);
     console.log('============================================\n');
 
+    // 🚨 Se for erro 409 (conexão já existente), retornar com status HTTP 409
+    if (qrResult.errorCode === 409 && qrResult.existingConnection) {
+      console.warn('⚠️  ERRO 409: Retornando mensagem de conexão existente para o frontend');
+      return res.status(409).json(qrResult);
+    }
+
+    // Outros erros retornam com sucesso false mas status 200
     res.json(qrResult);
   } catch (error) {
     res.status(500).json({

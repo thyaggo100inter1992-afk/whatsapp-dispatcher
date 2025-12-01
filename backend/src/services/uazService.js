@@ -268,6 +268,30 @@ class UazService {
       console.error('   └─ Mensagem:', error.message);
       console.error('   └─ Response:', error.response?.data);
       
+      // 🚨 CASO ESPECIAL: Erro 409 - "Connection attempt in progress"
+      // Isso significa que JÁ EXISTE uma conexão ativa ou em andamento com este número
+      if (error.response?.status === 409) {
+        const errorResponse = error.response.data;
+        const errorMessage = errorResponse?.response || errorResponse?.error || errorResponse?.message || '';
+        
+        // Se a mensagem indica que há uma tentativa de conexão em andamento
+        if (errorMessage.toLowerCase().includes('connection attempt in progress') || 
+            errorMessage.toLowerCase().includes('please wait')) {
+          console.warn('⚠️  ERRO 409: Já existe uma conexão ativa ou tentativa em andamento!');
+          console.warn('   └─ Número:', errorResponse?.instance?.owner || 'não identificado');
+          console.warn('   └─ Status:', errorResponse?.instance?.status || 'desconhecido');
+          
+          return {
+            success: false,
+            error: 'JÁ EXISTE UMA CONEXÃO ATIVA OU EM ANDAMENTO COM ESTE NÚMERO. Aguarde 2 minutos ou delete a instância antiga.',
+            errorCode: 409,
+            existingConnection: true,
+            phoneNumber: errorResponse?.instance?.owner || null,
+            instanceStatus: errorResponse?.instance?.status || 'unknown'
+          };
+        }
+      }
+      
       return {
         success: false,
         error: error.response?.data?.error || error.response?.data?.message || error.message

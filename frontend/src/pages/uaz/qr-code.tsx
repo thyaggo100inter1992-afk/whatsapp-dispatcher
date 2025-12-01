@@ -104,11 +104,32 @@ export default function QrCodeUaz() {
           router.push('/configuracoes-uaz');
         }, 3000);
         
-      // Erro 409 geralmente significa que já está conectado
+      // Erro 409 geralmente significa que já está conectado OU há conexão existente
       } else if (error.response?.status === 409) {
-        console.log('ℹ️ Erro 409 - Instância já conectada, atualizando estado...');
-        await loadInstance();
-        setAutoRefresh(false);
+        const errorData = error.response?.data;
+        
+        // Se for erro de conexão existente
+        if (errorData?.existingConnection) {
+          console.log('⚠️ ERRO 409: Já existe uma conexão ativa com este número!');
+          console.log('   └─ Número:', errorData?.phoneNumber);
+          console.log('   └─ Status da instância existente:', errorData?.instanceStatus);
+          
+          setAutoRefresh(false); // Para o auto-refresh
+          
+          error(
+            `⚠️ ${errorData.error || 'Já existe uma conexão ativa com este número!'}\n\n` +
+            `Número: ${errorData.phoneNumber || 'não identificado'}\n\n` +
+            `Você precisa:\n` +
+            `1. Ir em "Gerenciar Conexões"\n` +
+            `2. Deletar a instância antiga com este número\n` +
+            `3. Criar uma nova conexão`
+          );
+        } else {
+          // Erro 409 genérico - provavelmente já conectado
+          console.log('ℹ️ Erro 409 - Instância já conectada, atualizando estado...');
+          await loadInstance();
+          setAutoRefresh(false);
+        }
       } else {
         // Outros erros só mostram se o auto-refresh estiver ativo
         // (para não incomodar o usuário com erros repetidos)
