@@ -110,20 +110,61 @@ export default function QrCodeUaz() {
         
         // Se for erro de conexão existente
         if (errorData?.existingConnection) {
-          console.log('⚠️ ERRO 409: Já existe uma conexão ativa com este número!');
-          console.log('   └─ Número:', errorData?.phoneNumber);
+          console.log('🔄 ERRO 409: Já existe uma conexão ativa! Iniciando importação automática...');
+          console.log('   └─ Número detectado:', errorData?.phoneNumber);
           console.log('   └─ Status da instância existente:', errorData?.instanceStatus);
           
           setAutoRefresh(false); // Para o auto-refresh
           
-          error(
-            `⚠️ ${errorData.error || 'Já existe uma conexão ativa com este número!'}\n\n` +
-            `Número: ${errorData.phoneNumber || 'não identificado'}\n\n` +
-            `Você precisa:\n` +
-            `1. Ir em "Gerenciar Conexões"\n` +
-            `2. Deletar a instância antiga com este número\n` +
-            `3. Criar uma nova conexão`
-          );
+          // 🎯 IMPORTAÇÃO AUTOMÁTICA E SILENCIOSA
+          try {
+            // Buscar pelo número do telefone da instância atual
+            let phoneToSearch = errorData?.phoneNumber || instanceData?.phone_number;
+            
+            if (!phoneToSearch) {
+              console.warn('⚠️ Nenhum número de telefone disponível para busca automática');
+              // Se não tem número, redireciona para configurações
+              warning('⚠️ Conexão já existe. Redirecionando...');
+              setTimeout(() => router.push('/configuracoes-uaz'), 2000);
+              return;
+            }
+            
+            console.log(`🔍 Buscando instância existente com número: ${phoneToSearch}`);
+            const searchResponse = await api.get(`/uaz/fetch-instances?phoneNumber=${encodeURIComponent(phoneToSearch)}`);
+            
+            if (searchResponse.data.success && searchResponse.data.found) {
+              console.log('✅ Instância encontrada na UAZ API! Importando...');
+              
+              // Importar a instância encontrada
+              const importResponse = await api.post('/uaz/import-instances', {
+                instances: [searchResponse.data.instance]
+              });
+              
+              if (importResponse.data.success) {
+                console.log('✅ Instância importada automaticamente com sucesso!');
+                success('✅ Conexão importada com sucesso!');
+                
+                // Redirecionar para configurações após 2 segundos
+                setTimeout(() => {
+                  router.push('/configuracoes-uaz');
+                }, 2000);
+              } else {
+                console.error('❌ Falha ao importar instância:', importResponse.data.error);
+                warning('⚠️ Não foi possível importar a conexão. Redirecionando...');
+                setTimeout(() => router.push('/configuracoes-uaz'), 2000);
+              }
+            } else {
+              console.log('ℹ️ Instância não encontrada para importação, seguindo fluxo normal...');
+              // Se não encontrou, apenas redireciona
+              warning('⚠️ Conexão já existe. Redirecionando...');
+              setTimeout(() => router.push('/configuracoes-uaz'), 2000);
+            }
+          } catch (importError: any) {
+            console.error('❌ Erro durante importação automática:', importError);
+            // Em caso de erro na importação, apenas redireciona silenciosamente
+            warning('⚠️ Redirecionando para gerenciar conexões...');
+            setTimeout(() => router.push('/configuracoes-uaz'), 2000);
+          }
         } else {
           // Erro 409 genérico - provavelmente já conectado
           console.log('ℹ️ Erro 409 - Instância já conectada, atualizando estado...');
