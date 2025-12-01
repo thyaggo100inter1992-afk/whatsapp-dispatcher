@@ -110,22 +110,22 @@ export default function QrCodeUaz() {
         
         // Se for erro de conexão existente
         if (errorData?.existingConnection) {
-          console.log('🔄 ERRO 409: Já existe uma conexão ativa! Iniciando importação automática...');
+          console.log('🔄 ERRO 409: Já existe uma conexão na UAZ API! Verificando status...');
           console.log('   └─ Número detectado:', errorData?.phoneNumber);
           console.log('   └─ Status da instância existente:', errorData?.instanceStatus);
           
           setAutoRefresh(false); // Para o auto-refresh
           
-          // 🎯 IMPORTAÇÃO AUTOMÁTICA E SILENCIOSA
+          // 🎯 TRATATIVA AUTOMÁTICA E SILENCIOSA
           try {
             // Buscar pelo número do telefone da instância atual
             let phoneToSearch = errorData?.phoneNumber || instanceData?.phone_number;
             
             if (!phoneToSearch) {
               console.warn('⚠️ Nenhum número de telefone disponível para busca automática');
-              // Se não tem número, redireciona para configurações
-              warning('⚠️ Conexão já existe. Redirecionando...');
-              setTimeout(() => router.push('/configuracoes-uaz'), 2000);
+              // Se não tem número, tenta continuar com o fluxo normal
+              console.log('⏩ Continuando fluxo normal sem número...');
+              await loadQRCode(); // Tenta buscar QR Code novamente
               return;
             }
             
@@ -133,37 +133,102 @@ export default function QrCodeUaz() {
             const searchResponse = await api.get(`/uaz/fetch-instances?phoneNumber=${encodeURIComponent(phoneToSearch)}`);
             
             if (searchResponse.data.success && searchResponse.data.found) {
-              console.log('✅ Instância encontrada na UAZ API! Importando...');
+              const foundInstance = searchResponse.data.instance;
+              const isConnected = foundInstance.isConnected || foundInstance.status === 'connected';
               
-              // Importar a instância encontrada
-              const importResponse = await api.post('/uaz/import-instances', {
-                instances: [searchResponse.data.instance]
-              });
+              console.log(`📊 Instância encontrada! Status: ${isConnected ? 'CONECTADA' : 'DESCONECTADA'}`);
               
-              if (importResponse.data.success) {
-                console.log('✅ Instância importada automaticamente com sucesso!');
-                success('✅ Conexão importada com sucesso!');
+              if (isConnected) {
+                // ✅ CASO 1: Instância está CONECTADA → IMPORTAR
+                console.log('✅ Conexão está CONECTADA! Importando para a plataforma...');
                 
-                // Redirecionar para configurações após 2 segundos
-                setTimeout(() => {
-                  router.push('/configuracoes-uaz');
-                }, 2000);
+                const importResponse = await api.post('/uaz/import-instances', {
+                  instances: [foundInstance]
+                });
+                
+                if (importResponse.data.success) {
+                  console.log('✅ Instância importada automaticamente com sucesso!');
+                  success('✅ Conexão importada com sucesso!');
+                  
+                  setTimeout(() => {
+                    router.push('/configuracoes-uaz');
+                  }, 2000);
+                } else {
+                  console.error('❌ Falha ao importar instância:', importResponse.data.error);
+                  warning('⚠️ Não foi possível importar a conexão. Redirecionando...');
+                  setTimeout(() => router.push('/configuracoes-uaz'), 2000);
+                }
               } else {
-                console.error('❌ Falha ao importar instância:', importResponse.data.error);
-                warning('⚠️ Não foi possível importar a conexão. Redirecionando...');
-                setTimeout(() => router.push('/configuracoes-uaz'), 2000);
+                // 🗑️ CASO 2: Instância está DESCONECTADA → DELETAR + CONTINUAR
+                console.log('🗑️ Conexão está DESCONECTADA! Deletando antiga e continuando...');
+                
+                try {
+                  // Primeiro, buscar se essa instância já está no banco local
+                  const localInstancesResponse = await api.get('/uaz/instances');
+                  const localInstances = Array.isArray(localInstancesResponse.data) 
+                    ? localInstancesResponse.data 
+                    : (localInstancesResponse.data?.data || []);
+                  
+                  // Procurar instância pelo token
+                  const localInstance = localInstances.find((inst: any) => 
+                    inst.instance_token === foundInstance.token
+                  );
+                  
+                  if (localInstance) {
+                    // Se está no banco local, deletar usando o ID
+                    console.log(`🗑️ Instância encontrada no banco local (ID: ${localInstance.id}). Deletando...`);
+                    await api.delete(`/uaz/instances/${localInstance.id}`);
+                    console.log('✅ Instância antiga deletada com sucesso do banco e da UAZ API!');
+                  } else {
+                    // Se não está no banco, apenas logar
+                    console.log('ℹ️ Instância não está no banco local, apenas na UAZ API');
+                    console.log('⏩ A nova conexão irá substituir a antiga automaticamente');
+                  }
+                  
+                  // Aguardar 1 segundo para garantir que foi processado
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  
+                  // Deletar a instância atual que está causando conflito
+                  if (instance) {
+                    console.log(`🗑️ Deletando instância conflitante atual (ID: ${instance})...`);
+                    try {
+                      await api.delete(`/uaz/instances/${instance}`);
+                      console.log('✅ Instância conflitante deletada!');
+                    } catch (delError: any) {
+                      console.warn('⚠️ Erro ao deletar instância conflitante:', delError.message);
+                    }
+                  }
+                  
+                  // Redirecionar para criar uma nova conexão
+                  console.log('✅ Redirecionando para criar nova conexão...');
+                  warning('⏩ Criando nova conexão...');
+                  setTimeout(() => {
+                    router.push('/configuracoes-uaz');
+                  }, 1500);
+                  
+                } catch (deleteError: any) {
+                  console.error('❌ Erro ao deletar instância antiga:', deleteError);
+                  // Em caso de erro, redireciona para configurações
+                  warning('⚠️ Redirecionando para gerenciar conexões...');
+                  setTimeout(() => router.push('/configuracoes-uaz'), 2000);
+                }
               }
             } else {
-              console.log('ℹ️ Instância não encontrada para importação, seguindo fluxo normal...');
-              // Se não encontrou, apenas redireciona
-              warning('⚠️ Conexão já existe. Redirecionando...');
+              console.log('ℹ️ Instância não encontrada na busca, tentando continuar fluxo normal...');
+              // Se não encontrou, tenta continuar com o fluxo normal
+              await loadQRCode();
+            }
+          } catch (treatmentError: any) {
+            console.error('❌ Erro durante tratativa automática:', treatmentError);
+            // Em caso de erro, tenta continuar com o fluxo normal
+            console.log('⏩ Tentando continuar fluxo normal após erro...');
+            try {
+              await loadQRCode();
+            } catch (retryError) {
+              console.error('❌ Falha ao retomar fluxo normal:', retryError);
+              warning('⚠️ Redirecionando para gerenciar conexões...');
               setTimeout(() => router.push('/configuracoes-uaz'), 2000);
             }
-          } catch (importError: any) {
-            console.error('❌ Erro durante importação automática:', importError);
-            // Em caso de erro na importação, apenas redireciona silenciosamente
-            warning('⚠️ Redirecionando para gerenciar conexões...');
-            setTimeout(() => router.push('/configuracoes-uaz'), 2000);
           }
         } else {
           // Erro 409 genérico - provavelmente já conectado
