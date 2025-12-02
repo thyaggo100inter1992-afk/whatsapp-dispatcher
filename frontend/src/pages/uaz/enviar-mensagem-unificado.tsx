@@ -3681,8 +3681,10 @@ export default function EnviarMensagemUnificado() {
                                                   type="button"
                                                   onClick={() => {
                                                     const newCards = [...(block.cards || [])];
-                                                    newCards[cardIndex] = { ...card, image: '' };
+                                                    // Limpar TANTO image quanto uploadedImage
+                                                    newCards[cardIndex] = { ...card, image: '', uploadedImage: null };
                                                     updateMessageBlock(block.id, { cards: newCards });
+                                                    console.log('🗑️ Imagem removida do card', cardIndex + 1);
                                                   }}
                                                   className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded font-bold text-sm"
                                                 >
