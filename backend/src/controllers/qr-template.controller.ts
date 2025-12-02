@@ -27,6 +27,7 @@ class QrTemplateController {
    * GET /api/qr-templates
    */
   async list(req: Request, res: Response) {
+    const client = await pool.connect();
     try {
       // 🔒 FILTRAR POR TENANT_ID
       const tenantId = (req as any).tenant?.id;
@@ -34,7 +35,10 @@ class QrTemplateController {
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
       }
 
-      const result = await pool.query(`
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+
+      const result = await client.query(`
         SELECT 
           t.*,
           COALESCE(
@@ -76,6 +80,8 @@ class QrTemplateController {
         error: 'Erro ao listar templates',
         details: error.message
       });
+    } finally {
+      client.release();
     }
   }
 
@@ -84,6 +90,7 @@ class QrTemplateController {
    * GET /api/qr-templates/:id
    */
   async getById(req: Request, res: Response) {
+    const client = await pool.connect();
     try {
       const { id } = req.params;
       
@@ -93,7 +100,10 @@ class QrTemplateController {
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
       }
 
-      const result = await pool.query(`
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+
+      const result = await client.query(`
         SELECT 
           t.*,
           COALESCE(
@@ -150,6 +160,8 @@ class QrTemplateController {
         error: 'Erro ao buscar template',
         details: error.message
       });
+    } finally {
+      client.release();
     }
   }
 
@@ -218,6 +230,10 @@ class QrTemplateController {
       const processPoll = poll_config ? (typeof poll_config === 'string' ? poll_config : JSON.stringify(poll_config)) : null;
       const processCombined = combined_blocks ? (typeof combined_blocks === 'string' ? combined_blocks : JSON.stringify(combined_blocks)) : null;
       const processVariables = variables_map ? (typeof variables_map === 'string' ? variables_map : JSON.stringify(variables_map)) : '{}';
+
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+      console.log(`✅ Tenant ${tenantId} definido na sessão PostgreSQL`);
 
       // Inserir template COM TENANT_ID
       const result = await client.query(`
