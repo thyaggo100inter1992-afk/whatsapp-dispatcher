@@ -573,18 +573,36 @@ export default function EditarTemplate() {
     try {
       const response = await uploadAPI.uploadMedia(file);
       const data = response.data.data;
-      console.log('📤 UPLOAD COMPLETO - Dados recebidos:', data);
+      console.log('📤 [EDITAR] Upload completo:', data);
       
-      // ✅ CORRIGIR: Converter URL relativa para absoluta
-      const fullUrl = data.url?.startsWith('http') || data.url?.startsWith('data:') || data.url?.startsWith('blob:')
-        ? data.url
-        : `${API_BASE_URL}${data.url}`;
+      // ✅ CORRIGIR: Garantir que a URL seja absoluta
+      // O backend pode retornar 'url' ou precisar construir baseado em outras props
+      let mediaUrl = data.url;
+      if (!mediaUrl) {
+        // Se não tem URL, construir baseado no filename
+        mediaUrl = `/uploads/media/${data.filename}`;
+      }
+      
+      // Converter para URL absoluta se necessário
+      if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
+        mediaUrl = `${API_BASE_URL}${mediaUrl}`;
+      }
 
-      setUploadedMedia({
+      const uploadedMediaData = {
         ...data,
-        url: fullUrl
-      });
-      console.log('✅ [EDITAR] uploadedMedia configurado com URL absoluta:', fullUrl);
+        url: mediaUrl,
+        mimetype: data.mimetype || data.mime_type || file.type,
+        mime_type: data.mime_type || data.mimetype || file.type,
+        originalname: data.originalname || data.original_name || file.name,
+        original_name: data.original_name || data.originalname || file.name,
+        size: data.size || file.size
+      };
+      
+      setUploadedMedia(uploadedMediaData);
+      console.log('✅ [EDITAR] uploadedMedia configurado (novo arquivo)');
+      console.log('   - url:', uploadedMediaData.url);
+      console.log('   - mime_type:', uploadedMediaData.mime_type);
+      console.log('   - size:', uploadedMediaData.size);
       alert('✅ Arquivo enviado com sucesso!');
     } catch (err: any) {
       alert(err.response?.data?.error || 'Erro ao fazer upload');
