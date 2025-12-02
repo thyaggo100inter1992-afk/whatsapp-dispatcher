@@ -1277,7 +1277,7 @@ export default function EnviarMensagemUnificado() {
   };
 
   const updateCard = (cardId: string, field: string, value: any) => {
-    setCards(cards.map(card => 
+    setCards(prevCards => prevCards.map(card => 
       card.id === cardId ? { ...card, [field]: value } : card
     ));
   };
@@ -1350,7 +1350,7 @@ export default function EnviarMensagemUnificado() {
   };
 
   const updateCardButton = (cardId: string, buttonId: string, field: string, value: any) => {
-    setCards(cards.map(card => 
+    setCards(prevCards => prevCards.map(card => 
       card.id === cardId 
         ? {
             ...card,
@@ -4705,9 +4705,17 @@ export default function EnviarMensagemUnificado() {
                               <p className="text-white font-bold">✅ Imagem carregada</p>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  updateCard(card.id, 'image', '');
-                                  updateCard(card.id, 'uploadedImage', null);
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  console.log('🗑️ REMOVER IMAGEM - Card direto');
+                                  // Atualizar tudo de uma vez para evitar race condition
+                                  setCards(prevCards => prevCards.map(c => 
+                                    c.id === card.id 
+                                      ? { ...c, image: undefined, uploadedImage: undefined }
+                                      : c
+                                  ));
+                                  console.log('✅ Imagem removida do card');
                                 }}
                                 className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded font-bold text-sm"
                               >
