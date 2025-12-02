@@ -1063,9 +1063,9 @@ const [formData, setFormData] = useState({
 
     try {
       const response = await uploadAPI.uploadMedia(file);
-      const uploadedData = response.data.data;
+      const uploadedData = response.data; // ✅ CORRIGIDO: era response.data.data
       
-      const imageUrl = uploadedData.url.startsWith('http') 
+      const imageUrl = uploadedData.url && uploadedData.url.startsWith('http') 
         ? uploadedData.url 
         : `${API_BASE_URL}${uploadedData.url}`;
 
@@ -2210,10 +2210,10 @@ const [formData, setFormData] = useState({
                                                   try {
                                                     // Upload da imagem para o servidor
                                                     const response = await uploadAPI.uploadMedia(file);
-                                                    const uploadedData = response.data.data;
+                                                    const uploadedData = response.data; // ✅ CORRIGIDO: era response.data.data
                                                     
                                                     // Converter URL relativa para URL completa
-                                                    const imageUrl = uploadedData.url.startsWith('http') 
+                                                    const imageUrl = uploadedData.url && uploadedData.url.startsWith('http') 
                                                       ? uploadedData.url 
                                                       : `${API_BASE_URL}${uploadedData.url}`;
                                                     
