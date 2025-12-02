@@ -3860,8 +3860,8 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
 
     console.log('📤 Enviando menu interativo:', type);
 
-    // Buscar instância
-    const result = await pool.query(
+    // Buscar instância (usando tenantQuery para RLS)
+    const result = await tenantQuery(req,
       `SELECT 
         ui.*,
         p.name as proxy_name,
