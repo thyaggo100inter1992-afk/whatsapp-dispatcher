@@ -3679,14 +3679,31 @@ export default function EnviarMensagemUnificado() {
                                                 </p>
                                                 <button
                                                   type="button"
-                                                  onClick={() => {
-                                                    const newCards = [...(block.cards || [])];
-                                                    // Limpar TANTO image quanto uploadedImage
-                                                    newCards[cardIndex] = { ...card, image: '', uploadedImage: null };
+                                                  onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    console.log('🗑️ CLIQUE NO REMOVER - Card', cardIndex + 1);
+                                                    console.log('🗑️ Estado ANTES:', { image: card.image, uploadedImage: card.uploadedImage });
+                                                    
+                                                    // Criar novo array de cards completamente novo
+                                                    const newCards = (block.cards || []).map((c: any, idx: number) => {
+                                                      if (idx === cardIndex) {
+                                                        // Retornar card LIMPO sem image e uploadedImage
+                                                        return {
+                                                          text: c.text || '',
+                                                          buttons: c.buttons || [],
+                                                          image: '', // ← LIMPO
+                                                          uploadedImage: null // ← LIMPO
+                                                        };
+                                                      }
+                                                      return c;
+                                                    });
+                                                    
+                                                    console.log('🗑️ Estado DEPOIS:', newCards[cardIndex]);
                                                     updateMessageBlock(block.id, { cards: newCards });
-                                                    console.log('🗑️ Imagem removida do card', cardIndex + 1);
+                                                    console.log('✅ Imagem removida do card', cardIndex + 1);
                                                   }}
-                                                  className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded font-bold text-sm"
+                                                  className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded font-bold text-sm transition-all"
                                                 >
                                                   <FaTrash className="inline mr-1" /> Remover
                                                 </button>
