@@ -114,6 +114,9 @@ class QrTemplateController {
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
       }
 
+      // ✅ INICIAR TRANSAÇÃO
+      await client.query('BEGIN');
+
       // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
       await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
 
@@ -146,6 +149,9 @@ class QrTemplateController {
         GROUP BY t.id
       `, [id, tenantId]);
 
+      // ✅ COMMIT
+      await client.query('COMMIT');
+
       if (result.rows.length === 0) {
         return res.status(404).json({
           success: false,
@@ -168,6 +174,8 @@ class QrTemplateController {
         data: template
       });
     } catch (error: any) {
+      // ❌ ROLLBACK em caso de erro
+      await client.query('ROLLBACK');
       console.error('❌ Erro ao buscar template:', error);
       res.status(500).json({
         success: false,
