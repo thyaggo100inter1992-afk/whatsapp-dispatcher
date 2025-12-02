@@ -460,10 +460,22 @@ class QrCampaignWorker {
   private async autoPauseCampaign(campaignId: number, tenantId?: number) {
     try {
       if (tenantId) {
-        await query(
-          `UPDATE qr_campaigns SET status = 'paused' WHERE id = $1 AND tenant_id = $2`,
-          [campaignId, tenantId]
-        );
+        // ✅ Usar RLS para o UPDATE
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+          await client.query(
+            `UPDATE qr_campaigns SET status = 'paused' WHERE id = $1 AND tenant_id = $2`,
+            [campaignId, tenantId]
+          );
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally {
+          client.release();
+        }
       } else {
         await query(
           `UPDATE qr_campaigns SET status = 'paused' WHERE id = $1`,
@@ -500,18 +512,25 @@ class QrCampaignWorker {
   private async processCampaign(campaign: QrCampaign) {
     console.log(`📋 [QR Worker] Processando campanha: ${campaign.name} (ID: ${campaign.id})`);
 
-    // Atualizar status para running se estiver pending
+    // ✅ Atualizar status para running COM RLS
     if (campaign.status === 'pending' || campaign.status === 'scheduled') {
-      if (campaign.tenant_id) {
-        await query(
+      const statusClient = await pool.connect();
+      try {
+        await statusClient.query('BEGIN');
+        if (campaign.tenant_id) {
+          await statusClient.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', campaign.tenant_id.toString()]);
+        }
+        const updateResult = await statusClient.query(
           `UPDATE qr_campaigns SET status = 'running', started_at = NOW() WHERE id = $1 AND tenant_id = $2`,
           [campaign.id, campaign.tenant_id]
         );
-      } else {
-        await query(
-          `UPDATE qr_campaigns SET status = 'running', started_at = NOW() WHERE id = $1`,
-          [campaign.id]
-        );
+        await statusClient.query('COMMIT');
+        console.log(`✅ Status atualizado para 'running' (${updateResult.rowCount} row affected)`);
+      } catch (error) {
+        await statusClient.query('ROLLBACK');
+        console.error(`❌ Erro ao atualizar status:`, error);
+      } finally {
+        statusClient.release();
       }
     }
 
@@ -646,7 +665,7 @@ class QrCampaignWorker {
     if (contactsResult.rows.length === 0) {
       // Campanha concluída
       console.log(`✅ [DEBUG] Nenhum contato pendente, finalizando campanha ${campaign.id}`);
-      await this.finishCampaign(campaign.id);
+      await this.finishCampaign(campaign.id, campaign.tenant_id);
       return;
     }
 
@@ -683,11 +702,29 @@ class QrCampaignWorker {
           console.log(`⏸️ [QR Worker] FORA do horário de trabalho (${currentTime} não está entre ${scheduleConfig.work_start_time} e ${scheduleConfig.work_end_time})`);
           console.log(`⏸️ [QR Worker] Pausando campanha ${campaign.id} - ${index} de ${contacts.length} mensagens enviadas`);
           
-          // Pausar campanha automaticamente
-          await query(
-            `UPDATE qr_campaigns SET status = 'paused' WHERE id = $1`,
-            [campaign.id]
-          );
+          // ✅ Pausar campanha automaticamente COM RLS
+          if (campaign.tenant_id) {
+            const pauseClient = await pool.connect();
+            try {
+              await pauseClient.query('BEGIN');
+              await pauseClient.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', campaign.tenant_id.toString()]);
+              await pauseClient.query(
+                `UPDATE qr_campaigns SET status = 'paused' WHERE id = $1 AND tenant_id = $2`,
+                [campaign.id, campaign.tenant_id]
+              );
+              await pauseClient.query('COMMIT');
+            } catch (error) {
+              await pauseClient.query('ROLLBACK');
+              console.error('❌ Erro ao pausar campanha:', error);
+            } finally {
+              pauseClient.release();
+            }
+          } else {
+            await query(
+              `UPDATE qr_campaigns SET status = 'paused' WHERE id = $1`,
+              [campaign.id]
+            );
+          }
           
           console.log(`⏸️ [QR Worker] Campanha ${campaign.id} pausada - Retomará automaticamente no próximo horário de trabalho`);
           return; // Parar o processamento
@@ -1775,14 +1812,37 @@ class QrCampaignWorker {
     }
   }
 
-  private async finishCampaign(campaignId: number) {
+  private async finishCampaign(campaignId: number, tenantId?: number) {
     try {
-      await query(
-        `UPDATE qr_campaigns 
-         SET status = 'completed', completed_at = NOW()
-         WHERE id = $1`,
-        [campaignId]
-      );
+      if (!tenantId) {
+        console.warn(`⚠️ finishCampaign sem tenantId para campanha ${campaignId}`);
+        await query(
+          `UPDATE qr_campaigns 
+           SET status = 'completed', completed_at = NOW()
+           WHERE id = $1`,
+          [campaignId]
+        );
+      } else {
+        // ✅ Usar RLS para o UPDATE
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+          const result = await client.query(
+            `UPDATE qr_campaigns 
+             SET status = 'completed', completed_at = NOW()
+             WHERE id = $1 AND tenant_id = $2`,
+            [campaignId, tenantId]
+          );
+          await client.query('COMMIT');
+          console.log(`✅ Campanha ${campaignId} finalizada (${result.rowCount} row affected)`);
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally {
+          client.release();
+        }
+      }
       
       this.autoPausedCampaigns.delete(campaignId);
       this.pauseState.delete(campaignId);
