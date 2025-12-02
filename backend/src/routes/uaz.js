@@ -2745,8 +2745,8 @@ router.post('/instances/:id/send-image', checkMessageLimit, async (req, res) => 
       });
     }
 
-    // Busca instância
-    const instance = await pool.query(`
+    // Busca instância (usando tenantQuery para RLS)
+    const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id
@@ -2921,8 +2921,8 @@ router.post('/instances/:id/send-video', checkMessageLimit, async (req, res) => 
       });
     }
 
-    // Busca instância
-    const instance = await pool.query(`
+    // Busca instância (usando tenantQuery para RLS)
+    const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id
@@ -3077,8 +3077,8 @@ router.post('/instances/:id/send-document', checkMessageLimit, async (req, res) 
       });
     }
 
-    // Busca instância
-    const instance = await pool.query(`
+    // Busca instância (usando tenantQuery para RLS)
+    const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id
@@ -3234,8 +3234,8 @@ router.post('/instances/:id/send-audio', checkMessageLimit, async (req, res) => 
       });
     }
 
-    // Busca instância
-    const instance = await pool.query(`
+    // Busca instância (usando tenantQuery para RLS)
+    const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id
@@ -3371,8 +3371,8 @@ router.post('/instances/:id/check-number', async (req, res) => {
       });
     }
 
-    // Busca instância
-    const instance = await pool.query(`
+    // Busca instância (usando tenantQuery para RLS)
+    const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id
@@ -3443,8 +3443,8 @@ router.post('/instances/:id/check-numbers', async (req, res) => {
       });
     }
 
-    // Busca instância
-    const instance = await pool.query(`
+    // Busca instância (usando tenantQuery para RLS)
+    const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id
