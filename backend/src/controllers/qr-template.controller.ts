@@ -239,6 +239,10 @@ class QrTemplateController {
         throw new Error('Tenant não identificado');
       }
 
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+      console.log(`✅ [CREATE] Tenant ${tenantId} definido na sessão PostgreSQL`);
+
       // Validar tipos permitidos
       const validTypes = ['text', 'image', 'video', 'audio', 'audio_recorded', 'document', 'list', 'buttons', 'carousel', 'poll', 'combined'];
       if (!validTypes.includes(type)) {
