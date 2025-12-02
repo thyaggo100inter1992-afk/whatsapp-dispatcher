@@ -572,8 +572,13 @@ export default function EditarTemplate() {
     setUploadingMedia(true);
     try {
       const response = await uploadAPI.uploadMedia(file);
-      const data = response.data.data;
-      console.log('📤 [EDITAR] Upload completo:', data);
+      console.log('📤 [EDITAR] Response completo:', response);
+      console.log('📤 [EDITAR] response.data:', response.data);
+      
+      const data = response.data.data || response.data;
+      console.log('📤 [EDITAR] data extraído:', data);
+      console.log('📤 [EDITAR] data.url:', data.url);
+      console.log('📤 [EDITAR] data.filename:', data.filename);
       
       // ✅ CORRIGIR: Garantir que a URL seja absoluta
       // O backend pode retornar 'url' ou precisar construir baseado em outras props
@@ -583,10 +588,14 @@ export default function EditarTemplate() {
         mediaUrl = `/uploads/media/${data.filename}`;
       }
       
+      console.log('📤 [EDITAR] mediaUrl ANTES de converter para absoluta:', mediaUrl);
+      
       // Converter para URL absoluta se necessário
       if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
         mediaUrl = `${API_BASE_URL}${mediaUrl}`;
       }
+      
+      console.log('📤 [EDITAR] mediaUrl DEPOIS de converter para absoluta:', mediaUrl);
 
       const uploadedMediaData = {
         ...data,
@@ -598,13 +607,15 @@ export default function EditarTemplate() {
         size: data.size || file.size
       };
       
-      setUploadedMedia(uploadedMediaData);
-      console.log('✅ [EDITAR] uploadedMedia configurado (novo arquivo)');
+      console.log('✅ [EDITAR] uploadedMedia configurado (novo arquivo):', uploadedMediaData);
       console.log('   - url:', uploadedMediaData.url);
       console.log('   - mime_type:', uploadedMediaData.mime_type);
       console.log('   - size:', uploadedMediaData.size);
+      
+      setUploadedMedia(uploadedMediaData);
       alert('✅ Arquivo enviado com sucesso!');
     } catch (err: any) {
+      console.error('❌ [EDITAR] Erro no upload:', err);
       alert(err.response?.data?.error || 'Erro ao fazer upload');
     } finally {
       setUploadingMedia(false);
