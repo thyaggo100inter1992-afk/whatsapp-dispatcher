@@ -209,10 +209,11 @@ export class QrCampaignController {
       console.log(`✅ ${createdContacts.length} contatos criados/atualizados`);
 
       // Associar contatos à campanha
+      // ✅ CORRIGIDO: Incluir tenant_id para RLS funcionar
       for (const contact of createdContacts) {
         await tenantQuery(req, 
-          'INSERT INTO qr_campaign_contacts (campaign_id, contact_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-          [campaign.id, contact.id]
+          'INSERT INTO qr_campaign_contacts (campaign_id, contact_id, tenant_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+          [campaign.id, contact.id, tenantId]
         );
       }
       console.log('✅ Contatos associados à campanha QR');
@@ -232,13 +233,14 @@ export class QrCampaignController {
       //   0: Inst1+Temp1, 1: Inst2+Temp1, 2: Inst3+Temp1, 3: Inst4+Temp1, 4: Inst5+Temp1
       //   5: Inst1+Temp2, 6: Inst2+Temp2, 7: Inst3+Temp2, 8: Inst4+Temp2, 9: Inst5+Temp2
       //   ... e assim por diante
+      // ✅ CORRIGIDO: Incluir tenant_id para RLS funcionar
       for (const templateId of template_ids) {
         for (const instanceId of instance_ids) {
           await tenantQuery(req, 
             `INSERT INTO qr_campaign_templates 
-             (campaign_id, instance_id, qr_template_id, order_index, is_active)
-             VALUES ($1, $2, $3, $4, true)`,
-            [campaign.id, instanceId, templateId, orderIndex]
+             (campaign_id, instance_id, qr_template_id, order_index, is_active, tenant_id)
+             VALUES ($1, $2, $3, $4, true, $5)`,
+            [campaign.id, instanceId, templateId, orderIndex, tenantId]
           );
           orderIndex++;
         }
