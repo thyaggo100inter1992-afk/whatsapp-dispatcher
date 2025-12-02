@@ -10,6 +10,9 @@ import { InstanceAvatar } from '@/components/InstanceAvatar';
 import { detectVariables } from '@/utils/templateVariables';
 import RestrictionCheckModal from '@/components/RestrictionCheckModal';
 
+// ✅ URL base da API
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+
 interface QrTemplate {
   id: number;
   name: string;
@@ -93,7 +96,7 @@ export default function CriarCampanhaQR() {
 
   const loadInstances = async () => {
     try {
-      const response = await axios.get('http://localhost:3001/api/uaz/instances');
+      const response = await axios.get(`${API_URL}/uaz/instances`);
       console.log('📱 Resposta da API de instâncias:', response.data);
       console.log('📱 Total de instâncias:', response.data.data?.length);
       
@@ -126,7 +129,7 @@ export default function CriarCampanhaQR() {
 
   const loadTemplates = async () => {
     try {
-      const response = await axios.get('http://localhost:3001/api/qr-templates');
+      const response = await axios.get(`${API_URL}/qr-templates`);
       setTemplates(response.data.data);
       
       // 🔤 Detectar variáveis dos templates selecionados
@@ -604,7 +607,7 @@ export default function CriarCampanhaQR() {
       }
       
       // Verificar restrições em todas as instâncias selecionadas
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/restriction-lists/check-bulk`, {
+      const response = await fetch(`${API_URL}/restriction-lists/check-bulk`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
