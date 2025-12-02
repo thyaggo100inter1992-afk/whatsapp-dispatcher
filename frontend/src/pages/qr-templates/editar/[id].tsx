@@ -575,7 +575,8 @@ export default function EditarTemplate() {
       console.log('📤 [EDITAR] Response completo:', response);
       console.log('📤 [EDITAR] response.data:', response.data);
       
-      const data = response.data.data || response.data;
+      // ✅ O backend retorna response.data = { success, url, filename, ... }
+      const data = response.data;
       console.log('📤 [EDITAR] data extraído:', data);
       console.log('📤 [EDITAR] data.url:', data.url);
       console.log('📤 [EDITAR] data.filename:', data.filename);
