@@ -3192,21 +3192,23 @@ export default function EnviarMensagemUnificado() {
                                                 try {
                                                   const audioFile = new File([audioBlob], 'audio-gravado.ogg', { type: 'audio/ogg; codecs=opus' });
                                                   const response = await uploadAPI.uploadMedia(audioFile);
-                                                  const data = response.data.data || response.data;
+                                                  const data = response.data;
                                                   
-                                                  if (!data.url) {
-                                                    throw new Error('URL do áudio não foi retornada pelo servidor');
+                                                  // Construir URL absoluta
+                                                  let mediaUrl = data.url;
+                                                  if (!mediaUrl) {
+                                                    mediaUrl = `/uploads/media/${data.filename}`;
                                                   }
-                                                  
-                                                  // ✅ Converter URL relativa para URL completa
-                                                  const fullUrl = data.url.startsWith('http') || data.url.startsWith('data:') || data.url.startsWith('blob:')
-                                                    ? data.url 
-                                                    : `${API_BASE_URL}${data.url}`;
+                                                  if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
+                                                    mediaUrl = `${API_BASE_URL}${mediaUrl}`;
+                                                  }
                                                   
                                                   updateMessageBlock(block.id, { 
                                                     media: { 
                                                       ...data, 
-                                                      url: fullUrl,
+                                                      url: mediaUrl,
+                                                      mimetype: data.mimetype || data.mime_type || 'audio/ogg',
+                                                      mime_type: data.mime_type || data.mimetype || 'audio/ogg',
                                                       localAudioUrl: audioUrl 
                                                     } 
                                                   });
