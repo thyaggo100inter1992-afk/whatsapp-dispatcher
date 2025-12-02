@@ -307,10 +307,34 @@ export default function EnviarMensagemUnificado() {
         
         // Carregar outras configurações após a renderização do tipo de mensagem
         setTimeout(() => {
-          // Carregar mídia
-          if (templateData.media_url) {
-            setUploadedMedia({ url: templateData.media_url });
-            console.log('✅ Mídia carregada:', templateData.media_url);
+          // Carregar mídia - ✅ CORRIGIDO: Usar media_files se disponível
+          if (templateData.media_files && templateData.media_files.length > 0) {
+            const mediaFile = templateData.media_files[0];
+            // Construir URL completa se necessário
+            let mediaUrl = mediaFile.url;
+            if (mediaUrl && !mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
+              const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/api$/, '');
+              mediaUrl = `${API_BASE_URL}${mediaUrl}`;
+            }
+            setUploadedMedia({
+              url: mediaUrl,
+              path: mediaFile.path || mediaFile.url,
+              filename: mediaFile.file_name || mediaFile.filename || mediaFile.original_name,
+              originalname: mediaFile.original_name || mediaFile.file_name,
+              mimetype: mediaFile.mimetype || mediaFile.mime_type,
+              mime_type: mediaFile.mime_type || mediaFile.mimetype,
+              size: mediaFile.file_size || mediaFile.size
+            });
+            console.log('✅ Mídia carregada de media_files:', mediaUrl);
+          } else if (templateData.media_url) {
+            // Fallback para media_url se media_files não existir
+            let mediaUrl = templateData.media_url;
+            if (mediaUrl && !mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
+              const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/api$/, '');
+              mediaUrl = `${API_BASE_URL}${mediaUrl}`;
+            }
+            setUploadedMedia({ url: mediaUrl });
+            console.log('✅ Mídia carregada de media_url:', mediaUrl);
           }
           
           // Carregar configurações específicas

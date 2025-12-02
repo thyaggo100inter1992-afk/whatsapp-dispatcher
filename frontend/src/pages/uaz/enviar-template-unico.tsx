@@ -1678,6 +1678,7 @@ export default function EnviarTemplateUnico() {
                     type: selectedTemplate.type,
                     text_content: selectedTemplate.text_content,
                     media_url: selectedTemplate.media_url,
+                    media_files: selectedTemplate.media_files, // ✅ ADICIONADO: Incluir dados completos das mídias
                     buttons_config: selectedTemplate.buttons_config,
                     list_config: selectedTemplate.list_config,
                     carousel_config: selectedTemplate.carousel_config,
