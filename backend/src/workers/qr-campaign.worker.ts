@@ -350,12 +350,12 @@ class QrCampaignWorker {
       }
       
       // 🔒 SEGURANÇA: Buscar campanhas QR APENAS de tenants ativos
-      // ✅ CORRIGIDO: Usar timezone de Brasília para comparação
+      // ✅ As datas são salvas em UTC, então NOW() (também UTC) está correto
       const campaigns = await query(
         `SELECT * FROM qr_campaigns 
          WHERE tenant_id = ANY($1)
          AND status IN ('pending', 'scheduled', 'running')
-         AND (scheduled_at IS NULL OR scheduled_at <= (NOW() AT TIME ZONE 'America/Sao_Paulo'))
+         AND (scheduled_at IS NULL OR scheduled_at <= NOW())
          ORDER BY created_at ASC`,
         [tenantIds]
       );
