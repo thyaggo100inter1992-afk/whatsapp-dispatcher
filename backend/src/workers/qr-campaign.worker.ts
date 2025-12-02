@@ -1,4 +1,4 @@
-import { query } from '../database/connection';
+import { query, pool } from '../database/connection';
 import * as fs from 'fs';
 import * as path from 'path';
 import { RestrictionListController } from '../controllers/restriction-list.controller';
@@ -353,24 +353,41 @@ class QrCampaignWorker {
         return;
       }
       
-      // 🔒 SEGURANÇA: Buscar campanhas QR APENAS de tenants ativos
-      // ✅ As datas são salvas em UTC, então NOW() (também UTC) está correto
-      const campaigns = await query(
-        `SELECT * FROM qr_campaigns 
-         WHERE tenant_id = ANY($1)
-         AND status IN ('pending', 'scheduled', 'running')
-         AND (scheduled_at IS NULL OR scheduled_at <= NOW())
-         ORDER BY created_at ASC`,
-        [tenantIds]
-      );
-
-      console.log(`📊 [QR Worker] Encontradas ${campaigns.rows.length} campanhas elegíveis`);
+      // ✅ CORRIGIDO: Buscar campanhas de cada tenant separadamente com RLS
+      let allCampaigns: any[] = [];
       
-      if (campaigns.rows.length === 0) {
+      for (const tenantId of tenantIds) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+          
+          const result = await client.query(
+            `SELECT * FROM qr_campaigns 
+             WHERE tenant_id = $1
+             AND status IN ('pending', 'scheduled', 'running')
+             AND (scheduled_at IS NULL OR scheduled_at <= NOW())
+             ORDER BY created_at ASC`,
+            [tenantId]
+          );
+          
+          await client.query('COMMIT');
+          allCampaigns = allCampaigns.concat(result.rows);
+        } catch (error) {
+          await client.query('ROLLBACK');
+          console.error(`❌ Erro ao buscar campanhas do tenant ${tenantId}:`, error);
+        } finally {
+          client.release();
+        }
+      }
+
+      console.log(`📊 [QR Worker] Encontradas ${allCampaigns.length} campanhas elegíveis`);
+      
+      if (allCampaigns.length === 0) {
         return;
       }
 
-      for (const campaign of campaigns.rows) {
+      for (const campaign of allCampaigns) {
         console.log(`\n🔎 [QR Worker] Verificando campanha ${campaign.id} (${campaign.name})...`);
         console.log(`   📊 Status: ${campaign.status}`);
         console.log(`   📅 Agendada para: ${campaign.scheduled_at}`);
