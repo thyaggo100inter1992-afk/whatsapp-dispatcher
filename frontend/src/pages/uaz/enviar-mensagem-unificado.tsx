@@ -4712,7 +4712,7 @@ export default function EnviarMensagemUnificado() {
                                   // Atualizar tudo de uma vez para evitar race condition
                                   setCards(prevCards => prevCards.map(c => 
                                     c.id === card.id 
-                                      ? { ...c, image: undefined, uploadedImage: undefined }
+                                      ? { ...c, image: '', uploadedImage: null as any }
                                       : c
                                   ));
                                   console.log('✅ Imagem removida do card');
