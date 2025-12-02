@@ -957,7 +957,7 @@ class QrCampaignWorker {
       const statusAfterSend = await getCampaignStatus(campaign.id, campaign.tenant_id);
       
       if (statusAfterSend === 'paused' || statusAfterSend === 'cancelled') {
-        console.log(`⏸️ [QR Worker] Campanha ${statusCheck2.rows[0]?.status === 'paused' ? 'pausada' : 'cancelada'} após envio de ${index + 1} mensagem(ns)`);
+        console.log(`⏸️ [QR Worker] Campanha ${statusAfterSend === 'paused' ? 'pausada' : 'cancelada'} após envio de ${index + 1} mensagem(ns)`);
         return; // ← SAI DO LOOP
       }
 
@@ -990,7 +990,7 @@ class QrCampaignWorker {
           const statusDuringDelay = await getCampaignStatus(campaign.id, campaign.tenant_id);
           
           if (statusDuringDelay === 'paused' || statusDuringDelay === 'cancelled') {
-            console.log(`⏸️ [QR Worker] Campanha ${statusCheckDelay.rows[0]?.status === 'paused' ? 'pausada' : 'cancelada'} durante delay (após ${sec + 1}s de ${currentIntervalSeconds}s)`);
+            console.log(`⏸️ [QR Worker] Campanha ${statusDuringDelay === 'paused' ? 'pausada' : 'cancelada'} durante delay (após ${sec + 1}s de ${currentIntervalSeconds}s)`);
             return; // ← SAI DO LOOP
           }
         }
@@ -1022,7 +1022,7 @@ class QrCampaignWorker {
             const statusAfterPause = await getCampaignStatus(campaign.id, campaign.tenant_id);
 
             if (statusAfterPause === 'paused' || statusAfterPause === 'cancelled') {
-              console.log(`⏸️ [QR Worker] Campanha ${statusCheckPause.rows[0]?.status === 'paused' ? 'pausada' : 'cancelada'} durante pausa automática (${sec}s de ${pauseTotalSeconds}s)`);
+              console.log(`⏸️ [QR Worker] Campanha ${statusAfterPause === 'paused' ? 'pausada' : 'cancelada'} durante pausa automática (${sec}s de ${pauseTotalSeconds}s)`);
               return; // ← SAI DO LOOP
             }
           }
