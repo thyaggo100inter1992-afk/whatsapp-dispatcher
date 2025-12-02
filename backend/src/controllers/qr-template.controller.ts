@@ -670,6 +670,9 @@ class QrTemplateController {
         throw new Error('Tenant não identificado');
       }
 
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+
       // ⚠️ VERIFICAR SE O TEMPLATE ESTÁ SENDO USADO EM CAMPANHAS ATIVAS (do mesmo tenant)
       const activeCampaignsResult = await client.query(
         `SELECT c.id, c.name, c.status 

@@ -574,7 +574,17 @@ export default function EditarTemplate() {
       const response = await uploadAPI.uploadMedia(file);
       const data = response.data.data;
       console.log('📤 UPLOAD COMPLETO - Dados recebidos:', data);
-      setUploadedMedia(data);
+      
+      // ✅ CORRIGIR: Converter URL relativa para absoluta
+      const fullUrl = data.url?.startsWith('http') || data.url?.startsWith('data:') || data.url?.startsWith('blob:')
+        ? data.url
+        : `${API_BASE_URL}${data.url}`;
+
+      setUploadedMedia({
+        ...data,
+        url: fullUrl
+      });
+      console.log('✅ [EDITAR] uploadedMedia configurado com URL absoluta:', fullUrl);
       alert('✅ Arquivo enviado com sucesso!');
     } catch (err: any) {
       alert(err.response?.data?.error || 'Erro ao fazer upload');
