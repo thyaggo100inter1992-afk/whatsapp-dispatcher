@@ -89,6 +89,8 @@ interface SendingJob {
 }
 
 export default function CriarTemplate() {
+  console.log('🔥🔥🔥 VERSÃO NOVA DO CÓDIGO CARREGADA - BUILD TIMESTAMP:', new Date().toISOString());
+  
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
