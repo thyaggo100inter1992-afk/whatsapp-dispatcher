@@ -174,8 +174,8 @@ router.use('/lista-restricao', authenticate, listaRestricaoRoutes);
 router.use('/base-dados', authenticate, baseDadosRoutes);
 
 // QR Code / WhatsApp Web
-router.use('/qr-templates', authenticate, qrTemplatesRoutes);
-router.use('/qr-campaigns', authenticate, qrCampaignsRoutes);
+router.use('/qr-templates', authenticate, setTenantContext, qrTemplatesRoutes);
+router.use('/qr-campaigns', authenticate, setTenantContext, qrCampaignsRoutes);
 router.use('/qr-webhook', qrWebhookRoutes); // PÚBLICO - webhooks externos
 console.log('✅ Rotas QR Connect e auxiliares registradas');
 
