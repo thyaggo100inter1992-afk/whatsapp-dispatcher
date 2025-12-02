@@ -713,8 +713,9 @@ class QrCampaignWorker {
       // ✅ VERIFICAR SE ESTÁ DENTRO DO HORÁRIO DE TRABALHO ANTES DE CADA ENVIO
       const scheduleConfig = (campaign.schedule_config || {}) as WorkerConfig;
       if (scheduleConfig.work_start_time && scheduleConfig.work_end_time) {
-        const now = new Date();
-        const currentTime = now.toTimeString().slice(0, 5);
+        // ✅ CORRIGIDO: Usar horário de Brasília, não UTC
+        const brazilNow = getBrazilNow();
+        const currentTime = brazilNow.toTimeString().slice(0, 5);
         
         if (currentTime < scheduleConfig.work_start_time || currentTime > scheduleConfig.work_end_time) {
           console.log(`⏸️ [QR Worker] FORA do horário de trabalho (${currentTime} não está entre ${scheduleConfig.work_start_time} e ${scheduleConfig.work_end_time})`);
