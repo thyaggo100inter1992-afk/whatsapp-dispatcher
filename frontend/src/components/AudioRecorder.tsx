@@ -56,20 +56,10 @@ export default function AudioRecorder({ onAudioReady, onRemove, initialAudioUrl,
       };
 
       mediaRecorder.onstop = () => {
-        console.log('🎙️ [AudioRecorder] Gravação parada, processando áudio...');
         const audioBlob = new Blob(chunksRef.current, { type: 'audio/ogg; codecs=opus' });
-        console.log('🎙️ [AudioRecorder] Blob criado:', audioBlob.size, 'bytes');
         const audioUrl = URL.createObjectURL(audioBlob);
-        console.log('🎙️ [AudioRecorder] URL criada:', audioUrl);
         setRecordedAudio(audioUrl);
-        console.log('🎙️ [AudioRecorder] Chamando onAudioReady...');
-        
-        try {
-          onAudioReady(audioBlob, audioUrl);
-          console.log('✅ [AudioRecorder] onAudioReady executado com sucesso!');
-        } catch (err) {
-          console.error('❌ [AudioRecorder] Erro ao executar onAudioReady:', err);
-        }
+        onAudioReady(audioBlob, audioUrl);
         
         // Para o stream para liberar o microfone
         stream.getTracks().forEach(track => track.stop());

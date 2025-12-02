@@ -89,8 +89,6 @@ interface SendingJob {
 }
 
 export default function CriarTemplate() {
-  console.log('🔥🔥🔥 VERSÃO NOVA DO CÓDIGO CARREGADA - BUILD TIMESTAMP:', new Date().toISOString());
-  
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -902,9 +900,6 @@ const [formData, setFormData] = useState({
   };
 
   const handleAudioRecorded = async (audioBlob: Blob, audioUrl: string) => {
-    console.log('🎤 [AUDIO - handleAudioRecorded] Áudio recebido, iniciando upload...');
-    console.log('🎤 [AUDIO - handleAudioRecorded] Tamanho do blob:', audioBlob.size, 'bytes');
-    
     setRecordedAudioBlob(audioBlob);
     setRecordedAudioUrl(audioUrl);
     
@@ -915,17 +910,9 @@ const [formData, setFormData] = useState({
     
     setUploadingMedia(true);
     try {
-      console.log('🎤 [AUDIO - handleAudioRecorded] Criando File...');
       const audioFile = new File([audioBlob], 'audio-gravado.ogg', { type: 'audio/ogg; codecs=opus' });
-      console.log('🎤 [AUDIO - handleAudioRecorded] File criado:', audioFile.name, audioFile.size, 'bytes');
-      
-      console.log('🎤 [AUDIO - handleAudioRecorded] Enviando para uploadAPI.uploadMedia...');
       const response = await uploadAPI.uploadMedia(audioFile);
-      console.log('🎤 [AUDIO - handleAudioRecorded] Response recebido:', response);
-      console.log('🎤 [AUDIO - handleAudioRecorded] response.data:', response.data);
-      
-      const data = response.data; // ✅ CORRIGIDO: era response.data.data
-      console.log('🎤 [AUDIO - handleAudioRecorded] data extraído:', data);
+      const data = response.data;
       
       // Construir URL absoluta
       let mediaUrl = data.url;
@@ -935,21 +922,15 @@ const [formData, setFormData] = useState({
       if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
         mediaUrl = `${API_BASE_URL}${mediaUrl}`;
       }
-      console.log('🎤 [AUDIO - handleAudioRecorded] URL final do áudio:', mediaUrl);
       
       data.localAudioUrl = audioUrl;
       data.url = mediaUrl;
       data.mimetype = data.mimetype || data.mime_type || 'audio/ogg';
       data.mime_type = data.mime_type || data.mimetype || 'audio/ogg';
       
-      console.log('🎤 [AUDIO - handleAudioRecorded] setUploadedMedia com:', data);
       setUploadedMedia(data);
-      console.log('✅ [AUDIO - handleAudioRecorded] Upload e update concluídos com sucesso!');
     } catch (err: any) {
-      console.error('❌ [AUDIO - handleAudioRecorded] Erro COMPLETO:', err);
-      console.error('❌ [AUDIO - handleAudioRecorded] err.response:', err.response);
-      console.error('❌ [AUDIO - handleAudioRecorded] err.response?.data:', err.response?.data);
-      console.error('❌ [AUDIO - handleAudioRecorded] err.message:', err.message);
+      console.error('❌ Erro ao fazer upload do áudio:', err);
       alert(err.response?.data?.error || 'Erro ao fazer upload do áudio');
     } finally {
       setUploadingMedia(false);
@@ -1697,19 +1678,10 @@ const [formData, setFormData] = useState({
                                           <div className="bg-red-500/10 border-2 border-red-500/40 rounded-xl p-6">
                                             <AudioRecorder
                                               onAudioReady={async (audioBlob: Blob, audioUrl: string) => {
-                                                console.log('🎤 [AUDIO] Áudio recebido, iniciando upload...');
-                                                console.log('🎤 [AUDIO] Tamanho do blob:', audioBlob.size, 'bytes');
                                                 try {
                                                   const audioFile = new File([audioBlob], 'audio-gravado.ogg', { type: 'audio/ogg; codecs=opus' });
-                                                  console.log('🎤 [AUDIO] File criado:', audioFile.name, audioFile.size, 'bytes');
-                                                  
-                                                  console.log('🎤 [AUDIO] Enviando para uploadAPI.uploadMedia...');
                                                   const response = await uploadAPI.uploadMedia(audioFile);
-                                                  console.log('🎤 [AUDIO] Response recebido:', response);
-                                                  console.log('🎤 [AUDIO] response.data:', response.data);
-                                                  
                                                   const data = response.data;
-                                                  console.log('🎤 [AUDIO] data extraído:', data);
                                                   
                                                   // Construir URL absoluta
                                                   let mediaUrl = data.url;
@@ -1719,7 +1691,6 @@ const [formData, setFormData] = useState({
                                                   if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
                                                     mediaUrl = `${API_BASE_URL}${mediaUrl}`;
                                                   }
-                                                  console.log('🎤 [AUDIO] URL final do áudio:', mediaUrl);
                                                   
                                                   updateMessageBlock(block.id, { 
                                                     media: { 
@@ -1730,12 +1701,8 @@ const [formData, setFormData] = useState({
                                                       localAudioUrl: audioUrl 
                                                     } 
                                                   });
-                                                  console.log('✅ [AUDIO] Upload e update concluídos com sucesso!');
                                                 } catch (err: any) {
-                                                  console.error('❌ [AUDIO] Erro COMPLETO:', err);
-                                                  console.error('❌ [AUDIO] err.response:', err.response);
-                                                  console.error('❌ [AUDIO] err.response?.data:', err.response?.data);
-                                                  console.error('❌ [AUDIO] err.message:', err.message);
+                                                  console.error('❌ Erro ao fazer upload do áudio:', err);
                                                   alert(err.response?.data?.error || err.message || 'Erro ao fazer upload do áudio');
                                                 }
                                               }}
