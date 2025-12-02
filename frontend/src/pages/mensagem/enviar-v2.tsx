@@ -874,7 +874,7 @@ export default function EnviarMensagemImediataV2() {
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-2">
-                                      <h3 className="font-bold text-base truncate text-white">{template.name}</h3>
+                                      <h3 className="font-bold text-base text-white break-words whitespace-normal leading-tight">{template.name}</h3>
                                       {isSent && <span className="text-green-400 text-xl">✓</span>}
                                     </div>
                                   
