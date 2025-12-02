@@ -22,6 +22,7 @@ const pool = new Pool({
 /**
  * Executa query com contexto do tenant (RLS ativo)
  * USO: Substituir query() por tenantQuery(req, ...)
+ * ✅ CORRIGIDO: Usar set_config dentro de transação para RLS funcionar
  */
 export async function tenantQuery(
   req: Request,
@@ -38,13 +39,23 @@ export async function tenantQuery(
   const client = await pool.connect();
 
   try {
-    // Definir tenant_id na sessão PostgreSQL
-    await client.query('SELECT set_current_tenant($1)', [req.tenant.id]);
+    // ✅ INICIAR TRANSAÇÃO (necessário para set_config funcionar com RLS)
+    await client.query('BEGIN');
+    
+    // ✅ CORRIGIDO: Usar set_config ao invés de set_current_tenant
+    await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', req.tenant.id.toString()]);
 
     // Executar query com RLS ativo
     const result = await client.query(text, params);
+    
+    // ✅ COMMIT da transação
+    await client.query('COMMIT');
 
     return result;
+  } catch (error) {
+    // ✅ ROLLBACK em caso de erro
+    await client.query('ROLLBACK');
+    throw error;
   } finally {
     // Sempre liberar o cliente
     client.release();
@@ -54,6 +65,7 @@ export async function tenantQuery(
 /**
  * Versão para uso sem Request (ex: workers, services)
  * Requer tenant_id manual
+ * ✅ CORRIGIDO: Usar set_config dentro de transação para RLS funcionar
  */
 export async function queryWithTenantId(
   tenantId: number,
@@ -63,9 +75,21 @@ export async function queryWithTenantId(
   const client = await pool.connect();
 
   try {
-    await client.query('SELECT set_current_tenant($1)', [tenantId]);
+    // ✅ INICIAR TRANSAÇÃO
+    await client.query('BEGIN');
+    
+    // ✅ CORRIGIDO: Usar set_config ao invés de set_current_tenant
+    await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+    
     const result = await client.query(text, params);
+    
+    // ✅ COMMIT
+    await client.query('COMMIT');
+    
     return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
   } finally {
     client.release();
   }
@@ -83,6 +107,7 @@ export async function queryNoTenant(
 
 /**
  * Executar transação com contexto de tenant
+ * ✅ CORRIGIDO: Usar set_config para RLS funcionar
  */
 export async function tenantTransaction<T>(
   req: Request,
@@ -91,13 +116,13 @@ export async function tenantTransaction<T>(
   const client = await pool.connect();
 
   try {
-    // Definir tenant
-    if (req.tenant && req.tenant.id) {
-      await client.query('SELECT set_current_tenant($1)', [req.tenant.id]);
-    }
-
-    // Iniciar transação
+    // Iniciar transação PRIMEIRO
     await client.query('BEGIN');
+
+    // ✅ CORRIGIDO: Definir tenant com set_config
+    if (req.tenant && req.tenant.id) {
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', req.tenant.id.toString()]);
+    }
 
     // Executar callback
     const result = await callback(client);
