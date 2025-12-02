@@ -845,7 +845,10 @@ const [formData, setFormData] = useState({
     setUploadingMedia(true);
     try {
       const response = await uploadAPI.uploadMedia(file);
-      const data = response.data.data;
+      // ✅ Backend pode retornar de 2 formas:
+      // 1. { success: true, data: { url, filename, ... } } - novo formato
+      // 2. { url, filename, ... } - formato antigo
+      const data = response.data.data || response.data;
       
       console.log('📤 [CRIAR TEMPLATE] Upload completo:', {
         data,
@@ -854,7 +857,23 @@ const [formData, setFormData] = useState({
         url: data?.url
       });
       
-      setUploadedMedia(data);
+      // Verificar se data.url existe
+      if (!data.url) {
+        throw new Error('URL do arquivo não foi retornada pelo servidor');
+      }
+      
+      // ✅ Converter URL relativa para URL completa
+      const fullUrl = data.url.startsWith('http') || data.url.startsWith('data:') || data.url.startsWith('blob:')
+        ? data.url 
+        : `${API_BASE_URL}${data.url}`;
+      
+      console.log('📎 [CRIAR TEMPLATE] URL do arquivo:', fullUrl);
+      
+      setUploadedMedia({
+        ...data,
+        url: fullUrl
+      });
+      
       console.log('✅ [CRIAR TEMPLATE] uploadedMedia configurado');
     } catch (err: any) {
       console.error('❌ [CRIAR TEMPLATE] Erro no upload:', err);
@@ -1611,7 +1630,19 @@ const [formData, setFormData] = useState({
                                                   }
                                                   try {
                                                     const response = await uploadAPI.uploadMedia(file);
-                                                    updateMessageBlock(block.id, { media: response.data.data });
+                                                    const data = response.data.data || response.data;
+                                                    
+                                                    // ✅ Converter URL relativa para URL completa
+                                                    const fullUrl = data.url && (data.url.startsWith('http') || data.url.startsWith('data:') || data.url.startsWith('blob:'))
+                                                      ? data.url 
+                                                      : `${API_BASE_URL}${data.url}`;
+                                                    
+                                                    updateMessageBlock(block.id, { 
+                                                      media: {
+                                                        ...data,
+                                                        url: fullUrl
+                                                      }
+                                                    });
                                                   } catch (err) {
                                                     alert('Erro ao fazer upload');
                                                   }
@@ -1635,9 +1666,19 @@ const [formData, setFormData] = useState({
                                                 try {
                                                   const audioFile = new File([audioBlob], 'audio-gravado.ogg', { type: 'audio/ogg; codecs=opus' });
                                                   const response = await uploadAPI.uploadMedia(audioFile);
-                                                  const data = response.data.data;
+                                                  const data = response.data.data || response.data;
+                                                  
+                                                  // ✅ Converter URL relativa para URL completa
+                                                  const fullUrl = data.url && (data.url.startsWith('http') || data.url.startsWith('data:') || data.url.startsWith('blob:'))
+                                                    ? data.url 
+                                                    : `${API_BASE_URL}${data.url}`;
+                                                  
                                                   updateMessageBlock(block.id, { 
-                                                    media: { ...data, localAudioUrl: audioUrl } 
+                                                    media: { 
+                                                      ...data, 
+                                                      url: fullUrl,
+                                                      localAudioUrl: audioUrl 
+                                                    } 
                                                   });
                                                 } catch (err: any) {
                                                   alert(err.response?.data?.error || 'Erro ao fazer upload do áudio');
