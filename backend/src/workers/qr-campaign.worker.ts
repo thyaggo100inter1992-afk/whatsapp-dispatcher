@@ -637,28 +637,46 @@ class QrCampaignWorker {
     console.log('');
 
     // Buscar os próximos N contatos pendentes (N = número de instâncias)
-    // Incluir contatos que nunca foram enviados OU que falharam e precisam ser reenviados
-    const contactsResult = await query(
-      `SELECT DISTINCT c.* FROM contacts c
-       INNER JOIN qr_campaign_contacts cc ON c.id = cc.contact_id
-       WHERE cc.campaign_id = $1
-       AND (
-         -- Contatos que nunca foram enviados
-         c.id NOT IN (
-           SELECT contact_id FROM qr_campaign_messages 
-           WHERE campaign_id = $1 AND contact_id IS NOT NULL
+    // ✅ Buscar contatos pendentes COM RLS
+    const contactsClient = await pool.connect();
+    let contactsResult;
+    try {
+      await contactsClient.query('BEGIN');
+      
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      if (campaign.tenant_id) {
+        await contactsClient.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', campaign.tenant_id.toString()]);
+      }
+      
+      contactsResult = await contactsClient.query(
+        `SELECT DISTINCT c.* FROM contacts c
+         INNER JOIN qr_campaign_contacts cc ON c.id = cc.contact_id
+         WHERE cc.campaign_id = $1
+         AND (
+           -- Contatos que nunca foram enviados
+           c.id NOT IN (
+             SELECT contact_id FROM qr_campaign_messages 
+             WHERE campaign_id = $1 AND contact_id IS NOT NULL
+           )
+           -- OU contatos com mensagens pendentes (que precisam ser reenviadas)
+           OR c.id IN (
+             SELECT contact_id FROM qr_campaign_messages 
+             WHERE campaign_id = $1 
+             AND contact_id IS NOT NULL
+             AND status = 'pending'
+           )
          )
-         -- OU contatos com mensagens pendentes (que precisam ser reenviadas)
-         OR c.id IN (
-           SELECT contact_id FROM qr_campaign_messages 
-           WHERE campaign_id = $1 
-           AND contact_id IS NOT NULL
-           AND status = 'pending'
-         )
-       )
-       LIMIT $2`,
-      [campaign.id, numInstances]
-    );
+         LIMIT $2`,
+        [campaign.id, numInstances]
+      );
+      
+      await contactsClient.query('COMMIT');
+    } catch (error) {
+      await contactsClient.query('ROLLBACK');
+      throw error;
+    } finally {
+      contactsClient.release();
+    }
 
     console.log(`📊 [DEBUG] Query de contatos retornou ${contactsResult.rows.length} contato(s)`);
     
