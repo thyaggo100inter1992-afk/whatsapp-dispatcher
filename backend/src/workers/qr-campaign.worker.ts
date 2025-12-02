@@ -483,13 +483,21 @@ class QrCampaignWorker {
     if (scheduleConfig.work_start_time && scheduleConfig.work_end_time) {
       const brazilNow = getBrazilNow();
       const currentTime = brazilNow.toTimeString().slice(0, 5);
+      
+      // ✅ COMPARAR CORRETAMENTE: Converter para minutos para evitar problemas de comparação de strings
+      const currentMinutes = parseInt(currentTime.split(':')[0]) * 60 + parseInt(currentTime.split(':')[1]);
+      const startMinutes = parseInt(scheduleConfig.work_start_time.split(':')[0]) * 60 + parseInt(scheduleConfig.work_start_time.split(':')[1]);
+      const endMinutes = parseInt(scheduleConfig.work_end_time.split(':')[0]) * 60 + parseInt(scheduleConfig.work_end_time.split(':')[1]);
+      
       console.log(
-        `   🕐 Horário atual (Brasília): ${currentTime} | Horário de trabalho: ${scheduleConfig.work_start_time} - ${scheduleConfig.work_end_time}`
+        `   🕐 Horário atual (Brasília): ${currentTime} (${currentMinutes} min) | Horário de trabalho: ${scheduleConfig.work_start_time}-${scheduleConfig.work_end_time} (${startMinutes}-${endMinutes} min)`
       );
       
-      if (currentTime < scheduleConfig.work_start_time || currentTime > scheduleConfig.work_end_time) {
+      const isOutsideWorkHours = currentMinutes < startMinutes || currentMinutes > endMinutes;
+      
+      if (isOutsideWorkHours) {
         // Fora do horário de trabalho
-        console.log(`   🌙 FORA do horário de trabalho`);
+        console.log(`   🌙 FORA do horário de trabalho (${currentMinutes} < ${startMinutes} ou ${currentMinutes} > ${endMinutes})`);
         if (campaign.status === 'running' && !this.autoPausedCampaigns.has(campaign.id)) {
           this.autoPauseCampaign(campaign.id);
         }
@@ -753,6 +761,9 @@ class QrCampaignWorker {
     const pauseAfter = campaign.pause_config?.pause_after || 0;
     const pauseDuration = campaign.pause_config?.pause_duration_minutes || 30;
 
+    // ✅ CONTROLE DE DELAY: Manter timestamp do último envio válido
+    let lastValidSendTime: number | null = null;
+
     // ENVIAR MENSAGENS SEQUENCIALMENTE COM DELAY
     for (let index = 0; index < contacts.length; index++) {
       // ✅ VERIFICAR SE CAMPANHA FOI PAUSADA MANUALMENTE ANTES DE CADA ENVIO (COM RLS)
@@ -765,9 +776,23 @@ class QrCampaignWorker {
         const brazilNow = getBrazilNow();
         const currentTime = brazilNow.toTimeString().slice(0, 5);
         
-        if (currentTime < scheduleConfig.work_start_time || currentTime > scheduleConfig.work_end_time) {
-          console.log(`⏸️ [QR Worker] FORA do horário de trabalho (${currentTime} não está entre ${scheduleConfig.work_start_time} e ${scheduleConfig.work_end_time})`);
-          console.log(`⏸️ [QR Worker] Pausando campanha ${campaign.id} - ${index} de ${contacts.length} mensagens enviadas`);
+        // ✅ COMPARAR CORRETAMENTE: Converter para minutos para evitar problemas de comparação de strings
+        const currentMinutes = parseInt(currentTime.split(':')[0]) * 60 + parseInt(currentTime.split(':')[1]);
+        const startMinutes = parseInt(scheduleConfig.work_start_time.split(':')[0]) * 60 + parseInt(scheduleConfig.work_start_time.split(':')[1]);
+        const endMinutes = parseInt(scheduleConfig.work_end_time.split(':')[0]) * 60 + parseInt(scheduleConfig.work_end_time.split(':')[1]);
+        
+        const isOutsideWorkHours = currentMinutes < startMinutes || currentMinutes > endMinutes;
+        
+        if (isOutsideWorkHours) {
+          console.log('');
+          console.log('🌙 ═══════════════════════════════════════════');
+          console.log('🌙  FORA DO HORÁRIO DE TRABALHO');
+          console.log(`🌙  Horário atual: ${currentTime} (${currentMinutes} min)`);
+          console.log(`🌙  Horário permitido: ${scheduleConfig.work_start_time} - ${scheduleConfig.work_end_time}`);
+          console.log(`🌙  (${startMinutes} - ${endMinutes} min)`);
+          console.log(`🌙  Campanha: ${campaign.name} (ID: ${campaign.id})`);
+          console.log('🌙 ═══════════════════════════════════════════');
+          console.log('');
           
           // ✅ Pausar campanha automaticamente COM RLS
           if (campaign.tenant_id) {
@@ -908,6 +933,30 @@ class QrCampaignWorker {
       console.log(`   📞 Número: ${contact.phone_number}`);
       console.log(`   ✅ PROSSEGUINDO COM ENVIO...`);
       console.log('═══════════════════════════════════════════════════\n');
+
+      // ✅ VERIFICAR DELAY: Aguardar intervalo desde o último envio válido
+      const currentIntervalSecondsBeforeSend = campaign.schedule_config?.interval_seconds || 5;
+      if (lastValidSendTime !== null) {
+        const elapsedMs = Date.now() - lastValidSendTime;
+        const requiredMs = currentIntervalSecondsBeforeSend * 1000;
+        const remainingMs = requiredMs - elapsedMs;
+        
+        if (remainingMs > 0) {
+          console.log(`⏳ [QR Worker] Aguardando ${(remainingMs / 1000).toFixed(1)}s para respeitar intervalo de ${currentIntervalSecondsBeforeSend}s...`);
+          
+          // ✅ DURANTE O DELAY, VERIFICAR A CADA SEGUNDO SE CAMPANHA FOI PAUSADA
+          const remainingSeconds = Math.ceil(remainingMs / 1000);
+          for (let sec = 0; sec < remainingSeconds; sec++) {
+            await this.sleep(1000);
+            
+            const statusDuringDelay = await getCampaignStatus(campaign.id, campaign.tenant_id);
+            if (statusDuringDelay === 'paused' || statusDuringDelay === 'cancelled') {
+              console.log(`⏸️ [QR Worker] Campanha ${statusDuringDelay === 'paused' ? 'pausada' : 'cancelada'} durante delay pré-envio`);
+              return;
+            }
+          }
+        }
+      }
       
       // 📱 VERIFICAR SE O NÚMERO TEM WHATSAPP ANTES DE ENVIAR
       console.log('📱 ═══════════════════════════════════════════════════');
@@ -981,6 +1030,10 @@ class QrCampaignWorker {
       
       // Enviar mensagem
       await this.sendMessage(campaign, contact, template);
+      
+      // ✅ MARCAR TIMESTAMP DO ÚLTIMO ENVIO VÁLIDO
+      lastValidSendTime = Date.now();
+      console.log(`⏱️ [QR Worker] Timestamp de envio registrado: ${new Date(lastValidSendTime).toLocaleTimeString('pt-BR')}`);
 
       // ✅ VERIFICAR NOVAMENTE SE CAMPANHA FOI PAUSADA APÓS O ENVIO (COM RLS)
       const statusAfterSend = await getCampaignStatus(campaign.id, campaign.tenant_id);
@@ -1004,26 +1057,11 @@ class QrCampaignWorker {
       }
       
       // Pegar os valores atualizados das configurações
-      const currentIntervalSeconds = campaign.schedule_config?.interval_seconds || 5;
       const currentPauseAfter = campaign.pause_config?.pause_after || 0;
       const currentPauseDuration = campaign.pause_config?.pause_duration_minutes || 30;
 
-      // Aguardar delay ENTRE cada mensagem (exceto após a última)
-      if (index < contacts.length - 1) {
-        console.log(`⏳ [QR Worker] Aguardando ${currentIntervalSeconds}s antes da próxima mensagem...`);
-        
-        // ✅ DURANTE O DELAY, VERIFICAR A CADA SEGUNDO SE CAMPANHA FOI PAUSADA
-        for (let sec = 0; sec < currentIntervalSeconds; sec++) {
-          await this.sleep(1000); // 1 segundo
-          
-          const statusDuringDelay = await getCampaignStatus(campaign.id, campaign.tenant_id);
-          
-          if (statusDuringDelay === 'paused' || statusDuringDelay === 'cancelled') {
-            console.log(`⏸️ [QR Worker] Campanha ${statusDuringDelay === 'paused' ? 'pausada' : 'cancelada'} durante delay (após ${sec + 1}s de ${currentIntervalSeconds}s)`);
-            return; // ← SAI DO LOOP
-          }
-        }
-      }
+      // ✅ DELAY REMOVIDO AQUI - Agora o delay é aplicado ANTES de cada envio válido
+      // Isso garante que o intervalo seja respeitado mesmo quando há números pulados (sem WhatsApp/bloqueados)
 
       // Verificar se precisa pausar (após X mensagens)
       if (currentPauseAfter > 0) {
