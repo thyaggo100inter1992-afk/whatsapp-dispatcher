@@ -4272,12 +4272,13 @@ export default function EnviarMensagemUnificado() {
                     <div className="bg-dark-700/80 border-2 border-green-500/40 rounded-xl p-6">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
-                          {uploadedMedia.mimetype?.startsWith('image/') && <FaImage className="text-3xl text-blue-400" />}
-                          {uploadedMedia.mimetype?.startsWith('video/') && <FaVideo className="text-3xl text-purple-400" />}
-                          {uploadedMedia.mimetype?.startsWith('audio/') && <FaMusic className="text-3xl text-green-400" />}
-                          {!uploadedMedia.mimetype?.startsWith('image/') && !uploadedMedia.mimetype?.startsWith('video/') && !uploadedMedia.mimetype?.startsWith('audio/') && <FaImage className="text-3xl text-gray-400" />}
+                          {/* ✅ CORRIGIDO: Verificação mais robusta para ícones */}
+                          {(uploadedMedia.mimetype?.startsWith('image/') || uploadedMedia.mime_type?.startsWith('image/') || messageType === 'image' || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(uploadedMedia.filename || uploadedMedia.url || '')) && <FaImage className="text-3xl text-blue-400" />}
+                          {(uploadedMedia.mimetype?.startsWith('video/') || uploadedMedia.mime_type?.startsWith('video/') || messageType === 'video' || /\.(mp4|webm|mov|avi|mkv)$/i.test(uploadedMedia.filename || uploadedMedia.url || '')) && <FaVideo className="text-3xl text-purple-400" />}
+                          {(uploadedMedia.mimetype?.startsWith('audio/') || uploadedMedia.mime_type?.startsWith('audio/') || messageType === 'audio' || messageType === 'audio_recorded' || /\.(mp3|ogg|wav|m4a|aac)$/i.test(uploadedMedia.filename || uploadedMedia.url || '')) && <FaMusic className="text-3xl text-green-400" />}
+                          {messageType === 'document' && <FaFile className="text-3xl text-orange-400" />}
                           <div>
-                            <p className="font-bold text-white">{uploadedMedia.originalname}</p>
+                            <p className="font-bold text-white">{uploadedMedia.originalname || uploadedMedia.filename || 'Arquivo'}</p>
                             <p className="text-sm text-white/60">
                               {(uploadedMedia.size / 1024 / 1024).toFixed(2)} MB
                             </p>
@@ -4292,19 +4293,29 @@ export default function EnviarMensagemUnificado() {
                         </button>
                       </div>
                       
-                      {/* PREVIEW DE IMAGEM */}
-                      {uploadedMedia.mimetype?.startsWith('image/') && (
+                      {/* PREVIEW DE IMAGEM - ✅ CORRIGIDO: Verificação mais robusta */}
+                      {(uploadedMedia.mimetype?.startsWith('image/') || 
+                        uploadedMedia.mime_type?.startsWith('image/') || 
+                        messageType === 'image' ||
+                        /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(uploadedMedia.filename || uploadedMedia.url || '')) && (
                         <div className="mt-4 bg-dark-700/50 rounded-xl p-4">
                           <img
                             src={uploadedMedia.url.startsWith('http') ? uploadedMedia.url : `${API_BASE_URL}${uploadedMedia.url}`}
                             alt="Preview"
                             className="max-w-full h-auto max-h-96 rounded-lg mx-auto object-contain"
+                            onError={(e) => {
+                              console.error('❌ Erro ao carregar imagem:', uploadedMedia.url);
+                              e.currentTarget.style.display = 'none';
+                            }}
                           />
                         </div>
                       )}
 
-                      {/* PLAYER DE VÍDEO */}
-                      {uploadedMedia.mimetype?.startsWith('video/') && (
+                      {/* PLAYER DE VÍDEO - ✅ CORRIGIDO: Verificação mais robusta */}
+                      {(uploadedMedia.mimetype?.startsWith('video/') || 
+                        uploadedMedia.mime_type?.startsWith('video/') || 
+                        messageType === 'video' ||
+                        /\.(mp4|webm|mov|avi|mkv)$/i.test(uploadedMedia.filename || uploadedMedia.url || '')) && (
                         <div className="mt-4 bg-dark-700/50 rounded-xl p-4 space-y-3">
                           <p className="text-center text-purple-300 font-bold mb-2">🎥 Preview do Vídeo</p>
                           <video
@@ -4330,8 +4341,11 @@ export default function EnviarMensagemUnificado() {
                         </div>
                       )}
 
-                      {/* PLAYER DE ÁUDIO */}
-                      {uploadedMedia.mimetype?.startsWith('audio/') && (
+                      {/* PLAYER DE ÁUDIO - ✅ CORRIGIDO: Verificação mais robusta */}
+                      {(uploadedMedia.mimetype?.startsWith('audio/') || 
+                        uploadedMedia.mime_type?.startsWith('audio/') || 
+                        messageType === 'audio' || messageType === 'audio_recorded' ||
+                        /\.(mp3|ogg|wav|m4a|aac)$/i.test(uploadedMedia.filename || uploadedMedia.url || '')) && (
                         <div className="mt-4 bg-dark-700/50 rounded-xl p-5 space-y-4">
                           <p className="text-center text-green-300 font-bold mb-3">🎵 Ouça o áudio antes de enviar</p>
                           
