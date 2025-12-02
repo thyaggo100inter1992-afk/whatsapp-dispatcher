@@ -1600,8 +1600,11 @@ export default function EnviarMensagemUnificado() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Permitir múltiplos envios simultâneos - não bloquear se já estiver enviando
-    // if (sending) return;
+    // 🚫 Bloquear múltiplos cliques - prevenir envios duplicados
+    if (sending) {
+      console.log('⚠️ Envio já em andamento, aguarde...');
+      return;
+    }
 
     if (!formData.instance_id) {
       notify.warning('Instância Necessária', 'Por favor, selecione uma instância');
@@ -1692,6 +1695,9 @@ export default function EnviarMensagemUnificado() {
         return; // ❌ NÃO CRIAR O JOB
       }
     }
+
+    // 🔒 Desabilitar botão de envio para prevenir cliques duplicados
+    setSending(true);
 
     // Criar job para mensagens simples ou combinadas
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -2511,6 +2517,9 @@ export default function EnviarMensagemUnificado() {
           uploadingImage: false
         }]);
         setMessageBlocks([]);
+        
+        // 🔓 Reabilitar botão de envio após sucesso
+        setSending(false);
       } else {
         // ❌ ATUALIZAÇÃO IMEDIATA DO STATUS DE ERRO
         const errorMsg = response?.data.error || 'Erro desconhecido';
@@ -2560,6 +2569,9 @@ export default function EnviarMensagemUnificado() {
         
         // NÃO mostrar notificação de erro aqui - o erro já foi registrado no job
         // O usuário verá em "Envios em Andamento"
+        
+        // 🔓 Reabilitar botão de envio após erro
+        setSending(false);
       }
     } catch (error: any) {
       console.error('❌ Erro:', error);
@@ -2612,8 +2624,10 @@ export default function EnviarMensagemUnificado() {
       
       // NÃO mostrar notificação de erro aqui - o erro já foi registrado no job
       // O usuário verá em "Envios em Andamento"
+      
+      // 🔓 Reabilitar botão de envio após exceção
+      setSending(false);
     }
-    // NÃO usar finally com setSending(false) - botão sempre disponível para múltiplos envios
   };
 
   // Loading state
