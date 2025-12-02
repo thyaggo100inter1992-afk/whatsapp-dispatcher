@@ -4054,8 +4054,8 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
 
     console.log(`📋 Total de cards recebidos: ${cards.length}`);
 
-    // Buscar instância
-    const result = await pool.query(
+    // Buscar instância (usando tenantQuery para RLS)
+    const result = await tenantQuery(req,
       `SELECT 
         ui.*,
         p.name as proxy_name,
@@ -4190,8 +4190,8 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
 
     console.log('✅ Resposta da UAZ:', response);
 
-    // Registrar mensagem no banco (com texto processado)
-    await pool.query(
+    // Registrar mensagem no banco (com texto processado) - usando tenantQuery para RLS
+    await tenantQuery(req,
       `INSERT INTO uaz_messages (instance_id, phone_number, message_type, message_content, status)
        VALUES ($1, $2, $3, $4, $5)`,
       [id, number, 'carousel', JSON.stringify({ text: processedText, cards: processedCards }), 'sent']
