@@ -369,10 +369,13 @@ export class QrCampaignController {
           if (scheduleConfig.work_start_time && scheduleConfig.work_end_time) {
             const now = getBrazilNow();
             const currentTime = now.toTimeString().slice(0, 5); // HH:MM
-            const startTime = scheduleConfig.work_start_time;
-            const endTime = scheduleConfig.work_end_time;
             
-            const isWithinWorkHours = currentTime >= startTime && currentTime <= endTime;
+            // ✅ CORRIGIDO: Comparar usando minutos para evitar problemas de strings
+            const currentMinutes = parseInt(currentTime.split(':')[0]) * 60 + parseInt(currentTime.split(':')[1]);
+            const startMinutes = parseInt(scheduleConfig.work_start_time.split(':')[0]) * 60 + parseInt(scheduleConfig.work_start_time.split(':')[1]);
+            const endMinutes = parseInt(scheduleConfig.work_end_time.split(':')[0]) * 60 + parseInt(scheduleConfig.work_end_time.split(':')[1]);
+            
+            const isWithinWorkHours = currentMinutes >= startMinutes && currentMinutes <= endMinutes;
             
             if (!isWithinWorkHours) {
               currentStatus = 'outside_hours';
@@ -804,13 +807,19 @@ export class QrCampaignController {
       );
 
       // Verificar se está no horário de trabalho
-      const now = new Date();
-      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      // ✅ CORRIGIDO: Usar horário de Brasília, não UTC
+      const brazilNow = getBrazilNow();
+      const currentTime = brazilNow.toTimeString().slice(0, 5); // HH:MM
       const scheduleConfig = campaign.schedule_config || {};
-      const isWithinWorkHours = 
-        !scheduleConfig.work_start_time || 
-        !scheduleConfig.work_end_time ||
-        (currentTime >= scheduleConfig.work_start_time && currentTime <= scheduleConfig.work_end_time);
+      
+      // ✅ CORRIGIDO: Comparar usando minutos para evitar problemas de strings
+      let isWithinWorkHours = true;
+      if (scheduleConfig.work_start_time && scheduleConfig.work_end_time) {
+        const currentMinutes = parseInt(currentTime.split(':')[0]) * 60 + parseInt(currentTime.split(':')[1]);
+        const startMinutes = parseInt(scheduleConfig.work_start_time.split(':')[0]) * 60 + parseInt(scheduleConfig.work_start_time.split(':')[1]);
+        const endMinutes = parseInt(scheduleConfig.work_end_time.split(':')[0]) * 60 + parseInt(scheduleConfig.work_end_time.split(':')[1]);
+        isWithinWorkHours = currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+      }
 
       // Obter informações de intervalo
       const intervalSeconds = scheduleConfig.interval_seconds || 5;
@@ -825,11 +834,13 @@ export class QrCampaignController {
       }
 
       // Calcular tempo até próxima mensagem
+      // ✅ CORRIGIDO: Usar timestamp atual (Date.now()) para cálculos de tempo decorrido
+      const nowTimestamp = Date.now();
       let nextMessageIn = 0;
       if (lastMessage.rows[0] && campaign.status === 'running') {
         const lastSentAt = new Date(lastMessage.rows[0].sent_at || lastMessage.rows[0].created_at);
         const nextSendTime = new Date(lastSentAt.getTime() + (intervalSeconds * 1000));
-        const secondsUntilNext = Math.max(0, Math.floor((nextSendTime.getTime() - now.getTime()) / 1000));
+        const secondsUntilNext = Math.max(0, Math.floor((nextSendTime.getTime() - nowTimestamp) / 1000));
         nextMessageIn = secondsUntilNext;
       }
 
@@ -844,7 +855,7 @@ export class QrCampaignController {
           // Acabou de completar um ciclo, pode estar em pausa
           const lastSentAt = new Date(lastMessage.rows[0].sent_at || lastMessage.rows[0].created_at);
           const pauseEndTime = new Date(lastSentAt.getTime() + (pauseDurationMinutes * 60 * 1000));
-          const secondsRemaining = Math.max(0, Math.floor((pauseEndTime.getTime() - now.getTime()) / 1000));
+          const secondsRemaining = Math.max(0, Math.floor((pauseEndTime.getTime() - nowTimestamp) / 1000));
           
           if (secondsRemaining > 0) {
             pauseRemainingSeconds = secondsRemaining;
