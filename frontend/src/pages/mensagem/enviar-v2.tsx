@@ -859,7 +859,7 @@ export default function EnviarMensagemImediataV2() {
                           return (
                             <div
                               key={index}
-                              className={`group p-5 rounded-xl border-2 cursor-pointer transition-all duration-200 relative ${
+                              className={`group p-5 rounded-xl border-2 cursor-pointer transition-all duration-200 relative min-h-[120px] ${
                                 isSent 
                                   ? 'border-green-500/50 bg-gradient-to-br from-green-500/20 to-green-600/10 hover:border-green-500'
                                   : selectedTemplate?.name === template.name
@@ -874,7 +874,9 @@ export default function EnviarMensagemImediataV2() {
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-2">
-                                      <h3 className="font-bold text-base text-white break-words whitespace-normal leading-tight">{template.name}</h3>
+                                      <h3 className="font-bold text-base text-white leading-tight break-all whitespace-normal w-full">
+                                        {template.name}
+                                      </h3>
                                       {isSent && <span className="text-green-400 text-xl">✓</span>}
                                     </div>
                                   
