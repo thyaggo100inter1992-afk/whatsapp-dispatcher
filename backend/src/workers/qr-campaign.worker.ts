@@ -371,10 +371,18 @@ class QrCampaignWorker {
       }
 
       for (const campaign of campaigns.rows) {
+        console.log(`\n🔎 [QR Worker] Verificando campanha ${campaign.id} (${campaign.name})...`);
+        console.log(`   📊 Status: ${campaign.status}`);
+        console.log(`   📅 Agendada para: ${campaign.scheduled_at}`);
+        console.log(`   🏢 Tenant ID: ${campaign.tenant_id}`);
+        
         if (!this.shouldProcessCampaign(campaign)) {
+          console.log(`   ❌ shouldProcessCampaign retornou FALSE - pulando...`);
           continue;
         }
 
+        console.log(`   ✅ shouldProcessCampaign retornou TRUE - processando!`);
+        
         // Processar campanha
         this.currentCampaignId = campaign.id;
         
