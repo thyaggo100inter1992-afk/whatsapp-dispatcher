@@ -518,33 +518,51 @@ class QrCampaignWorker {
     // ✅ VERIFICAR E REATIVAR INSTÂNCIAS QUE RECONECTARAM
     await this.checkAndReactivateInstances(campaign.id);
     
-    // ✅ Buscar APENAS templates/instâncias ATIVOS E CONECTADOS
-    const templatesResult = await query(
-      `SELECT ct.*, i.instance_token, i.name as instance_name, i.is_connected,
-       t.name as template_name, t.type as template_type,
-       t.text_content, t.list_config, t.buttons_config, t.carousel_config,
-       t.poll_config, t.combined_blocks, t.variables_map,
-       p.host as proxy_host, p.port as proxy_port, 
-       p.username as proxy_username, p.password as proxy_password,
-       json_agg(json_build_object(
-         'media_type', m.media_type,
-         'url', m.url,
-         'file_path', m.file_path,
-         'caption', m.caption
-       )) FILTER (WHERE m.id IS NOT NULL) as media_files
-       FROM qr_campaign_templates ct
-       LEFT JOIN uaz_instances i ON ct.instance_id = i.id
-       LEFT JOIN qr_templates t ON ct.qr_template_id = t.id
-       LEFT JOIN qr_template_media m ON t.id = m.template_id
-       LEFT JOIN proxies p ON i.proxy_id = p.id
-       WHERE ct.campaign_id = $1 
-       AND ct.is_active = true
-       AND i.is_connected = true  -- ✅ SÓ INSTÂNCIAS CONECTADAS
-       AND i.is_active = true     -- ✅ SÓ INSTÂNCIAS ATIVAS (não pausadas)
-       GROUP BY ct.id, i.id, t.id, p.id
-       ORDER BY ct.order_index`,
-      [campaign.id]
-    );
+    // ✅ Buscar APENAS templates/instâncias ATIVOS E CONECTADOS COM RLS
+    const client = await pool.connect();
+    let templatesResult;
+    try {
+      await client.query('BEGIN');
+      
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      if (campaign.tenant_id) {
+        await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', campaign.tenant_id.toString()]);
+      }
+      
+      templatesResult = await client.query(
+        `SELECT ct.*, i.instance_token, i.name as instance_name, i.is_connected,
+         t.name as template_name, t.type as template_type,
+         t.text_content, t.list_config, t.buttons_config, t.carousel_config,
+         t.poll_config, t.combined_blocks, t.variables_map,
+         p.host as proxy_host, p.port as proxy_port, 
+         p.username as proxy_username, p.password as proxy_password,
+         json_agg(json_build_object(
+           'media_type', m.media_type,
+           'url', m.url,
+           'file_path', m.file_path,
+           'caption', m.caption
+         )) FILTER (WHERE m.id IS NOT NULL) as media_files
+         FROM qr_campaign_templates ct
+         LEFT JOIN uaz_instances i ON ct.instance_id = i.id
+         LEFT JOIN qr_templates t ON ct.qr_template_id = t.id
+         LEFT JOIN qr_template_media m ON t.id = m.template_id
+         LEFT JOIN proxies p ON i.proxy_id = p.id
+         WHERE ct.campaign_id = $1 
+         AND ct.is_active = true
+         AND i.is_connected = true  -- ✅ SÓ INSTÂNCIAS CONECTADAS
+         AND i.is_active = true     -- ✅ SÓ INSTÂNCIAS ATIVAS (não pausadas)
+         GROUP BY ct.id, i.id, t.id, p.id
+         ORDER BY ct.order_index`,
+        [campaign.id]
+      );
+      
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     if (templatesResult.rows.length === 0) {
       console.log(`⚠️  [QR Worker] Nenhum template ativo para campanha ${campaign.id}`);
