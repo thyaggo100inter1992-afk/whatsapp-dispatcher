@@ -864,15 +864,24 @@ export default function EditarTemplate() {
     const newCards = [...carouselCards];
     try {
       const response = await uploadAPI.uploadMedia(file);
-      const uploadedData = response.data.data;
+      const uploadedData = response.data;
       
-      // 🔧 CORRIGIR: Converter URL relativa para URL completa
-      const imageUrl = uploadedData.url.startsWith('http') 
-        ? uploadedData.url 
-        : `${API_BASE_URL}${uploadedData.url}`;
+      // Construir URL absoluta
+      let mediaUrl = uploadedData.url;
+      if (!mediaUrl) {
+        mediaUrl = `/uploads/media/${uploadedData.filename}`;
+      }
+      if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
+        mediaUrl = `${API_BASE_URL}${mediaUrl}`;
+      }
       
-      newCards[cardIndex].uploadedImage = uploadedData;
-      newCards[cardIndex].image = imageUrl;
+      newCards[cardIndex].uploadedImage = {
+        ...uploadedData,
+        url: mediaUrl,
+        mimetype: uploadedData.mimetype || uploadedData.mime_type || file.type,
+        mime_type: uploadedData.mime_type || uploadedData.mimetype || file.type
+      };
+      newCards[cardIndex].image = mediaUrl;
       setCarouselCards(newCards);
       alert('✅ Imagem do card enviada!');
     } catch (err) {
@@ -890,8 +899,23 @@ export default function EditarTemplate() {
       
       console.log('📤 [EDITAR] Upload completo:', response.data);
       
+      // ✅ CORRIGIR: response.data JÁ é o objeto com url, filename, etc
+      const data = response.data;
+      
+      // Construir URL absoluta
+      let mediaUrl = data.url;
+      if (!mediaUrl) {
+        mediaUrl = `/uploads/media/${data.filename}`;
+      }
+      if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
+        mediaUrl = `${API_BASE_URL}${mediaUrl}`;
+      }
+      
       setUploadedMedia({
-        ...response.data.data,
+        ...data,
+        url: mediaUrl,
+        mimetype: data.mimetype || data.mime_type || file.type,
+        mime_type: data.mime_type || data.mimetype || file.type,
         originalName: file.name,
         isExisting: false // ← Marcar como NOVO arquivo (não existente no template)
       });
@@ -1415,7 +1439,25 @@ export default function EditarTemplate() {
                                               }
                                               try {
                                                 const response = await uploadAPI.uploadMedia(file);
-                                                updateMessageBlock(block.id, { media: response.data.data });
+                                                const data = response.data;
+                                                
+                                                // Construir URL absoluta
+                                                let mediaUrl = data.url;
+                                                if (!mediaUrl) {
+                                                  mediaUrl = `/uploads/media/${data.filename}`;
+                                                }
+                                                if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
+                                                  mediaUrl = `${API_BASE_URL}${mediaUrl}`;
+                                                }
+                                                
+                                                updateMessageBlock(block.id, { 
+                                                  media: {
+                                                    ...data,
+                                                    url: mediaUrl,
+                                                    mimetype: data.mimetype || data.mime_type || file.type,
+                                                    mime_type: data.mime_type || data.mimetype || file.type
+                                                  }
+                                                });
                                               } catch (err) {
                                                 alert('Erro ao fazer upload');
                                               }
@@ -1439,9 +1481,23 @@ export default function EditarTemplate() {
                                             try {
                                               const audioFile = new File([audioBlob], 'audio-gravado.ogg', { type: 'audio/ogg; codecs=opus' });
                                               const response = await uploadAPI.uploadMedia(audioFile);
-                                              const data = response.data.data;
+                                              const data = response.data;
+                                              
+                                              // Construir URL absoluta
+                                              let mediaUrl = data.url;
+                                              if (!mediaUrl) {
+                                                mediaUrl = `/uploads/media/${data.filename}`;
+                                              }
+                                              if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
+                                                mediaUrl = `${API_BASE_URL}${mediaUrl}`;
+                                              }
+                                              
                                               updateMessageBlock(block.id, { 
-                                                media: { ...data, localAudioUrl: audioUrl } 
+                                                media: { 
+                                                  ...data, 
+                                                  url: mediaUrl,
+                                                  localAudioUrl: audioUrl 
+                                                } 
                                               });
                                             } catch (err: any) {
                                               alert(err.response?.data?.error || 'Erro ao fazer upload do áudio');
@@ -1902,20 +1958,29 @@ export default function EditarTemplate() {
                                               try {
                                                 // Upload da imagem para o servidor
                                                 const response = await uploadAPI.uploadMedia(file);
-                                                const uploadedData = response.data.data;
+                                                const uploadedData = response.data;
                                                 
-                                                // Converter URL relativa para URL completa
-                                                const imageUrl = uploadedData.url.startsWith('http') 
-                                                  ? uploadedData.url 
-                                                  : `${API_BASE_URL}${uploadedData.url}`;
+                                                // Construir URL absoluta
+                                                let mediaUrl = uploadedData.url;
+                                                if (!mediaUrl) {
+                                                  mediaUrl = `/uploads/media/${uploadedData.filename}`;
+                                                }
+                                                if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
+                                                  mediaUrl = `${API_BASE_URL}${mediaUrl}`;
+                                                }
                                                 
                                                 const newBlocks = messageBlocks.map(b => {
                                                   if (b.id === block.id) {
                                                     const newCards = [...(b.cards || [])];
                                                     newCards[cardIndex] = { 
                                                       ...card, 
-                                                      image: imageUrl,
-                                                      uploadedImage: uploadedData
+                                                      image: mediaUrl,
+                                                      uploadedImage: {
+                                                        ...uploadedData,
+                                                        url: mediaUrl,
+                                                        mimetype: uploadedData.mimetype || uploadedData.mime_type || file.type,
+                                                        mime_type: uploadedData.mime_type || uploadedData.mimetype || file.type
+                                                      }
                                                     };
                                                     return { ...b, cards: newCards };
                                                   }
