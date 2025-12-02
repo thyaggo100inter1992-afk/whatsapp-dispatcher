@@ -871,10 +871,11 @@ class QrCampaignWorker {
         console.log(`═══════════════════════════════════════════════════\n`);
         
         // Marcar como pulado/failed
-        await query(
+        await queryWithRLS(
+          campaign.tenant_id,
           `INSERT INTO qr_campaign_messages 
-           (campaign_id, contact_id, instance_id, qr_template_id, phone_number, template_name, status, error_message, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, 'failed', $7, NOW())`,
+           (campaign_id, contact_id, instance_id, qr_template_id, phone_number, template_name, status, error_message, tenant_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'failed', $7, $8, NOW())`,
           [
             campaign.id,
             contact.id,
@@ -882,12 +883,14 @@ class QrCampaignWorker {
             template.qr_template_id,
             contact.phone_number,
             template.template_name || 'Template QR',
-            `Bloqueado - Lista de Restrição: ${isRestricted.listNames}`
+            `Bloqueado - Lista de Restrição: ${isRestricted.listNames}`,
+            campaign.tenant_id
           ]
         );
         
-        // Atualizar contador
-        await query(
+        // ✅ Atualizar contador (COM RLS)
+        await queryWithRLS(
+          campaign.tenant_id,
           `UPDATE qr_campaigns SET sent_count = sent_count + 1, failed_count = failed_count + 1, updated_at = NOW() WHERE id = $1`,
           [campaign.id]
         );
@@ -939,23 +942,26 @@ class QrCampaignWorker {
         console.log(`   ❌ ENVIO CANCELADO - Marcando como "sem WhatsApp"`);
         console.log('═══════════════════════════════════════════════════\n');
         
-        // Marcar como "sem WhatsApp" SEM ENVIAR
-        await query(
+        // ✅ Marcar como "sem WhatsApp" SEM ENVIAR (COM RLS E TENANT_ID)
+        await queryWithRLS(
+          campaign.tenant_id,
           `INSERT INTO qr_campaign_messages 
-           (campaign_id, contact_id, instance_id, qr_template_id, phone_number, template_name, status, error_message, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, 'no_whatsapp', 'SEM WHATSAPP', NOW())`,
+           (campaign_id, contact_id, instance_id, qr_template_id, phone_number, template_name, status, error_message, tenant_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'no_whatsapp', 'SEM WHATSAPP', $7, NOW())`,
           [
             campaign.id,
             contact.id,
             template.instance_id,
             template.qr_template_id,
             contact.phone_number,
-            template.template_name || 'Template QR'
+            template.template_name || 'Template QR',
+            campaign.tenant_id
           ]
         );
         
-        // Atualizar contador
-        await query(
+        // ✅ Atualizar contador (COM RLS)
+        await queryWithRLS(
+          campaign.tenant_id,
           `UPDATE qr_campaigns SET sent_count = sent_count + 1, no_whatsapp_count = no_whatsapp_count + 1, updated_at = NOW() WHERE id = $1`,
           [campaign.id]
         );
@@ -1085,12 +1091,12 @@ class QrCampaignWorker {
         console.log(`🔤 [QR Worker] Texto processado: ${processedTemplate.text_content?.substring(0, 100)}...`);
       }
 
-      // ✅ Criar registro de mensagem como pending (COM RLS)
+      // ✅ Criar registro de mensagem como pending (COM RLS E TENANT_ID)
       const messageResult = await queryWithRLS(
         campaign.tenant_id,
         `INSERT INTO qr_campaign_messages 
-         (campaign_id, contact_id, instance_id, qr_template_id, phone_number, template_name, status, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
+         (campaign_id, contact_id, instance_id, qr_template_id, phone_number, template_name, status, tenant_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, NOW())
          RETURNING id`,
         [
           campaign.id,
@@ -1098,7 +1104,8 @@ class QrCampaignWorker {
           template.instance_id,
           template.qr_template_id,
           contact.phone_number,
-          template.template_name || 'Template QR'
+          template.template_name || 'Template QR',
+          campaign.tenant_id
         ]
       );
 
