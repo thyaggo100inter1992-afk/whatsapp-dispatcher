@@ -1595,7 +1595,7 @@ export default function ConfiguracoesUaz() {
                         handleSearchByPhoneNumber();
                       }
                     }}
-                    placeholder="Ex: 5562981045992 ou 62981045992"
+                    placeholder="Ex: 5512345678901 ou 62999888777"
                     className="w-full px-4 py-4 bg-dark-700 border-2 border-white/20 rounded-xl text-white text-lg focus:border-purple-500 focus:outline-none transition-all"
                     disabled={loadingInstances}
                   />
