@@ -70,11 +70,28 @@ export class QrCampaignModel {
     if (!tenantId) {
       throw new Error('tenantId é obrigatório para findAll');
     }
-    const result = await query(
-      'SELECT * FROM qr_campaigns WHERE tenant_id = $1 ORDER BY created_at DESC',
-      [tenantId]
-    );
-    return result.rows;
+    
+    // ✅ USAR POOL COM TRANSAÇÃO PARA RLS
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+      
+      const result = await client.query(
+        'SELECT * FROM qr_campaigns WHERE tenant_id = $1 ORDER BY created_at DESC',
+        [tenantId]
+      );
+      
+      await client.query('COMMIT');
+      return result.rows;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   static async findById(id: number, tenantId?: number) {
@@ -82,11 +99,28 @@ export class QrCampaignModel {
     if (!tenantId) {
       throw new Error('tenantId é obrigatório para findById');
     }
-    const result = await query(
-      'SELECT * FROM qr_campaigns WHERE id = $1 AND tenant_id = $2',
-      [id, tenantId]
-    );
-    return result.rows[0];
+    
+    // ✅ USAR POOL COM TRANSAÇÃO PARA RLS
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+      
+      const result = await client.query(
+        'SELECT * FROM qr_campaigns WHERE id = $1 AND tenant_id = $2',
+        [id, tenantId]
+      );
+      
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   static async update(id: number, campaign: Partial<QrCampaign>, tenantId?: number) {
