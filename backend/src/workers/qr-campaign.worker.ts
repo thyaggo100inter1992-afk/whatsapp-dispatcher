@@ -953,13 +953,10 @@ class QrCampaignWorker {
       // Enviar mensagem
       await this.sendMessage(campaign, contact, template);
 
-      // ✅ VERIFICAR NOVAMENTE SE CAMPANHA FOI PAUSADA APÓS O ENVIO
-      const statusCheck2 = await query(
-        `SELECT status FROM qr_campaigns WHERE id = $1`,
-        [campaign.id]
-      );
+      // ✅ VERIFICAR NOVAMENTE SE CAMPANHA FOI PAUSADA APÓS O ENVIO (COM RLS)
+      const statusAfterSend = await getCampaignStatus(campaign.id, campaign.tenant_id);
       
-      if (statusCheck2.rows[0]?.status === 'paused' || statusCheck2.rows[0]?.status === 'cancelled') {
+      if (statusAfterSend === 'paused' || statusAfterSend === 'cancelled') {
         console.log(`⏸️ [QR Worker] Campanha ${statusCheck2.rows[0]?.status === 'paused' ? 'pausada' : 'cancelada'} após envio de ${index + 1} mensagem(ns)`);
         return; // ← SAI DO LOOP
       }
@@ -990,12 +987,9 @@ class QrCampaignWorker {
         for (let sec = 0; sec < currentIntervalSeconds; sec++) {
           await this.sleep(1000); // 1 segundo
           
-          const statusCheckDelay = await query(
-            `SELECT status FROM qr_campaigns WHERE id = $1`,
-            [campaign.id]
-          );
+          const statusDuringDelay = await getCampaignStatus(campaign.id, campaign.tenant_id);
           
-          if (statusCheckDelay.rows[0]?.status === 'paused' || statusCheckDelay.rows[0]?.status === 'cancelled') {
+          if (statusDuringDelay === 'paused' || statusDuringDelay === 'cancelled') {
             console.log(`⏸️ [QR Worker] Campanha ${statusCheckDelay.rows[0]?.status === 'paused' ? 'pausada' : 'cancelada'} durante delay (após ${sec + 1}s de ${currentIntervalSeconds}s)`);
             return; // ← SAI DO LOOP
           }
@@ -1025,12 +1019,9 @@ class QrCampaignWorker {
           for (let sec = 0; sec < pauseTotalSeconds; sec += 5) {
             await this.sleep(5000); // 5 segundos
             
-            const statusCheckPause = await query(
-              `SELECT status FROM qr_campaigns WHERE id = $1`,
-              [campaign.id]
-            );
-            
-            if (statusCheckPause.rows[0]?.status === 'paused' || statusCheckPause.rows[0]?.status === 'cancelled') {
+            const statusAfterPause = await getCampaignStatus(campaign.id, campaign.tenant_id);
+
+            if (statusAfterPause === 'paused' || statusAfterPause === 'cancelled') {
               console.log(`⏸️ [QR Worker] Campanha ${statusCheckPause.rows[0]?.status === 'paused' ? 'pausada' : 'cancelada'} durante pausa automática (${sec}s de ${pauseTotalSeconds}s)`);
               return; // ← SAI DO LOOP
             }
