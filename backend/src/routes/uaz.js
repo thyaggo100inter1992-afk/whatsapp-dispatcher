@@ -3982,20 +3982,9 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
     // Log do payload completo
     console.log('📤 Payload completo do menu:', JSON.stringify(menuData, null, 2));
     
-    // Enviar via UAZ API - usar método específico para poll
-    let response;
-    if (type === 'poll') {
-      console.log('🗳️ Enviando ENQUETE via método sendPoll...');
-      response = await uazService.sendPoll(instance.instance_token, {
-        number: menuData.number,
-        pollname: menuData.text,
-        options: menuData.choices,
-        selectableCount: menuData.selectableCount || 1
-      }, proxyConfig);
-    } else {
-      console.log('📋 Enviando MENU via método sendMenu...');
-      response = await uazService.sendMenu(instance.instance_token, menuData, proxyConfig);
-    }
+    // Enviar via UAZ API usando sendMenu (suporta button, list, poll, carousel)
+    console.log(`📋 Enviando ${type.toUpperCase()} via método sendMenu...`);
+    const response = await uazService.sendMenu(instance.instance_token, menuData, proxyConfig);
 
     // Registrar no banco
     await pool.query(
