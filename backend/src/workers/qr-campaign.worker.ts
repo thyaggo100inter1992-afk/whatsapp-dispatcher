@@ -7,6 +7,34 @@ const UazService = require('../services/uazService');
 const { getTenantUazapCredentials } = require('../helpers/uaz-credentials.helper');
 
 // ========================================
+// 🔐 HELPER PARA QUERIES COM RLS
+// ========================================
+
+/**
+ * Verifica o status da campanha com RLS
+ */
+async function getCampaignStatus(campaignId: number, tenantId?: number): Promise<string | null> {
+  if (!tenantId) {
+    const result = await query(`SELECT status FROM qr_campaigns WHERE id = $1`, [campaignId]);
+    return result.rows[0]?.status || null;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+    const result = await client.query(`SELECT status FROM qr_campaigns WHERE id = $1`, [campaignId]);
+    await client.query('COMMIT');
+    return result.rows[0]?.status || null;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// ========================================
 // 🔄 FUNÇÕES AUXILIARES PARA SPIN TEXT
 // ========================================
 
@@ -704,11 +732,8 @@ class QrCampaignWorker {
 
     // ENVIAR MENSAGENS SEQUENCIALMENTE COM DELAY
     for (let index = 0; index < contacts.length; index++) {
-      // ✅ VERIFICAR SE CAMPANHA FOI PAUSADA MANUALMENTE ANTES DE CADA ENVIO
-      const statusCheck = await query(
-        `SELECT status FROM qr_campaigns WHERE id = $1`,
-        [campaign.id]
-      );
+      // ✅ VERIFICAR SE CAMPANHA FOI PAUSADA MANUALMENTE ANTES DE CADA ENVIO (COM RLS)
+      const currentStatus = await getCampaignStatus(campaign.id, campaign.tenant_id);
       
       // ✅ VERIFICAR SE ESTÁ DENTRO DO HORÁRIO DE TRABALHO ANTES DE CADA ENVIO
       const scheduleConfig = (campaign.schedule_config || {}) as WorkerConfig;
@@ -750,7 +775,7 @@ class QrCampaignWorker {
         }
       }
       
-      if (statusCheck.rows[0]?.status === 'paused') {
+      if (currentStatus === 'paused') {
         console.log('');
         console.log('⏸️ ═══════════════════════════════════════════');
         console.log(`⏸️  CAMPANHA PAUSADA MANUALMENTE`);
@@ -761,7 +786,7 @@ class QrCampaignWorker {
         return; // ← SAI DO LOOP E PARA DE ENVIAR
       }
       
-      if (statusCheck.rows[0]?.status === 'cancelled') {
+      if (currentStatus === 'cancelled') {
         console.log('');
         console.log('🛑 ═══════════════════════════════════════════');
         console.log(`🛑  CAMPANHA CANCELADA`);
