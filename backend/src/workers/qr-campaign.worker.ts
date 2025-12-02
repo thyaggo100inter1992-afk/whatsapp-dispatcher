@@ -34,6 +34,29 @@ async function getCampaignStatus(campaignId: number, tenantId?: number): Promise
   }
 }
 
+/**
+ * Executa query com RLS
+ */
+async function queryWithRLS(tenantId: number | undefined, queryText: string, params: any[]): Promise<any> {
+  if (!tenantId) {
+    return await query(queryText, params);
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+    const result = await client.query(queryText, params);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // ========================================
 // 🔄 FUNÇÕES AUXILIARES PARA SPIN TEXT
 // ========================================
@@ -1062,8 +1085,9 @@ class QrCampaignWorker {
         console.log(`🔤 [QR Worker] Texto processado: ${processedTemplate.text_content?.substring(0, 100)}...`);
       }
 
-      // Criar registro de mensagem como pending
-      const messageResult = await query(
+      // ✅ Criar registro de mensagem como pending (COM RLS)
+      const messageResult = await queryWithRLS(
+        campaign.tenant_id,
         `INSERT INTO qr_campaign_messages 
          (campaign_id, contact_id, instance_id, qr_template_id, phone_number, template_name, status, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
@@ -1089,16 +1113,18 @@ class QrCampaignWorker {
       );
 
       if (sendResult.success) {
-        // Atualizar mensagem como enviada
-        await query(
+        // ✅ Atualizar mensagem como enviada (COM RLS)
+        await queryWithRLS(
+          campaign.tenant_id,
           `UPDATE qr_campaign_messages 
            SET status = 'sent', sent_at = NOW(), whatsapp_message_id = $1
            WHERE id = $2`,
           [sendResult.messageId, messageId]
         );
 
-        // Atualizar contador da campanha
-        await query(
+        // ✅ Atualizar contador da campanha (COM RLS)
+        await queryWithRLS(
+          campaign.tenant_id,
           `UPDATE qr_campaigns 
            SET sent_count = sent_count + 1
            WHERE id = $1`,
@@ -1121,15 +1147,17 @@ class QrCampaignWorker {
                               errorMessage.toLowerCase().includes('disconnected');
         
         if (isNoWhatsApp) {
-          // Marcar como "sem WhatsApp"
-          await query(
+          // ✅ Marcar como "sem WhatsApp" (COM RLS)
+          await queryWithRLS(
+            campaign.tenant_id,
             `UPDATE qr_campaign_messages 
              SET status = 'no_whatsapp', failed_at = NOW(), error_message = 'SEM WHATSAPP'
              WHERE id = $1`,
             [messageId]
           );
 
-          await query(
+          await queryWithRLS(
+            campaign.tenant_id,
             `UPDATE qr_campaigns 
              SET no_whatsapp_count = no_whatsapp_count + 1
              WHERE id = $1`,
@@ -1161,15 +1189,17 @@ class QrCampaignWorker {
           
           console.log(`🔄 [QR Worker] Mensagem retornada para fila (será enviada por outra instância)`);
         } else {
-          // Marcar como falha normal
-          await query(
+          // ✅ Marcar como falha normal (COM RLS)
+          await queryWithRLS(
+            campaign.tenant_id,
             `UPDATE qr_campaign_messages 
              SET status = 'failed', failed_at = NOW(), error_message = $1
              WHERE id = $2`,
             [sendResult.error, messageId]
           );
 
-          await query(
+          await queryWithRLS(
+            campaign.tenant_id,
             `UPDATE qr_campaigns 
              SET failed_count = failed_count + 1
              WHERE id = $1`,
