@@ -543,7 +543,14 @@ export class QrCampaignController {
   async cancel(req: Request, res: Response) {
     try {
       const campaignId = parseInt(req.params.id);
-      const campaign = await QrCampaignModel.update(campaignId, { status: 'cancelled' });
+      
+      // ✅ CORRIGIDO: Passar tenantId para RLS funcionar
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+      
+      const campaign = await QrCampaignModel.update(campaignId, { status: 'cancelled' }, tenantId);
 
       console.log(`🛑 Campanha QR ${campaignId} cancelada manualmente`);
 

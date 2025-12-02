@@ -124,6 +124,11 @@ export class QrCampaignModel {
   }
 
   static async update(id: number, campaign: Partial<QrCampaign>, tenantId?: number) {
+    // 🔒 SEGURANÇA: tenant_id é obrigatório
+    if (!tenantId) {
+      throw new Error('tenantId é obrigatório para update');
+    }
+    
     const fields: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
@@ -143,20 +148,33 @@ export class QrCampaignModel {
 
     fields.push(`updated_at = CURRENT_TIMESTAMP`);
     values.push(id);
+    paramCount++;
+    values.push(tenantId);
 
     // 🔒 SEGURANÇA: SEMPRE filtrar por tenant_id
-    let whereClause = `id = $${paramCount}`;
-    if (tenantId) {
-      paramCount++;
-      whereClause += ` AND tenant_id = $${paramCount}`;
-      values.push(tenantId);
-    }
+    const whereClause = `id = $${paramCount - 1} AND tenant_id = $${paramCount}`;
 
-    const result = await query(
-      `UPDATE qr_campaigns SET ${fields.join(', ')} WHERE ${whereClause} RETURNING *`,
-      values
-    );
-    return result.rows[0];
+    // ✅ USAR POOL COM TRANSAÇÃO PARA RLS
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+      
+      const result = await client.query(
+        `UPDATE qr_campaigns SET ${fields.join(', ')} WHERE ${whereClause} RETURNING *`,
+        values
+      );
+      
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   static async updateStats(id: number, stats: {
