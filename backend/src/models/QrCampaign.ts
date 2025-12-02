@@ -215,8 +215,25 @@ export class QrCampaignModel {
     if (!tenantId) {
       throw new Error('tenantId é obrigatório para delete');
     }
-    await query('DELETE FROM qr_campaigns WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
-    return true;
+    
+    // ✅ USAR POOL COM TRANSAÇÃO PARA RLS
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+      
+      await client.query('DELETE FROM qr_campaigns WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+      
+      await client.query('COMMIT');
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   static async getScheduledCampaigns(tenantId?: number) {
