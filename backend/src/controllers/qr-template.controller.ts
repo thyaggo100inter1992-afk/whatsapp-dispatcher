@@ -491,6 +491,9 @@ class QrTemplateController {
         throw new Error('Tenant não identificado');
       }
 
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+
       // Verificar se existe E pertence ao tenant
       const checkResult = await client.query('SELECT id FROM qr_templates WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
       if (checkResult.rows.length === 0) {
