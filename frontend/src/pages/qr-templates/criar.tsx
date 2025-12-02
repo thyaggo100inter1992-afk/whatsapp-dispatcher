@@ -1663,10 +1663,19 @@ const [formData, setFormData] = useState({
                                           <div className="bg-red-500/10 border-2 border-red-500/40 rounded-xl p-6">
                                             <AudioRecorder
                                               onAudioReady={async (audioBlob: Blob, audioUrl: string) => {
+                                                console.log('🎤 [AUDIO] Áudio recebido, iniciando upload...');
+                                                console.log('🎤 [AUDIO] Tamanho do blob:', audioBlob.size, 'bytes');
                                                 try {
                                                   const audioFile = new File([audioBlob], 'audio-gravado.ogg', { type: 'audio/ogg; codecs=opus' });
+                                                  console.log('🎤 [AUDIO] File criado:', audioFile.name, audioFile.size, 'bytes');
+                                                  
+                                                  console.log('🎤 [AUDIO] Enviando para uploadAPI.uploadMedia...');
                                                   const response = await uploadAPI.uploadMedia(audioFile);
+                                                  console.log('🎤 [AUDIO] Response recebido:', response);
+                                                  console.log('🎤 [AUDIO] response.data:', response.data);
+                                                  
                                                   const data = response.data;
+                                                  console.log('🎤 [AUDIO] data extraído:', data);
                                                   
                                                   // Construir URL absoluta
                                                   let mediaUrl = data.url;
@@ -1676,6 +1685,7 @@ const [formData, setFormData] = useState({
                                                   if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
                                                     mediaUrl = `${API_BASE_URL}${mediaUrl}`;
                                                   }
+                                                  console.log('🎤 [AUDIO] URL final do áudio:', mediaUrl);
                                                   
                                                   updateMessageBlock(block.id, { 
                                                     media: { 
@@ -1686,9 +1696,13 @@ const [formData, setFormData] = useState({
                                                       localAudioUrl: audioUrl 
                                                     } 
                                                   });
+                                                  console.log('✅ [AUDIO] Upload e update concluídos com sucesso!');
                                                 } catch (err: any) {
-                                                  console.error('❌ Erro ao fazer upload do áudio:', err);
-                                                  alert(err.response?.data?.error || 'Erro ao fazer upload do áudio');
+                                                  console.error('❌ [AUDIO] Erro COMPLETO:', err);
+                                                  console.error('❌ [AUDIO] err.response:', err.response);
+                                                  console.error('❌ [AUDIO] err.response?.data:', err.response?.data);
+                                                  console.error('❌ [AUDIO] err.message:', err.message);
+                                                  alert(err.response?.data?.error || err.message || 'Erro ao fazer upload do áudio');
                                                 }
                                               }}
                                               onRemove={() => {
