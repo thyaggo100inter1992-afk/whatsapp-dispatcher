@@ -990,9 +990,9 @@ class QrCampaignWorker {
         return; // ← SAI DO LOOP
       }
 
-      // ⭐ RECARREGAR configurações da campanha antes de cada iteração
-      // Isso garante que edições feitas durante a execução sejam respeitadas
-      const updatedCampaignResult = await query(
+      // ✅ RECARREGAR configurações da campanha (COM RLS)
+      const updatedCampaignResult = await queryWithRLS(
+        campaign.tenant_id,
         'SELECT pause_config, schedule_config FROM qr_campaigns WHERE id = $1',
         [campaign.id]
       );
@@ -1027,8 +1027,9 @@ class QrCampaignWorker {
 
       // Verificar se precisa pausar (após X mensagens)
       if (currentPauseAfter > 0) {
-        // Recarregar contador de mensagens enviadas
-        const campaignData = await query(
+        // ✅ Recarregar contador de mensagens enviadas (COM RLS)
+        const campaignData = await queryWithRLS(
+          campaign.tenant_id,
           `SELECT sent_count FROM qr_campaigns WHERE id = $1`,
           [campaign.id]
         );
