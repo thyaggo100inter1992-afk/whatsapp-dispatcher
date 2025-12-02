@@ -902,6 +902,9 @@ const [formData, setFormData] = useState({
   };
 
   const handleAudioRecorded = async (audioBlob: Blob, audioUrl: string) => {
+    console.log('🎤 [AUDIO - handleAudioRecorded] Áudio recebido, iniciando upload...');
+    console.log('🎤 [AUDIO - handleAudioRecorded] Tamanho do blob:', audioBlob.size, 'bytes');
+    
     setRecordedAudioBlob(audioBlob);
     setRecordedAudioUrl(audioUrl);
     
@@ -912,12 +915,41 @@ const [formData, setFormData] = useState({
     
     setUploadingMedia(true);
     try {
+      console.log('🎤 [AUDIO - handleAudioRecorded] Criando File...');
       const audioFile = new File([audioBlob], 'audio-gravado.ogg', { type: 'audio/ogg; codecs=opus' });
+      console.log('🎤 [AUDIO - handleAudioRecorded] File criado:', audioFile.name, audioFile.size, 'bytes');
+      
+      console.log('🎤 [AUDIO - handleAudioRecorded] Enviando para uploadAPI.uploadMedia...');
       const response = await uploadAPI.uploadMedia(audioFile);
-      const data = response.data.data;
+      console.log('🎤 [AUDIO - handleAudioRecorded] Response recebido:', response);
+      console.log('🎤 [AUDIO - handleAudioRecorded] response.data:', response.data);
+      
+      const data = response.data; // ✅ CORRIGIDO: era response.data.data
+      console.log('🎤 [AUDIO - handleAudioRecorded] data extraído:', data);
+      
+      // Construir URL absoluta
+      let mediaUrl = data.url;
+      if (!mediaUrl) {
+        mediaUrl = `/uploads/media/${data.filename}`;
+      }
+      if (!mediaUrl.startsWith('http') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('blob:')) {
+        mediaUrl = `${API_BASE_URL}${mediaUrl}`;
+      }
+      console.log('🎤 [AUDIO - handleAudioRecorded] URL final do áudio:', mediaUrl);
+      
       data.localAudioUrl = audioUrl;
+      data.url = mediaUrl;
+      data.mimetype = data.mimetype || data.mime_type || 'audio/ogg';
+      data.mime_type = data.mime_type || data.mimetype || 'audio/ogg';
+      
+      console.log('🎤 [AUDIO - handleAudioRecorded] setUploadedMedia com:', data);
       setUploadedMedia(data);
+      console.log('✅ [AUDIO - handleAudioRecorded] Upload e update concluídos com sucesso!');
     } catch (err: any) {
+      console.error('❌ [AUDIO - handleAudioRecorded] Erro COMPLETO:', err);
+      console.error('❌ [AUDIO - handleAudioRecorded] err.response:', err.response);
+      console.error('❌ [AUDIO - handleAudioRecorded] err.response?.data:', err.response?.data);
+      console.error('❌ [AUDIO - handleAudioRecorded] err.message:', err.message);
       alert(err.response?.data?.error || 'Erro ao fazer upload do áudio');
     } finally {
       setUploadingMedia(false);
