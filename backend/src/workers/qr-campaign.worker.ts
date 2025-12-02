@@ -338,14 +338,18 @@ class QrCampaignWorker {
 
   private async processCampaigns() {
     try {
+      console.log('🔍 [QR Worker] Buscando campanhas pendentes...');
+      
       // 🔒 SEGURANÇA: Buscar tenants ativos primeiro
       const tenantsResult = await query(
         `SELECT DISTINCT id FROM tenants WHERE status != 'deleted' AND blocked_at IS NULL`
       );
       
       const tenantIds = tenantsResult.rows.map(t => t.id);
+      console.log(`📋 [QR Worker] Tenants ativos: ${tenantIds.join(', ')}`);
       
       if (tenantIds.length === 0) {
+        console.log('⚠️ [QR Worker] Nenhum tenant ativo encontrado');
         return;
       }
       
@@ -360,6 +364,8 @@ class QrCampaignWorker {
         [tenantIds]
       );
 
+      console.log(`📊 [QR Worker] Encontradas ${campaigns.rows.length} campanhas elegíveis`);
+      
       if (campaigns.rows.length === 0) {
         return;
       }
