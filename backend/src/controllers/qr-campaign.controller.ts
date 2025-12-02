@@ -498,7 +498,14 @@ export class QrCampaignController {
   async pause(req: Request, res: Response) {
     try {
       const campaignId = parseInt(req.params.id);
-      const campaign = await QrCampaignModel.update(campaignId, { status: 'paused' });
+      
+      // ✅ CORRIGIDO: Passar tenantId para RLS funcionar
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+      
+      const campaign = await QrCampaignModel.update(campaignId, { status: 'paused' }, tenantId);
 
       console.log(`⏸️ Campanha QR ${campaignId} pausada manualmente`);
 
@@ -519,11 +526,17 @@ export class QrCampaignController {
     try {
       const campaignId = parseInt(req.params.id);
       
+      // ✅ CORRIGIDO: Passar tenantId para RLS funcionar
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+      
       // ✅ Ao retomar, limpar scheduled_at para garantir que será processada imediatamente
       const campaign = await QrCampaignModel.update(campaignId, { 
         status: 'running',
         scheduled_at: undefined  // ← LIMPAR AGENDAMENTO
-      });
+      }, tenantId);
 
       console.log(`▶️ Campanha QR ${campaignId} retomada manualmente (scheduled_at limpo)`);
 
