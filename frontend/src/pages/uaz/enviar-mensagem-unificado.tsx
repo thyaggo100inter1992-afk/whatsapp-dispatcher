@@ -1421,7 +1421,7 @@ export default function EnviarMensagemUnificado() {
   };
 
   const updateMessageBlock = (blockId: string, updates: Partial<MessageBlock>) => {
-    setMessageBlocks(messageBlocks.map(block =>
+    setMessageBlocks(prevBlocks => prevBlocks.map(block =>
       block.id === blockId ? { ...block, ...updates } : block
     ));
   };
@@ -3683,24 +3683,36 @@ export default function EnviarMensagemUnificado() {
                                                     e.preventDefault();
                                                     e.stopPropagation();
                                                     console.log('🗑️ CLIQUE NO REMOVER - Card', cardIndex + 1);
-                                                    console.log('🗑️ Estado ANTES:', { image: card.image, uploadedImage: card.uploadedImage });
+                                                    console.log('🗑️ Estado ANTES:', JSON.stringify({ 
+                                                      image: card.image?.substring(0, 100), 
+                                                      uploadedImage: card.uploadedImage 
+                                                    }, null, 2));
                                                     
-                                                    // Criar novo array de cards completamente novo
-                                                    const newCards = (block.cards || []).map((c: any, idx: number) => {
-                                                      if (idx === cardIndex) {
-                                                        // Retornar card LIMPO sem image e uploadedImage
-                                                        return {
-                                                          text: c.text || '',
-                                                          buttons: c.buttons || [],
-                                                          image: '', // ← LIMPO
-                                                          uploadedImage: null // ← LIMPO
-                                                        };
-                                                      }
-                                                      return c;
+                                                    // Usar setMessageBlocks diretamente com callback para garantir estado atualizado
+                                                    setMessageBlocks(prevBlocks => {
+                                                      return prevBlocks.map(b => {
+                                                        if (b.id !== block.id) return b;
+                                                        
+                                                        // Criar novo array de cards
+                                                        const newCards = (b.cards || []).map((c: any, idx: number) => {
+                                                          if (idx === cardIndex) {
+                                                            console.log('🗑️ Removendo imagem do card', idx + 1);
+                                                            // Retornar card LIMPO
+                                                            return {
+                                                              text: c.text || '',
+                                                              buttons: c.buttons || [],
+                                                              image: undefined, // ← UNDEFINED para forçar re-render
+                                                              uploadedImage: undefined // ← UNDEFINED
+                                                            };
+                                                          }
+                                                          return c;
+                                                        });
+                                                        
+                                                        console.log('🗑️ Novo card:', JSON.stringify(newCards[cardIndex], null, 2));
+                                                        return { ...b, cards: newCards };
+                                                      });
                                                     });
                                                     
-                                                    console.log('🗑️ Estado DEPOIS:', newCards[cardIndex]);
-                                                    updateMessageBlock(block.id, { cards: newCards });
                                                     console.log('✅ Imagem removida do card', cardIndex + 1);
                                                   }}
                                                   className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded font-bold text-sm transition-all"
