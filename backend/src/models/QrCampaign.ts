@@ -1,4 +1,4 @@
-import { query } from '../database/connection';
+import { query, pool } from '../database/connection';
 
 export interface QrCampaign {
   id?: number;
@@ -29,22 +29,40 @@ export class QrCampaignModel {
     if (!campaign.tenant_id) {
       throw new Error('tenant_id é obrigatório para criar campanha QR');
     }
-    const result = await query(
-      `INSERT INTO qr_campaigns 
-       (name, tenant_id, status, scheduled_at, schedule_config, pause_config, total_contacts)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [
-        campaign.name,
-        campaign.tenant_id,
-        campaign.status || 'pending',
-        campaign.scheduled_at,
-        JSON.stringify(campaign.schedule_config || {}),
-        JSON.stringify(campaign.pause_config || {}),
-        campaign.total_contacts || 0,
-      ]
-    );
-    return result.rows[0];
+    
+    // ✅ USAR POOL COM TRANSAÇÃO PARA RLS
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', campaign.tenant_id.toString()]);
+      console.log(`✅ [QrCampaignModel.create] Tenant ${campaign.tenant_id} definido na sessão PostgreSQL`);
+      
+      const result = await client.query(
+        `INSERT INTO qr_campaigns 
+         (name, tenant_id, status, scheduled_at, schedule_config, pause_config, total_contacts)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *`,
+        [
+          campaign.name,
+          campaign.tenant_id,
+          campaign.status || 'pending',
+          campaign.scheduled_at,
+          JSON.stringify(campaign.schedule_config || {}),
+          JSON.stringify(campaign.pause_config || {}),
+          campaign.total_contacts || 0,
+        ]
+      );
+      
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   static async findAll(tenantId?: number) {
