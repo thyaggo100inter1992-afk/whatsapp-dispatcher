@@ -32,19 +32,17 @@ class QrTemplateController {
       // 🔒 FILTRAR POR TENANT_ID
       const tenantId = (req as any).tenant?.id;
       console.log('📋 [LIST] Tenant ID do usuário logado:', tenantId);
-      console.log('📋 [LIST] req.tenant completo:', (req as any).tenant);
       
       if (!tenantId) {
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
       }
 
-      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
-      const setConfigResult = await client.query('SELECT set_config($1, $2, true) as config_set', ['app.current_tenant_id', tenantId.toString()]);
-      console.log(`✅ [LIST] set_config result:`, setConfigResult.rows[0]);
+      // ✅ INICIAR TRANSAÇÃO (necessário para set_config funcionar)
+      await client.query('BEGIN');
       
-      // Verificar se foi realmente definido
-      const verifyConfigResult = await client.query('SELECT current_setting($1, true) as tenant_value', ['app.current_tenant_id']);
-      console.log(`✅ [LIST] current_setting result:`, verifyConfigResult.rows[0]);
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+      console.log(`✅ [LIST] Tenant ${tenantId} definido na sessão PostgreSQL`);
 
       // USAR CONSULTA DIRETA COM TENANT_ID (não depender de RLS)
       const result = await client.query(`
@@ -77,8 +75,10 @@ class QrTemplateController {
         ORDER BY t.created_at DESC
       `, [tenantId]);
 
+      // ✅ COMMIT da transação
+      await client.query('COMMIT');
+
       console.log(`📋 [LIST] Encontrados ${result.rows.length} template(s) para tenant ${tenantId}`);
-      console.log('📋 [LIST] Templates:', result.rows.map(t => ({ id: t.id, name: t.name, type: t.type })));
 
       res.json({
         success: true,
@@ -86,6 +86,8 @@ class QrTemplateController {
         total: result.rows.length
       });
     } catch (error: any) {
+      // ❌ ROLLBACK em caso de erro
+      await client.query('ROLLBACK');
       console.error('❌ Erro ao listar templates:', error);
       res.status(500).json({
         success: false,
