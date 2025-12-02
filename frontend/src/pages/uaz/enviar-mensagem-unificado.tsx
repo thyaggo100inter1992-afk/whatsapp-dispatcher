@@ -4275,7 +4275,7 @@ export default function EnviarMensagemUnificado() {
                           {/* ✅ CORRIGIDO: Verificação mais robusta para ícones */}
                           {(uploadedMedia.mimetype?.startsWith('image/') || uploadedMedia.mime_type?.startsWith('image/') || messageType === 'image' || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(uploadedMedia.filename || uploadedMedia.url || '')) && <FaImage className="text-3xl text-blue-400" />}
                           {(uploadedMedia.mimetype?.startsWith('video/') || uploadedMedia.mime_type?.startsWith('video/') || messageType === 'video' || /\.(mp4|webm|mov|avi|mkv)$/i.test(uploadedMedia.filename || uploadedMedia.url || '')) && <FaVideo className="text-3xl text-purple-400" />}
-                          {(uploadedMedia.mimetype?.startsWith('audio/') || uploadedMedia.mime_type?.startsWith('audio/') || messageType === 'audio' || messageType === 'audio_recorded' || /\.(mp3|ogg|wav|m4a|aac)$/i.test(uploadedMedia.filename || uploadedMedia.url || '')) && <FaMusic className="text-3xl text-green-400" />}
+                          {(uploadedMedia.mimetype?.startsWith('audio/') || uploadedMedia.mime_type?.startsWith('audio/') || /\.(mp3|ogg|wav|m4a|aac)$/i.test(uploadedMedia.filename || uploadedMedia.url || '')) && <FaMusic className="text-3xl text-green-400" />}
                           {messageType === 'document' && <FaFile className="text-3xl text-orange-400" />}
                           <div>
                             <p className="font-bold text-white">{uploadedMedia.originalname || uploadedMedia.filename || 'Arquivo'}</p>
@@ -4344,7 +4344,7 @@ export default function EnviarMensagemUnificado() {
                       {/* PLAYER DE ÁUDIO - ✅ CORRIGIDO: Verificação mais robusta */}
                       {(uploadedMedia.mimetype?.startsWith('audio/') || 
                         uploadedMedia.mime_type?.startsWith('audio/') || 
-                        messageType === 'audio' || messageType === 'audio_recorded' ||
+                        messageType === 'audio' ||
                         /\.(mp3|ogg|wav|m4a|aac)$/i.test(uploadedMedia.filename || uploadedMedia.url || '')) && (
                         <div className="mt-4 bg-dark-700/50 rounded-xl p-5 space-y-4">
                           <p className="text-center text-green-300 font-bold mb-3">🎵 Ouça o áudio antes de enviar</p>
