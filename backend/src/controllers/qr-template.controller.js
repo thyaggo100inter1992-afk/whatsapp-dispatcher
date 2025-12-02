@@ -30,8 +30,17 @@ class QrTemplateController {
    * GET /api/qr-templates
    */
   async list(req, res) {
+    const client = await pool.connect();
     try {
-      const result = await pool.query(`
+      // Validar tenant
+      if (!req.tenant || !req.tenant.id) {
+        throw new Error('Tenant não identificado');
+      }
+
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', req.tenant.id.toString()]);
+      
+      const result = await client.query(`
         SELECT 
           t.*,
           COALESCE(
@@ -70,6 +79,8 @@ class QrTemplateController {
         error: 'Erro ao listar templates',
         details: error.message
       });
+    } finally {
+      client.release();
     }
   }
 
@@ -78,10 +89,19 @@ class QrTemplateController {
    * GET /api/qr-templates/:id
    */
   async getById(req, res) {
+    const client = await pool.connect();
     try {
       const { id } = req.params;
 
-      const result = await pool.query(`
+      // Validar tenant
+      if (!req.tenant || !req.tenant.id) {
+        throw new Error('Tenant não identificado');
+      }
+
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', req.tenant.id.toString()]);
+
+      const result = await client.query(`
         SELECT 
           t.*,
           COALESCE(
@@ -126,6 +146,8 @@ class QrTemplateController {
         error: 'Erro ao buscar template',
         details: error.message
       });
+    } finally {
+      client.release();
     }
   }
 
@@ -166,11 +188,20 @@ class QrTemplateController {
         throw new Error('Nome e tipo são obrigatórios');
       }
 
+      // Validar tenant
+      if (!req.tenant || !req.tenant.id) {
+        throw new Error('Tenant não identificado');
+      }
+
       // Validar tipos permitidos
       const validTypes = ['text', 'image', 'video', 'audio', 'audio_recorded', 'document', 'list', 'buttons', 'carousel'];
       if (!validTypes.includes(type)) {
         throw new Error(`Tipo inválido. Use: ${validTypes.join(', ')}`);
       }
+
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', req.tenant.id.toString()]);
+      console.log(`✅ Tenant ${req.tenant.id} definido na sessão PostgreSQL`);
 
       // Inserir template
       const result = await client.query(`
@@ -454,6 +485,15 @@ class QrTemplateController {
         throw new Error(`Erro ao processar configurações: ${jsonError.message}`);
       }
 
+      // Validar tenant
+      if (!req.tenant || !req.tenant.id) {
+        throw new Error('Tenant não identificado');
+      }
+
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', req.tenant.id.toString()]);
+      console.log(`✅ Tenant ${req.tenant.id} definido na sessão PostgreSQL para UPDATE`);
+
       // Atualizar template
       console.log('💾 [UPDATE] Executando UPDATE com parâmetros:', {
         name,
@@ -678,6 +718,15 @@ class QrTemplateController {
 
       const { id } = req.params;
 
+      // Validar tenant
+      if (!req.tenant || !req.tenant.id) {
+        throw new Error('Tenant não identificado');
+      }
+
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', req.tenant.id.toString()]);
+      console.log(`✅ Tenant ${req.tenant.id} definido na sessão PostgreSQL para DELETE`);
+
       // 🔑 PASSO 1: Verificar se o template está sendo usado em campanhas
       const campaignsCheck = await client.query(
         'SELECT COUNT(*) FROM qr_campaign_templates WHERE qr_template_id = $1',
@@ -768,11 +817,20 @@ class QrTemplateController {
    * DELETE /api/qr-templates/:templateId/media/:mediaId
    */
   async deleteMedia(req, res) {
+    const client = await pool.connect();
     try {
       const { templateId, mediaId } = req.params;
 
+      // Validar tenant
+      if (!req.tenant || !req.tenant.id) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', req.tenant.id.toString()]);
+
       // Buscar arquivo
-      const result = await pool.query(
+      const result = await client.query(
         'SELECT * FROM qr_template_media WHERE id = $1 AND template_id = $2',
         [mediaId, templateId]
       );
@@ -787,16 +845,11 @@ class QrTemplateController {
       const media = result.rows[0];
 
       // 🔒 SEGURANÇA: Deletar do banco COM filtro de tenant (via JOIN com qr_templates)
-      const tenantId = req.tenant?.id;
-      if (!tenantId) {
-        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
-      }
-      
-      await pool.query(`
+      await client.query(`
         DELETE FROM qr_template_media 
         WHERE id = $1 
         AND template_id IN (SELECT id FROM qr_templates WHERE tenant_id = $2)
-      `, [mediaId, tenantId]);
+      `, [mediaId, req.tenant.id]);
 
       // Deletar arquivo físico
       try {
@@ -820,6 +873,8 @@ class QrTemplateController {
         error: 'Erro ao deletar mídia',
         details: error.message
       });
+    } finally {
+      client.release();
     }
   }
 }
