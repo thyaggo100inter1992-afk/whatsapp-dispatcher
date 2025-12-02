@@ -726,6 +726,42 @@ export default function QrTemplates() {
                             </div>
 
                             <div className="bg-[#202c33] rounded-xl px-4 py-3 shadow-lg">
+                              {/* ✅ PRÉVIA DE IMAGEM */}
+                              {mobilePreview.type === 'image' && mobilePreview.media_files && mobilePreview.media_files.length > 0 && (
+                                <div className="mb-3 -mx-4 -mt-3">
+                                  <img 
+                                    src={mobilePreview.media_files[0].url} 
+                                    alt="Preview"
+                                    className="w-full max-h-64 object-cover rounded-t-xl"
+                                    onError={(e) => {
+                                      e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23444" width="100" height="100"/%3E%3Ctext fill="%23fff" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem%3C/text%3E%3C/svg%3E';
+                                    }}
+                                  />
+                                </div>
+                              )}
+
+                              {/* ✅ PRÉVIA DE VÍDEO */}
+                              {mobilePreview.type === 'video' && mobilePreview.media_files && mobilePreview.media_files.length > 0 && (
+                                <div className="mb-3 -mx-4 -mt-3">
+                                  <video 
+                                    src={mobilePreview.media_files[0].url} 
+                                    className="w-full max-h-64 object-cover rounded-t-xl"
+                                    controls
+                                  />
+                                </div>
+                              )}
+
+                              {/* ✅ PRÉVIA DE ÁUDIO */}
+                              {mobilePreview.type === 'audio' && mobilePreview.media_files && mobilePreview.media_files.length > 0 && (
+                                <div className="mb-3">
+                                  <audio 
+                                    src={mobilePreview.media_files[0].url} 
+                                    className="w-full"
+                                    controls
+                                  />
+                                </div>
+                              )}
+
                               {/* Texto */}
                               {mobilePreview.text_content && (
                                 <p className="text-white whitespace-pre-wrap break-words mb-2">
@@ -764,13 +800,6 @@ export default function QrTemplates() {
                               {mobilePreview.type === 'carousel' && mobilePreview.carousel_config && (
                                 <div className="mt-3 text-xs text-gray-400">
                                   🎠 {((mobilePreview.carousel_config as any)?.cards || []).length} card(s)
-                                </div>
-                              )}
-
-                              {/* Mídia */}
-                              {mobilePreview.media_files && mobilePreview.media_files.length > 0 && (
-                                <div className="mt-3 text-xs text-gray-400">
-                                  📎 {mobilePreview.media_files.length} arquivo(s) anexado(s)
                                 </div>
                               )}
 
