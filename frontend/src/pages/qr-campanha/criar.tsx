@@ -57,6 +57,7 @@ export default function CriarCampanhaQR() {
   const [excludeTemplate, setExcludeTemplate] = useState('');
   const [onlyWithMedia, setOnlyWithMedia] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('Todas');
+  const [variablesFilter, setVariablesFilter] = useState<'all' | 'with' | 'without'>('all'); // ✅ Filtro de variáveis
   
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsInput, setContactsInput] = useState('');
@@ -229,6 +230,39 @@ export default function CriarCampanhaQR() {
     }
   };
 
+  // ✅ Função para detectar variáveis no template
+  const getTemplateVariables = (template: QrTemplate): { hasVariables: boolean; count: number; names: string[] } => {
+    const variables = new Set<string>();
+    
+    // Verificar variables_map
+    if (template.variables_map) {
+      try {
+        const varsMap = typeof template.variables_map === 'string' 
+          ? JSON.parse(template.variables_map) 
+          : template.variables_map;
+        
+        Object.keys(varsMap).forEach(key => variables.add(key));
+      } catch (e) {
+        // Ignorar erros de parse
+      }
+    }
+    
+    // Verificar no text_content usando regex
+    if (template.text_content) {
+      const variableRegex = /\{\{\s*(\w+)\s*\}\}/g;
+      let match;
+      while ((match = variableRegex.exec(template.text_content)) !== null) {
+        variables.add(match[1].trim());
+      }
+    }
+    
+    return {
+      hasVariables: variables.size > 0,
+      count: variables.size,
+      names: Array.from(variables)
+    };
+  };
+
   // Filtrar templates
   const getFilteredTemplates = () => {
     return templates.filter(template => {
@@ -253,6 +287,17 @@ export default function CriarCampanhaQR() {
       // Filtro de categoria
       if (categoryFilter !== 'Todas' && template.type !== categoryFilter) {
         return false;
+      }
+
+      // ✅ Filtro de variáveis
+      if (variablesFilter !== 'all') {
+        const varInfo = getTemplateVariables(template);
+        if (variablesFilter === 'with' && !varInfo.hasVariables) {
+          return false;
+        }
+        if (variablesFilter === 'without' && varInfo.hasVariables) {
+          return false;
+        }
       }
 
       return true;
@@ -998,7 +1043,7 @@ export default function CriarCampanhaQR() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Apenas com Mídia */}
               <div className="flex items-center gap-3">
                 <input
@@ -1031,10 +1076,24 @@ export default function CriarCampanhaQR() {
                   <option value="button">Botão</option>
                 </select>
               </div>
+
+              {/* ✅ Filtro por Variáveis */}
+              <div>
+                <label className="block text-sm text-white/70 mb-2">🔧 Variáveis</label>
+                <select
+                  className="w-full px-4 py-2 bg-dark-600 border-2 border-white/10 rounded-lg text-white focus:border-green-500 focus:outline-none"
+                  value={variablesFilter}
+                  onChange={(e) => setVariablesFilter(e.target.value as 'all' | 'with' | 'without')}
+                >
+                  <option value="all">Todos (com/sem variáveis)</option>
+                  <option value="with">✅ Apenas COM variáveis</option>
+                  <option value="without">❌ Apenas SEM variáveis</option>
+                </select>
+              </div>
             </div>
 
             {/* Contador de filtros */}
-            {(searchTemplate || excludeTemplate || onlyWithMedia || categoryFilter !== 'Todas') && (
+            {(searchTemplate || excludeTemplate || onlyWithMedia || categoryFilter !== 'Todas' || variablesFilter !== 'all') && (
               <div className="pt-3 border-t border-white/10">
                 <p className="text-sm text-white/60">
                   Mostrando <strong className="text-green-400">{getFilteredTemplates().length}</strong> de <strong>{templates.length}</strong> templates
@@ -1056,35 +1115,67 @@ export default function CriarCampanhaQR() {
           ) : (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 max-h-[500px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-green-500/50 scrollbar-track-dark-700/50">
-                {getFilteredTemplates().map(template => (
-                  <label 
-                    key={template.id}
-                    className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all border-2 ${
-                      selectedTemplateIds.includes(template.id)
-                        ? 'bg-green-500/20 border-green-500/60'
-                        : 'bg-dark-700/50 border-white/10 hover:border-white/30'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedTemplateIds.includes(template.id)}
-                      onChange={() => handleToggleTemplate(template.id)}
-                      className="w-5 h-5 accent-green-500"
-                    />
-                    <div className="flex-1">
-                      <div className="font-bold text-white">{template.name}</div>
-                      <div className="text-sm text-white/60">{template.type}</div>
-                      {template.description && (
-                        <div className="text-xs text-white/40 mt-1">{template.description}</div>
-                      )}
-                    </div>
-                    {selectedTemplateIds.includes(template.id) && (
-                      <div className="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded-full">
-                        ✓ SELECIONADO
+                {getFilteredTemplates().map(template => {
+                  const varInfo = getTemplateVariables(template);
+                  return (
+                    <label 
+                      key={template.id}
+                      className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all border-2 ${
+                        selectedTemplateIds.includes(template.id)
+                          ? 'bg-green-500/20 border-green-500/60'
+                          : 'bg-dark-700/50 border-white/10 hover:border-white/30'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedTemplateIds.includes(template.id)}
+                        onChange={() => handleToggleTemplate(template.id)}
+                        className="w-5 h-5 accent-green-500"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">{template.name}</span>
+                          {/* ✅ Badge de Variáveis */}
+                          {varInfo.hasVariables && (
+                            <span 
+                              className="px-2 py-0.5 bg-orange-500/20 border border-orange-500/50 text-orange-300 text-xs font-bold rounded-full"
+                              title={`Variáveis: ${varInfo.names.join(', ')}`}
+                            >
+                              🔧 {varInfo.count} {varInfo.count === 1 ? 'variável' : 'variáveis'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-white/60">{template.type}</div>
+                        {template.description && (
+                          <div className="text-xs text-white/40 mt-1">{template.description}</div>
+                        )}
+                        {/* ✅ Lista de nomes das variáveis */}
+                        {varInfo.hasVariables && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {varInfo.names.slice(0, 5).map((name, idx) => (
+                              <span 
+                                key={idx}
+                                className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded"
+                              >
+                                {`{{${name}}}`}
+                              </span>
+                            ))}
+                            {varInfo.names.length > 5 && (
+                              <span className="px-2 py-0.5 text-white/40 text-xs">
+                                +{varInfo.names.length - 5} mais
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </label>
-                ))}
+                      {selectedTemplateIds.includes(template.id) && (
+                        <div className="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded-full">
+                          ✓ SELECIONADO
+                        </div>
+                      )}
+                    </label>
+                  );
+                })}
               </div>
               <div className="p-4 bg-green-500/10 border-2 border-green-500/30 rounded-xl">
                 <p className="text-green-300 font-bold">
