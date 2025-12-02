@@ -551,6 +551,17 @@ class QrTemplateController {
       console.log('🔄 Media Type:', req.body.media_type);
       console.log('🔄 ============================================');
 
+      // ✅ DELETAR MÍDIAS ANTIGAS ANTES DE ADICIONAR NOVAS
+      const isExisting = req.body.isExisting === true || req.body.isExisting === 'true';
+      const hasNewMedia = (req.files && Array.isArray(req.files) && req.files.length > 0) || 
+                          (req.body.media_url && req.body.media_path && !isExisting);
+      
+      if (hasNewMedia) {
+        console.log('🗑️ Deletando mídias antigas do template...');
+        await client.query('DELETE FROM qr_template_media WHERE template_id = $1', [template.id]);
+        console.log('✅ Mídias antigas deletadas!');
+      }
+
       // Se tem novos arquivos, adicionar
       const uploadedFiles = [];
       if (req.files && Array.isArray(req.files) && req.files.length > 0) {
