@@ -39,9 +39,14 @@ class QrTemplateController {
       }
 
       // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
-      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
-      console.log(`✅ [LIST] Tenant ${tenantId} definido na sessão PostgreSQL`);
+      const setConfigResult = await client.query('SELECT set_config($1, $2, true) as config_set', ['app.current_tenant_id', tenantId.toString()]);
+      console.log(`✅ [LIST] set_config result:`, setConfigResult.rows[0]);
+      
+      // Verificar se foi realmente definido
+      const verifyConfigResult = await client.query('SELECT current_setting($1, true) as tenant_value', ['app.current_tenant_id']);
+      console.log(`✅ [LIST] current_setting result:`, verifyConfigResult.rows[0]);
 
+      // USAR CONSULTA DIRETA COM TENANT_ID (não depender de RLS)
       const result = await client.query(`
         SELECT 
           t.*,
