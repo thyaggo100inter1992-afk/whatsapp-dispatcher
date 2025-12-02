@@ -31,12 +31,16 @@ class QrTemplateController {
     try {
       // 🔒 FILTRAR POR TENANT_ID
       const tenantId = (req as any).tenant?.id;
+      console.log('📋 [LIST] Tenant ID do usuário logado:', tenantId);
+      console.log('📋 [LIST] req.tenant completo:', (req as any).tenant);
+      
       if (!tenantId) {
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
       }
 
       // ✅ IMPORTANTE: Definir tenant na sessão PostgreSQL para RLS
       await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
+      console.log(`✅ [LIST] Tenant ${tenantId} definido na sessão PostgreSQL`);
 
       const result = await client.query(`
         SELECT 
@@ -67,6 +71,9 @@ class QrTemplateController {
         GROUP BY t.id
         ORDER BY t.created_at DESC
       `, [tenantId]);
+
+      console.log(`📋 [LIST] Encontrados ${result.rows.length} template(s) para tenant ${tenantId}`);
+      console.log('📋 [LIST] Templates:', result.rows.map(t => ({ id: t.id, name: t.name, type: t.type })));
 
       res.json({
         success: true,
