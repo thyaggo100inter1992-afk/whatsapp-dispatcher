@@ -324,9 +324,13 @@ class QrTemplateController {
         let fileSize = 0;
         let mimeType = 'application/octet-stream';
         
+        // ✅ Construir caminho absoluto correto no servidor
+        const absolutePath = path.join(__dirname, '../../', req.body.media_path);
+        console.log('📁 Caminho absoluto do arquivo:', absolutePath);
+        
         // Tentar obter tamanho do arquivo
         try {
-          const stats = fs.statSync(req.body.media_path);
+          const stats = fs.statSync(absolutePath);
           fileSize = stats.size;
           
           // Determinar mime type baseado no tipo
@@ -336,6 +340,7 @@ class QrTemplateController {
           else if (req.body.media_type === 'document') mimeType = 'application/pdf';
         } catch (err: any) {
           console.warn('⚠️ Não foi possível obter informações do arquivo:', err.message);
+          console.warn('⚠️ Caminho tentado:', absolutePath);
         }
         
         // Salvar no banco
@@ -600,8 +605,12 @@ class QrTemplateController {
         let fileSize = 0;
         let mimeType = 'application/octet-stream';
         
+        // ✅ Construir caminho absoluto correto no servidor
+        const absolutePath = path.join(__dirname, '../../', req.body.media_path);
+        console.log('📁 Caminho absoluto do arquivo:', absolutePath);
+        
         try {
-          const stats = fs.statSync(req.body.media_path);
+          const stats = fs.statSync(absolutePath);
           fileSize = stats.size;
           
           // Determinar mime type baseado no tipo
@@ -611,6 +620,7 @@ class QrTemplateController {
           else if (req.body.media_type === 'document') mimeType = 'application/pdf';
         } catch (err: any) {
           console.warn('⚠️ Não foi possível obter informações do arquivo:', err.message);
+          console.warn('⚠️ Caminho tentado:', absolutePath);
         }
         
         // Salvar no banco
