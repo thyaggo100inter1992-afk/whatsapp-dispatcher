@@ -269,19 +269,22 @@ function formatListChoices(choices) {
 function processAutoVariables(text) {
   if (!text) return text;
   
+  // ⏰ USAR TIMEZONE DE BRASÍLIA (America/Sao_Paulo = GMT-3)
   const now = new Date();
+  const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  
   const autoVariables = {
-    data: now.toLocaleDateString('pt-BR'),
-    hora: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+    data: brasiliaTime.toLocaleDateString('pt-BR'),
+    hora: brasiliaTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
     protocolo: `${now.getTime()}${Math.floor(Math.random() * 1000)}`,
     saudacao: (() => {
-      const hour = now.getHours();
+      const hour = brasiliaTime.getHours();
       if (hour >= 6 && hour < 12) return 'Bom dia';
       if (hour >= 12 && hour < 18) return 'Boa tarde';
       return 'Boa noite';
     })(),
     saudação: (() => { // variação com acento
-      const hour = now.getHours();
+      const hour = brasiliaTime.getHours();
       if (hour >= 6 && hour < 12) return 'Bom dia';
       if (hour >= 12 && hour < 18) return 'Boa tarde';
       return 'Boa noite';
