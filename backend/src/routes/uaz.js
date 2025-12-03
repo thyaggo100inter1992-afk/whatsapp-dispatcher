@@ -1179,19 +1179,19 @@ router.delete('/instances/delete-all', async (req, res) => {
     // 🔒 SEGURANÇA: Buscar IDs das instâncias do tenant para filtrar
     const instanceIds = instances.map(inst => inst.id);
     
-    // 1. Remove apenas de qr_campaign_templates DO TENANT (via instance_id)
-    const qrCampaignTemplatesResult = await pool.query(
+    // 1. Remove apenas de qr_campaign_templates DO TENANT (via instance_id) - usando tenantQuery
+    const qrCampaignTemplatesResult = await tenantQuery(req,
       'DELETE FROM qr_campaign_templates WHERE instance_id = ANY($1::int[])',
       [instanceIds]
     );
-    console.log(`   ├─ Removidas ${qrCampaignTemplatesResult.rowCount} referências em qr_campaign_templates`);
+    console.log(`   ├─ Removidas ${qrCampaignTemplatesResult.rowCount || 0} referências em qr_campaign_templates`);
     
-    // 2. Atualiza apenas qr_campaign_messages DO TENANT para NULL (preserva histórico)
-    const qrCampaignMessagesResult = await pool.query(
+    // 2. Atualiza apenas qr_campaign_messages DO TENANT para NULL (preserva histórico) - usando tenantQuery
+    const qrCampaignMessagesResult = await tenantQuery(req,
       'UPDATE qr_campaign_messages SET instance_id = NULL WHERE instance_id = ANY($1::int[])',
       [instanceIds]
     );
-    console.log(`   ├─ Atualizadas ${qrCampaignMessagesResult.rowCount} mensagens em qr_campaign_messages`);
+    console.log(`   ├─ Atualizadas ${qrCampaignMessagesResult.rowCount || 0} mensagens em qr_campaign_messages`);
     
     // 3. Deleta todas do banco de dados local DO TENANT (usando tenantQuery para respeitar RLS)
     const deleteResult = await tenantQuery(req, 'DELETE FROM uaz_instances WHERE tenant_id = $1', [tenantId]);
@@ -1272,19 +1272,19 @@ router.delete('/instances/:id', async (req, res) => {
     // Remove todas as referências antes de deletar a instância
     console.log(`🧹 Removendo referências da instância ${inst.name}...`);
     
-    // 1. Remove de qr_campaign_templates (referência a instance_id)
-    const qrCampaignTemplatesResult = await pool.query(
+    // 1. Remove de qr_campaign_templates (referência a instance_id) - usando tenantQuery para RLS
+    const qrCampaignTemplatesResult = await tenantQuery(req,
       'DELETE FROM qr_campaign_templates WHERE instance_id = $1',
       [id]
     );
-    console.log(`   ├─ Removidas ${qrCampaignTemplatesResult.rowCount} referências em qr_campaign_templates`);
+    console.log(`   ├─ Removidas ${qrCampaignTemplatesResult.rowCount || 0} referências em qr_campaign_templates`);
     
     // 2. Atualiza qr_campaign_messages para NULL ao invés de deletar (preserva histórico)
-    const qrCampaignMessagesResult = await pool.query(
+    const qrCampaignMessagesResult = await tenantQuery(req,
       'UPDATE qr_campaign_messages SET instance_id = NULL WHERE instance_id = $1',
       [id]
     );
-    console.log(`   ├─ Atualizadas ${qrCampaignMessagesResult.rowCount} mensagens em qr_campaign_messages`);
+    console.log(`   ├─ Atualizadas ${qrCampaignMessagesResult.rowCount || 0} mensagens em qr_campaign_messages`);
     
     // 3. Remove do banco de dados local (já com tenant_id validado acima)
     await tenantQuery(req, 'DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
