@@ -2,7 +2,11 @@
  * Controller para gerenciamento de templates de email
  */
 
-const { query } = require('../../config/database');
+const { pool } = require('../../database/connection');
+const query = async (text, params) => {
+  const result = await pool.query(text, params);
+  return result;
+};
 const EmailService = require('../../services/email.service').default;
 const emailService = new EmailService();
 
