@@ -243,6 +243,80 @@ class EmailCampaignWorker {
   }
 
   /**
+   * Substitui variáveis no conteúdo do email
+   */
+  async replaceVariables(content, recipient) {
+    let processedContent = content;
+
+    try {
+      // Buscar dados do tenant se houver tenant_id
+      let tenantData = null;
+      if (recipient.tenant_id) {
+        const tenantResult = await query(
+          'SELECT * FROM tenants WHERE id = $1',
+          [recipient.tenant_id]
+        );
+        tenantData = tenantResult.rows[0];
+      }
+
+      // Buscar planos
+      const plansResult = await query('SELECT * FROM plans WHERE is_active = TRUE');
+      const plans = {};
+      plansResult.rows.forEach(plan => {
+        const planKey = plan.name.toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]/g, '');
+        plans[planKey] = plan;
+      });
+
+      // Variáveis globais
+      const now = new Date();
+      const variables = {
+        // Dados do destinatário
+        email: recipient.email,
+        nome: tenantData?.nome || 'Cliente',
+        empresa: tenantData?.nome || 'Empresa',
+        
+        // Datas
+        data_atual: now.toLocaleDateString('pt-BR'),
+        hora_atual: now.toLocaleTimeString('pt-BR'),
+        data_cadastro: tenantData?.created_at ? new Date(tenantData.created_at).toLocaleDateString('pt-BR') : '',
+        data_vencimento: tenantData?.data_vencimento ? new Date(tenantData.data_vencimento).toLocaleDateString('pt-BR') : '',
+        
+        // Plano
+        plano_atual: tenantData?.plano || 'Não definido',
+        
+        // Trial
+        dias_teste: '3',
+        data_fim_teste: tenantData?.trial_end ? new Date(tenantData.trial_end).toLocaleDateString('pt-BR') : '',
+        
+        // Valores dos planos
+        valor_basico: plans.basico?.monthly_price || '0',
+        valor_profissional: plans.profissional?.monthly_price || '0',
+        valor_empresarial: plans.empresarial?.monthly_price || '0',
+        valor_megatop: plans.megatop?.monthly_price || '0',
+        
+        // Links
+        url_sistema: 'https://sistemasnettsistemas.com.br',
+        url_registro: 'https://sistemasnettsistemas.com.br/registro',
+        url_site: 'https://sistemasnettsistemas.com.br/site'
+      };
+
+      // Substituir todas as variáveis
+      Object.keys(variables).forEach(key => {
+        const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
+        processedContent = processedContent.replace(regex, variables[key]);
+      });
+
+      return processedContent;
+    } catch (error) {
+      console.error('❌ Erro ao substituir variáveis:', error);
+      return content; // Retorna conteúdo original em caso de erro
+    }
+  }
+
+  /**
    * Envia emails para todos os destinatários
    */
   async sendEmails(campaign, recipients, emailAccounts) {
@@ -266,11 +340,15 @@ class EmailCampaignWorker {
           console.log(`   🔄 Usando conta: ${emailAccounts[accountIndex % emailAccounts.length].name}`);
         }
 
+        // Substituir variáveis no conteúdo
+        const processedContent = await this.replaceVariables(campaign.content, recipient);
+        const processedSubject = await this.replaceVariables(campaign.subject, recipient);
+
         // Enviar email
         const sent = await emailAccountService.sendEmail(
           recipient.email,
-          campaign.subject,
-          campaign.content,
+          processedSubject,
+          processedContent,
           accountId
         );
 

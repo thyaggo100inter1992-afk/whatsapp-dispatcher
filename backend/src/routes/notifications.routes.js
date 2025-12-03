@@ -41,9 +41,69 @@ router.get('/active', async (req, res) => {
       ORDER BY n.created_at DESC
     `, [tenantId]);
 
+    // Buscar dados do tenant para substituir variáveis
+    const tenantResult = await query('SELECT * FROM tenants WHERE id = $1', [tenantId]);
+    const tenantData = tenantResult.rows[0];
+
+    // Buscar planos
+    const plansResult = await query('SELECT * FROM plans WHERE is_active = TRUE');
+    const plans = {};
+    plansResult.rows.forEach(plan => {
+      const planKey = plan.name.toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, '');
+      plans[planKey] = plan;
+    });
+
+    // Variáveis para substituição
+    const now = new Date();
+    const variables = {
+      nome: tenantData?.nome || 'Cliente',
+      empresa: tenantData?.nome || 'Empresa',
+      email: tenantData?.email || '',
+      data_atual: now.toLocaleDateString('pt-BR'),
+      hora_atual: now.toLocaleTimeString('pt-BR'),
+      data_cadastro: tenantData?.created_at ? new Date(tenantData.created_at).toLocaleDateString('pt-BR') : '',
+      data_vencimento: tenantData?.data_vencimento ? new Date(tenantData.data_vencimento).toLocaleDateString('pt-BR') : '',
+      plano_atual: tenantData?.plano || 'Não definido',
+      dias_teste: '3',
+      data_fim_teste: tenantData?.trial_end ? new Date(tenantData.trial_end).toLocaleDateString('pt-BR') : '',
+      valor_basico: plans.basico?.monthly_price || '0',
+      valor_profissional: plans.profissional?.monthly_price || '0',
+      valor_empresarial: plans.empresarial?.monthly_price || '0',
+      valor_megatop: plans.megatop?.monthly_price || '0',
+      url_sistema: 'https://sistemasnettsistemas.com.br',
+      url_registro: 'https://sistemasnettsistemas.com.br/registro',
+      url_site: 'https://sistemasnettsistemas.com.br/site'
+    };
+
+    // Substituir variáveis em cada notificação
+    const processedNotifications = result.rows.map(notif => {
+      let title = notif.title;
+      let message = notif.message;
+      let link_text = notif.link_text;
+
+      Object.keys(variables).forEach(key => {
+        const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
+        title = title.replace(regex, variables[key]);
+        message = message.replace(regex, variables[key]);
+        if (link_text) {
+          link_text = link_text.replace(regex, variables[key]);
+        }
+      });
+
+      return {
+        ...notif,
+        title,
+        message,
+        link_text
+      };
+    });
+
     res.json({
       success: true,
-      notifications: result.rows
+      notifications: processedNotifications
     });
   } catch (error) {
     console.error('❌ Erro ao buscar notificações ativas:', error);
