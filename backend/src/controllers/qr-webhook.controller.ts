@@ -150,7 +150,7 @@ export class QrWebhookController {
           if (singleId) messageIds = [singleId];
         }
         
-        let status = update.Type || update.status || update.update?.status;
+        let status = update.Type || update.status || update.update?.status || update.state || update.State || data?.state || data?.State;
         let errorMessage = update.error || update.errorMessage || update.update?.error;
 
         // Converter status numérico para string (baileys format)
@@ -166,11 +166,21 @@ export class QrWebhookController {
           status = statusMap[status] || 'unknown';
         }
 
+        // Normalizar string de status
+        if (typeof status === 'string') {
+          status = status.toLowerCase();
+        }
+
         // Normalizar status
-        if (status === 'DELIVERY_ACK' || status === 'delivery') status = 'delivered';
-        if (status === 'READ' || status === 'viewed' || status === 'read') status = 'read';
-        if (status === 'FAILED' || status === 'error') status = 'failed';
-        if (status === 'SENT' || status === 'server') status = 'sent';
+        if (status === 'delivery_ack' || status === 'delivery' || status === 'delivered') status = 'delivered';
+        if (status === 'read' || status === 'viewed' || status === 'played') status = 'read';
+        if (status === 'failed' || status === 'error') status = 'failed';
+        if (status === 'sent' || status === 'server') status = 'sent';
+        if (!status && data?.state) {
+          const state = String(data.state).toLowerCase();
+          if (state === 'delivered') status = 'delivered';
+          if (state === 'read') status = 'read';
+        }
 
         if (messageIds.length === 0) {
           console.log('⚠️ Message ID não encontrado no update:', update);
