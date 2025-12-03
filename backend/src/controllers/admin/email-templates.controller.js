@@ -290,9 +290,10 @@ const previewTemplate = async (req, res) => {
         email: 'lucas@exemplo.com',
         data_inicio_trial: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         data_fim_trial: new Date().toLocaleDateString('pt-BR'),
-        valor_basico: plansData.valor_basico || '49,90',
-        valor_profissional: plansData.valor_profissional || '99,90',
-        valor_empresarial: plansData.valor_empresarial || '199,90',
+        valor_basico: plansData.valor_basico || '157,90',
+        valor_profissional: plansData.valor_profissional || '297,90',
+        valor_empresarial: plansData.valor_empresarial || '567,90',
+        valor_megatop: plansData.valor_megatop || '1249,90',
         url_planos: 'https://sistemasnettsistemas.com.br/planos',
         dias_para_exclusao: '20'
       },
@@ -368,16 +369,37 @@ const sendTestEmail = async (req, res) => {
     let plansData = {};
     try {
       const plansResult = await pool.query('SELECT nome, preco_mensal FROM plans WHERE ativo = true ORDER BY id');
+      
+      // Mapeamento de nomes de planos para chaves normalizadas
+      const planNameMap = {
+        'básico': 'basico',
+        'basico': 'basico',
+        'profissional': 'profissional',
+        'empresarial': 'empresarial',
+        'mega top': 'megatop',
+        'megatop': 'megatop'
+      };
+      
       plansResult.rows.forEach(plan => {
-        const planKey = plan.nome.toLowerCase().replace(/[^a-z]/g, '');
+        // Normalizar nome: remover acentos e converter para lowercase
+        const normalizedName = plan.nome
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+          .trim();
+        
+        const planKey = planNameMap[normalizedName] || normalizedName.replace(/[^a-z]/g, '');
         plansData[`valor_${planKey}`] = parseFloat(plan.preco_mensal).toFixed(2).replace('.', ',');
       });
+      
+      console.log('📊 Planos carregados (sendTestEmail):', plansData);
     } catch (err) {
       console.error('⚠️ Erro ao buscar planos:', err.message);
       plansData = {
-        valor_basico: '49,90',
-        valor_profissional: '99,90',
-        valor_empresarial: '199,90'
+        valor_basico: '157,90',
+        valor_profissional: '297,90',
+        valor_empresarial: '567,90',
+        valor_megatop: '1249,90'
       };
     }
 
@@ -444,9 +466,10 @@ const sendTestEmail = async (req, res) => {
         email: 'lucas@exemplo.com',
         data_inicio_trial: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         data_fim_trial: new Date().toLocaleDateString('pt-BR'),
-        valor_basico: plansData.valor_basico || '49,90',
-        valor_profissional: plansData.valor_profissional || '99,90',
-        valor_empresarial: plansData.valor_empresarial || '199,90',
+        valor_basico: plansData.valor_basico || '157,90',
+        valor_profissional: plansData.valor_profissional || '297,90',
+        valor_empresarial: plansData.valor_empresarial || '567,90',
+        valor_megatop: plansData.valor_megatop || '1249,90',
         url_planos: 'https://sistemasnettsistemas.com.br/planos',
         dias_para_exclusao: '20'
       },
