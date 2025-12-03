@@ -1041,15 +1041,28 @@ router.get('/whatsapp-accounts/available', async (req, res) => {
     // Buscar todas as instâncias UAZ do tenant (se a tabela existir)
     let uazInstances = { rows: [] };
     try {
+      // Primeiro, verificar TODAS as instâncias UAZ no sistema
+      const allUazInstances = await tenantQuery(req, `
+        SELECT id, name, tenant_id, phone_number as phone, is_active
+        FROM uaz_instances
+        ORDER BY tenant_id, name
+      `);
+      console.log(`🌍 [Gestão] TODAS instâncias QR no sistema: ${allUazInstances.rows.length}`);
+      allUazInstances.rows.forEach(inst => {
+        console.log(`   - ID: ${inst.id}, Nome: ${inst.name}, Tenant: ${inst.tenant_id}, Ativa: ${inst.is_active}`);
+      });
+
+      // Agora buscar apenas as do tenant atual
       uazInstances = await tenantQuery(req, `
         SELECT id, name, phone_number as phone, is_active
         FROM uaz_instances
         WHERE tenant_id = $1
         ORDER BY name
       `, [tenantId]);
-      console.log(`🔗 [Gestão] Instâncias QR encontradas: ${uazInstances.rows.length}`);
+      console.log(`🔗 [Gestão] Instâncias QR do tenant ${tenantId}: ${uazInstances.rows.length}`);
     } catch (error) {
-      console.log('⚠️ Tabela uaz_instances não encontrada ou sem dados:', error.message);
+      console.log('⚠️ Erro ao buscar instâncias UAZ:', error.message);
+      console.error(error);
     }
 
     const response = {
