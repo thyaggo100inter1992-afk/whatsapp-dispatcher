@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { FaEnvelope, FaEye, FaPaperPlane, FaSave, FaToggleOn, FaToggleOff, FaExclamationTriangle, FaCog, FaArrowLeft } from 'react-icons/fa';
-import axios from 'axios';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import api from '@/services/api';
 
 interface EmailTemplate {
   id: number;
@@ -49,10 +47,7 @@ export default function EmailTemplates() {
   const loadTemplates = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/api/admin/email-templates`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/admin/email-templates');
       
       if (response.data.success) {
         setTemplates(response.data.templates);
@@ -85,16 +80,12 @@ export default function EmailTemplates() {
 
     try {
       setSaving(true);
-      const token = localStorage.getItem('token');
       
-      const response = await axios.put(
-        `${API_URL}/api/admin/email-templates/${selectedTemplate.id}`,
+      const response = await api.put(
+        `/admin/email-templates/${selectedTemplate.id}`,
         {
           subject: editedSubject,
           html_content: editedHtml
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
         }
       );
 
@@ -112,14 +103,8 @@ export default function EmailTemplates() {
 
   const toggleTemplate = async (template: EmailTemplate) => {
     try {
-      const token = localStorage.getItem('token');
-      
-      const response = await axios.patch(
-        `${API_URL}/api/admin/email-templates/${template.id}/toggle`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
+      const response = await api.patch(
+        `/admin/email-templates/${template.id}/toggle`
       );
 
       if (response.data.success) {
@@ -135,16 +120,11 @@ export default function EmailTemplates() {
     if (!selectedTemplate) return;
 
     try {
-      const token = localStorage.getItem('token');
-      
-      const response = await axios.post(
-        `${API_URL}/api/admin/email-templates/preview`,
+      const response = await api.post(
+        '/admin/email-templates/preview',
         {
           html_content: editedHtml,
           event_type: selectedTemplate.event_type
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
         }
       );
 
@@ -165,18 +145,13 @@ export default function EmailTemplates() {
     }
 
     try {
-      const token = localStorage.getItem('token');
-      
-      const response = await axios.post(
-        `${API_URL}/api/admin/email-templates/test`,
+      const response = await api.post(
+        '/admin/email-templates/test',
         {
           to: testEmail,
           subject: editedSubject,
           html_content: editedHtml,
           event_type: selectedTemplate.event_type
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
         }
       );
 
