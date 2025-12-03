@@ -5314,7 +5314,7 @@ router.post('/contact/details', async (req, res) => {
     console.log(`   â””â”€ Tamanho foto: ${preview ? 'Preview (pequeno)' : 'Full (original)'}`);
 
     // Busca instÃ¢ncia e proxy com filtro de tenant
-    const instance = await pool.query(`
+    const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id
