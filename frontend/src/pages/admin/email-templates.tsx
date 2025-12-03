@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { FaEnvelope, FaEye, FaPaperPlane, FaSave, FaToggleOn, FaToggleOff, FaExclamationTriangle } from 'react-icons/fa';
+import { useRouter } from 'next/router';
+import { FaEnvelope, FaEye, FaPaperPlane, FaSave, FaToggleOn, FaToggleOff, FaExclamationTriangle, FaCog, FaArrowLeft } from 'react-icons/fa';
 import axios from 'axios';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -18,6 +19,7 @@ interface EmailTemplate {
 }
 
 export default function EmailTemplates() {
+  const router = useRouter();
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
   const [editedSubject, setEditedSubject] = useState('');
@@ -202,14 +204,23 @@ export default function EmailTemplates() {
         
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl shadow-2xl p-8 mb-8">
-          <div className="flex items-center gap-4">
-            <FaEnvelope className="text-5xl text-white" />
-            <div>
-              <h1 className="text-4xl font-bold text-white">Templates de Email</h1>
-              <p className="text-blue-100 mt-2">
-                Configure emails personalizados para cada evento do sistema
-              </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <FaEnvelope className="text-5xl text-white" />
+              <div>
+                <h1 className="text-4xl font-bold text-white">Templates de Email</h1>
+                <p className="text-blue-100 mt-2">
+                  Configure emails personalizados para cada evento do sistema
+                </p>
+              </div>
             </div>
+            <button
+              onClick={() => router.push('/admin/credentials?tab=email')}
+              className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold transition-all flex items-center gap-2 backdrop-blur-sm"
+              title="Voltar para Configurações SMTP"
+            >
+              <FaCog /> Configurar SMTP
+            </button>
           </div>
         </div>
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { FaCog, FaPlus, FaEdit, FaTrash, FaStar, FaRegStar, FaToggleOn, FaToggleOff, FaBuilding, FaServer, FaKey, FaCheckCircle, FaCopy, FaLink, FaEnvelope, FaPaperPlane } from 'react-icons/fa';
+import { useRouter } from 'next/router';
+import { FaCog, FaPlus, FaEdit, FaTrash, FaStar, FaRegStar, FaToggleOn, FaToggleOff, FaBuilding, FaServer, FaKey, FaCheckCircle, FaCopy, FaLink, FaEnvelope, FaPaperPlane, FaEnvelopeOpen } from 'react-icons/fa';
 import AdminLayout from '@/components/admin/AdminLayout';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
@@ -61,6 +62,7 @@ interface EmailConfig {
 export default function AdminCredentials() {
   const notification = useNotification();
   const { confirm, ConfirmDialog } = useConfirm();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'uazap' | 'novavida' | 'asaas' | 'email'>('uazap');
   const [uazapCredentials, setUazapCredentials] = useState<UazapCredential[]>([]);
   const [novaVidaCredentials, setNovaVidaCredentials] = useState<NovaVidaCredential[]>([]);
@@ -170,7 +172,12 @@ export default function AdminCredentials() {
 
   useEffect(() => {
     loadCredentials();
-  }, []);
+    
+    // Se vier da URL com ?tab=email, abre a aba de email
+    if (router.query.tab === 'email') {
+      setActiveTab('email');
+    }
+  }, [router.query.tab]);
 
   const loadCredentials = async () => {
     try {
@@ -1295,6 +1302,16 @@ export default function AdminCredentials() {
                   {emailConfig?.is_configured ? '✅ Configurado' : '⚠️ Não Configurado'}
                 </div>
               </div>
+            </div>
+
+            {/* Botão para Templates */}
+            <div className="flex justify-end">
+              <button
+                onClick={() => router.push('/admin/email-templates')}
+                className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg"
+              >
+                <FaEnvelopeOpen /> Gerenciar Templates de Email
+              </button>
             </div>
 
             {/* Provider Selection */}
