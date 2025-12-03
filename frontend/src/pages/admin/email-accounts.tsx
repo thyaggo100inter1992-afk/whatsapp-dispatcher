@@ -31,8 +31,8 @@ export default function EmailAccounts() {
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [testingEmail, setTestingEmail] = useState(false);
-  const [testEmail, setTestEmail] = useState('');
+  const [testingEmail, setTestingEmail] = useState<{ [key: number]: boolean }>({});
+  const [testEmails, setTestEmails] = useState<{ [key: number]: string }>({});
 
   const [form, setForm] = useState({
     name: '',
@@ -160,21 +160,22 @@ export default function EmailAccounts() {
   };
 
   const handleTest = async (id: number) => {
-    if (!testEmail) {
+    const email = testEmails[id];
+    if (!email) {
       notification.error('Digite um email para teste');
       return;
     }
 
     try {
-      setTestingEmail(true);
-      await api.post(`/admin/email-accounts/${id}/test`, { test_email: testEmail });
+      setTestingEmail({ ...testingEmail, [id]: true });
+      await api.post(`/admin/email-accounts/${id}/test`, { test_email: email });
       notification.success('Email de teste enviado! Verifique sua caixa de entrada.');
-      setTestEmail('');
+      setTestEmails({ ...testEmails, [id]: '' });
     } catch (error: any) {
       notification.error(error.response?.data?.message || 'Erro ao enviar email de teste');
       console.error(error);
     } finally {
-      setTestingEmail(false);
+      setTestingEmail({ ...testingEmail, [id]: false });
     }
   };
 
@@ -495,17 +496,17 @@ export default function EmailAccounts() {
                     <div className="flex gap-3">
                       <input
                         type="email"
-                        value={testEmail}
-                        onChange={(e) => setTestEmail(e.target.value)}
+                        value={testEmails[account.id] || ''}
+                        onChange={(e) => setTestEmails({ ...testEmails, [account.id]: e.target.value })}
                         className="flex-1 p-3 rounded-xl bg-white/10 border-2 border-white/20 text-white placeholder-white/50"
                         placeholder="Digite um email para teste..."
                       />
                       <button
                         onClick={() => handleTest(account.id)}
-                        disabled={testingEmail}
+                        disabled={testingEmail[account.id]}
                         className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 disabled:opacity-50"
                       >
-                        <FaPaperPlane /> {testingEmail ? 'Enviando...' : 'Testar'}
+                        <FaPaperPlane /> {testingEmail[account.id] ? 'Enviando...' : 'Testar'}
                       </button>
                     </div>
                   </div>
