@@ -6,6 +6,7 @@
 const { query } = require('../../config/database');
 const { pool } = require('../../database/connection');
 const emailAccountService = require('../../services/email-account.service').default;
+const emailCampaignWorker = require('../../workers/email-campaign.worker');
 
 // ============================================
 // CAMPANHAS DE EMAIL
@@ -259,65 +260,23 @@ const startCampaign = async (req, res) => {
 
     const campaignData = campaign.rows[0];
 
-    if (campaignData.status !== 'draft') {
+    if (campaignData.status !== 'draft' && campaignData.status !== 'pending') {
       return res.status(400).json({
         success: false,
-        message: 'Campanha já foi iniciada'
+        message: 'Campanha já foi iniciada ou concluída'
       });
     }
 
-    // Gerar lista de destinatários
-    const previewResult = await previewRecipients({
-      body: {
-        recipient_type: campaignData.recipient_type,
-        recipient_list: campaignData.recipient_list
-      }
-    }, { json: (data) => data });
-
-    if (!previewResult.success) {
-      throw new Error('Erro ao gerar lista de destinatários');
-    }
-
-    const emails = previewResult.emails;
-
-    // Criar registros de destinatários
-    for (const email of emails) {
-      // Buscar tenant_id se existir
-      const tenantResult = await query(
-        'SELECT id FROM tenants WHERE email = $1',
-        [email]
-      );
-      const tenantId = tenantResult.rows.length > 0 ? tenantResult.rows[0].id : null;
-
-      await query(
-        `INSERT INTO admin_email_campaign_recipients (
-          campaign_id, email, tenant_id, status
-        ) VALUES ($1, $2, $3, 'pending')`,
-        [id, email, tenantId]
-      );
-    }
-
-    // Atualizar campanha
-    await query(
-      `UPDATE admin_email_campaigns 
-       SET status = 'sending', 
-           total_recipients = $1, 
-           started_at = NOW()
-       WHERE id = $2`,
-      [emails.length, id]
-    );
-
-    console.log(`✅ Campanha ${id} iniciada com ${emails.length} destinatários`);
+    console.log(`✅ Iniciando campanha ${id}...`);
 
     // Iniciar worker de envio (assíncrono)
-    processEmailCampaign(id).catch(err => {
-      console.error('❌ Erro no worker:', err);
+    emailCampaignWorker.startCampaign(id).catch(err => {
+      console.error('❌ Erro no worker de campanha:', err);
     });
 
     res.json({
       success: true,
-      message: 'Campanha iniciada!',
-      total_recipients: emails.length
+      message: 'Campanha iniciada! O envio está sendo processado em segundo plano.'
     });
   } catch (error) {
     console.error('❌ Erro ao iniciar campanha:', error);
@@ -328,112 +287,6 @@ const startCampaign = async (req, res) => {
     });
   }
 };
-
-/**
- * Worker para processar envio de campanha
- */
-async function processEmailCampaign(campaignId) {
-  try {
-    console.log(`📧 [WORKER] Processando campanha ${campaignId}...`);
-
-    // Buscar campanha
-    const campaign = await query(
-      'SELECT * FROM admin_email_campaigns WHERE id = $1',
-      [campaignId]
-    );
-
-    if (campaign.rows.length === 0) {
-      throw new Error('Campanha não encontrada');
-    }
-
-    const campaignData = campaign.rows[0];
-    const emailAccounts = campaignData.email_accounts || [];
-    const delaySeconds = campaignData.delay_seconds || 5;
-
-    // Buscar destinatários pendentes
-    const recipients = await query(
-      `SELECT id, email 
-       FROM admin_email_campaign_recipients 
-       WHERE campaign_id = $1 AND status = 'pending'
-       ORDER BY id`,
-      [campaignId]
-    );
-
-    let sentCount = 0;
-    let failedCount = 0;
-    let currentAccountIndex = 0;
-
-    for (const recipient of recipients.rows) {
-      try {
-        // Selecionar conta de email (rotação)
-        const accountId = emailAccounts.length > 0
-          ? emailAccounts[currentAccountIndex % emailAccounts.length]
-          : null;
-
-        console.log(`   📧 Enviando para ${recipient.email} usando conta ${accountId || 'padrão'}...`);
-
-        // Enviar email
-        const sent = await emailAccountService.sendEmail(
-          recipient.email,
-          campaignData.subject,
-          campaignData.content,
-          accountId
-        );
-
-        if (sent) {
-          await query(
-            `UPDATE admin_email_campaign_recipients 
-             SET status = 'sent', sent_at = NOW(), email_account_id = $1
-             WHERE id = $2`,
-            [accountId, recipient.id]
-          );
-          sentCount++;
-          console.log(`   ✅ Enviado com sucesso`);
-        } else {
-          throw new Error('Falha no envio');
-        }
-
-        // Rotacionar conta
-        currentAccountIndex++;
-
-        // Delay entre envios
-        if (delaySeconds > 0) {
-          await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
-        }
-      } catch (error) {
-        console.error(`   ❌ Erro ao enviar para ${recipient.email}:`, error.message);
-        await query(
-          `UPDATE admin_email_campaign_recipients 
-           SET status = 'failed', error_message = $1
-           WHERE id = $2`,
-          [error.message, recipient.id]
-        );
-        failedCount++;
-      }
-    }
-
-    // Atualizar campanha como concluída
-    await query(
-      `UPDATE admin_email_campaigns 
-       SET status = 'completed', 
-           sent_count = $1, 
-           failed_count = $2, 
-           completed_at = NOW()
-       WHERE id = $3`,
-      [sentCount, failedCount, campaignId]
-    );
-
-    console.log(`✅ [WORKER] Campanha ${campaignId} concluída: ${sentCount} enviados, ${failedCount} falhas`);
-  } catch (error) {
-    console.error(`❌ [WORKER] Erro fatal na campanha ${campaignId}:`, error);
-    await query(
-      `UPDATE admin_email_campaigns 
-       SET status = 'failed', error_log = $1
-       WHERE id = $2`,
-      [error.message, campaignId]
-    );
-  }
-}
 
 /**
  * Deletar campanha
