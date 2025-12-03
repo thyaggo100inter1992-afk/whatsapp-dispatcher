@@ -5,6 +5,7 @@
 
 import { pool } from '../database/connection';
 import emailServiceInstance from './email.service';
+import emailAccountService from './email-account.service';
 
 interface TemplateData {
   [key: string]: string | number;
@@ -57,12 +58,6 @@ class EmailTemplateService {
     data: TemplateData
   ): Promise<boolean> {
     try {
-      // Verificar se o serviço de email está configurado
-      if (!emailServiceInstance.isConfigured) {
-        console.log('⚠️ Serviço de email não configurado');
-        return false;
-      }
-
       // Buscar template
       const template = await this.getActiveTemplate(eventType);
       if (!template) {
@@ -74,9 +69,14 @@ class EmailTemplateService {
       const subject = this.replaceVariables(template.subject, data);
       const htmlContent = this.replaceVariables(template.html_content, data);
 
-      // Enviar email
-      console.log(`📧 Enviando email '${eventType}' para ${to}`);
-      const sent = await emailServiceInstance.sendEmail(to, subject, htmlContent);
+      // Enviar email usando a conta configurada no template (ou padrão)
+      console.log(`📧 Enviando email '${eventType}' para ${to} usando conta ${template.email_account_id || 'padrão'}`);
+      const sent = await emailAccountService.sendEmail(
+        to,
+        subject,
+        htmlContent,
+        template.email_account_id
+      );
 
       if (sent) {
         console.log(`✅ Email '${eventType}' enviado com sucesso para ${to}`);

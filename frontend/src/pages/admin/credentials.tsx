@@ -63,7 +63,7 @@ export default function AdminCredentials() {
   const notification = useNotification();
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'uazap' | 'novavida' | 'asaas' | 'email'>('uazap');
+  const [activeTab, setActiveTab] = useState<'uazap' | 'novavida' | 'asaas'>('uazap');
   const [uazapCredentials, setUazapCredentials] = useState<UazapCredential[]>([]);
   const [novaVidaCredentials, setNovaVidaCredentials] = useState<NovaVidaCredential[]>([]);
   const [asaasCredentials, setAsaasCredentials] = useState<AsaasCredential[]>([]);
@@ -172,26 +172,19 @@ export default function AdminCredentials() {
 
   useEffect(() => {
     loadCredentials();
-    
-    // Se vier da URL com ?tab=email, abre a aba de email
-    if (router.query.tab === 'email') {
-      setActiveTab('email');
-    }
-  }, [router.query.tab]);
+  }, []);
 
   const loadCredentials = async () => {
     try {
       setLoading(true);
-      const [uazapRes, novaVidaRes, asaasRes, emailRes] = await Promise.all([
+      const [uazapRes, novaVidaRes, asaasRes] = await Promise.all([
         api.get('/admin/credentials/uazap'),
         api.get('/admin/credentials/novavida'),
-        api.get('/admin/credentials/asaas'),
-        api.get('/admin/credentials/email').catch(() => ({ data: { data: null } }))
+        api.get('/admin/credentials/asaas')
       ]);
       setUazapCredentials(uazapRes.data.data);
       setNovaVidaCredentials(novaVidaRes.data.data);
       setAsaasCredentials(asaasRes.data.data);
-      setEmailConfig(emailRes.data.data);
       
       // Preencher form se já existe configuração
       if (emailRes.data.data) {
@@ -597,20 +590,18 @@ export default function AdminCredentials() {
           >
             <FaCheckCircle /> Asaas ({asaasCredentials.length})
           </button>
-          <button
-            onClick={() => setActiveTab('email')}
-            className={`flex-1 py-4 px-6 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
-              activeTab === 'email'
-                ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg scale-105'
-                : 'bg-white/10 text-gray-300 hover:bg-white/20'
-            }`}
-          >
-            <FaEnvelope /> Email {emailConfig?.is_configured && '✅'}
-          </button>
         </div>
 
-        {/* Botão Criar */}
-        {activeTab !== 'email' && (
+        {/* Botão Criar e Link para Email Accounts */}
+        <div className="mb-6 flex justify-between items-center">
+          <button
+            onClick={() => router.push('/admin/email-accounts')}
+            className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg"
+          >
+            <FaEnvelope /> Gerenciar Contas de Email
+          </button>
+          
+          {(
           <div className="mb-6 flex justify-end">
             <button
               onClick={() => {
@@ -1275,281 +1266,7 @@ export default function AdminCredentials() {
           </div>
         )}
 
-        {/* EMAIL Content */}
-        {activeTab === 'email' && (
-          <div className="space-y-6">
-            {/* Status Card */}
-            <div className={`bg-gradient-to-br rounded-2xl p-6 border-2 ${
-              emailConfig?.is_configured
-                ? 'from-green-500/10 to-green-600/5 border-green-500/30'
-                : 'from-orange-500/10 to-orange-600/5 border-orange-500/30'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-2xl font-black text-white flex items-center gap-3">
-                    <FaEnvelope className="text-orange-400" />
-                    Configuração de Email
-                  </h3>
-                  <p className="text-gray-400 mt-2">
-                    Configure o envio de emails para notificações de vencimento e bloqueio
-                  </p>
-                </div>
-                <div className={`px-6 py-3 rounded-xl font-bold text-lg ${
-                  emailConfig?.is_configured
-                    ? 'bg-green-500 text-green-900'
-                    : 'bg-orange-500 text-orange-900'
-                }`}>
-                  {emailConfig?.is_configured ? '✅ Configurado' : '⚠️ Não Configurado'}
-                </div>
-              </div>
-            </div>
-
-            {/* Botões de Navegação */}
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => router.push('/admin/email-accounts')}
-                className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg"
-              >
-                <FaEnvelope /> Gerenciar Contas de Email
-              </button>
-              <button
-                onClick={() => router.push('/admin/email-templates')}
-                className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg"
-              >
-                <FaEnvelopeOpen /> Gerenciar Templates de Email
-              </button>
-            </div>
-
-            {/* Provider Selection */}
-            <div className="bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-6 border-2 border-white/20">
-              <h4 className="text-xl font-black text-white mb-4 flex items-center gap-2">
-                <FaServer className="text-orange-400" />
-                Escolha o Provedor de Email
-              </h4>
-              
-              <div className="grid grid-cols-2 gap-4">
-                {/* Hostinger */}
-                <button
-                  onClick={() => handleProviderChange('hostinger')}
-                  className={`p-6 rounded-xl border-2 transition-all ${
-                    emailForm.provider === 'hostinger'
-                      ? 'bg-orange-500/20 border-orange-500 shadow-lg shadow-orange-500/20'
-                      : 'bg-white/5 border-white/20 hover:border-orange-500/50'
-                  }`}
-                >
-                  <div className="text-center">
-                    <div className="text-4xl mb-3">🌐</div>
-                    <h5 className="text-lg font-bold text-white mb-2">Hostinger</h5>
-                    <p className="text-sm text-gray-400">SMTP da Hostinger</p>
-                    {emailForm.provider === 'hostinger' && (
-                      <div className="mt-3 px-3 py-1 bg-orange-500 text-orange-900 rounded-full text-xs font-bold inline-block">
-                        ✓ Selecionado
-                      </div>
-                    )}
-                  </div>
-                </button>
-
-                {/* Gmail */}
-                <button
-                  onClick={() => handleProviderChange('gmail')}
-                  className={`p-6 rounded-xl border-2 transition-all ${
-                    emailForm.provider === 'gmail'
-                      ? 'bg-red-500/20 border-red-500 shadow-lg shadow-red-500/20'
-                      : 'bg-white/5 border-white/20 hover:border-red-500/50'
-                  }`}
-                >
-                  <div className="text-center">
-                    <div className="text-4xl mb-3">📧</div>
-                    <h5 className="text-lg font-bold text-white mb-2">Gmail</h5>
-                    <p className="text-sm text-gray-400">SMTP do Google</p>
-                    {emailForm.provider === 'gmail' && (
-                      <div className="mt-3 px-3 py-1 bg-red-500 text-red-900 rounded-full text-xs font-bold inline-block">
-                        ✓ Selecionado
-                      </div>
-                    )}
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {/* Configuration Form */}
-            <div className="bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-6 border-2 border-white/20">
-              <h4 className="text-xl font-black text-white mb-6 flex items-center gap-2">
-                <FaCog className="text-orange-400" />
-                Configurações SMTP
-              </h4>
-
-              <div className="space-y-4">
-                {/* SMTP Host (readonly) */}
-                <div>
-                  <label className="block text-sm font-bold text-gray-300 mb-2">
-                    🌐 Servidor SMTP
-                  </label>
-                  <input
-                    type="text"
-                    value={emailForm.smtp_host}
-                    readOnly
-                    className="w-full px-4 py-3 bg-black/30 border-2 border-white/10 rounded-lg text-gray-400 cursor-not-allowed"
-                  />
-                </div>
-
-                {/* SMTP Port (readonly) */}
-                <div>
-                  <label className="block text-sm font-bold text-gray-300 mb-2">
-                    🔌 Porta
-                  </label>
-                  <input
-                    type="text"
-                    value={emailForm.smtp_port}
-                    readOnly
-                    className="w-full px-4 py-3 bg-black/30 border-2 border-white/10 rounded-lg text-gray-400 cursor-not-allowed"
-                  />
-                </div>
-
-                {/* SMTP User */}
-                <div>
-                  <label className="block text-sm font-bold text-orange-300 mb-2">
-                    📧 Email / Usuário SMTP *
-                  </label>
-                  <input
-                    type="email"
-                    value={emailForm.smtp_user}
-                    onChange={(e) => setEmailForm({ ...emailForm, smtp_user: e.target.value })}
-                    placeholder={emailForm.provider === 'hostinger' ? 'contato@nettsistemas.com' : 'seu-email@gmail.com'}
-                    className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-orange-500 focus:outline-none"
-                  />
-                  <p className="text-xs text-gray-400 mt-1">
-                    {emailForm.provider === 'hostinger' 
-                      ? 'Digite o email completo da Hostinger'
-                      : 'Digite seu email do Gmail'}
-                  </p>
-                </div>
-
-                {/* SMTP Password */}
-                <div>
-                  <label className="block text-sm font-bold text-orange-300 mb-2">
-                    🔑 Senha {emailConfig?.is_configured && '(deixe vazio para manter a atual)'}
-                  </label>
-                  <input
-                    type="password"
-                    value={emailForm.smtp_pass}
-                    onChange={(e) => setEmailForm({ ...emailForm, smtp_pass: e.target.value })}
-                    placeholder={emailConfig?.is_configured ? 'Deixe vazio para manter' : 'Digite a senha'}
-                    className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-orange-500 focus:outline-none"
-                  />
-                  {emailForm.provider === 'gmail' && (
-                    <p className="text-xs text-yellow-400 mt-1">
-                      ⚠️ Para Gmail, use uma "Senha de App" (não a senha normal)
-                    </p>
-                  )}
-                </div>
-
-                {/* Email From */}
-                <div>
-                  <label className="block text-sm font-bold text-orange-300 mb-2">
-                    📤 Email de Envio (From) *
-                  </label>
-                  <input
-                    type="email"
-                    value={emailForm.email_from}
-                    onChange={(e) => setEmailForm({ ...emailForm, email_from: e.target.value })}
-                    placeholder="noreply@nettsistemas.com"
-                    className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-orange-500 focus:outline-none"
-                  />
-                  <p className="text-xs text-gray-400 mt-1">
-                    Email que aparecerá como remetente
-                  </p>
-                </div>
-
-                {/* Save Button */}
-                <button
-                  onClick={handleSaveEmail}
-                  className="w-full py-4 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg"
-                >
-                  <FaCheckCircle /> Salvar Configurações
-                </button>
-              </div>
-            </div>
-
-            {/* Test Email */}
-            {emailConfig?.is_configured && (
-              <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 rounded-2xl p-6 border-2 border-blue-500/30">
-                <h4 className="text-xl font-black text-white mb-4 flex items-center gap-2">
-                  <FaPaperPlane className="text-blue-400" />
-                  Testar Envio de Email
-                </h4>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-bold text-blue-300 mb-2">
-                      📧 Email para Teste
-                    </label>
-                    <input
-                      type="email"
-                      value={emailForm.test_email}
-                      onChange={(e) => setEmailForm({ ...emailForm, test_email: e.target.value })}
-                      placeholder="seu-email@gmail.com"
-                      className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleTestEmail}
-                    disabled={testingEmail}
-                    className="w-full py-4 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {testingEmail ? (
-                      <>
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                        Enviando...
-                      </>
-                    ) : (
-                      <>
-                        <FaPaperPlane /> Enviar Email de Teste
-                      </>
-                    )}
-                  </button>
-
-                  {emailConfig.last_test && (
-                    <div className={`p-4 rounded-lg ${
-                      emailConfig.last_test_success
-                        ? 'bg-green-500/20 border-2 border-green-500/50'
-                        : 'bg-red-500/20 border-2 border-red-500/50'
-                    }`}>
-                      <p className={`text-sm font-bold ${
-                        emailConfig.last_test_success ? 'text-green-300' : 'text-red-300'
-                      }`}>
-                        {emailConfig.last_test_success ? '✅ Último teste: Sucesso' : '❌ Último teste: Falhou'}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {new Date(emailConfig.last_test).toLocaleString('pt-BR')}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Info Box */}
-            <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 rounded-2xl p-6 border-2 border-purple-500/30">
-              <h4 className="text-lg font-black text-white mb-3 flex items-center gap-2">
-                <FaCheckCircle className="text-purple-400" />
-                📧 Emails Automáticos
-              </h4>
-              <div className="space-y-2 text-gray-300 text-sm">
-                <p>✅ <strong>3 dias antes</strong> do vencimento</p>
-                <p>✅ <strong>2 dias antes</strong> do vencimento</p>
-                <p>✅ <strong>1 dia antes</strong> do vencimento</p>
-                <p>✅ <strong>No bloqueio</strong> (quando o plano vence)</p>
-                <p className="text-purple-300 mt-4">
-                  ⏰ Os emails são enviados automaticamente a cada <strong>2 horas</strong>
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </AdminLayout>
+        {/* EMAIL Content - REMOVIDO - Agora em /admin/email-accounts */}
     </>
   );
 }
