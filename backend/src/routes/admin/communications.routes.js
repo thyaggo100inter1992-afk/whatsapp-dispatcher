@@ -26,6 +26,15 @@ router.post('/campaigns/preview-recipients', communicationsController.previewRec
 // Iniciar envio de campanha
 router.post('/campaigns/:id/start', communicationsController.startCampaign);
 
+// Pausar campanha
+router.post('/campaigns/:id/pause', communicationsController.pauseCampaign);
+
+// Retomar campanha
+router.post('/campaigns/:id/resume', communicationsController.resumeCampaign);
+
+// Cancelar campanha
+router.post('/campaigns/:id/cancel', communicationsController.cancelCampaign);
+
 // Deletar campanha
 router.delete('/campaigns/:id', communicationsController.deleteCampaign);
 

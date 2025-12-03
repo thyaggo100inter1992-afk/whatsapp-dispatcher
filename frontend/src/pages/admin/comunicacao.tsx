@@ -62,6 +62,8 @@ export default function Comunicacao() {
   const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
   const [previewEmails, setPreviewEmails] = useState<string[]>([]);
   const [showPreview, setShowPreview] = useState(false);
+  const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
+  const [showCampaignDetails, setShowCampaignDetails] = useState(false);
   
   // Notification State
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -197,6 +199,64 @@ export default function Comunicacao() {
       loadNotifications();
     } catch (error: any) {
       notification.error('Erro ao deletar notificação');
+    }
+  };
+
+  // Campaign Actions
+  const handleViewCampaignDetails = async (id: number) => {
+    try {
+      setLoading(true);
+      const response = await api.get(`/admin/communications/campaigns/${id}`);
+      setSelectedCampaign(response.data);
+      setShowCampaignDetails(true);
+    } catch (error: any) {
+      notification.error('Erro ao carregar detalhes da campanha');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePauseCampaign = async (id: number) => {
+    try {
+      await api.post(`/admin/communications/campaigns/${id}/pause`);
+      notification.success('Campanha pausada!');
+      loadCampaigns();
+    } catch (error: any) {
+      notification.error('Erro ao pausar campanha');
+    }
+  };
+
+  const handleResumeCampaign = async (id: number) => {
+    try {
+      await api.post(`/admin/communications/campaigns/${id}/resume`);
+      notification.success('Campanha retomada!');
+      loadCampaigns();
+    } catch (error: any) {
+      notification.error('Erro ao retomar campanha');
+    }
+  };
+
+  const handleCancelCampaign = async (id: number) => {
+    if (!confirm('Tem certeza que deseja cancelar esta campanha?')) return;
+    
+    try {
+      await api.post(`/admin/communications/campaigns/${id}/cancel`);
+      notification.success('Campanha cancelada!');
+      loadCampaigns();
+    } catch (error: any) {
+      notification.error('Erro ao cancelar campanha');
+    }
+  };
+
+  const handleDeleteCampaign = async (id: number) => {
+    if (!confirm('Tem certeza que deseja deletar esta campanha? Esta ação não pode ser desfeita.')) return;
+    
+    try {
+      await api.delete(`/admin/communications/campaigns/${id}`);
+      notification.success('Campanha deletada!');
+      loadCampaigns();
+    } catch (error: any) {
+      notification.error('Erro ao deletar campanha');
     }
   };
   
@@ -482,7 +542,7 @@ export default function Comunicacao() {
                     key={campaign.id}
                     className="bg-gradient-to-br from-white/20 to-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/30"
                   >
-                    <div className="flex justify-between items-start">
+                    <div className="flex justify-between items-start mb-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <h3 className="text-2xl font-bold text-white">{campaign.name}</h3>
@@ -509,6 +569,52 @@ export default function Comunicacao() {
                           </div>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Botões de Ação */}
+                    <div className="flex gap-2 justify-end border-t border-white/20 pt-4">
+                      <button
+                        onClick={() => handleViewCampaignDetails(campaign.id)}
+                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-bold transition-all flex items-center gap-2"
+                      >
+                        <FaEye /> Ver Detalhes
+                      </button>
+
+                      {campaign.status === 'sending' && (
+                        <button
+                          onClick={() => handlePauseCampaign(campaign.id)}
+                          className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-bold transition-all flex items-center gap-2"
+                        >
+                          <FaPause /> Pausar
+                        </button>
+                      )}
+
+                      {campaign.status === 'paused' && (
+                        <button
+                          onClick={() => handleResumeCampaign(campaign.id)}
+                          className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold transition-all flex items-center gap-2"
+                        >
+                          <FaPlay /> Retomar
+                        </button>
+                      )}
+
+                      {(campaign.status === 'sending' || campaign.status === 'paused') && (
+                        <button
+                          onClick={() => handleCancelCampaign(campaign.id)}
+                          className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold transition-all flex items-center gap-2"
+                        >
+                          <FaTimesCircle /> Cancelar
+                        </button>
+                      )}
+
+                      {(campaign.status === 'completed' || campaign.status === 'failed' || campaign.status === 'cancelled') && (
+                        <button
+                          onClick={() => handleDeleteCampaign(campaign.id)}
+                          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition-all flex items-center gap-2"
+                        >
+                          <FaTrash /> Deletar
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -698,6 +804,108 @@ export default function Comunicacao() {
             </div>
           )}
         </div>
+
+        {/* Modal de Detalhes da Campanha */}
+        {showCampaignDetails && selectedCampaign && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-gradient-to-br from-purple-900 via-purple-800 to-blue-900 rounded-3xl p-8 max-w-6xl w-full max-h-[90vh] overflow-y-auto border-4 border-white/30">
+              {/* Header */}
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-3xl font-black text-white mb-2">{selectedCampaign.campaign.name}</h2>
+                  <p className="text-white/80 text-lg">📧 {selectedCampaign.campaign.subject}</p>
+                </div>
+                <button
+                  onClick={() => setShowCampaignDetails(false)}
+                  className="text-white/60 hover:text-white text-3xl"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Estatísticas */}
+              <div className="grid grid-cols-4 gap-4 mb-6">
+                <div className="bg-white/10 rounded-xl p-4">
+                  <p className="text-white/60 text-sm mb-1">Total</p>
+                  <p className="text-white font-bold text-2xl">{selectedCampaign.campaign.total_recipients}</p>
+                </div>
+                <div className="bg-green-500/20 rounded-xl p-4">
+                  <p className="text-green-300 text-sm mb-1">Enviados</p>
+                  <p className="text-green-400 font-bold text-2xl">{selectedCampaign.campaign.sent_count}</p>
+                </div>
+                <div className="bg-red-500/20 rounded-xl p-4">
+                  <p className="text-red-300 text-sm mb-1">Falhas</p>
+                  <p className="text-red-400 font-bold text-2xl">{selectedCampaign.campaign.failed_count}</p>
+                </div>
+                <div className="bg-blue-500/20 rounded-xl p-4">
+                  <p className="text-blue-300 text-sm mb-1">Status</p>
+                  <div className="mt-1">{getStatusBadge(selectedCampaign.campaign.status)}</div>
+                </div>
+              </div>
+
+              {/* Contas de Email Usadas */}
+              {selectedCampaign.email_accounts && selectedCampaign.email_accounts.length > 0 && (
+                <div className="bg-white/10 rounded-xl p-4 mb-6">
+                  <h3 className="text-white font-bold mb-3">📮 Contas de Email Usadas (Rotação):</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedCampaign.email_accounts.map((account: any) => (
+                      <div key={account.id} className="bg-purple-500/30 px-4 py-2 rounded-lg text-white text-sm">
+                        <span className="font-bold">{account.name}</span>
+                        <span className="text-white/70 ml-2">({account.email_from})</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Lista de Destinatários */}
+              <div className="bg-white/10 rounded-xl p-4">
+                <h3 className="text-white font-bold mb-3">📋 Destinatários ({selectedCampaign.recipients.length}):</h3>
+                <div className="max-h-96 overflow-y-auto space-y-2">
+                  {selectedCampaign.recipients.map((recipient: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className={`flex justify-between items-center p-3 rounded-lg ${
+                        recipient.status === 'sent'
+                          ? 'bg-green-500/20 border border-green-500/30'
+                          : 'bg-red-500/20 border border-red-500/30'
+                      }`}
+                    >
+                      <div className="flex-1">
+                        <p className="text-white font-mono">{recipient.email}</p>
+                        {recipient.error_message && (
+                          <p className="text-red-300 text-sm mt-1">❌ {recipient.error_message}</p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        {recipient.status === 'sent' ? (
+                          <span className="text-green-400 font-bold">✓ Enviado</span>
+                        ) : (
+                          <span className="text-red-400 font-bold">✗ Falhou</span>
+                        )}
+                        {recipient.sent_at && (
+                          <p className="text-white/60 text-xs mt-1">
+                            {new Date(recipient.sent_at).toLocaleString('pt-BR')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Botão Fechar */}
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => setShowCampaignDetails(false)}
+                  className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold transition-all"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AdminLayout>
   );

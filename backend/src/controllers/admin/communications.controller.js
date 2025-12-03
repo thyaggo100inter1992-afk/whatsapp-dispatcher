@@ -72,19 +72,32 @@ const getCampaignById = async (req, res) => {
       });
     }
 
+    const campaignData = campaign.rows[0];
+
     // Buscar destinatários
     const recipients = await query(
-      `SELECT email, status, sent_at, error_message 
+      `SELECT email, status, sent_at, error_message, email_account_id
        FROM admin_email_campaign_recipients 
        WHERE campaign_id = $1
        ORDER BY id`,
       [id]
     );
 
+    // Buscar contas de email usadas
+    let emailAccounts = [];
+    if (campaignData.email_accounts && Array.isArray(campaignData.email_accounts) && campaignData.email_accounts.length > 0) {
+      const accountsResult = await query(
+        'SELECT id, name, email_from FROM email_accounts WHERE id = ANY($1)',
+        [campaignData.email_accounts]
+      );
+      emailAccounts = accountsResult.rows;
+    }
+
     res.json({
       success: true,
-      campaign: campaign.rows[0],
-      recipients: recipients.rows
+      campaign: campaignData,
+      recipients: recipients.rows,
+      email_accounts: emailAccounts
     });
   } catch (error) {
     console.error('❌ Erro ao buscar campanha:', error);
@@ -288,6 +301,95 @@ const startCampaign = async (req, res) => {
 };
 
 /**
+ * Pausar campanha
+ */
+const pauseCampaign = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await query(
+      "UPDATE admin_email_campaigns SET status = 'paused', updated_at = NOW() WHERE id = $1",
+      [id]
+    );
+
+    console.log('⏸️ Campanha pausada:', id);
+
+    res.json({
+      success: true,
+      message: 'Campanha pausada com sucesso'
+    });
+  } catch (error) {
+    console.error('❌ Erro ao pausar campanha:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao pausar campanha',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Retomar campanha
+ */
+const resumeCampaign = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await query(
+      "UPDATE admin_email_campaigns SET status = 'sending', updated_at = NOW() WHERE id = $1",
+      [id]
+    );
+
+    console.log('▶️ Campanha retomada:', id);
+
+    // Retomar worker
+    emailCampaignWorker.startCampaign(id).catch(err => {
+      console.error('❌ Erro ao retomar worker:', err);
+    });
+
+    res.json({
+      success: true,
+      message: 'Campanha retomada com sucesso'
+    });
+  } catch (error) {
+    console.error('❌ Erro ao retomar campanha:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao retomar campanha',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Cancelar campanha
+ */
+const cancelCampaign = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await query(
+      "UPDATE admin_email_campaigns SET status = 'cancelled', updated_at = NOW() WHERE id = $1",
+      [id]
+    );
+
+    console.log('❌ Campanha cancelada:', id);
+
+    res.json({
+      success: true,
+      message: 'Campanha cancelada com sucesso'
+    });
+  } catch (error) {
+    console.error('❌ Erro ao cancelar campanha:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao cancelar campanha',
+      error: error.message
+    });
+  }
+};
+
+/**
  * Deletar campanha
  */
 const deleteCampaign = async (req, res) => {
@@ -296,7 +398,7 @@ const deleteCampaign = async (req, res) => {
 
     await query('DELETE FROM admin_email_campaigns WHERE id = $1', [id]);
 
-    console.log('✅ Campanha deletada:', id);
+    console.log('🗑️ Campanha deletada:', id);
 
     res.json({
       success: true,
@@ -607,6 +709,9 @@ module.exports = {
   createCampaign,
   previewRecipients,
   startCampaign,
+  pauseCampaign,
+  resumeCampaign,
+  cancelCampaign,
   deleteCampaign,
   
   // Notifications
