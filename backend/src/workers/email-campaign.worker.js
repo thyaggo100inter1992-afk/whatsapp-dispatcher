@@ -75,7 +75,7 @@ class EmailCampaignWorker {
       );
 
       // Buscar contas de email para rotação
-      const emailAccounts = await this.getEmailAccounts(campaign.email_account_ids);
+      const emailAccounts = await this.getEmailAccounts(campaign.email_accounts);
 
       if (emailAccounts.length === 0) {
         console.log('⚠️ Nenhuma conta de email configurada, usando conta padrão');
@@ -167,23 +167,18 @@ class EmailCampaignWorker {
           break;
 
         case 'specific':
-          if (campaign.specific_tenants && Array.isArray(campaign.specific_tenants)) {
+          if (campaign.recipient_list && campaign.recipient_list.tenant_ids && Array.isArray(campaign.recipient_list.tenant_ids)) {
             const specificResult = await query(
               `SELECT id as tenant_id, email FROM tenants WHERE id = ANY($1) AND email IS NOT NULL AND email != ''`,
-              [campaign.specific_tenants]
+              [campaign.recipient_list.tenant_ids]
             );
             recipients.push(...specificResult.rows);
           }
           break;
 
         case 'manual':
-          if (campaign.manual_recipients) {
-            const emails = campaign.manual_recipients
-              .split(/[\n,;]/)
-              .map(e => e.trim())
-              .filter(e => e && e.includes('@'));
-            
-            recipients.push(...emails.map(email => ({ tenant_id: null, email })));
+          if (campaign.recipient_list && campaign.recipient_list.emails && Array.isArray(campaign.recipient_list.emails)) {
+            recipients.push(...campaign.recipient_list.emails.map(email => ({ tenant_id: null, email })));
           }
           break;
 
