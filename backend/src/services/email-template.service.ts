@@ -58,19 +58,26 @@ class EmailTemplateService {
     data: TemplateData
   ): Promise<boolean> {
     try {
+      console.log(`📋 [TEMPLATE-SERVICE] Iniciando envio de email templado...`);
+      console.log(`📋 [TEMPLATE-SERVICE] Tipo de evento: ${eventType}`);
+      console.log(`📋 [TEMPLATE-SERVICE] Destinatário: ${to}`);
+      
       // Buscar template
       const template = await this.getActiveTemplate(eventType);
       if (!template) {
-        console.log(`⚠️ Template '${eventType}' não disponível`);
+        console.log(`⚠️ [TEMPLATE-SERVICE] Template '${eventType}' não disponível`);
         return false;
       }
+
+      console.log(`📋 [TEMPLATE-SERVICE] Template encontrado: ${template.name} (ID: ${template.id})`);
+      console.log(`📋 [TEMPLATE-SERVICE] Email Account ID do template: ${template.email_account_id || 'NÃO CONFIGURADO (usará padrão)'}`);
 
       // Substituir variáveis no assunto e conteúdo
       const subject = this.replaceVariables(template.subject, data);
       const htmlContent = this.replaceVariables(template.html_content, data);
 
       // Enviar email usando a conta configurada no template (ou padrão)
-      console.log(`📧 Enviando email '${eventType}' para ${to} usando conta ${template.email_account_id || 'padrão'}`);
+      console.log(`📧 [TEMPLATE-SERVICE] Chamando emailAccountService.sendEmail com accountId: ${template.email_account_id || 'undefined'}`);
       const sent = await emailAccountService.sendEmail(
         to,
         subject,
@@ -79,14 +86,14 @@ class EmailTemplateService {
       );
 
       if (sent) {
-        console.log(`✅ Email '${eventType}' enviado com sucesso para ${to}`);
+        console.log(`✅ [TEMPLATE-SERVICE] Email '${eventType}' enviado com sucesso para ${to}`);
       } else {
-        console.log(`❌ Falha ao enviar email '${eventType}' para ${to}`);
+        console.log(`❌ [TEMPLATE-SERVICE] Falha ao enviar email '${eventType}' para ${to}`);
       }
 
       return sent;
     } catch (error: any) {
-      console.error('❌ Erro ao enviar email templado:', error);
+      console.error('❌ [TEMPLATE-SERVICE] Erro ao enviar email templado:', error);
       return false;
     }
   }

@@ -85,22 +85,35 @@ class EmailAccountService {
     accountId?: number
   ): Promise<boolean> {
     try {
+      console.log(`📧 [EMAIL-SERVICE] Iniciando envio de email...`);
+      console.log(`📧 [EMAIL-SERVICE] Para: ${to}`);
+      console.log(`📧 [EMAIL-SERVICE] Assunto: ${subject}`);
+      console.log(`📧 [EMAIL-SERVICE] Account ID solicitado: ${accountId || 'PADRÃO'}`);
+      
       let account: EmailAccount | null;
 
       if (accountId) {
+        console.log(`📧 [EMAIL-SERVICE] Buscando conta ID: ${accountId}`);
         account = await this.getAccountById(accountId);
         if (!account) {
-          console.warn(`⚠️ Conta ${accountId} não encontrada, usando padrão`);
+          console.warn(`⚠️ [EMAIL-SERVICE] Conta ${accountId} não encontrada, usando padrão`);
           account = await this.getDefaultAccount();
+        } else {
+          console.log(`✅ [EMAIL-SERVICE] Conta encontrada: ${account.name} (${account.email_from})`);
         }
       } else {
+        console.log(`📧 [EMAIL-SERVICE] Nenhuma conta especificada, usando padrão`);
         account = await this.getDefaultAccount();
       }
 
       if (!account) {
-        console.error('❌ Nenhuma conta de email configurada');
+        console.error('❌ [EMAIL-SERVICE] Nenhuma conta de email configurada');
         return false;
       }
+
+      console.log(`📧 [EMAIL-SERVICE] Conta final selecionada: ${account.name} (${account.email_from})`);
+      console.log(`📧 [EMAIL-SERVICE] SMTP: ${account.smtp_host}:${account.smtp_port}`);
+      console.log(`📧 [EMAIL-SERVICE] User: ${account.smtp_user}`);
 
       const transporter = this.createTransporter(account);
 
@@ -111,10 +124,10 @@ class EmailAccountService {
         html
       });
 
-      console.log(`✅ Email enviado com sucesso usando conta: ${account.name}`);
+      console.log(`✅ [EMAIL-SERVICE] Email enviado com sucesso usando conta: ${account.name} (${account.email_from})`);
       return true;
     } catch (error) {
-      console.error('❌ Erro ao enviar email:', error);
+      console.error('❌ [EMAIL-SERVICE] Erro ao enviar email:', error);
       return false;
     }
   }
