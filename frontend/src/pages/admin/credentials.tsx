@@ -480,17 +480,7 @@ export default function AdminCredentials() {
       currentPage="credentials"
     >
       <div>
-        {/* Botão Email no topo */}
-        <div className="mb-6 flex justify-end">
-          <button
-            onClick={() => router.push('/admin/email-accounts')}
-            className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg"
-          >
-            <FaEnvelope /> Gerenciar Contas de Email
-          </button>
-        </div>
-
-        {/* Tabs */}
+        {/* Tabs com Email como 4ª aba */}
         <div className="flex gap-4 mb-6">
           <button
             onClick={() => setActiveTab('uazap')}
@@ -521,6 +511,12 @@ export default function AdminCredentials() {
             }`}
           >
             <FaCheckCircle /> Asaas ({asaasCredentials.length})
+          </button>
+          <button
+            onClick={() => router.push('/admin/email-accounts')}
+            className="flex-1 py-4 px-6 rounded-xl font-bold transition-all flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg"
+          >
+            <FaEnvelope /> Email
           </button>
         </div>
 
