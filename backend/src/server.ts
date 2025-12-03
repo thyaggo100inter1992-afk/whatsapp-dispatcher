@@ -44,6 +44,39 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
+// 🔧 MIDDLEWARE ESPECIAL: Corrigir JSON malformado da UAZAPI
+app.use('/api/qr-webhook/uaz-event', express.raw({ type: 'application/json' }), (req: any, res, next) => {
+  try {
+    if (req.body && Buffer.isBuffer(req.body)) {
+      let bodyStr = req.body.toString('utf8');
+      
+      // Corrigir caracteres de escape incorretos da UAZAPI
+      // Exemplo: {" type\\:\\messages_update\\} -> {"type":"messages_update"}
+      bodyStr = bodyStr
+        .replace(/\{"\s*/g, '{"')  // Remove espaços após {"
+        .replace(/\\:/g, '":')      // Substitui \: por ":
+        .replace(/\\,/g, ',"')      // Substitui \, por ,"
+        .replace(/\\/g, '"')        // Substitui \ restantes por "
+        .replace(/\[\\/g, '["')     // Arrays: [\  -> ["
+        .replace(/\\\]/g, '"]');    // Arrays: \]  -> "]
+      
+      console.log('🔧 [UAZAPI Fix] Body original:', req.body.toString('utf8').substring(0, 200));
+      console.log('🔧 [UAZAPI Fix] Body corrigido:', bodyStr.substring(0, 200));
+      
+      try {
+        req.body = JSON.parse(bodyStr);
+        console.log('✅ [UAZAPI Fix] JSON parseado com sucesso');
+      } catch (parseError: any) {
+        console.error('❌ [UAZAPI Fix] Erro ao parsear JSON corrigido:', parseError.message);
+        console.error('   Body que falhou:', bodyStr.substring(0, 500));
+      }
+    }
+  } catch (error: any) {
+    console.error('❌ [UAZAPI Fix] Erro no middleware:', error.message);
+  }
+  next();
+});
+
 // ⚠️ IMPORTANTE: NÃO aplicar express.json() e express.urlencoded() em rotas de upload multipart/form-data
 // O Multer precisa processar o body RAW
 app.use((req, res, next) => {
