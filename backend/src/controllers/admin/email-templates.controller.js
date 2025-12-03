@@ -191,10 +191,10 @@ const previewTemplate = async (req, res) => {
     // Buscar valores REAIS dos planos do banco de dados
     let plansData = {};
     try {
-      const plansResult = await pool.query('SELECT nome, valor_mensal FROM plans WHERE ativo = true ORDER BY id');
+      const plansResult = await pool.query('SELECT nome, preco_mensal FROM plans WHERE ativo = true ORDER BY id');
       plansResult.rows.forEach(plan => {
         const planKey = plan.nome.toLowerCase().replace(/[^a-z]/g, '');
-        plansData[`valor_${planKey}`] = parseFloat(plan.valor_mensal).toFixed(2).replace('.', ',');
+        plansData[`valor_${planKey}`] = parseFloat(plan.preco_mensal).toFixed(2).replace('.', ',');
       });
     } catch (err) {
       console.error('⚠️ Erro ao buscar planos:', err.message);
@@ -346,10 +346,10 @@ const sendTestEmail = async (req, res) => {
     // Buscar valores REAIS dos planos do banco de dados
     let plansData = {};
     try {
-      const plansResult = await pool.query('SELECT nome, valor_mensal FROM plans WHERE ativo = true ORDER BY id');
+      const plansResult = await pool.query('SELECT nome, preco_mensal FROM plans WHERE ativo = true ORDER BY id');
       plansResult.rows.forEach(plan => {
         const planKey = plan.nome.toLowerCase().replace(/[^a-z]/g, '');
-        plansData[`valor_${planKey}`] = parseFloat(plan.valor_mensal).toFixed(2).replace('.', ',');
+        plansData[`valor_${planKey}`] = parseFloat(plan.preco_mensal).toFixed(2).replace('.', ',');
       });
     } catch (err) {
       console.error('⚠️ Erro ao buscar planos:', err.message);
