@@ -245,6 +245,39 @@ const previewTemplate = async (req, res) => {
         dias_restantes: '5',
         data_exclusao: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
+      },
+      trial_expired: {
+        nome: 'Lucas Ferreira',
+        email: 'lucas@exemplo.com',
+        data_inicio_trial: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        data_fim_trial: new Date().toLocaleDateString('pt-BR'),
+        valor_basico: '49,90',
+        valor_profissional: '99,90',
+        valor_empresarial: '199,90',
+        url_planos: 'https://sistemasnettsistemas.com.br/planos',
+        dias_para_exclusao: '20'
+      },
+      pix_generated: {
+        nome: 'Juliana Rocha',
+        email: 'juliana@exemplo.com',
+        plano: 'Premium',
+        valor: '99,90',
+        data_vencimento: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        payment_id: 'PAY-123456789',
+        qr_code_url: 'https://via.placeholder.com/250x250.png?text=QR+Code+PIX',
+        pix_code: '00020126580014br.gov.bcb.pix0136a1b2c3d4-e5f6-7890-abcd-ef1234567890520400005303986540599.905802BR5925NETT SISTEMAS LTDA6009SAO PAULO62070503***6304ABCD',
+        horas_expiracao: '24',
+        url_sistema: 'https://sistemasnettsistemas.com.br'
+      },
+      payment_confirmed: {
+        nome: 'Ricardo Mendes',
+        email: 'ricardo@exemplo.com',
+        plano: 'Premium',
+        valor: '99,90',
+        data_pagamento: new Date().toLocaleDateString('pt-BR'),
+        transaction_id: 'TXN-987654321',
+        proximo_vencimento: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        url_sistema: 'https://sistemasnettsistemas.com.br'
       }
     };
 
@@ -349,6 +382,39 @@ const sendTestEmail = async (req, res) => {
         dias_restantes: '5',
         data_exclusao: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
+      },
+      trial_expired: {
+        nome: 'Lucas Ferreira (TESTE)',
+        email: 'lucas@exemplo.com',
+        data_inicio_trial: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        data_fim_trial: new Date().toLocaleDateString('pt-BR'),
+        valor_basico: '49,90',
+        valor_profissional: '99,90',
+        valor_empresarial: '199,90',
+        url_planos: 'https://sistemasnettsistemas.com.br/planos',
+        dias_para_exclusao: '20'
+      },
+      pix_generated: {
+        nome: 'Juliana Rocha (TESTE)',
+        email: 'juliana@exemplo.com',
+        plano: 'Premium',
+        valor: '99,90',
+        data_vencimento: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        payment_id: 'PAY-123456789',
+        qr_code_url: 'https://via.placeholder.com/250x250.png?text=QR+Code+PIX',
+        pix_code: '00020126580014br.gov.bcb.pix0136a1b2c3d4-e5f6-7890-abcd-ef1234567890520400005303986540599.905802BR5925NETT SISTEMAS LTDA6009SAO PAULO62070503***6304ABCD',
+        horas_expiracao: '24',
+        url_sistema: 'https://sistemasnettsistemas.com.br'
+      },
+      payment_confirmed: {
+        nome: 'Ricardo Mendes (TESTE)',
+        email: 'ricardo@exemplo.com',
+        plano: 'Premium',
+        valor: '99,90',
+        data_pagamento: new Date().toLocaleDateString('pt-BR'),
+        transaction_id: 'TXN-987654321',
+        proximo_vencimento: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        url_sistema: 'https://sistemasnettsistemas.com.br'
       }
     };
 
