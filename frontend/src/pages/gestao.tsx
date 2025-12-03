@@ -1019,6 +1019,7 @@ export default function Gestao() {
   };
 
   const handleOpenEditUserModal = (userToEdit: TenantUser) => {
+    console.log('🔧 handleOpenEditUserModal chamado para usuário:', userToEdit.nome, 'ID:', userToEdit.id);
     setEditingUser(userToEdit);
     
     // Permissões padrão (garantir que todas existam)
@@ -1059,6 +1060,7 @@ export default function Gestao() {
     });
     
     // Buscar contas disponíveis e contas do usuário
+    console.log('📞 Chamando loadWhatsAppAccounts para userId:', userToEdit.id);
     loadWhatsAppAccounts(userToEdit.id);
     
     setShowEditModal(true);
