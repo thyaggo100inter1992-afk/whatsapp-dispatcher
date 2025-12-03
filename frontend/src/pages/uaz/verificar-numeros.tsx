@@ -36,7 +36,8 @@ export default function VerificarNumerosUaz() {
   const router = useRouter();
   
   // URL da API (produção ou desenvolvimento)
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001';
+  // Remove apenas o /api do FINAL da URL, não do meio (ex: https://api.sistemasnettsistemas.com.br/api -> https://api.sistemasnettsistemas.com.br)
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, '') || 'http://localhost:3001';
   
   console.log('🌐 API_BASE_URL configurado:', API_BASE_URL);
   console.log('🌐 NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL);
