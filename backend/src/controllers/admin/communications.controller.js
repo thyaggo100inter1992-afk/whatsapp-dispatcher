@@ -3,8 +3,7 @@
  * Gerencia emails em massa e notificações pop-up para tenants
  */
 
-const { query } = require('../../config/database');
-const { pool } = require('../../database/connection');
+const { query, pool } = require('../../database/connection');
 const emailAccountService = require('../../services/email-account.service').default;
 const emailCampaignWorker = require('../../workers/email-campaign.worker');
 
