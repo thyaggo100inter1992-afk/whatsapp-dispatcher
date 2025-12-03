@@ -11,6 +11,7 @@
 
 import { pool } from '../database/connection';
 import asaasService from '../services/asaas.service';
+import emailTemplateService from '../services/email-template.service';
 
 class PaymentRenewalWorker {
   /**
@@ -106,42 +107,26 @@ class PaymentRenewalWorker {
         return;
       }
 
-      const emailService = require('../services/email.service').default;
+      // 🎯 USAR TEMPLATE PERSONALIZADO
+      const tenantData = {
+        ...tenant,
+        valor_mensalidade: tenant.preco_mensal
+      };
+
+      const sent = await emailTemplateService.sendExpiryWarningEmail(tenantData, daysUntilDue);
       
-      const subject = daysUntilDue === 1 
-        ? '⚠️ Seu plano vence AMANHÃ!' 
-        : `⚠️ Seu plano vence em ${daysUntilDue} dias`;
+      if (sent) {
+        // Registrar notificação enviada
+        await pool.query(`
+          INSERT INTO payment_notifications (
+            tenant_id, notification_type, days_before, sent_at, created_at
+          ) VALUES ($1, 'expiration_warning', $2, NOW(), NOW())
+        `, [tenant.id, daysUntilDue]);
 
-      const message = `
-        <h2>Olá, ${tenant.nome}!</h2>
-        
-        <p>Seu plano <strong>${tenant.plano_nome || tenant.plano}</strong> vence em <strong>${daysUntilDue} dia(s)</strong>.</p>
-        
-        <p><strong>Data de vencimento:</strong> ${new Date(tenant.proximo_vencimento).toLocaleDateString('pt-BR')}</p>
-        <p><strong>Valor da renovação:</strong> R$ ${tenant.preco_mensal}</p>
-        
-        <p style="color: #d32f2f; font-weight: bold;">
-          ⚠️ Após o vencimento, seu acesso será bloqueado automaticamente.
-        </p>
-        
-        <p>Para renovar seu plano, acesse:</p>
-        <p><a href="https://sistemasnettsistemas.com.br/gestao" style="background: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">Renovar Agora</a></p>
-        
-        <p>Caso já tenha realizado o pagamento, desconsidere este email.</p>
-        
-        <p>Atenciosamente,<br>Equipe Nett Sistemas</p>
-      `;
-
-      await emailService.sendEmail(tenant.email, subject, message);
-      
-      // Registrar notificação enviada
-      await pool.query(`
-        INSERT INTO payment_notifications (
-          tenant_id, notification_type, days_before, sent_at, created_at
-        ) VALUES ($1, 'expiration_warning', $2, NOW(), NOW())
-      `, [tenant.id, daysUntilDue]);
-
-      console.log(`   ✅ Email enviado com sucesso!`);
+        console.log(`   ✅ Email enviado com sucesso usando template!`);
+      } else {
+        console.log(`   ⚠️ Email não enviado (template inativo ou serviço não configurado)`);
+      }
       
     } catch (error: any) {
       console.error(`   ❌ Erro ao enviar email:`, error.message);
@@ -410,61 +395,21 @@ class PaymentRenewalWorker {
    */
   async sendBlockedNotification(tenant: any, willBeDeletedAt: Date) {
     try {
-      const emailService = require('../services/email.service').default;
+      // 🎯 USAR TEMPLATE PERSONALIZADO
+      const sent = await emailTemplateService.sendBlockedEmail(tenant, willBeDeletedAt);
       
-      const daysUntilDeletion = Math.ceil(
-        (willBeDeletedAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-      );
+      if (sent) {
+        // Registrar notificação enviada
+        await pool.query(`
+          INSERT INTO payment_notifications (
+            tenant_id, notification_type, sent_at, created_at
+          ) VALUES ($1, 'blocked', NOW(), NOW())
+        `, [tenant.id]);
 
-      const subject = '🔒 Seu acesso foi bloqueado - Pagamento vencido';
-
-      const message = `
-        <h2>Olá, ${tenant.nome}!</h2>
-        
-        <p style="color: #d32f2f; font-weight: bold; font-size: 18px;">
-          ⚠️ Seu acesso ao sistema foi bloqueado devido ao vencimento do plano.
-        </p>
-        
-        <p><strong>Plano:</strong> ${tenant.plano}</p>
-        <p><strong>Data de vencimento:</strong> ${new Date(tenant.proximo_vencimento).toLocaleDateString('pt-BR')}</p>
-        
-        <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
-          <p style="margin: 0; color: #856404;">
-            <strong>⏰ ATENÇÃO:</strong> Você tem <strong>${daysUntilDeletion} dias</strong> para renovar seu plano.
-            Após este prazo, todos os seus dados serão <strong>DELETADOS PERMANENTEMENTE</strong>.
-          </p>
-        </div>
-        
-        <p><strong>O que será deletado:</strong></p>
-        <ul>
-          <li>Todas as suas campanhas e mensagens</li>
-          <li>Todos os contatos e listas</li>
-          <li>Todas as conexões WhatsApp</li>
-          <li>Todos os templates e configurações</li>
-          <li>Todo o histórico e relatórios</li>
-        </ul>
-        
-        <p style="font-size: 18px; margin: 30px 0;">
-          <a href="https://sistemasnettsistemas.com.br/gestao" style="background: #d32f2f; color: white; padding: 15px 30px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold;">
-            🔓 RENOVAR AGORA E REATIVAR ACESSO
-          </a>
-        </p>
-        
-        <p>Após o pagamento, seu acesso será <strong>reativado automaticamente</strong>.</p>
-        
-        <p>Atenciosamente,<br>Equipe Nett Sistemas</p>
-      `;
-
-      await emailService.sendEmail(tenant.email, subject, message);
-      
-      // Registrar notificação enviada
-      await pool.query(`
-        INSERT INTO payment_notifications (
-          tenant_id, notification_type, sent_at, created_at
-        ) VALUES ($1, 'blocked', NOW(), NOW())
-      `, [tenant.id]);
-
-      console.log(`   ✅ Email de bloqueio enviado para ${tenant.email}`);
+        console.log(`   ✅ Email de bloqueio enviado para ${tenant.email} usando template!`);
+      } else {
+        console.log(`   ⚠️ Email não enviado (template inativo ou serviço não configurado)`);
+      }
       
     } catch (error: any) {
       console.error(`   ❌ Erro ao enviar email de bloqueio:`, error.message);

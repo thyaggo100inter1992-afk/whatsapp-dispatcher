@@ -47,6 +47,7 @@ const adminProfileRoutes = require('./admin/profile.routes');
 const adminSystemSettingsRoutes = require('./admin/system-settings.routes');
 const adminTutorialsRoutes = require('./admin/tutorials.routes');
 const adminRelatoriosFinanceirosRoutes = require('./admin/relatorios-financeiros.routes').default;
+const adminEmailTemplatesRoutes = require('./admin/email-templates.routes');
 
 // Import rotas de logs de atividade
 const activityLogsRoutes = require('./logs/activity.routes');
@@ -247,6 +248,9 @@ console.log('✅ Rota /admin/faixas-preco-consultas registrada (apenas super_adm
 
 router.use('/admin/relatorios-financeiros', authenticate, requireSuperAdmin, adminRelatoriosFinanceirosRoutes);
 console.log('✅ Rota /admin/relatorios-financeiros registrada (apenas super_admin)');
+
+router.use('/admin/email-templates', authenticate, requireSuperAdmin, adminEmailTemplatesRoutes);
+console.log('✅ Rota /admin/email-templates registrada (apenas super_admin)');
 
 const adminLandingRoutes = require('./admin/landing.routes');
 router.use('/admin/landing', authenticate, requireSuperAdmin, adminLandingRoutes);

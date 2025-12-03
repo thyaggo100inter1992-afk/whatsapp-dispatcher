@@ -392,6 +392,16 @@ class AuthController {
 
       await client.query('COMMIT');
 
+      // 🎯 ENVIAR EMAIL DE BOAS-VINDAS
+      try {
+        const emailTemplateService = require('../services/email-template.service').default;
+        await emailTemplateService.sendWelcomeEmail(tenant);
+        console.log(`📧 Email de boas-vindas enviado para ${tenant.email}`);
+      } catch (emailError) {
+        console.error('⚠️ Erro ao enviar email de boas-vindas:', emailError.message);
+        // Não impede o registro se o email falhar
+      }
+
       // Gerar tokens
       const accessToken = generateToken(user.id, tenant.id);
       const refreshToken = generateRefreshToken(user.id, tenant.id);

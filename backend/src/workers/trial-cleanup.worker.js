@@ -1,4 +1,5 @@
 const { query } = require('../database/connection');
+const emailTemplateService = require('../services/email-template.service').default;
 
 /**
  * Worker para gerenciar planos de teste (trial) e bloqueios por falta de pagamento
@@ -16,6 +17,7 @@ class TrialCleanupWorker {
 
     try {
       await this.blockExpiredTrials();
+      await this.sendDeletionWarnings(); // 🎯 NOVO: Avisar antes de deletar
       await this.deleteExpiredTenants();
       
       console.log('✅ Verificação de trials concluída\n');
@@ -76,7 +78,8 @@ class TrialCleanupWorker {
           console.log(`   Será deletado em: ${willBeDeletedAt.toLocaleString('pt-BR')} (20 dias)`);
           console.log(`   ⚠️  Cliente deve fazer upgrade para reativar\n`);
 
-          // TODO: Enviar email notificando que o trial expirou e link de pagamento
+          // 🎯 ENVIAR EMAIL DE BLOQUEIO (TRIAL EXPIRADO)
+          await emailTemplateService.sendBlockedEmail(tenant, willBeDeletedAt);
           
         } catch (error) {
           console.error(`❌ Erro ao bloquear tenant ${tenant.id}:`, error.message);
@@ -92,7 +95,85 @@ class TrialCleanupWorker {
   }
 
   /**
-   * Deletar tenants bloqueados há mais de 7 dias
+   * Enviar avisos de exclusão para tenants bloqueados
+   * Avisa 7, 5, 3 e 1 dias antes da exclusão
+   */
+  async sendDeletionWarnings() {
+    try {
+      console.log('⚠️ Verificando tenants para envio de avisos de exclusão...');
+
+      // Buscar tenants bloqueados com exclusão programada
+      const result = await query(`
+        SELECT 
+          t.id,
+          t.nome,
+          t.email,
+          t.will_be_deleted_at,
+          EXTRACT(DAY FROM (t.will_be_deleted_at - NOW())) as days_remaining
+        FROM tenants t
+        WHERE t.status = 'blocked'
+          AND t.will_be_deleted_at IS NOT NULL
+          AND t.will_be_deleted_at > NOW()
+          AND t.will_be_deleted_at <= NOW() + INTERVAL '7 days'
+      `);
+
+      if (result.rows.length === 0) {
+        console.log('✅ Nenhum aviso de exclusão a enviar');
+        return;
+      }
+
+      console.log(`📧 ${result.rows.length} tenants precisam de aviso de exclusão\n`);
+
+      for (const tenant of result.rows) {
+        const daysRemaining = Math.ceil(tenant.days_remaining);
+
+        // Enviar aviso apenas em dias específicos: 7, 5, 3, 1
+        if ([7, 5, 3, 1].includes(daysRemaining)) {
+          // Verificar se já enviou aviso hoje
+          const lastWarning = await query(`
+            SELECT created_at 
+            FROM payment_notifications 
+            WHERE tenant_id = $1 
+              AND notification_type = 'deletion_warning'
+              AND days_before = $2
+              AND created_at > NOW() - INTERVAL '12 hours'
+            ORDER BY created_at DESC 
+            LIMIT 1
+          `, [tenant.id, daysRemaining]);
+
+          if (lastWarning.rows.length > 0) {
+            console.log(`   ⏭️  Aviso já enviado para ${tenant.nome}, pulando...`);
+            continue;
+          }
+
+          console.log(`📧 Enviando aviso para ${tenant.nome} - ${daysRemaining} dias restantes`);
+
+          // 🎯 ENVIAR EMAIL DE AVISO DE EXCLUSÃO
+          const sent = await emailTemplateService.sendDeletionWarningEmail(tenant, daysRemaining);
+
+          if (sent) {
+            // Registrar aviso enviado
+            await query(`
+              INSERT INTO payment_notifications (
+                tenant_id, notification_type, days_before, sent_at, created_at
+              ) VALUES ($1, 'deletion_warning', $2, NOW(), NOW())
+            `, [tenant.id, daysRemaining]);
+
+            console.log(`   ✅ Aviso enviado com sucesso!\n`);
+          } else {
+            console.log(`   ⚠️ Aviso não enviado (template inativo ou serviço não configurado)\n`);
+          }
+        }
+      }
+
+      console.log();
+    } catch (error) {
+      console.error('❌ Erro ao enviar avisos de exclusão:', error);
+    }
+  }
+
+  /**
+   * Deletar tenants bloqueados há mais de 20 dias
    */
   async deleteExpiredTenants() {
     try {

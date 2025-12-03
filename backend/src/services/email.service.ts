@@ -21,7 +21,7 @@ interface EmailOptions {
 
 class EmailService {
   private transporter: any;
-  private isConfigured: boolean = false;
+  public isConfigured: boolean = false;
   private provider: string = 'none';
 
   constructor() {
