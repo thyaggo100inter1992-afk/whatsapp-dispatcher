@@ -27,24 +27,26 @@ export class QrWebhookController {
 
       // Extrair informações do payload
       const instanceName = payload.instance || payload.instanceName;
-      const eventType = payload.event || payload.type;
-      const eventData = payload.data || payload;
+      const instanceToken = payload.token || payload.instance_token;
+      const eventType = payload.event || payload.type || payload.EventType;
+      const eventData = payload.data || payload.event || payload;
 
       console.log(`📡 Instância: ${instanceName}`);
+      console.log(`🔑 Token: ${instanceToken}`);
       console.log(`📋 Evento: ${eventType}`);
 
-      // Buscar instance_id pelo nome da instância
+      // Buscar instance_id pelo nome da instância OU pelo token
       let instanceId: number | null = null;
-      if (instanceName) {
+      if (instanceName || instanceToken) {
         const instanceResult = await query(
-          'SELECT id FROM uaz_instances WHERE name = $1 OR instance_token LIKE $2 LIMIT 1',
-          [instanceName, `%${instanceName}%`]
+          'SELECT id FROM uaz_instances WHERE name = $1 OR instance_token = $2 LIMIT 1',
+          [instanceName || '', instanceToken || '']
         );
         if (instanceResult.rows.length > 0) {
           instanceId = instanceResult.rows[0].id;
           console.log(`✅ Instância encontrada: ID ${instanceId}`);
         } else {
-          console.log(`⚠️ Instância não encontrada: ${instanceName}`);
+          console.log(`⚠️ Instância não encontrada - Nome: ${instanceName}, Token: ${instanceToken}`);
         }
       }
 
