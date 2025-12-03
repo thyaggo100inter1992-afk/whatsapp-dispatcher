@@ -30,8 +30,9 @@ CREATE TABLE IF NOT EXISTS admin_email_campaigns (
     -- Metadados
     created_by INTEGER, -- ID do super admin (futuro)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     started_at TIMESTAMP,
-    completed_at TIMESTAMP,
+    finished_at TIMESTAMP,
     
     -- Logs
     error_log TEXT
