@@ -321,6 +321,20 @@ const testAccount = async (req, res) => {
 
     const account = result.rows[0];
 
+    // Debug: verificar credenciais
+    console.log(`🔍 [TEST] Conta: ${account.name}`);
+    console.log(`🔍 [TEST] User: ${account.smtp_user}`);
+    console.log(`🔍 [TEST] Pass length: ${account.smtp_pass ? account.smtp_pass.length : 0}`);
+    console.log(`🔍 [TEST] Pass exists: ${!!account.smtp_pass}`);
+
+    // Verificar se tem senha
+    if (!account.smtp_pass || account.smtp_pass.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Esta conta não possui senha configurada. Por favor, edite a conta e adicione a senha.'
+      });
+    }
+
     // Criar transporter
     const transporter = nodemailer.createTransport({
       host: account.smtp_host,
