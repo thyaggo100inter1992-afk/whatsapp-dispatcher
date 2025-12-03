@@ -106,8 +106,8 @@ class EmailTemplateService {
       nome: tenant.nome,
       email: tenant.email || 'não informado',
       plano: tenant.plano || 'Padrão',
-      dias_teste: '20',
-      data_fim_teste: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+      dias_teste: '3',
+      data_fim_teste: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
       url_sistema: process.env.FRONTEND_URL || 'https://sistemasnettsistemas.com.br'
     };
 
@@ -121,9 +121,9 @@ class EmailTemplateService {
     const data = {
       nome: tenant.nome,
       email: tenant.email || 'não informado',
-      dias_teste: '20',
+      dias_teste: '3',
       data_inicio: new Date().toLocaleDateString('pt-BR'),
-      data_fim_teste: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+      data_fim_teste: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
       url_sistema: process.env.FRONTEND_URL || 'https://sistemasnettsistemas.com.br'
     };
 
