@@ -607,7 +607,7 @@ export default function Comunicacao() {
                         </button>
                       )}
 
-                      {(campaign.status === 'completed' || campaign.status === 'failed' || campaign.status === 'cancelled') && (
+                      {campaign.status !== 'sending' && (
                         <button
                           onClick={() => handleDeleteCampaign(campaign.id)}
                           className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition-all flex items-center gap-2"
