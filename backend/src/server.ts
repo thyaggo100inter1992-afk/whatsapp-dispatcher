@@ -45,7 +45,7 @@ app.use(cors({
 }));
 
 // 🔧 MIDDLEWARE ESPECIAL: Corrigir JSON malformado da UAZAPI
-app.use('/api/qr-webhook/uaz-event', express.raw({ type: 'application/json' }), (req: any, res, next) => {
+app.use(['/api/qr-webhook/uaz-event', '/api/webhook/tenant-'], express.raw({ type: 'application/json' }), (req: any, res, next) => {
   try {
     if (req.body && Buffer.isBuffer(req.body)) {
       let bodyStr = req.body.toString('utf8');
@@ -378,4 +378,9 @@ process.on('SIGTERM', async () => {
     console.log('HTTP server closed');
   });
 });
+
+
+
+
+
 
