@@ -78,7 +78,7 @@ const getFeatures = async (req, res) => {
     
     // Tenant está em TRIAL APENAS se:
     // 1. NÃO tem pagamento confirmado E
-    // 2. (Flag is_trial está ativa OU status é 'trial' OU foi criado há menos de 20 dias)
+    // 2. (Flag is_trial está ativa OU status é 'trial' OU foi criado há menos de 3 dias)
     const isInTrial = !hasPaidPlan && (
                       tenantData.is_trial || 
                       tenantData.tenant_status === 'trial' || 

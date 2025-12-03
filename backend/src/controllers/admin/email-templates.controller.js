@@ -194,14 +194,14 @@ const previewTemplate = async (req, res) => {
         nome: 'João Silva',
         email: 'joao@exemplo.com',
         plano: 'Premium',
-        dias_teste: '20',
+        dias_teste: '3',
         data_fim_teste: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       trial_start: {
         nome: 'Maria Santos',
         email: 'maria@exemplo.com',
-        dias_teste: '20',
+        dias_teste: '3',
         data_inicio: new Date().toLocaleDateString('pt-BR'),
         data_fim_teste: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         url_sistema: 'https://sistemasnettsistemas.com.br'
@@ -298,14 +298,14 @@ const sendTestEmail = async (req, res) => {
         nome: 'João Silva (TESTE)',
         email: 'joao@exemplo.com',
         plano: 'Premium',
-        dias_teste: '20',
+        dias_teste: '3',
         data_fim_teste: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       trial_start: {
         nome: 'Maria Santos (TESTE)',
         email: 'maria@exemplo.com',
-        dias_teste: '20',
+        dias_teste: '3',
         data_inicio: new Date().toLocaleDateString('pt-BR'),
         data_fim_teste: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         url_sistema: 'https://sistemasnettsistemas.com.br'

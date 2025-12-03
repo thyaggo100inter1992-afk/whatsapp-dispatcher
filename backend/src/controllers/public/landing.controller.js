@@ -261,7 +261,7 @@ exports.createTrialUser = async (req, res) => {
 
     // Criar tenant (empresa/organização) - SEMPRE ATIVO durante trial
     const dataFimTrial = new Date();
-    dataFimTrial.setDate(dataFimTrial.getDate() + 20); // 20 dias de trial
+    dataFimTrial.setDate(dataFimTrial.getDate() + 3); // 3 dias de trial
 
     const tenantResult = await query(`
       INSERT INTO tenants (

@@ -71,9 +71,9 @@ const createTenant = async (req, res) => {
       console.log('✅ Credencial Nova Vida padrão encontrada (ID:', defaultNovaVidaId, ')');
     }
 
-    // 🆓 Calcular data de fim do trial (20 dias)
+    // 🆓 Calcular data de fim do trial (3 dias)
     const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + 20);
+    trialEndsAt.setDate(trialEndsAt.getDate() + 3);
     
     console.log(`🆓 Novo tenant iniciará em período de TRIAL`);
     console.log(`   Trial expira em: ${trialEndsAt.toLocaleDateString('pt-BR')}`);

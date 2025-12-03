@@ -5,7 +5,7 @@ const emailTemplateService = require('../services/email-template.service').defau
  * Worker para gerenciar planos de teste (trial) e bloqueios por falta de pagamento
  * 
  * Regras:
- * 1. Trial de 20 dias: Após trial_ends_at, bloquear tenant (status = 'blocked')
+ * 1. Trial de 3 dias: Após trial_ends_at, bloquear tenant (status = 'blocked')
  * 2. Após 20 dias bloqueado: Deletar tenant automaticamente
  * 3. Se pagamento confirmado: Sistema libera automaticamente (via webhook)
  */
@@ -28,7 +28,7 @@ class TrialCleanupWorker {
   }
 
   /**
-   * Bloquear tenants cujo período de teste expirou (após 20 dias)
+   * Bloquear tenants cujo período de teste expirou (após 3 dias)
    */
   async blockExpiredTrials() {
     try {
@@ -74,7 +74,7 @@ class TrialCleanupWorker {
           `, [willBeDeletedAt, tenant.id]);
 
           console.log(`🔒 BLOQUEADO: ${tenant.nome} (${tenant.email})`);
-          console.log(`   Trial de 20 dias terminou em: ${new Date(tenant.trial_ends_at).toLocaleString('pt-BR')}`);
+          console.log(`   Trial de 3 dias terminou em: ${new Date(tenant.trial_ends_at).toLocaleString('pt-BR')}`);
           console.log(`   Será deletado em: ${willBeDeletedAt.toLocaleString('pt-BR')} (20 dias)`);
           console.log(`   ⚠️  Cliente deve fazer upgrade para reativar\n`);
 
