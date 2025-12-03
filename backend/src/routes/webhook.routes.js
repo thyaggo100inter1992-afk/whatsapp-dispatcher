@@ -207,8 +207,14 @@ router.post('/tenant-:tenantId', (req, res) => {
   
   // 🔍 DETECTAR SE É EVENTO UAZAPI OU API OFICIAL
   const body = req.body;
-  const isUazapiEvent = body.type || body.event || body.instance || body.instanceId || 
-                        body.messages_update || body.presence || body.connection;
+  
+  // Detectar eventos UAZAPI pelos campos específicos
+  const isUazapiEvent = body.instanceName || body.instance_token || body.owner || 
+                        body.token || body.messages_update || body.presence || 
+                        body.connection || body.message || body.messages ||
+                        (body.type && !body.entry) || body.data;
+  
+  // Detectar API Oficial do WhatsApp
   const isApiOficial = body.object === 'whatsapp_business_account' || body.entry;
   
   if (isUazapiEvent && !isApiOficial) {
