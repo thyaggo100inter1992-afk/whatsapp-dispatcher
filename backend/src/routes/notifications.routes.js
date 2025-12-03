@@ -25,8 +25,7 @@ router.get('/active', async (req, res) => {
         n.message,
         n.type,
         n.link_url,
-        n.link_text,
-        n.icon_name
+        n.link_text
       FROM admin_notifications n
       WHERE n.is_active = TRUE
         AND (n.expires_at IS NULL OR n.expires_at > NOW())
