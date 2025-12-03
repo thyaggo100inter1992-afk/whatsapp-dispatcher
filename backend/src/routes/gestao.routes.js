@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database/connection');
+const { tenantQuery } = require('../database/tenant-query');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs').promises;
@@ -973,7 +974,7 @@ router.get('/users/:userId/whatsapp-accounts', async (req, res) => {
     }
 
     // Buscar contas API associadas ao usuário
-    const apiAccounts = await query(`
+    const apiAccounts = await tenantQuery(req, `
       SELECT uwa.id as association_id, wa.id, wa.name, wa.phone_number, wa.is_active
       FROM user_whatsapp_accounts uwa
       INNER JOIN whatsapp_accounts wa ON uwa.whatsapp_account_id = wa.id
@@ -984,7 +985,7 @@ router.get('/users/:userId/whatsapp-accounts', async (req, res) => {
     // Buscar instâncias UAZ associadas ao usuário (se a tabela existir)
     let uazInstances = { rows: [] };
     try {
-      uazInstances = await query(`
+      uazInstances = await tenantQuery(req, `
         SELECT uui.id as association_id, ui.id, ui.name, ui.phone_number as phone, ui.is_active
         FROM user_uaz_instances uui
         INNER JOIN uaz_instances ui ON uui.uaz_instance_id = ui.id
@@ -1026,7 +1027,7 @@ router.get('/whatsapp-accounts/available', async (req, res) => {
     }
 
     // Buscar todas as contas API do tenant
-    const apiAccounts = await query(`
+    const apiAccounts = await tenantQuery(req, `
       SELECT id, name, phone_number, is_active
       FROM whatsapp_accounts
       WHERE tenant_id = $1
@@ -1036,7 +1037,7 @@ router.get('/whatsapp-accounts/available', async (req, res) => {
     // Buscar todas as instâncias UAZ do tenant (se a tabela existir)
     let uazInstances = { rows: [] };
     try {
-      uazInstances = await query(`
+      uazInstances = await tenantQuery(req, `
         SELECT id, name, phone_number as phone, is_active
         FROM uaz_instances
         WHERE tenant_id = $1
@@ -1202,9 +1203,6 @@ router.delete('/users/:userId/whatsapp-accounts/:accountId', async (req, res) =>
 });
 
 module.exports = router;
-
-
-
 
 
 
