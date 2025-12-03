@@ -114,9 +114,20 @@ export class QrWebhookController {
         // { id: 'wamid.xxx', status: 'delivered' }
         // { key: { id: 'wamid.xxx' }, update: { status: 3 } }
         // { message: { id: 'wamid.xxx' }, status: 'read' }
+        // UAZAPI: { MessageIDs: ['xxx'], Type: 'read' }
         
-        let messageId = update.id || update.key?.id || update.message?.id || update.messageId;
-        let status = update.status || update.update?.status;
+        let messageIds: string[] = [];
+        
+        // Se tem MessageIDs (formato UAZAPI), processar array
+        if (update.MessageIDs && Array.isArray(update.MessageIDs)) {
+          messageIds = update.MessageIDs;
+        } else {
+          // Formato único
+          const singleId = update.id || update.key?.id || update.message?.id || update.messageId;
+          if (singleId) messageIds = [singleId];
+        }
+        
+        let status = update.Type || update.status || update.update?.status;
         let errorMessage = update.error || update.errorMessage || update.update?.error;
 
         // Converter status numérico para string (baileys format)
@@ -134,20 +145,24 @@ export class QrWebhookController {
 
         // Normalizar status
         if (status === 'DELIVERY_ACK' || status === 'delivery') status = 'delivered';
-        if (status === 'READ' || status === 'viewed') status = 'read';
+        if (status === 'READ' || status === 'viewed' || status === 'read') status = 'read';
         if (status === 'FAILED' || status === 'error') status = 'failed';
         if (status === 'SENT' || status === 'server') status = 'sent';
 
-        if (!messageId) {
+        if (messageIds.length === 0) {
           console.log('⚠️ Message ID não encontrado no update:', update);
           continue;
         }
 
-        console.log(`   📝 Message ID: ${messageId}`);
+        console.log(`   📝 Message IDs (${messageIds.length}): ${messageIds.join(', ')}`);
         console.log(`   📊 Status: ${status}`);
 
-        // Buscar mensagem no banco (qr_campaign_messages)
-        const messageResult = await query(
+        // Processar cada message ID
+        for (const messageId of messageIds) {
+          console.log(`      🔍 Processando Message ID: ${messageId}`);
+          
+          // Buscar mensagem no banco (qr_campaign_messages)
+          const messageResult = await query(
           `SELECT id, campaign_id, status as current_status, instance_id
            FROM qr_campaign_messages 
            WHERE whatsapp_message_id = $1`,
@@ -257,7 +272,8 @@ export class QrWebhookController {
           
           console.log(`   ❌ Atualizado para FAILED: ${errorMessage}`);
         }
-      }
+        } // Fim do loop de messageIds
+      } // Fim do loop de updates
     } catch (error: any) {
       console.error('❌ Erro ao processar messages_update:', error);
     }
