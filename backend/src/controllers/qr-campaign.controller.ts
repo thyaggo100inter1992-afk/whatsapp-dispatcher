@@ -3,6 +3,8 @@ import { QrCampaignModel } from '../models/QrCampaign';
 import { ContactModel } from '../models/Contact';
 import { tenantQuery } from '../database/tenant-query';
 import ExcelJS from 'exceljs';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { normalizeBrazilScheduleToUtc, getBrazilNow } from '../utils/timezone';
 
 export class QrCampaignController {
@@ -1440,6 +1442,16 @@ export class QrCampaignController {
         cell.style = headerStyle;
       });
 
+      // helper para formatar datas no padrão dd/MM/yyyy HH:mm:ss (Brasília)
+      const formatDateTime = (value: any) => {
+        if (!value) return '';
+        try {
+          return format(new Date(value), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR });
+        } catch {
+          return '';
+        }
+      };
+
       // Buscar mensagens
       console.log(`📨 Buscando mensagens para campanha QR ${campaignId}...`);
       
@@ -1476,9 +1488,9 @@ export class QrCampaignController {
             instance: msg.instance_name || 'N/A',
             template: msg.template_name || 'N/A',
             status: this.translateStatus(msg.status),
-            sent_at: msg.sent_at ? new Date(msg.sent_at).toLocaleString('pt-BR') : '',
-            delivered_at: msg.delivered_at ? new Date(msg.delivered_at).toLocaleString('pt-BR') : '',
-            read_at: msg.read_at ? new Date(msg.read_at).toLocaleString('pt-BR') : '',
+            sent_at: formatDateTime(msg.sent_at),
+            delivered_at: formatDateTime(msg.delivered_at),
+            read_at: formatDateTime(msg.read_at),
             error: msg.error_message || ''
           });
         });
@@ -1643,4 +1655,3 @@ export class QrCampaignController {
 }
 
 export const qrCampaignController = new QrCampaignController();
-

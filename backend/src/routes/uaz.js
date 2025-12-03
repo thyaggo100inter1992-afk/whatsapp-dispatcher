@@ -3657,7 +3657,7 @@ router.get('/stats', async (req, res) => {
       }))
     });
     
-    const instancesStats = await pool.query(`
+    const instancesStats = await tenantQuery(req, `
       SELECT 
         COUNT(DISTINCT id) as total_instances,
         COUNT(DISTINCT CASE WHEN is_connected THEN id END) as connected_instances
@@ -3697,7 +3697,7 @@ router.get('/stats', async (req, res) => {
       paramIndex++;
     }
 
-    const campaignStats = await pool.query(campaignQuery, campaignParams);
+    const campaignStats = await tenantQuery(req, campaignQuery, campaignParams);
 
     // ===============================================
     // 3. ESTATÍSTICAS DE MENSAGENS ÚNICAS (não-campanha)
@@ -3719,7 +3719,7 @@ router.get('/stats', async (req, res) => {
       LIMIT 10
     `;
     
-    const debugResult = await pool.query(debugQuery, [tenantId]);
+    const debugResult = await tenantQuery(req, debugQuery, [tenantId]);
     console.log('🔍 DEBUG - Últimas 10 mensagens únicas:', {
       total_found: debugResult.rows.length,
       messages: debugResult.rows.map(m => ({
@@ -3759,7 +3759,7 @@ router.get('/stats', async (req, res) => {
       uniqueParamIndex++;
     }
 
-    const uniqueStats = await pool.query(uniqueQuery, uniqueParams);
+    const uniqueStats = await tenantQuery(req, uniqueQuery, uniqueParams);
     
     console.log('📊 Resultado da query de mensagens únicas:', uniqueStats.rows[0]);
 
@@ -3777,7 +3777,7 @@ router.get('/stats', async (req, res) => {
       LIMIT 5
     `;
 
-    const recentCampaigns = await pool.query(recentCampaignsQuery, [tenantId]);
+    const recentCampaigns = await tenantQuery(req, recentCampaignsQuery, [tenantId]);
 
     console.log('✅ Estatísticas UAZ carregadas:', {
       instances: instancesStats.rows[0],
