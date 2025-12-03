@@ -194,7 +194,10 @@ export default function EmailAccounts() {
   };
 
   return (
-    <AdminLayout>
+    <AdminLayout
+      title="Gerenciamento de Contas de Email"
+      currentPage="Contas de Email"
+    >
       <ConfirmDialog />
       
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-blue-900 p-8">
