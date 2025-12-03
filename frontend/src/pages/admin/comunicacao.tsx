@@ -474,8 +474,10 @@ export default function Comunicacao() {
                         <div className="flex gap-2">
                           <button
                             onClick={() => {
-                              const allTenantIds = allTenants.map(t => t.id);
-                              setEmailForm({ ...emailForm, recipient_list: { ...emailForm.recipient_list, tenant_ids: allTenantIds } });
+                              if (allTenants && allTenants.length > 0) {
+                                const allTenantIds = allTenants.map(t => t.id);
+                                setEmailForm({ ...emailForm, recipient_list: { ...emailForm.recipient_list, tenant_ids: allTenantIds } });
+                              }
                             }}
                             className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded text-sm"
                           >
@@ -490,7 +492,7 @@ export default function Comunicacao() {
                         </div>
                       </div>
                       <div className="max-h-64 overflow-y-auto space-y-2 bg-black/20 p-3 rounded-xl">
-                        {allTenants.map(tenant => (
+                        {allTenants && allTenants.length > 0 ? allTenants.map(tenant => (
                           <label
                             key={tenant.id}
                             className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
@@ -535,7 +537,11 @@ export default function Comunicacao() {
                               {tenant.status}
                             </span>
                           </label>
-                        ))}
+                        )) : (
+                          <div className="text-white/60 text-center py-4">
+                            Carregando tenants...
+                          </div>
+                        )}
                       </div>
                       <p className="text-white/70 text-sm mt-2">
                         ✅ {emailForm.recipient_list.tenant_ids.length} tenant(s) selecionado(s)
@@ -846,8 +852,10 @@ export default function Comunicacao() {
                         <div className="flex gap-2">
                           <button
                             onClick={() => {
-                              const allTenantIds = allTenants.map(t => t.id);
-                              setNotificationForm({ ...notificationForm, recipient_list: { tenant_ids: allTenantIds } });
+                              if (allTenants && allTenants.length > 0) {
+                                const allTenantIds = allTenants.map(t => t.id);
+                                setNotificationForm({ ...notificationForm, recipient_list: { tenant_ids: allTenantIds } });
+                              }
                             }}
                             className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded text-sm"
                           >
@@ -862,7 +870,7 @@ export default function Comunicacao() {
                         </div>
                       </div>
                       <div className="max-h-64 overflow-y-auto space-y-2 bg-black/20 p-3 rounded-xl">
-                        {allTenants.map(tenant => {
+                        {allTenants && allTenants.length > 0 ? allTenants.map(tenant => {
                           const tenantIds = (notificationForm.recipient_list as any).tenant_ids || [];
                           return (
                             <label
@@ -909,7 +917,11 @@ export default function Comunicacao() {
                               </span>
                             </label>
                           );
-                        })}
+                        }) : (
+                          <div className="text-white/60 text-center py-4">
+                            Carregando tenants...
+                          </div>
+                        )}
                       </div>
                       <p className="text-white/70 text-sm mt-2">
                         ✅ {((notificationForm.recipient_list as any).tenant_ids || []).length} tenant(s) selecionado(s)
