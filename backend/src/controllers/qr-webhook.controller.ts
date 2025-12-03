@@ -160,6 +160,7 @@ export class QrWebhookController {
         // Processar cada message ID
         for (const messageId of messageIds) {
           console.log(`      🔍 Processando Message ID: ${messageId}`);
+          console.log(`      📊 Status para atualizar: ${status}`);
           
           // Buscar mensagem no banco (qr_campaign_messages)
           const messageResult = await query(
@@ -171,6 +172,18 @@ export class QrWebhookController {
 
         if (messageResult.rows.length === 0) {
           console.log(`   ⚠️ Mensagem não encontrada no banco: ${messageId}`);
+          console.log(`   🔍 Buscando mensagens similares...`);
+          const similarResult = await query(
+            `SELECT id, whatsapp_message_id, campaign_id, status 
+             FROM qr_campaign_messages 
+             WHERE whatsapp_message_id LIKE $1 
+             LIMIT 5`,
+            [`%${messageId.substring(0, 10)}%`]
+          );
+          console.log(`   📋 Mensagens similares encontradas: ${similarResult.rows.length}`);
+          if (similarResult.rows.length > 0) {
+            console.log(`   📝 IDs similares:`, similarResult.rows.map(r => r.whatsapp_message_id));
+          }
           continue;
         }
 
