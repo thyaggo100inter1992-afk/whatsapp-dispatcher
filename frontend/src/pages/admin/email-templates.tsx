@@ -12,8 +12,19 @@ interface EmailTemplate {
   html_content: string;
   is_active: boolean;
   variables: string[];
+  email_account_id: number | null;
+  email_account_name: string | null;
+  email_from: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface EmailAccount {
+  id: number;
+  name: string;
+  email_from: string;
+  is_default: boolean;
+  is_active: boolean;
 }
 
 // Todas as variáveis disponíveis no sistema
@@ -61,7 +72,9 @@ const ALL_AVAILABLE_VARIABLES: Record<string, { name: string; description: strin
 export default function EmailTemplates() {
   const router = useRouter();
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [editedSubject, setEditedSubject] = useState('');
   const [editedHtml, setEditedHtml] = useState('');
   const [preview, setPreview] = useState('');
@@ -88,7 +101,19 @@ export default function EmailTemplates() {
   // Carregar templates
   useEffect(() => {
     loadTemplates();
+    loadEmailAccounts();
   }, []);
+
+  const loadEmailAccounts = async () => {
+    try {
+      const response = await api.get('/admin/email-accounts');
+      if (response.data.success) {
+        setEmailAccounts(response.data.accounts);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar contas de email:', error);
+    }
+  };
 
   const loadTemplates = async () => {
     try {
@@ -104,6 +129,7 @@ export default function EmailTemplates() {
           setSelectedTemplate(first);
           setEditedSubject(first.subject);
           setEditedHtml(first.html_content);
+          setSelectedAccountId(first.email_account_id);
         }
       }
     } catch (error) {
@@ -118,6 +144,7 @@ export default function EmailTemplates() {
     setSelectedTemplate(template);
     setEditedSubject(template.subject);
     setEditedHtml(template.html_content);
+    setSelectedAccountId(template.email_account_id);
     setShowPreview(false);
   };
 
@@ -152,7 +179,8 @@ export default function EmailTemplates() {
         `/admin/email-templates/${selectedTemplate.id}`,
         {
           subject: editedSubject,
-          html_content: editedHtml
+          html_content: editedHtml,
+          email_account_id: selectedAccountId
         }
       );
 
@@ -605,6 +633,30 @@ export default function EmailTemplates() {
                         )}
                       </div>
                     </div>
+                  </div>
+
+                  {/* Conta de Email */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-bold text-gray-300 mb-2">
+                      📬 Conta de Email para Envio:
+                    </label>
+                    <select
+                      value={selectedAccountId || ''}
+                      onChange={(e) => setSelectedAccountId(e.target.value ? parseInt(e.target.value) : null)}
+                      className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="">🌟 Usar conta padrão</option>
+                      {emailAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name} ({account.email_from}) {account.is_default ? '⭐' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {selectedAccountId 
+                        ? `Emails serão enviados usando: ${emailAccounts.find(a => a.id === selectedAccountId)?.email_from}`
+                        : 'Emails serão enviados usando a conta padrão do sistema'}
+                    </p>
                   </div>
 
                   {/* Assunto */}

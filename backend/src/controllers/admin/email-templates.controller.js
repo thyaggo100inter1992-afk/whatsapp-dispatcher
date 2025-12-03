@@ -16,19 +16,23 @@ const getAllTemplates = async (req, res) => {
   try {
     const result = await query(`
       SELECT 
-        id,
-        event_type,
-        name,
-        description,
-        subject,
-        html_content,
-        is_active,
-        variables,
-        created_at,
-        updated_at
-      FROM email_templates
+        et.id,
+        et.event_type,
+        et.name,
+        et.description,
+        et.subject,
+        et.html_content,
+        et.is_active,
+        et.variables,
+        et.email_account_id,
+        ea.name as email_account_name,
+        ea.email_from,
+        et.created_at,
+        et.updated_at
+      FROM email_templates et
+      LEFT JOIN email_accounts ea ON et.email_account_id = ea.id
       ORDER BY 
-        CASE event_type
+        CASE et.event_type
           WHEN 'welcome' THEN 1
           WHEN 'trial_start' THEN 2
           WHEN 'expiry_3days' THEN 3
@@ -93,7 +97,7 @@ const getTemplateById = async (req, res) => {
 const updateTemplate = async (req, res) => {
   try {
     const { id } = req.params;
-    const { subject, html_content } = req.body;
+    const { subject, html_content, email_account_id } = req.body;
 
     if (!subject || !html_content) {
       return res.status(400).json({
@@ -106,10 +110,11 @@ const updateTemplate = async (req, res) => {
       `UPDATE email_templates 
        SET subject = $1, 
            html_content = $2,
+           email_account_id = $3,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3
+       WHERE id = $4
        RETURNING *`,
-      [subject, html_content, id]
+      [subject, html_content, email_account_id || null, id]
     );
 
     if (result.rows.length === 0) {

@@ -1304,8 +1304,14 @@ export default function AdminCredentials() {
               </div>
             </div>
 
-            {/* Botão para Templates */}
-            <div className="flex justify-end">
+            {/* Botões de Navegação */}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => router.push('/admin/email-accounts')}
+                className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg"
+              >
+                <FaEnvelope /> Gerenciar Contas de Email
+              </button>
               <button
                 onClick={() => router.push('/admin/email-templates')}
                 className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg"
