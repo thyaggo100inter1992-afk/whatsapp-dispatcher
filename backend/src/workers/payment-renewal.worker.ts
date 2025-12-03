@@ -113,7 +113,28 @@ class PaymentRenewalWorker {
         valor_mensalidade: tenant.preco_mensal
       };
 
+      // Enviar para o email da empresa
       const sent = await emailTemplateService.sendExpiryWarningEmail(tenantData, daysUntilDue);
+      
+      // Buscar email do administrador e enviar também (se diferente)
+      try {
+        const adminResult = await pool.query(`
+          SELECT email FROM tenant_users 
+          WHERE tenant_id = $1 AND role = 'admin' 
+          ORDER BY id ASC LIMIT 1
+        `, [tenant.id]);
+
+        if (adminResult.rows.length > 0) {
+          const adminEmail = adminResult.rows[0].email;
+          if (adminEmail && adminEmail.toLowerCase() !== tenant.email.toLowerCase()) {
+            const tenantWithAdminEmail = { ...tenantData, email: adminEmail };
+            await emailTemplateService.sendExpiryWarningEmail(tenantWithAdminEmail, daysUntilDue);
+            console.log(`   📧 Email também enviado para administrador: ${adminEmail}`);
+          }
+        }
+      } catch (adminError) {
+        console.log(`   ⚠️ Não foi possível enviar para administrador:`, adminError);
+      }
       
       if (sent) {
         // Registrar notificação enviada
@@ -396,7 +417,28 @@ class PaymentRenewalWorker {
   async sendBlockedNotification(tenant: any, willBeDeletedAt: Date) {
     try {
       // 🎯 USAR TEMPLATE PERSONALIZADO
+      // Enviar para o email da empresa
       const sent = await emailTemplateService.sendBlockedEmail(tenant, willBeDeletedAt);
+      
+      // Buscar email do administrador e enviar também (se diferente)
+      try {
+        const adminResult = await pool.query(`
+          SELECT email FROM tenant_users 
+          WHERE tenant_id = $1 AND role = 'admin' 
+          ORDER BY id ASC LIMIT 1
+        `, [tenant.id]);
+
+        if (adminResult.rows.length > 0) {
+          const adminEmail = adminResult.rows[0].email;
+          if (adminEmail && adminEmail.toLowerCase() !== tenant.email.toLowerCase()) {
+            const tenantWithAdminEmail = { ...tenant, email: adminEmail };
+            await emailTemplateService.sendBlockedEmail(tenantWithAdminEmail, willBeDeletedAt);
+            console.log(`   📧 Email de bloqueio também enviado para administrador: ${adminEmail}`);
+          }
+        }
+      } catch (adminError) {
+        console.log(`   ⚠️ Não foi possível enviar para administrador:`, adminError);
+      }
       
       if (sent) {
         // Registrar notificação enviada

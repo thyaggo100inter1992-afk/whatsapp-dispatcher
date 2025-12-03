@@ -392,11 +392,22 @@ class AuthController {
 
       await client.query('COMMIT');
 
-      // 🎯 ENVIAR EMAIL DE BOAS-VINDAS
+      // 🎯 ENVIAR EMAIL DE BOAS-VINDAS (para empresa e administrador)
       try {
         const emailTemplateService = require('../services/email-template.service').default;
+        
+        // Enviar para o email da empresa
         await emailTemplateService.sendWelcomeEmail(tenant);
-        console.log(`📧 Email de boas-vindas enviado para ${tenant.email}`);
+        console.log(`📧 Email de boas-vindas enviado para empresa: ${tenant.email}`);
+        
+        // Se o email do administrador for diferente do email da empresa, enviar também
+        if (adminEmail && adminEmail.toLowerCase() !== tenant.email.toLowerCase()) {
+          const tenantWithAdminEmail = { ...tenant, email: adminEmail };
+          await emailTemplateService.sendWelcomeEmail(tenantWithAdminEmail);
+          console.log(`📧 Email de boas-vindas enviado para administrador: ${adminEmail}`);
+        } else {
+          console.log(`ℹ️  Email do administrador é igual ao da empresa, não duplicar envio`);
+        }
       } catch (emailError) {
         console.error('⚠️ Erro ao enviar email de boas-vindas:', emailError.message);
         // Não impede o registro se o email falhar
