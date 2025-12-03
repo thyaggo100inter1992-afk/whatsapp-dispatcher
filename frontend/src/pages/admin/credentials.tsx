@@ -480,6 +480,16 @@ export default function AdminCredentials() {
       currentPage="credentials"
     >
       <div>
+        {/* Botão Email no topo */}
+        <div className="mb-6 flex justify-end">
+          <button
+            onClick={() => router.push('/admin/email-accounts')}
+            className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg"
+          >
+            <FaEnvelope /> Gerenciar Contas de Email
+          </button>
+        </div>
+
         {/* Tabs */}
         <div className="flex gap-4 mb-6">
           <button
@@ -514,32 +524,22 @@ export default function AdminCredentials() {
           </button>
         </div>
 
-        {/* Botão Criar e Link para Email Accounts */}
-        <div className="mb-6 flex justify-between items-center">
+        {/* Botão Criar */}
+        <div className="mb-6 flex justify-end">
           <button
-            onClick={() => router.push('/admin/email-accounts')}
-            className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg"
+            onClick={() => {
+              setIsCreating(true);
+              setIsEditing(false);
+              setEditingId(null);
+              if (activeTab === 'uazap') resetUazapForm();
+              else if (activeTab === 'novavida') resetNovaVidaForm();
+              else resetAsaasForm();
+            }}
+            className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg"
           >
-            <FaEnvelope /> Gerenciar Contas de Email
+            <FaPlus /> Adicionar {activeTab === 'uazap' ? 'UAZAP' : activeTab === 'novavida' ? 'Nova Vida' : 'Asaas'}
           </button>
-          
-          {(
-          <div className="mb-6 flex justify-end">
-            <button
-              onClick={() => {
-                setIsCreating(true);
-                setIsEditing(false);
-                setEditingId(null);
-                if (activeTab === 'uazap') resetUazapForm();
-                else if (activeTab === 'novavida') resetNovaVidaForm();
-                else resetAsaasForm();
-              }}
-              className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg"
-            >
-              <FaPlus /> Adicionar {activeTab === 'uazap' ? 'UAZAP' : activeTab === 'novavida' ? 'Nova Vida' : 'Asaas'}
-            </button>
-          </div>
-        )}
+        </div>
 
         {/* UAZAP Content */}
         {activeTab === 'uazap' && (
