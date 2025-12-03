@@ -549,7 +549,9 @@ const restoreTemplate = async (req, res) => {
     const eventType = currentTemplate.rows[0].event_type;
 
     // Carregar templates padrão
-    const { DEFAULT_TEMPLATES } = require('../config/default_email_templates');
+    const path = require('path');
+    const templatesPath = path.join(__dirname, '../../config/default_email_templates');
+    const { DEFAULT_TEMPLATES } = require(templatesPath);
 
     if (!DEFAULT_TEMPLATES[eventType]) {
       return res.status(400).json({
