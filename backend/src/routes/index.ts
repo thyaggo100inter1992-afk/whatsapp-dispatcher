@@ -42,6 +42,7 @@ const adminSystemLogsRoutes = require('./admin/system-logs.routes');
 const adminFilesRoutes = require('./admin/files.routes');
 const adminCredentialsRoutes = require('./admin/credentials.routes');
 const adminEmailAccountsRoutes = require('./admin/email-accounts.routes');
+const adminCommunicationsRoutes = require('./admin/communications.routes');
 const adminPacotesConsultasRoutes = require('./admin/pacotes-consultas.routes').default;
 const adminFaixasPrecoConsultasRoutes = require('./admin/faixas-preco-consultas.routes').default;
 const adminProfileRoutes = require('./admin/profile.routes');
@@ -228,6 +229,9 @@ console.log('✅ Rota /admin/system-logs registrada (apenas super_admin)');
 
 router.use('/admin/files', authenticate, requireSuperAdmin, adminFilesRoutes);
 console.log('✅ Rota /admin/files registrada (apenas super_admin)');
+
+router.use('/admin/communications', authenticate, requireSuperAdmin, adminCommunicationsRoutes);
+console.log('✅ Rota /admin/communications registrada (apenas super_admin)');
 
 router.use('/admin/credentials', authenticate, requireSuperAdmin, adminCredentialsRoutes);
 console.log('✅ Rota /admin/credentials registrada (apenas super_admin)');
