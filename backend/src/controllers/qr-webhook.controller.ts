@@ -1,11 +1,22 @@
 import { Request, Response } from 'express';
 import { query } from '../database/connection';
+import { tenantQuery } from '../database/tenant-query';
 
 /**
  * Controller para processar webhooks de status de mensagens do WhatsApp QR Connect
  * Processa eventos da UAZAPI: messages_update, messages, connection, etc.
  */
 export class QrWebhookController {
+
+  /**
+   * Executa query respeitando tenant (RLS); se não houver tenant, usa query padrão.
+   */
+  private async runTenantQuery(tenantId: number | undefined | null, text: string, params: any[] = []) {
+    if (tenantId) {
+      return tenantQuery({ tenant: { id: tenantId } } as any, text, params);
+    }
+    return query(text, params);
+  }
 
   /**
    * Receber eventos do UAZ API (webhook externo)
@@ -22,16 +33,20 @@ export class QrWebhookController {
     try {
       const payload = req.body;
       
-      console.log('\n📨 ===== WEBHOOK UAZAPI RECEBIDO =====');
-      console.log('📦 Payload:', JSON.stringify(payload, null, 2));
+      console.log("\n[UAZAPI] ===== WEBHOOK RECEBIDO =====");
+      console.log("[UAZAPI] Payload:", JSON.stringify(payload, null, 2));
 
-      // Extrair informações do payload
       const instanceName = payload.instance || payload.instanceName;
       const instanceToken = payload.token || payload.instance_token;
-      // IMPORTANTE: EventType é o campo correto da UAZAPI, mas às vezes vem dentro de "event" como objeto
+      const tenantId = (req as any).tenant?.id || (req as any).tenantIdFromWebhook || payload.tenant_id || payload.tenantId;
+
+      if (tenantId && !(req as any).tenant) {
+        (req as any).tenant = { id: tenantId };
+      }
+
       const eventType = payload.EventType 
         || payload.type 
-        || (typeof payload.event === 'string' ? payload.event : null)
+        || (typeof payload.event === "string" ? payload.event : null)
         || payload.event?.type 
         || payload.event?.EventType 
         || payload.event?.Type 
@@ -40,74 +55,67 @@ export class QrWebhookController {
 
       const eventData = payload.data || payload.event?.data || payload.event || payload;
 
-      console.log(`📡 Instância: ${instanceName}`);
-      console.log(`🔑 Token: ${instanceToken}`);
-      console.log(`📋 Evento: ${eventType}`);
+      console.log(`[UAZAPI] Instancia: ${instanceName}`);
+      console.log(`[UAZAPI] Token: ${instanceToken}`);
+      console.log(`[UAZAPI] Evento: ${eventType}`);
 
-      // Buscar instance_id pelo nome da instância OU pelo token
-      // IMPORTANTE: Usar pool direto para BYPASSAR RLS (webhooks são públicos)
-      const { pool } = require('../database/connection');
-      
       let instanceId: number | null = null;
       if (instanceName || instanceToken) {
-        // Tentar primeiro por token exato (mais confiável)
         let instanceResult;
         if (instanceToken) {
-          instanceResult = await pool.query(
-            'SELECT id, name, tenant_id FROM uaz_instances WHERE instance_token = $1 LIMIT 1',
+          instanceResult = await this.runTenantQuery(
+            (req as any).tenant?.id,
+            "SELECT id, name, tenant_id FROM uaz_instances WHERE instance_token = $1 LIMIT 1",
             [instanceToken]
           );
-          console.log(`🔍 Busca por token: ${instanceToken} -> ${instanceResult.rows.length} resultado(s)`);
+          console.log(`[UAZAPI] Busca por token: ${instanceToken} -> ${instanceResult.rows.length} resultado(s)`);
         }
         
-        // Se não encontrou por token, tentar por nome
         if (!instanceResult || instanceResult.rows.length === 0) {
-          instanceResult = await pool.query(
-            'SELECT id, name, tenant_id FROM uaz_instances WHERE name = $1 LIMIT 1',
-            [instanceName || '']
+          instanceResult = await this.runTenantQuery(
+            (req as any).tenant?.id,
+            "SELECT id, name, tenant_id FROM uaz_instances WHERE name = $1 LIMIT 1",
+            [instanceName || ""]
           );
-          console.log(`🔍 Busca por nome: "${instanceName}" -> ${instanceResult.rows.length} resultado(s)`);
+          console.log(`[UAZAPI] Busca por nome: "${instanceName}" -> ${instanceResult.rows.length} resultado(s)`);
         }
         
-        if (instanceResult.rows.length > 0) {
+        if (instanceResult && instanceResult.rows.length > 0) {
           instanceId = instanceResult.rows[0].id;
-          const tenantId = instanceResult.rows[0].tenant_id;
-          console.log(`✅ Instância encontrada: ID ${instanceId} (${instanceResult.rows[0].name}) - Tenant: ${tenantId}`);
-          
-          // Configurar tenant_id na sessão para as próximas queries respeitarem RLS
-          (req as any).tenant = { id: tenantId };
+          const instanceTenantId = instanceResult.rows[0].tenant_id;
+          console.log(`[UAZAPI] Instancia encontrada: ID ${instanceId} (${instanceResult.rows[0].name}) - Tenant: ${instanceTenantId}`);
+          (req as any).tenant = { id: instanceTenantId };
         } else {
-          console.log(`⚠️ Instância não encontrada - Nome: "${instanceName}", Token: ${instanceToken}`);
+          console.log(`[UAZAPI] Instancia nao encontrada - Nome: "${instanceName}", Token: ${instanceToken}`);
         }
       }
 
-      // Processar baseado no tipo de evento
       switch (eventType) {
-        case 'messages_update':
-        case 'message_status':
-        case 'messages.update':
-          await this.processMessagesUpdate(eventData, instanceId);
+        case "messages_update":
+        case "message_status":
+        case "messages.update":
+          await this.processMessagesUpdate(eventData, instanceId, (req as any).tenant?.id);
           break;
 
-        case 'messages':
-        case 'message':
-          await this.processIncomingMessage(eventData, instanceId);
+        case "messages":
+        case "message":
+          await this.processIncomingMessage(eventData, instanceId, (req as any).tenant?.id);
           break;
 
-        case 'connection':
-        case 'connection.update':
-          await this.processConnectionUpdate(eventData, instanceName);
+        case "connection":
+        case "connection.update":
+          await this.processConnectionUpdate(eventData, instanceName, (req as any).tenant?.id);
           break;
 
         default:
-          console.log(`ℹ️ Evento não processado: ${eventType}`);
+          console.log(`[UAZAPI] Evento nao processado: ${eventType}`);
       }
 
-      console.log('===== FIM DO WEBHOOK =====\n');
+      console.log("[UAZAPI] ===== FIM DO WEBHOOK =====\n");
 
-      res.json({ success: true, message: 'Evento processado' });
+      res.json({ success: true, message: "Evento processado" });
     } catch (error: any) {
-      console.error('❌ Erro ao processar webhook UAZAPI:', error);
+      console.error("[UAZAPI] Erro ao processar webhook:", error);
       res.status(500).json({ success: false, error: error.message });
     }
   }
@@ -116,7 +124,7 @@ export class QrWebhookController {
    * Processar atualização de status de mensagem (messages_update)
    * Atualiza: delivered_count, read_count, failed_count
    */
-  private async processMessagesUpdate(data: any, instanceId: number | null) {
+  private async processMessagesUpdate(data: any, instanceId: number | null, tenantId?: number) {
     try {
       console.log('\n📩 Processando MESSAGES_UPDATE...');
       
@@ -181,18 +189,20 @@ export class QrWebhookController {
           // A UAZAPI envia apenas a parte final do ID (ex: 3EB036AB542D136AF1A206)
           // Mas salvamos com prefixo (ex: 556298669726:3EB036AB542D136AF1A206)
           console.log(`      🔎 Query params: messageId="${messageId}", pattern="%:${messageId}"`);
-          const messageResult = await query(
-          `SELECT id, campaign_id, status as current_status, instance_id, whatsapp_message_id
-           FROM qr_campaign_messages 
-           WHERE whatsapp_message_id = $1 OR whatsapp_message_id LIKE $2`,
-          [messageId, `%:${messageId}`]
-        );
+          const messageResult = await this.runTenantQuery(
+            tenantId,
+            `SELECT id, campaign_id, status as current_status, instance_id, whatsapp_message_id
+             FROM qr_campaign_messages 
+             WHERE whatsapp_message_id = $1 OR whatsapp_message_id LIKE $2`,
+            [messageId, `%:${messageId}`]
+          );
           console.log(`      📊 Resultado da busca: ${messageResult.rows.length} mensagem(ns) encontrada(s)`);
 
         if (messageResult.rows.length === 0) {
           console.log(`   ⚠️ Mensagem não encontrada no banco: ${messageId}`);
           console.log(`   🔍 Buscando mensagens similares...`);
-          const similarResult = await query(
+          const similarResult = await this.runTenantQuery(
+            tenantId,
             `SELECT id, whatsapp_message_id, campaign_id, status 
              FROM qr_campaign_messages 
              WHERE whatsapp_message_id LIKE $1 
@@ -233,7 +243,8 @@ export class QrWebhookController {
 
         // Atualizar status da mensagem
         if (status === 'delivered') {
-          await query(
+          await this.runTenantQuery(
+            tenantId,
             `UPDATE qr_campaign_messages 
              SET status = 'delivered', delivered_at = NOW(), updated_at = NOW()
              WHERE id = $1`,
@@ -241,7 +252,8 @@ export class QrWebhookController {
           );
           
           // Atualizar contador da campanha
-          await query(
+          await this.runTenantQuery(
+            tenantId,
             `UPDATE qr_campaigns 
              SET delivered_count = delivered_count + 1, updated_at = NOW()
              WHERE id = $1`,
@@ -253,7 +265,8 @@ export class QrWebhookController {
         } else if (status === 'read' || status === 'played') {
           // Se está passando de delivered para read, ajustar contadores
           if (currentStatus === 'delivered') {
-            await query(
+            await this.runTenantQuery(
+              tenantId,
               `UPDATE qr_campaigns 
                SET delivered_count = delivered_count - 1, 
                    read_count = read_count + 1, 
@@ -263,7 +276,8 @@ export class QrWebhookController {
             );
           } else {
             // Pulou delivered, ir direto para read
-            await query(
+            await this.runTenantQuery(
+              tenantId,
               `UPDATE qr_campaigns 
                SET read_count = read_count + 1, updated_at = NOW()
                WHERE id = $1`,
@@ -271,7 +285,8 @@ export class QrWebhookController {
             );
           }
 
-          await query(
+          await this.runTenantQuery(
+            tenantId,
             `UPDATE qr_campaign_messages 
              SET status = 'read', 
                  read_at = NOW(), 
@@ -284,7 +299,8 @@ export class QrWebhookController {
           console.log(`   ✅ Atualizado para READ`);
 
         } else if (status === 'failed') {
-          await query(
+          await this.runTenantQuery(
+            tenantId,
             `UPDATE qr_campaign_messages 
              SET status = 'failed', 
                  failed_at = NOW(), 
@@ -295,7 +311,8 @@ export class QrWebhookController {
           );
           
           // Atualizar contador da campanha
-          await query(
+          await this.runTenantQuery(
+            tenantId,
             `UPDATE qr_campaigns 
              SET failed_count = failed_count + 1, updated_at = NOW()
              WHERE id = $1`,
@@ -315,7 +332,7 @@ export class QrWebhookController {
    * Processar mensagem recebida (messages)
    * Detecta cliques em botões e respostas de lista
    */
-  private async processIncomingMessage(data: any, instanceId: number | null) {
+  private async processIncomingMessage(data: any, instanceId: number | null, tenantId?: number) {
     try {
       console.log('\n💬 Processando MENSAGEM RECEBIDA...');
 
@@ -374,7 +391,7 @@ export class QrWebhookController {
 
         // Se foi clique em botão, registrar
         if (isButtonClick && phoneNumber) {
-          await this.registerButtonClick(phoneNumber, buttonText, buttonPayload, contextId, instanceId);
+          await this.registerButtonClick(phoneNumber, buttonText, buttonPayload, contextId, instanceId, tenantId);
         }
       }
     } catch (error: any) {
@@ -390,7 +407,8 @@ export class QrWebhookController {
     buttonText: string,
     buttonPayload: string,
     contextMessageId: string | null,
-    instanceId: number | null
+    instanceId: number | null,
+    tenantId?: number
   ) {
     try {
       console.log('\n👆 Registrando CLIQUE EM BOTÃO...');
@@ -400,7 +418,8 @@ export class QrWebhookController {
       let messageId: number | null = null;
 
       if (contextMessageId) {
-        const msgResult = await query(
+        const msgResult = await this.runTenantQuery(
+          tenantId,
           `SELECT id, campaign_id FROM qr_campaign_messages 
            WHERE whatsapp_message_id = $1`,
           [contextMessageId]
@@ -413,7 +432,8 @@ export class QrWebhookController {
 
       // Se não encontrou pelo context, buscar última mensagem para este número
       if (!campaignId && phoneNumber) {
-        const recentMsg = await query(
+        const recentMsg = await this.runTenantQuery(
+          tenantId,
           `SELECT id, campaign_id FROM qr_campaign_messages 
            WHERE phone_number LIKE $1
            ORDER BY sent_at DESC
@@ -430,7 +450,8 @@ export class QrWebhookController {
       console.log(`   📝 Botão: ${buttonText}`);
 
       // Verificar se já existe clique duplicado (últimos 60 segundos)
-      const existingClick = await query(
+      const existingClick = await this.runTenantQuery(
+        tenantId,
         `SELECT id FROM button_clicks 
          WHERE phone_number = $1 AND button_text = $2 
          AND clicked_at > NOW() - INTERVAL '1 minute'`,
@@ -443,14 +464,16 @@ export class QrWebhookController {
       }
 
       // Buscar contact_id
-      const contactResult = await query(
+      const contactResult = await this.runTenantQuery(
+        tenantId,
         'SELECT id FROM contacts WHERE phone_number = $1 LIMIT 1',
         [phoneNumber]
       );
       const contactId = contactResult.rows[0]?.id || null;
 
       // Inserir clique
-      await query(
+      await this.runTenantQuery(
+        tenantId,
         `INSERT INTO button_clicks (
           campaign_id, message_id, contact_id, phone_number, 
           button_text, button_payload, clicked_at, campaign_type
@@ -462,7 +485,8 @@ export class QrWebhookController {
 
       // Atualizar contador da campanha
       if (campaignId) {
-        await query(
+        await this.runTenantQuery(
+          tenantId,
           `UPDATE qr_campaigns 
            SET button_clicks_count = button_clicks_count + 1, updated_at = NOW()
            WHERE id = $1`,
@@ -478,7 +502,7 @@ export class QrWebhookController {
   /**
    * Processar atualização de conexão
    */
-  private async processConnectionUpdate(data: any, instanceName: string | null) {
+  private async processConnectionUpdate(data: any, instanceName: string | null, tenantId?: number) {
     try {
       console.log('\n🔌 Processando CONNECTION UPDATE...');
 
@@ -489,7 +513,8 @@ export class QrWebhookController {
       console.log(`   🔗 Status: ${status} (${isConnected ? 'CONECTADO' : 'DESCONECTADO'})`);
 
       if (instanceName) {
-        await query(
+        await this.runTenantQuery(
+          tenantId,
           `UPDATE uaz_instances 
            SET is_connected = $1, updated_at = NOW()
            WHERE name = $2 OR instance_token LIKE $3`,
@@ -524,7 +549,7 @@ export class QrWebhookController {
         id: whatsapp_message_id,
         status: status,
         error: error_message
-      }], instance_id);
+      }], instance_id, (req as any).tenant?.id || (req as any).tenantIdFromWebhook);
 
       res.json({ success: true, message: 'Status atualizado com sucesso' });
     } catch (error: any) {
@@ -548,7 +573,8 @@ export class QrWebhookController {
         button_text,
         button_payload || '',
         whatsapp_message_id || null,
-        null
+        null,
+        (req as any).tenant?.id || (req as any).tenantIdFromWebhook
       );
 
       res.json({ success: true, message: 'Clique registrado com sucesso' });
