@@ -5,9 +5,9 @@ const path = require('path');
 const pool = new Pool({
   host: 'localhost',
   port: 5432,
-  user: 'postgres',
-  password: 'Tg74108520963,',
-  database: 'whatsapp_db'
+  user: 'whatsapp_user',
+  password: 'Tg130992*',
+  database: 'whatsapp_dispatcher'
 });
 
 const sql = fs.readFileSync(path.join(__dirname, 'fix_admin_email_campaigns_columns.sql'), 'utf8');
