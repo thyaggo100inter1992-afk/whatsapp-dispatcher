@@ -339,7 +339,7 @@ async function startServer() {
         trialCleanupWorker.run();
       });
       console.log('✅ Trial Cleanup Worker iniciado (executa a cada 2 horas)');
-      console.log('🔒 Trials de 3 dias expirados serão bloqueados automaticamente');
+      console.log('🔒 Trials de 20 dias expirados serão bloqueados automaticamente');
       console.log('🗑️  Tenants bloqueados há 20 dias serão deletados');
       console.log('');
 
