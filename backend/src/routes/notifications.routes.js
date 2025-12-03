@@ -28,7 +28,7 @@ router.get('/active', async (req, res) => {
         n.link_text
       FROM admin_notifications n
       WHERE n.is_active = TRUE
-        AND (n.expires_at IS NULL OR n.expires_at > NOW())
+        AND n.deleted_at IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM admin_notification_reads r
           WHERE r.notification_id = n.id AND r.tenant_id = $1
