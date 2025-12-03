@@ -8,7 +8,7 @@ const pool = new Pool({
   database: 'whatsapp_dispatcher'
 });
 
-pool.query('SELECT id, name, subject, recipient_type, recipient_list, email_accounts, manual_recipients, specific_tenants, status FROM admin_email_campaigns ORDER BY id DESC LIMIT 1')
+pool.query('SELECT id, name, subject, recipient_type, recipient_list, email_accounts, delay_seconds, status FROM admin_email_campaigns ORDER BY id DESC LIMIT 1')
   .then(r => {
     console.log('=== ÚLTIMA CAMPANHA ===');
     console.log(JSON.stringify(r.rows[0], null, 2));
