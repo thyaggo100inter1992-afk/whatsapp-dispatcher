@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { 
   FaBuilding, FaSignOutAlt, FaUser, FaTachometerAlt, FaCreditCard,
-  FaChartBar, FaServer, FaDesktop, FaCloudUploadAlt, FaCog, FaUserCircle, FaVideo, FaFileInvoiceDollar, FaGlobe, FaShieldAlt
+  FaChartBar, FaServer, FaDesktop, FaCloudUploadAlt, FaCog, FaUserCircle, FaVideo, FaFileInvoiceDollar, FaGlobe, FaShieldAlt, FaPaperPlane
 } from 'react-icons/fa';
 import { useAuth } from '@/contexts/AuthContext';
 import SystemLogo from '@/components/SystemLogo';
@@ -48,6 +48,7 @@ export default function AdminLayout({ children, title, subtitle, icon, currentPa
     { href: '/admin/plans', label: 'Planos', icon: <FaCreditCard />, page: 'plans' },
     { href: '/admin/landing-page', label: 'Landing Page', icon: <FaGlobe />, page: 'landing' },
     { href: '/admin/relatorios-financeiros', label: 'Relatórios Financeiros', icon: <FaFileInvoiceDollar />, page: 'relatorios-financeiros' },
+    { href: '/admin/comunicacao', label: 'Comunicação', icon: <FaPaperPlane />, page: 'comunicacao' },
     { href: '/admin/credentials', label: 'Credenciais', icon: <FaCog />, page: 'credentials' },
     { href: '/admin/configuracoes', label: 'Configurações', icon: <FaCog />, page: 'configuracoes' },
     { href: '/admin/logs', label: 'Auditoria', icon: <FaChartBar />, page: 'logs' },
