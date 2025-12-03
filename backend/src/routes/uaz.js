@@ -283,7 +283,7 @@ function processAutoVariables(text) {
       if (hour >= 12 && hour < 18) return 'Boa tarde';
       return 'Boa noite';
     })(),
-    saudaÃ§Ã£o: (() => { // variaÃ§Ã£o com acento
+    saudacao_acentuada: (() => { // variacao com acento
       const hour = brasiliaTime.getHours();
       if (hour >= 6 && hour < 12) return 'Bom dia';
       if (hour >= 12 && hour < 18) return 'Boa tarde';
