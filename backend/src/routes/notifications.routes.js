@@ -51,11 +51,13 @@ router.get('/active', async (req, res) => {
     const plansResult = await query('SELECT * FROM plans');
     const plans = {};
     plansResult.rows.forEach(plan => {
-      const planKey = plan.name.toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]/g, '');
-      plans[planKey] = plan;
+      if (plan.name) {
+        const planKey = plan.name.toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]/g, '');
+        plans[planKey] = plan;
+      }
     });
 
     // Variáveis para substituição
@@ -71,10 +73,10 @@ router.get('/active', async (req, res) => {
       plano_atual: tenantData?.plano || 'Não definido',
       dias_teste: '3',
       data_fim_teste: tenantData?.trial_end ? new Date(tenantData.trial_end).toLocaleDateString('pt-BR') : '',
-      valor_basico: plans.basico?.monthly_price || '0',
-      valor_profissional: plans.profissional?.monthly_price || '0',
-      valor_empresarial: plans.empresarial?.monthly_price || '0',
-      valor_megatop: plans.megatop?.monthly_price || '0',
+      valor_basico: plans.basico?.monthly_value || '0',
+      valor_profissional: plans.profissional?.monthly_value || '0',
+      valor_empresarial: plans.empresarial?.monthly_value || '0',
+      valor_megatop: plans.megatop?.monthly_value || '0',
       url_sistema: 'https://sistemasnettsistemas.com.br',
       url_registro: 'https://sistemasnettsistemas.com.br/registro',
       url_site: 'https://sistemasnettsistemas.com.br/site'
