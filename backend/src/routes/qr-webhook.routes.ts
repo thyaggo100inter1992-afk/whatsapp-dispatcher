@@ -24,5 +24,8 @@ router.post('/uaz-event', qrWebhookController.receiveUazEvent.bind(qrWebhookCont
 // Verificar mensagem específica (para testes e debug)
 router.get('/check-message/:messageId', qrWebhookController.checkMessage.bind(qrWebhookController));
 
+// Estatísticas de webhooks (últimas 24h)
+router.get('/stats', qrWebhookController.getStats.bind(qrWebhookController));
+
 export default router;
 
