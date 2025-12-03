@@ -41,6 +41,13 @@ interface EmailAccount {
   email_from: string;
 }
 
+interface Tenant {
+  id: number;
+  nome: string;
+  email: string;
+  status: string;
+}
+
 export default function Comunicacao() {
   const notification = useNotification();
   
@@ -64,6 +71,8 @@ export default function Comunicacao() {
   const [showPreview, setShowPreview] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
   const [showCampaignDetails, setShowCampaignDetails] = useState(false);
+  const [allTenants, setAllTenants] = useState<Tenant[]>([]);
+  const [showTenantSelector, setShowTenantSelector] = useState(false);
   
   // Notification State
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -84,7 +93,17 @@ export default function Comunicacao() {
     loadCampaigns();
     loadNotifications();
     loadEmailAccounts();
+    loadAllTenants();
   }, []);
+  
+  const loadAllTenants = async () => {
+    try {
+      const response = await api.get('/admin/tenants');
+      setAllTenants(response.data.tenants);
+    } catch (error) {
+      console.error('Erro ao carregar tenants:', error);
+    }
+  };
   
   const loadCampaigns = async () => {
     try {
@@ -428,16 +447,101 @@ export default function Comunicacao() {
                     <label className="block text-white font-bold mb-2">Destinatários *</label>
                     <select
                       value={emailForm.recipient_type}
-                      onChange={(e) => setEmailForm({ ...emailForm, recipient_type: e.target.value })}
+                      onChange={(e) => {
+                        setEmailForm({ ...emailForm, recipient_type: e.target.value });
+                        if (e.target.value === 'specific') {
+                          setShowTenantSelector(true);
+                        } else {
+                          setShowTenantSelector(false);
+                        }
+                      }}
                       className="w-full p-3 rounded-xl bg-white/10 border-2 border-white/20 text-white"
                     >
                       <option value="all">Todos os Tenants</option>
                       <option value="active">Apenas Ativos</option>
                       <option value="blocked">Apenas Bloqueados</option>
                       <option value="trial">Apenas em Trial</option>
+                      <option value="specific">Selecionar Tenants</option>
                       <option value="manual">Digitar Emails Manualmente</option>
                     </select>
                   </div>
+                  
+                  {/* Seletor de Tenants */}
+                  {showTenantSelector && emailForm.recipient_type === 'specific' && (
+                    <div className="mb-6 bg-white/10 rounded-xl p-4 border-2 border-purple-500">
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="text-white font-bold">👥 Selecione os Tenants</label>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              const allTenantIds = allTenants.map(t => t.id);
+                              setEmailForm({ ...emailForm, recipient_list: { ...emailForm.recipient_list, tenant_ids: allTenantIds } });
+                            }}
+                            className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded text-sm"
+                          >
+                            Selecionar Todos
+                          </button>
+                          <button
+                            onClick={() => setEmailForm({ ...emailForm, recipient_list: { ...emailForm.recipient_list, tenant_ids: [] } })}
+                            className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded text-sm"
+                          >
+                            Limpar
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto space-y-2 bg-black/20 p-3 rounded-xl">
+                        {allTenants.map(tenant => (
+                          <label
+                            key={tenant.id}
+                            className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                              emailForm.recipient_list.tenant_ids.includes(tenant.id)
+                                ? 'bg-purple-500/30 border-2 border-purple-400'
+                                : 'bg-white/5 hover:bg-white/10 border-2 border-transparent'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={emailForm.recipient_list.tenant_ids.includes(tenant.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setEmailForm({
+                                    ...emailForm,
+                                    recipient_list: {
+                                      ...emailForm.recipient_list,
+                                      tenant_ids: [...emailForm.recipient_list.tenant_ids, tenant.id]
+                                    }
+                                  });
+                                } else {
+                                  setEmailForm({
+                                    ...emailForm,
+                                    recipient_list: {
+                                      ...emailForm.recipient_list,
+                                      tenant_ids: emailForm.recipient_list.tenant_ids.filter(id => id !== tenant.id)
+                                    }
+                                  });
+                                }
+                              }}
+                              className="w-5 h-5"
+                            />
+                            <div className="flex-1">
+                              <p className="text-white font-bold">{tenant.nome}</p>
+                              <p className="text-white/60 text-sm">{tenant.email}</p>
+                            </div>
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${
+                              tenant.status === 'active' ? 'bg-green-500/20 text-green-300' :
+                              tenant.status === 'trial' ? 'bg-blue-500/20 text-blue-300' :
+                              'bg-red-500/20 text-red-300'
+                            }`}>
+                              {tenant.status}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-white/70 text-sm mt-2">
+                        ✅ {emailForm.recipient_list.tenant_ids.length} tenant(s) selecionado(s)
+                      </p>
+                    </div>
+                  )}
 
                   {/* Manual Emails */}
                   {emailForm.recipient_type === 'manual' && (
@@ -730,8 +834,88 @@ export default function Comunicacao() {
                       <option value="active">Apenas Ativos</option>
                       <option value="blocked">Apenas Bloqueados</option>
                       <option value="trial">Apenas em Trial</option>
+                      <option value="specific">Selecionar Tenants</option>
                     </select>
                   </div>
+                  
+                  {/* Seletor de Tenants para Notificações */}
+                  {notificationForm.recipient_type === 'specific' && (
+                    <div className="mb-6 bg-white/10 rounded-xl p-4 border-2 border-blue-500">
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="text-white font-bold">👥 Selecione os Tenants</label>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              const allTenantIds = allTenants.map(t => t.id);
+                              setNotificationForm({ ...notificationForm, recipient_list: { tenant_ids: allTenantIds } });
+                            }}
+                            className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded text-sm"
+                          >
+                            Selecionar Todos
+                          </button>
+                          <button
+                            onClick={() => setNotificationForm({ ...notificationForm, recipient_list: { tenant_ids: [] } })}
+                            className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded text-sm"
+                          >
+                            Limpar
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto space-y-2 bg-black/20 p-3 rounded-xl">
+                        {allTenants.map(tenant => {
+                          const tenantIds = (notificationForm.recipient_list as any).tenant_ids || [];
+                          return (
+                            <label
+                              key={tenant.id}
+                              className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                                tenantIds.includes(tenant.id)
+                                  ? 'bg-blue-500/30 border-2 border-blue-400'
+                                  : 'bg-white/5 hover:bg-white/10 border-2 border-transparent'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={tenantIds.includes(tenant.id)}
+                                onChange={(e) => {
+                                  const currentIds = (notificationForm.recipient_list as any).tenant_ids || [];
+                                  if (e.target.checked) {
+                                    setNotificationForm({
+                                      ...notificationForm,
+                                      recipient_list: {
+                                        tenant_ids: [...currentIds, tenant.id]
+                                      }
+                                    });
+                                  } else {
+                                    setNotificationForm({
+                                      ...notificationForm,
+                                      recipient_list: {
+                                        tenant_ids: currentIds.filter((id: number) => id !== tenant.id)
+                                      }
+                                    });
+                                  }
+                                }}
+                                className="w-5 h-5"
+                              />
+                              <div className="flex-1">
+                                <p className="text-white font-bold">{tenant.nome}</p>
+                                <p className="text-white/60 text-sm">{tenant.email}</p>
+                              </div>
+                              <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                tenant.status === 'active' ? 'bg-green-500/20 text-green-300' :
+                                tenant.status === 'trial' ? 'bg-blue-500/20 text-blue-300' :
+                                'bg-red-500/20 text-red-300'
+                              }`}>
+                                {tenant.status}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p className="text-white/70 text-sm mt-2">
+                        ✅ {((notificationForm.recipient_list as any).tenant_ids || []).length} tenant(s) selecionado(s)
+                      </p>
+                    </div>
+                  )}
 
                   {/* Buttons */}
                   <div className="flex gap-3 justify-end">
