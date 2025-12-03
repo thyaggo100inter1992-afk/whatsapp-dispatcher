@@ -965,7 +965,7 @@ const testEmail = async (req, res) => {
 
     console.log(`📧 Enviando email de teste para ${test_email}...`);
 
-    const emailService = require('../services/email.service').default;
+    const emailService = require('../../services/email.service').default;
 
     if (!emailService.isReady()) {
       return res.status(400).json({
