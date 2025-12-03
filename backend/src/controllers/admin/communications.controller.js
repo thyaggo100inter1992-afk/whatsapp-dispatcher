@@ -22,7 +22,7 @@ const getAllCampaigns = async (req, res) => {
       SELECT 
         id, name, subject, recipient_type, 
         total_recipients, sent_count, failed_count,
-        status, created_at, started_at, completed_at
+        status, created_at, started_at, finished_at
       FROM admin_email_campaigns
     `;
 
