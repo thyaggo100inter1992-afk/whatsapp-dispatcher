@@ -38,6 +38,9 @@ export default function VerificarNumerosUaz() {
   // URL da API (produção ou desenvolvimento)
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001';
   
+  console.log('🌐 API_BASE_URL configurado:', API_BASE_URL);
+  console.log('🌐 NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL);
+  
   const [instances, setInstances] = useState<UazInstance[]>([]);
   const [loading, setLoading] = useState(false);
   const [instanceId, setInstanceId] = useState('');
