@@ -322,7 +322,7 @@ const testAccount = async (req, res) => {
     const account = result.rows[0];
 
     // Criar transporter
-    const transporter = nodemailer.createTransporter({
+    const transporter = nodemailer.createTransport({
       host: account.smtp_host,
       port: account.smtp_port,
       secure: account.smtp_secure,
