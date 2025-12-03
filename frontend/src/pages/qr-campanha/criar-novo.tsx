@@ -64,7 +64,8 @@ export default function CriarCampanhaQR() {
 
   const loadInstances = async () => {
     try {
-      const response = await axios.get('http://localhost:3001/api/uaz/instances');
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+      const response = await axios.get(`${API_URL}/uaz/instances`);
       // Filtrar apenas conectadas E ativas (não pausadas)
       const activeInstances = response.data.data.filter((i: UazInstance) => 
         i.is_connected && i.is_active
@@ -82,7 +83,8 @@ export default function CriarCampanhaQR() {
 
   const loadTemplates = async () => {
     try {
-      const response = await axios.get('http://localhost:3001/api/qr-templates');
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+      const response = await axios.get(`${API_URL}/qr-templates`);
       setTemplates(response.data.data);
     } catch (error) {
       console.error('Erro ao carregar templates:', error);
