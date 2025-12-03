@@ -31,6 +31,8 @@ const ALL_AVAILABLE_VARIABLES: Record<string, { name: string; description: strin
   valor_megatop: { name: 'valor_megatop', description: 'Valor do plano Mega Top', category: 'Planos' },
   
   // Datas e Prazos
+  data_atual: { name: 'data_atual', description: 'Data atual do envio do email', category: 'Datas' },
+  hora_atual: { name: 'hora_atual', description: 'Hora atual do envio do email', category: 'Datas' },
   data_inicio: { name: 'data_inicio', description: 'Data de início', category: 'Datas' },
   data_inicio_trial: { name: 'data_inicio_trial', description: 'Data de início do trial', category: 'Datas' },
   data_fim_teste: { name: 'data_fim_teste', description: 'Data de fim do teste', category: 'Datas' },

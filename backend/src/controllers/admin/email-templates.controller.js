@@ -227,9 +227,17 @@ const previewTemplate = async (req, res) => {
       };
     }
 
+    // Variáveis globais disponíveis em todos os templates
+    const now = new Date();
+    const globalVars = {
+      data_atual: now.toLocaleDateString('pt-BR'),
+      hora_atual: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    };
+
     // Dados de exemplo para cada tipo de evento
     const exampleData = {
       welcome: {
+        ...globalVars,
         nome: 'João Silva',
         email: 'joao@exemplo.com',
         plano: 'Premium',
@@ -238,6 +246,7 @@ const previewTemplate = async (req, res) => {
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       trial_start: {
+        ...globalVars,
         nome: 'Maria Santos',
         email: 'maria@exemplo.com',
         dias_teste: '3',
@@ -246,6 +255,7 @@ const previewTemplate = async (req, res) => {
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       expiry_3days: {
+        ...globalVars,
         nome: 'Carlos Oliveira',
         email: 'carlos@exemplo.com',
         plano: 'Premium',
@@ -254,6 +264,7 @@ const previewTemplate = async (req, res) => {
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
       },
       expiry_2days: {
+        ...globalVars,
         nome: 'Ana Costa',
         email: 'ana@exemplo.com',
         plano: 'Premium',
@@ -262,6 +273,7 @@ const previewTemplate = async (req, res) => {
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
       },
       expiry_1day: {
+        ...globalVars,
         nome: 'Pedro Almeida',
         email: 'pedro@exemplo.com',
         plano: 'Premium',
@@ -270,6 +282,7 @@ const previewTemplate = async (req, res) => {
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
       },
       blocked: {
+        ...globalVars,
         nome: 'Fernanda Lima',
         email: 'fernanda@exemplo.com',
         plano: 'Premium',
@@ -279,6 +292,7 @@ const previewTemplate = async (req, res) => {
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
       },
       deletion_warning: {
+        ...globalVars,
         nome: 'Roberto Souza',
         email: 'roberto@exemplo.com',
         dias_restantes: '5',
@@ -286,6 +300,7 @@ const previewTemplate = async (req, res) => {
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
       },
       trial_expired: {
+        ...globalVars,
         nome: 'Lucas Ferreira',
         email: 'lucas@exemplo.com',
         data_inicio_trial: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
@@ -298,6 +313,7 @@ const previewTemplate = async (req, res) => {
         dias_para_exclusao: '20'
       },
       pix_generated: {
+        ...globalVars,
         nome: 'Juliana Rocha',
         email: 'juliana@exemplo.com',
         plano: 'Premium',
@@ -310,6 +326,7 @@ const previewTemplate = async (req, res) => {
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       payment_confirmed: {
+        ...globalVars,
         nome: 'Ricardo Mendes',
         email: 'ricardo@exemplo.com',
         plano: 'Premium',
@@ -403,9 +420,17 @@ const sendTestEmail = async (req, res) => {
       };
     }
 
+    // Variáveis globais disponíveis em todos os templates (para teste)
+    const now = new Date();
+    const globalVars = {
+      data_atual: now.toLocaleDateString('pt-BR'),
+      hora_atual: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    };
+
     // Dados de exemplo para teste
     const exampleData = {
       welcome: {
+        ...globalVars,
         nome: 'João Silva (TESTE)',
         email: 'joao@exemplo.com',
         plano: 'Premium',
@@ -414,6 +439,7 @@ const sendTestEmail = async (req, res) => {
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       trial_start: {
+        ...globalVars,
         nome: 'Maria Santos (TESTE)',
         email: 'maria@exemplo.com',
         dias_teste: '3',
@@ -422,6 +448,7 @@ const sendTestEmail = async (req, res) => {
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       expiry_3days: {
+        ...globalVars,
         nome: 'Carlos Oliveira (TESTE)',
         email: 'carlos@exemplo.com',
         plano: 'Premium',
@@ -430,6 +457,7 @@ const sendTestEmail = async (req, res) => {
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
       },
       expiry_2days: {
+        ...globalVars,
         nome: 'Ana Costa (TESTE)',
         email: 'ana@exemplo.com',
         plano: 'Premium',
@@ -438,6 +466,7 @@ const sendTestEmail = async (req, res) => {
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
       },
       expiry_1day: {
+        ...globalVars,
         nome: 'Pedro Almeida (TESTE)',
         email: 'pedro@exemplo.com',
         plano: 'Premium',
@@ -446,6 +475,7 @@ const sendTestEmail = async (req, res) => {
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
       },
       blocked: {
+        ...globalVars,
         nome: 'Fernanda Lima (TESTE)',
         email: 'fernanda@exemplo.com',
         plano: 'Premium',
@@ -455,6 +485,7 @@ const sendTestEmail = async (req, res) => {
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
       },
       deletion_warning: {
+        ...globalVars,
         nome: 'Roberto Souza (TESTE)',
         email: 'roberto@exemplo.com',
         dias_restantes: '5',
@@ -462,6 +493,7 @@ const sendTestEmail = async (req, res) => {
         url_renovacao: 'https://sistemasnettsistemas.com.br/renovar'
       },
       trial_expired: {
+        ...globalVars,
         nome: 'Lucas Ferreira (TESTE)',
         email: 'lucas@exemplo.com',
         data_inicio_trial: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
@@ -486,6 +518,7 @@ const sendTestEmail = async (req, res) => {
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       payment_confirmed: {
+        ...globalVars,
         nome: 'Ricardo Mendes (TESTE)',
         email: 'ricardo@exemplo.com',
         plano: 'Premium',
