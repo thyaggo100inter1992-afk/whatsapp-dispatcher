@@ -5,7 +5,7 @@ const { query } = require('../database/connection');
  * 
  * Regras:
  * 1. Trial de 3 dias: Após trial_ends_at, bloquear tenant (status = 'blocked')
- * 2. Após 7 dias bloqueado: Deletar tenant automaticamente
+ * 2. Após 20 dias bloqueado: Deletar tenant automaticamente
  * 3. Se pagamento confirmado: Sistema libera automaticamente (via webhook)
  */
 
@@ -56,9 +56,9 @@ class TrialCleanupWorker {
 
       for (const tenant of result.rows) {
         try {
-          // Calcular data de deleção (7 dias após bloqueio)
+          // Calcular data de deleção (20 dias após bloqueio)
           const willBeDeletedAt = new Date();
-          willBeDeletedAt.setDate(willBeDeletedAt.getDate() + 7);
+          willBeDeletedAt.setDate(willBeDeletedAt.getDate() + 20);
 
           // Bloquear tenant
           await query(`
@@ -73,7 +73,7 @@ class TrialCleanupWorker {
 
           console.log(`🔒 BLOQUEADO: ${tenant.nome} (${tenant.email})`);
           console.log(`   Trial de 3 dias terminou em: ${new Date(tenant.trial_ends_at).toLocaleString('pt-BR')}`);
-          console.log(`   Será deletado em: ${willBeDeletedAt.toLocaleString('pt-BR')} (7 dias)`);
+          console.log(`   Será deletado em: ${willBeDeletedAt.toLocaleString('pt-BR')} (20 dias)`);
           console.log(`   ⚠️  Cliente deve fazer upgrade para reativar\n`);
 
           // TODO: Enviar email notificando que o trial expirou e link de pagamento

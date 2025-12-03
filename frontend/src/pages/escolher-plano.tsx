@@ -35,6 +35,8 @@ export default function EscolherPlano() {
   const [documento, setDocumento] = useState('');
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [successPlanName, setSuccessPlanName] = useState('');
+  const [syncingPayment, setSyncingPayment] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
 
   useEffect(() => {
     if (!user) {
@@ -102,6 +104,9 @@ export default function EscolherPlano() {
       // Mostrar toast de sucesso
       setSuccessPlanName(selectedPlan.nome);
       setShowSuccessToast(true);
+
+      // Começar a acompanhar confirmação automática
+      startAutoSync();
       
     } catch (error: any) {
       console.error('Erro ao gerar cobrança:', error);
@@ -132,6 +137,50 @@ export default function EscolherPlano() {
       style: 'currency',
       currency: 'BRL'
     }).format(value);
+  };
+
+  // Sincroniza pagamento e redireciona assim que confirmado
+  const startAutoSync = () => {
+    // evita múltiplos timers
+    let attempts = 0;
+    const maxAttempts = 24; // ~2 minutos (intervalo 5s)
+
+    const interval = setInterval(async () => {
+      attempts += 1;
+      try {
+        setSyncingPayment(true);
+        setSyncMessage('Aguardando confirmação do Asaas...');
+
+        // Força sincronização com Asaas e lê status atual
+        await api.post('/payments/sync');
+        const statusResponse = await api.get('/payments/status');
+
+        const { tenant: tenantStatus, last_payment: lastPayment } = statusResponse.data;
+        const isPaid = lastPayment && ['confirmed', 'CONFIRMED', 'received', 'RECEIVED'].includes(lastPayment.status);
+        const isActive = tenantStatus?.status === 'active';
+
+        if (isPaid && isActive) {
+          clearInterval(interval);
+          setSyncMessage('Pagamento confirmado! Redirecionando...');
+          setTimeout(() => router.push('/gestao'), 1200);
+        } else if (attempts % 3 === 0) {
+          // feedback a cada 15s
+          setSyncMessage('Ainda não confirmou. Continuando a checar...');
+        }
+      } catch (error: any) {
+        console.error('Erro ao sincronizar pagamento:', error);
+        setSyncMessage('Erro ao checar status. Tentando de novo...');
+      } finally {
+        if (attempts >= maxAttempts) {
+          clearInterval(interval);
+          setSyncingPayment(false);
+          setSyncMessage('Não recebemos confirmação automática. Use "Ir para Gestão" e clique em "Atualizar Pagamentos".');
+        }
+      }
+    }, 5000);
+
+    // Limpa timer se o componente desmontar
+    return () => clearInterval(interval);
   };
 
   if (loadingPlans) {
@@ -364,6 +413,12 @@ export default function EscolherPlano() {
                 <p className="text-sm text-gray-400 mb-4">
                   💡 Após o pagamento, sua conta será ativada automaticamente. Você pode acompanhar o status do pagamento na página de Gestão.
                 </p>
+                {syncMessage && (
+                  <div className="mb-3 p-3 rounded-xl bg-emerald-900/30 border border-emerald-500/30 text-emerald-100 text-sm">
+                    {syncingPayment && <FaSpinner className="animate-spin inline mr-2" />}
+                    {syncMessage}
+                  </div>
+                )}
                 <button
                   onClick={() => router.push('/gestao')}
                   className="w-full py-4 bg-gray-600 hover:bg-gray-700 text-white font-bold rounded-xl transition"
@@ -386,4 +441,3 @@ export default function EscolherPlano() {
     </div>
   );
 }
-

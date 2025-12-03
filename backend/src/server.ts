@@ -333,28 +333,29 @@ async function startServer() {
       console.log('🚀 Iniciando Trial Cleanup Worker...');
       // Executar imediatamente na inicialização
       trialCleanupWorker.run();
-      // Agendar para executar a cada 6 horas
-      cron.schedule('0 */6 * * *', () => {
+      // Agendar para executar a cada 2 horas
+      cron.schedule('0 */2 * * *', () => {
         console.log('⏰ Executando Trial Cleanup Worker...');
         trialCleanupWorker.run();
       });
-      console.log('✅ Trial Cleanup Worker iniciado (executa a cada 6 horas)');
+      console.log('✅ Trial Cleanup Worker iniciado (executa a cada 2 horas)');
       console.log('🔒 Trials de 3 dias expirados serão bloqueados automaticamente');
-      console.log('🗑️  Tenants bloqueados há 7 dias serão deletados');
+      console.log('🗑️  Tenants bloqueados há 20 dias serão deletados');
       console.log('');
 
       // Iniciar Payment Renewal Worker
       console.log('🚀 Iniciando Payment Renewal Worker...');
       // Executar imediatamente na inicialização
       paymentRenewalWorker.run();
-      // Agendar para executar a cada 6 horas
-      cron.schedule('0 */6 * * *', () => {
+      // Agendar para executar a cada 2 horas
+      cron.schedule('0 */2 * * *', () => {
         console.log('⏰ Executando Payment Renewal Worker...');
         paymentRenewalWorker.run();
       });
-      console.log('✅ Payment Renewal Worker iniciado (executa a cada 6 horas)');
+      console.log('✅ Payment Renewal Worker iniciado (executa a cada 2 horas)');
       console.log('💰 Vencimentos de pagamento serão verificados automaticamente');
-      console.log('🔄 Renovações mensais serão criadas automaticamente');
+      console.log('📧 Notificações enviadas 3, 2 e 1 dias antes do vencimento');
+      console.log('🔄 Período de carência: 20 dias após bloqueio');
       console.log('');
     }
 

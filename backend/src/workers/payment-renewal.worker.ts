@@ -4,8 +4,9 @@
  * Responsabilidades:
  * 1. Verificar pagamentos vencidos (overdue)
  * 2. Bloquear tenants com pagamento atrasado
- * 3. Notificar sobre vencimentos próximos (5 dias antes)
+ * 3. Notificar sobre vencimentos próximos (3, 2 e 1 dias antes)
  * 4. Criar novas cobranças para renovação mensal
+ * 5. Período de carência: 20 dias após bloqueio
  */
 
 import { pool } from '../database/connection';
@@ -33,21 +34,22 @@ class PaymentRenewalWorker {
   }
 
   /**
-   * Notificar sobre vencimentos próximos (5 dias antes)
+   * Notificar sobre vencimentos próximos (3, 2 e 1 dias antes)
    */
   async checkUpcomingDueDates() {
     try {
       console.log('📅 Verificando vencimentos próximos...');
 
+      // Buscar tenants que vencem em 3, 2 ou 1 dias
       const result = await pool.query(`
         SELECT 
           t.id, t.nome, t.email, t.proximo_vencimento, t.plano,
-          p.preco_mensal
+          p.preco_mensal, p.nome as plano_nome
         FROM tenants t
         LEFT JOIN plans p ON p.slug = t.plano
         WHERE t.status = 'active'
           AND t.proximo_vencimento IS NOT NULL
-          AND t.proximo_vencimento <= NOW() + INTERVAL '5 days'
+          AND t.proximo_vencimento <= NOW() + INTERVAL '3 days'
           AND t.proximo_vencimento > NOW()
       `);
 
@@ -56,20 +58,93 @@ class PaymentRenewalWorker {
         return;
       }
 
-      console.log(`⚠️  ${result.rows.length} vencimentos nos próximos 5 dias\n`);
+      console.log(`⚠️  ${result.rows.length} vencimentos nos próximos 3 dias\n`);
 
       for (const tenant of result.rows) {
         const daysUntilDue = Math.ceil(
           (new Date(tenant.proximo_vencimento).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
         );
 
-        console.log(`📧 Notificar: ${tenant.nome} - Vence em ${daysUntilDue} dias`);
-        // TODO: Enviar email de lembrete
+        // Enviar notificação apenas para 3, 2 ou 1 dias
+        if (daysUntilDue === 3 || daysUntilDue === 2 || daysUntilDue === 1) {
+          console.log(`📧 NOTIFICAÇÃO: ${tenant.nome} - Vence em ${daysUntilDue} dia(s)`);
+          console.log(`   Email: ${tenant.email}`);
+          console.log(`   Plano: ${tenant.plano_nome || tenant.plano}`);
+          console.log(`   Valor: R$ ${tenant.preco_mensal}`);
+          console.log(`   Vencimento: ${new Date(tenant.proximo_vencimento).toLocaleDateString('pt-BR')}\n`);
+          
+          // Enviar email de notificação
+          await this.sendExpirationNotification(tenant, daysUntilDue);
+        }
       }
 
       console.log();
     } catch (error) {
       console.error('❌ Erro ao verificar vencimentos próximos:', error);
+    }
+  }
+
+  /**
+   * Enviar email de notificação de vencimento próximo
+   */
+  async sendExpirationNotification(tenant: any, daysUntilDue: number) {
+    try {
+      // Verificar se já enviou notificação hoje para este tenant
+      const lastNotification = await pool.query(`
+        SELECT created_at 
+        FROM payment_notifications 
+        WHERE tenant_id = $1 
+          AND notification_type = 'expiration_warning'
+          AND days_before = $2
+          AND created_at > NOW() - INTERVAL '12 hours'
+        ORDER BY created_at DESC 
+        LIMIT 1
+      `, [tenant.id, daysUntilDue]);
+
+      if (lastNotification.rows.length > 0) {
+        console.log(`   ⏭️  Notificação já enviada hoje, pulando...`);
+        return;
+      }
+
+      const emailService = require('../services/email.service').default;
+      
+      const subject = daysUntilDue === 1 
+        ? '⚠️ Seu plano vence AMANHÃ!' 
+        : `⚠️ Seu plano vence em ${daysUntilDue} dias`;
+
+      const message = `
+        <h2>Olá, ${tenant.nome}!</h2>
+        
+        <p>Seu plano <strong>${tenant.plano_nome || tenant.plano}</strong> vence em <strong>${daysUntilDue} dia(s)</strong>.</p>
+        
+        <p><strong>Data de vencimento:</strong> ${new Date(tenant.proximo_vencimento).toLocaleDateString('pt-BR')}</p>
+        <p><strong>Valor da renovação:</strong> R$ ${tenant.preco_mensal}</p>
+        
+        <p style="color: #d32f2f; font-weight: bold;">
+          ⚠️ Após o vencimento, seu acesso será bloqueado automaticamente.
+        </p>
+        
+        <p>Para renovar seu plano, acesse:</p>
+        <p><a href="https://sistemasnettsistemas.com.br/gestao" style="background: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">Renovar Agora</a></p>
+        
+        <p>Caso já tenha realizado o pagamento, desconsidere este email.</p>
+        
+        <p>Atenciosamente,<br>Equipe Nett Sistemas</p>
+      `;
+
+      await emailService.sendEmail(tenant.email, subject, message);
+      
+      // Registrar notificação enviada
+      await pool.query(`
+        INSERT INTO payment_notifications (
+          tenant_id, notification_type, days_before, sent_at, created_at
+        ) VALUES ($1, 'expiration_warning', $2, NOW(), NOW())
+      `, [tenant.id, daysUntilDue]);
+
+      console.log(`   ✅ Email enviado com sucesso!`);
+      
+    } catch (error: any) {
+      console.error(`   ❌ Erro ao enviar email:`, error.message);
     }
   }
 
@@ -128,9 +203,9 @@ class PaymentRenewalWorker {
             console.log(`❌ DOWNGRADE CANCELADO - ${tenant.nome} excedeu limites:`);
             validation.errors.forEach(err => console.log(`   - ${err}`));
 
-            // Bloquear tenant
+            // Bloquear tenant (20 dias de carência)
             const willBeDeletedAt = new Date();
-            willBeDeletedAt.setDate(willBeDeletedAt.getDate() + 7);
+            willBeDeletedAt.setDate(willBeDeletedAt.getDate() + 20);
 
             await pool.query(`
               UPDATE tenants 
@@ -298,9 +373,9 @@ class PaymentRenewalWorker {
 
       for (const tenant of result.rows) {
         try {
-          // Calcular data de deleção (7 dias após bloqueio)
+          // Calcular data de deleção (20 dias após bloqueio)
           const willBeDeletedAt = new Date();
-          willBeDeletedAt.setDate(willBeDeletedAt.getDate() + 7);
+          willBeDeletedAt.setDate(willBeDeletedAt.getDate() + 20);
 
           // Bloquear tenant
           await pool.query(`
@@ -315,9 +390,10 @@ class PaymentRenewalWorker {
 
           console.log(`🔒 BLOQUEADO: ${tenant.nome} (${tenant.email})`);
           console.log(`   Vencimento: ${new Date(tenant.proximo_vencimento).toLocaleString('pt-BR')}`);
-          console.log(`   Será deletado em: ${willBeDeletedAt.toLocaleString('pt-BR')}\n`);
+          console.log(`   Será deletado em: ${willBeDeletedAt.toLocaleString('pt-BR')} (20 dias)\n`);
 
-          // TODO: Enviar email notificando bloqueio e link de pagamento
+          // Enviar email notificando bloqueio e link de pagamento
+          await this.sendBlockedNotification(tenant, willBeDeletedAt);
         } catch (error: any) {
           console.error(`❌ Erro ao bloquear tenant ${tenant.id}:`, error.message);
         }
@@ -326,6 +402,72 @@ class PaymentRenewalWorker {
       console.log(`✅ ${result.rows.length} tenants bloqueados\n`);
     } catch (error) {
       console.error('❌ Erro ao bloquear tenants:', error);
+    }
+  }
+
+  /**
+   * Enviar email de notificação de bloqueio por falta de pagamento
+   */
+  async sendBlockedNotification(tenant: any, willBeDeletedAt: Date) {
+    try {
+      const emailService = require('../services/email.service').default;
+      
+      const daysUntilDeletion = Math.ceil(
+        (willBeDeletedAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      );
+
+      const subject = '🔒 Seu acesso foi bloqueado - Pagamento vencido';
+
+      const message = `
+        <h2>Olá, ${tenant.nome}!</h2>
+        
+        <p style="color: #d32f2f; font-weight: bold; font-size: 18px;">
+          ⚠️ Seu acesso ao sistema foi bloqueado devido ao vencimento do plano.
+        </p>
+        
+        <p><strong>Plano:</strong> ${tenant.plano}</p>
+        <p><strong>Data de vencimento:</strong> ${new Date(tenant.proximo_vencimento).toLocaleDateString('pt-BR')}</p>
+        
+        <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0; color: #856404;">
+            <strong>⏰ ATENÇÃO:</strong> Você tem <strong>${daysUntilDeletion} dias</strong> para renovar seu plano.
+            Após este prazo, todos os seus dados serão <strong>DELETADOS PERMANENTEMENTE</strong>.
+          </p>
+        </div>
+        
+        <p><strong>O que será deletado:</strong></p>
+        <ul>
+          <li>Todas as suas campanhas e mensagens</li>
+          <li>Todos os contatos e listas</li>
+          <li>Todas as conexões WhatsApp</li>
+          <li>Todos os templates e configurações</li>
+          <li>Todo o histórico e relatórios</li>
+        </ul>
+        
+        <p style="font-size: 18px; margin: 30px 0;">
+          <a href="https://sistemasnettsistemas.com.br/gestao" style="background: #d32f2f; color: white; padding: 15px 30px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold;">
+            🔓 RENOVAR AGORA E REATIVAR ACESSO
+          </a>
+        </p>
+        
+        <p>Após o pagamento, seu acesso será <strong>reativado automaticamente</strong>.</p>
+        
+        <p>Atenciosamente,<br>Equipe Nett Sistemas</p>
+      `;
+
+      await emailService.sendEmail(tenant.email, subject, message);
+      
+      // Registrar notificação enviada
+      await pool.query(`
+        INSERT INTO payment_notifications (
+          tenant_id, notification_type, sent_at, created_at
+        ) VALUES ($1, 'blocked', NOW(), NOW())
+      `, [tenant.id]);
+
+      console.log(`   ✅ Email de bloqueio enviado para ${tenant.email}`);
+      
+    } catch (error: any) {
+      console.error(`   ❌ Erro ao enviar email de bloqueio:`, error.message);
     }
   }
 
