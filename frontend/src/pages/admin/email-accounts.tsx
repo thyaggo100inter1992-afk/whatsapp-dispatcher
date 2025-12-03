@@ -218,12 +218,6 @@ export default function EmailAccounts() {
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => router.push('/admin/credentials?tab=email')}
-                  className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold transition-all flex items-center gap-2 backdrop-blur-sm"
-                >
-                  <FaCog /> Configuração Antiga
-                </button>
-                <button
                   onClick={() => router.push('/admin/email-templates')}
                   className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold transition-all flex items-center gap-2 backdrop-blur-sm"
                 >
