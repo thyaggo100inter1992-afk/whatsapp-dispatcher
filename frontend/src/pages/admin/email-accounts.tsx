@@ -131,10 +131,10 @@ export default function EmailAccounts() {
   };
 
   const handleDelete = async (id: number) => {
-    const confirmed = await confirm(
-      'Confirmar Exclusão',
-      'Tem certeza que deseja deletar esta conta? Templates associados usarão a conta padrão.'
-    );
+    const confirmed = await confirm({
+      title: 'Confirmar Exclusão',
+      message: 'Tem certeza que deseja deletar esta conta? Templates associados usarão a conta padrão.'
+    });
 
     if (confirmed) {
       try {
