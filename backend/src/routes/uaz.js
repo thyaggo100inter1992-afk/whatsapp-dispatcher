@@ -1,7 +1,7 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const { pool } = require('../database/connection');
-const { tenantQuery } = require('../database/tenant-query');
+const { tenantQuery, queryWithTenantId } = require('../database/tenant-query');
 const UazService = require('../services/uazService');
 const fs = require('fs');
 const path = require('path');
@@ -27,50 +27,50 @@ const { getTenantUazapCredentials, getDefaultUazapCredentials } = require('../he
 const { getInstanceWithCredentials } = require('../helpers/instance-credentials.helper');
 
 /**
- * 📞 Normaliza número de telefone para comparação
+ * ðŸ“ž Normaliza nÃºmero de telefone para comparaÃ§Ã£o
  * Remove caracteres especiais e testa diferentes formatos:
- * - Com/sem código do país (55)
- * - Com/sem 9º dígito em celulares
+ * - Com/sem cÃ³digo do paÃ­s (55)
+ * - Com/sem 9Âº dÃ­gito em celulares
  * 
- * @param {string} phone - Número a ser normalizado
- * @returns {Array<string>} Array com todas as variações possíveis do número
+ * @param {string} phone - NÃºmero a ser normalizado
+ * @returns {Array<string>} Array com todas as variaÃ§Ãµes possÃ­veis do nÃºmero
  */
 function normalizePhoneNumber(phone) {
   if (!phone) return [];
   
-  // Remove tudo que não é número
+  // Remove tudo que nÃ£o Ã© nÃºmero
   const cleaned = phone.replace(/\D/g, '');
   
   const variations = [cleaned];
   
-  // Se tem 55 no início (código do Brasil)
+  // Se tem 55 no inÃ­cio (cÃ³digo do Brasil)
   if (cleaned.startsWith('55') && cleaned.length >= 12) {
     const withoutCountryCode = cleaned.substring(2); // Remove 55
     variations.push(withoutCountryCode);
     
-    // Se o número tem 11 dígitos após o 55 (celular com 9º dígito)
+    // Se o nÃºmero tem 11 dÃ­gitos apÃ³s o 55 (celular com 9Âº dÃ­gito)
     if (withoutCountryCode.length === 11) {
-      // Remove o 9º dígito (3º caractere)
+      // Remove o 9Âº dÃ­gito (3Âº caractere)
       const without9 = withoutCountryCode.substring(0, 2) + withoutCountryCode.substring(3);
       variations.push(without9);
-      variations.push('55' + without9); // Com 55 mas sem 9º dígito
+      variations.push('55' + without9); // Com 55 mas sem 9Âº dÃ­gito
     }
   } 
-  // Se NÃO tem 55 no início
+  // Se NÃƒO tem 55 no inÃ­cio
   else {
     // Tenta adicionar 55
     variations.push('55' + cleaned);
     
-    // Se tem 11 dígitos (celular com 9º dígito)
+    // Se tem 11 dÃ­gitos (celular com 9Âº dÃ­gito)
     if (cleaned.length === 11) {
-      // Remove o 9º dígito
+      // Remove o 9Âº dÃ­gito
       const without9 = cleaned.substring(0, 2) + cleaned.substring(3);
       variations.push(without9);
       variations.push('55' + without9);
     }
-    // Se tem 10 dígitos (sem 9º dígito)
+    // Se tem 10 dÃ­gitos (sem 9Âº dÃ­gito)
     else if (cleaned.length === 10) {
-      // Adiciona o 9º dígito
+      // Adiciona o 9Âº dÃ­gito
       const with9 = cleaned.substring(0, 2) + '9' + cleaned.substring(2);
       variations.push(with9);
       variations.push('55' + with9);
@@ -82,43 +82,43 @@ function normalizePhoneNumber(phone) {
 }
 
 /**
- * 🔍 Verifica se dois números de telefone são equivalentes
- * Compara considerando diferentes formatos (com/sem 55, com/sem 9º dígito)
+ * ðŸ” Verifica se dois nÃºmeros de telefone sÃ£o equivalentes
+ * Compara considerando diferentes formatos (com/sem 55, com/sem 9Âº dÃ­gito)
  * 
- * @param {string} phone1 - Primeiro número
- * @param {string} phone2 - Segundo número
- * @returns {boolean} true se os números são equivalentes
+ * @param {string} phone1 - Primeiro nÃºmero
+ * @param {string} phone2 - Segundo nÃºmero
+ * @returns {boolean} true se os nÃºmeros sÃ£o equivalentes
  */
 function phonesMatch(phone1, phone2) {
   const variations1 = normalizePhoneNumber(phone1);
   const variations2 = normalizePhoneNumber(phone2);
   
-  console.log(`      🔢 Variações de "${phone1}": ${JSON.stringify(variations1)}`);
-  console.log(`      🔢 Variações de "${phone2}": ${JSON.stringify(variations2)}`);
+  console.log(`      ðŸ”¢ VariaÃ§Ãµes de "${phone1}": ${JSON.stringify(variations1)}`);
+  console.log(`      ðŸ”¢ VariaÃ§Ãµes de "${phone2}": ${JSON.stringify(variations2)}`);
   
-  // Verifica se alguma variação do phone1 existe nas variações do phone2
+  // Verifica se alguma variaÃ§Ã£o do phone1 existe nas variaÃ§Ãµes do phone2
   const hasMatch = variations1.some(v1 => variations2.includes(v1));
-  console.log(`      🎯 Match encontrado? ${hasMatch}`);
+  console.log(`      ðŸŽ¯ Match encontrado? ${hasMatch}`);
   
   return hasMatch;
 }
 
 /**
- * Substitui variáveis no formato {{nome}} pelos valores fornecidos
- * Exemplo: "Olá {{nome}}" + {nome: "João"} → "Olá João"
- * @param {string} text - Texto com variáveis
- * @param {object} variables - Objeto com valores das variáveis
- * @returns {string} Texto com variáveis substituídas
+ * Substitui variÃ¡veis no formato {{nome}} pelos valores fornecidos
+ * Exemplo: "OlÃ¡ {{nome}}" + {nome: "JoÃ£o"} â†’ "OlÃ¡ JoÃ£o"
+ * @param {string} text - Texto com variÃ¡veis
+ * @param {object} variables - Objeto com valores das variÃ¡veis
+ * @returns {string} Texto com variÃ¡veis substituÃ­das
  */
 function replaceVariables(text, variables) {
   if (!text || !variables) return text;
   
   let result = text;
   
-  // Para cada variável fornecida
+  // Para cada variÃ¡vel fornecida
   Object.entries(variables).forEach(([varName, varValue]) => {
     if (varValue !== null && varValue !== undefined) {
-      // Substituir {{nome}} ou {{ nome }} (com espaços opcionais)
+      // Substituir {{nome}} ou {{ nome }} (com espaÃ§os opcionais)
       const regex = new RegExp(`{{\\s*${varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*}}`, 'g');
       result = result.replace(regex, String(varValue));
     }
@@ -128,25 +128,25 @@ function replaceVariables(text, variables) {
 }
 
 /**
- * Converte arquivo local para Base64 com compressão para imagens
+ * Converte arquivo local para Base64 com compressÃ£o para imagens
  * @param {string} fileUrl - URL ou caminho do arquivo
- * @param {boolean} compress - Se deve comprimir imagens (padrão: true)
+ * @param {boolean} compress - Se deve comprimir imagens (padrÃ£o: true)
  * @returns {object} { success: boolean, file: string, error?: string }
  */
 async function convertFileToBase64(fileUrl, compress = true) {
   try {
-    // Remove o domínio da URL, mantendo apenas o path relativo
+    // Remove o domÃ­nio da URL, mantendo apenas o path relativo
     let filePath = fileUrl;
     if (fileUrl.startsWith('http')) {
-      // Remove qualquer domínio/porta e mantém apenas o path
+      // Remove qualquer domÃ­nio/porta e mantÃ©m apenas o path
       filePath = '.' + fileUrl.replace(/^https?:\/\/[^\/]+/, '');
     } else {
       filePath = '.' + fileUrl;
     }
     
-    console.log('📁 Convertendo arquivo para Base64:', filePath);
+    console.log('ðŸ“ Convertendo arquivo para Base64:', filePath);
     
-    // Detecta MIME type pela extensão
+    // Detecta MIME type pela extensÃ£o
     const ext = path.extname(filePath).toLowerCase();
     let mimeType = 'application/octet-stream';
     
@@ -177,14 +177,14 @@ async function convertFileToBase64(fileUrl, compress = true) {
     // Comprimir imagens se for o caso
     const isImage = ['.png', '.jpg', '.jpeg', '.webp'].includes(ext);
     if (isImage && compress) {
-      console.log(`🔄 Comprimindo imagem (tamanho original: ${(originalSize / 1024).toFixed(2)} KB)...`);
+      console.log(`ðŸ”„ Comprimindo imagem (tamanho original: ${(originalSize / 1024).toFixed(2)} KB)...`);
       
       try {
-        // Comprimir e redimensionar se necessário
+        // Comprimir e redimensionar se necessÃ¡rio
         const image = sharp(fileBuffer);
         const metadata = await image.metadata();
         
-        // Limitar tamanho máximo para 1200px para carrosséis (mantendo boa qualidade)
+        // Limitar tamanho mÃ¡ximo para 1200px para carrossÃ©is (mantendo boa qualidade)
         const maxSize = 1200;
         let resizeOptions = {};
         
@@ -195,7 +195,7 @@ async function convertFileToBase64(fileUrl, compress = true) {
             fit: 'inside',
             withoutEnlargement: true
           };
-          console.log(`📐 Redimensionando de ${metadata.width}x${metadata.height} para max ${maxSize}px`);
+          console.log(`ðŸ“ Redimensionando de ${metadata.width}x${metadata.height} para max ${maxSize}px`);
         }
         
         // Comprimir com qualidade 85% para manter boa qualidade visual
@@ -206,12 +206,12 @@ async function convertFileToBase64(fileUrl, compress = true) {
         
         const compressedSize = fileBuffer.length;
         const reduction = ((1 - compressedSize / originalSize) * 100).toFixed(1);
-        console.log(`✅ Imagem comprimida: ${(compressedSize / 1024).toFixed(2)} KB (redução de ${reduction}%)`);
+        console.log(`âœ… Imagem comprimida: ${(compressedSize / 1024).toFixed(2)} KB (reduÃ§Ã£o de ${reduction}%)`);
         
-        // Forçar MIME type para JPEG após compressão
+        // ForÃ§ar MIME type para JPEG apÃ³s compressÃ£o
         mimeType = 'image/jpeg';
       } catch (compressError) {
-        console.warn('⚠️ Erro ao comprimir imagem, usando original:', compressError.message);
+        console.warn('âš ï¸ Erro ao comprimir imagem, usando original:', compressError.message);
         // Continua com o buffer original
       }
     }
@@ -219,11 +219,11 @@ async function convertFileToBase64(fileUrl, compress = true) {
     const base64 = fileBuffer.toString('base64');
     const dataUrl = `data:${mimeType};base64,${base64}`;
     
-    console.log(`✅ Arquivo convertido: ${ext} (${mimeType}) - ${(base64.length / 1024).toFixed(2)} KB em Base64`);
+    console.log(`âœ… Arquivo convertido: ${ext} (${mimeType}) - ${(base64.length / 1024).toFixed(2)} KB em Base64`);
     
     // Avisar se o Base64 estiver muito grande
     if (base64.length > 50 * 1024 * 1024) { // > 50MB
-      console.warn(`⚠️ AVISO: Arquivo muito grande (${(base64.length / 1024 / 1024).toFixed(2)} MB). Pode causar problemas no envio.`);
+      console.warn(`âš ï¸ AVISO: Arquivo muito grande (${(base64.length / 1024 / 1024).toFixed(2)} MB). Pode causar problemas no envio.`);
     }
     
     return {
@@ -231,7 +231,7 @@ async function convertFileToBase64(fileUrl, compress = true) {
       file: dataUrl
     };
   } catch (error) {
-    console.error('❌ Erro ao converter arquivo:', error.message);
+    console.error('âŒ Erro ao converter arquivo:', error.message);
     return {
       success: false,
       error: error.message
@@ -241,19 +241,19 @@ async function convertFileToBase64(fileUrl, compress = true) {
 
 /**
  * Formata choices de lista para o formato esperado pela API UAZ
- * Formato: ["[Seção]", "texto|id|descrição", ...]
- * @param {Array<string>} choices - Array de strings com as opções
- * @returns {Array<string>} - Array formatado com seção e itens
+ * Formato: ["[SeÃ§Ã£o]", "texto|id|descriÃ§Ã£o", ...]
+ * @param {Array<string>} choices - Array de strings com as opÃ§Ãµes
+ * @returns {Array<string>} - Array formatado com seÃ§Ã£o e itens
  */
 function formatListChoices(choices) {
-  const formatted = ["[Opções]"]; // Seção padrão
+  const formatted = ["[OpÃ§Ãµes]"]; // SeÃ§Ã£o padrÃ£o
   
   choices.forEach((choice, index) => {
     const id = `option_${index + 1}`;
     const text = choice.substring(0, 24); // WhatsApp limita a 24 caracteres
-    const description = choice.length > 24 ? choice.substring(24, 72) : ''; // Descrição até 72 chars
+    const description = choice.length > 24 ? choice.substring(24, 72) : ''; // DescriÃ§Ã£o atÃ© 72 chars
     
-    // Formato: texto|id|descrição
+    // Formato: texto|id|descriÃ§Ã£o
     formatted.push(`${text}|${id}|${description}`);
   });
   
@@ -261,15 +261,15 @@ function formatListChoices(choices) {
 }
 
 /**
- * Substitui variáveis automáticas em um texto
- * Variáveis suportadas: {{data}}, {{hora}}, {{protocolo}}, {{saudacao}}, {{saudação}}
- * @param {string} text - Texto com variáveis a serem substituídas
- * @returns {string} - Texto com variáveis substituídas pelos valores atuais
+ * Substitui variÃ¡veis automÃ¡ticas em um texto
+ * VariÃ¡veis suportadas: {{data}}, {{hora}}, {{protocolo}}, {{saudacao}}, {{saudaÃ§Ã£o}}
+ * @param {string} text - Texto com variÃ¡veis a serem substituÃ­das
+ * @returns {string} - Texto com variÃ¡veis substituÃ­das pelos valores atuais
  */
 function processAutoVariables(text) {
   if (!text) return text;
   
-  // ⏰ USAR TIMEZONE DE BRASÍLIA (America/Sao_Paulo = GMT-3)
+  // â° USAR TIMEZONE DE BRASÃLIA (America/Sao_Paulo = GMT-3)
   const now = new Date();
   const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
   
@@ -283,7 +283,7 @@ function processAutoVariables(text) {
       if (hour >= 12 && hour < 18) return 'Boa tarde';
       return 'Boa noite';
     })(),
-    saudação: (() => { // variação com acento
+    saudaÃ§Ã£o: (() => { // variaÃ§Ã£o com acento
       const hour = brasiliaTime.getHours();
       if (hour >= 6 && hour < 12) return 'Bom dia';
       if (hour >= 12 && hour < 18) return 'Boa tarde';
@@ -293,15 +293,15 @@ function processAutoVariables(text) {
 
   let processedText = text;
   
-  // Substituir cada variável automática no texto
+  // Substituir cada variÃ¡vel automÃ¡tica no texto
   Object.entries(autoVariables).forEach(([key, value]) => {
     const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'gi');
     processedText = processedText.replace(regex, value);
   });
 
-  // Log apenas se houve substituições
+  // Log apenas se houve substituiÃ§Ãµes
   if (processedText !== text) {
-    console.log('🔤 Variáveis automáticas substituídas:', Object.keys(autoVariables).filter(key => {
+    console.log('ðŸ”¤ VariÃ¡veis automÃ¡ticas substituÃ­das:', Object.keys(autoVariables).filter(key => {
       const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'gi');
       return regex.test(text);
     }));
@@ -310,30 +310,30 @@ function processAutoVariables(text) {
   return processedText;
 }
 
-// ⚠️ AVISO: Sistema de Credenciais Multi-Tenant ATIVADO
-// As rotas CRÍTICAS agora usam getTenantUazapCredentials() para buscar credenciais dinamicamente:
-//   ✅ POST /instances (criar)
-//   ✅ GET /instances/:id/qrcode (QR Code)
-//   ✅ PUT /instances/:id (atualizar)
-//   ✅ GET /instances/:id/status (verificar status)
+// âš ï¸ AVISO: Sistema de Credenciais Multi-Tenant ATIVADO
+// As rotas CRÃTICAS agora usam getTenantUazapCredentials() para buscar credenciais dinamicamente:
+//   âœ… POST /instances (criar)
+//   âœ… GET /instances/:id/qrcode (QR Code)
+//   âœ… PUT /instances/:id (atualizar)
+//   âœ… GET /instances/:id/status (verificar status)
 //
-// Outras rotas ainda usam credencial global (temporário para compatibilidade)
+// Outras rotas ainda usam credencial global (temporÃ¡rio para compatibilidade)
 const UAZ_SERVER_URL = process.env.UAZ_SERVER_URL || 'https://nettsistemas.uazapi.com';
 const UAZ_ADMIN_TOKEN = process.env.UAZ_ADMIN_TOKEN || '';
 
-// 🔄 RELOAD FORÇADO - Sistema de variáveis automáticas ativo
-console.log('✅ [RELOAD] Arquivo uaz.js carregado com suporte a variáveis automáticas!');
+// ðŸ”„ RELOAD FORÃ‡ADO - Sistema de variÃ¡veis automÃ¡ticas ativo
+console.log('âœ… [RELOAD] Arquivo uaz.js carregado com suporte a variÃ¡veis automÃ¡ticas!');
 
-console.log('🔧 Sistema de Credenciais Multi-Tenant ATIVADO');
-console.log('   ✅ Rotas críticas usam credenciais por tenant');
-console.log('   ⚠️ Rotas legacy usam credencial global (temporário)');
+console.log('ðŸ”§ Sistema de Credenciais Multi-Tenant ATIVADO');
+console.log('   âœ… Rotas crÃ­ticas usam credenciais por tenant');
+console.log('   âš ï¸ Rotas legacy usam credencial global (temporÃ¡rio)');
 
-// Instância global do uazService (usado apenas por rotas legacy que ainda não foram migradas)
+// InstÃ¢ncia global do uazService (usado apenas por rotas legacy que ainda nÃ£o foram migradas)
 const uazService = new UazService(UAZ_SERVER_URL, UAZ_ADMIN_TOKEN);
 
 /**
  * GET /api/uaz/health
- * Verifica saúde da API UAZ
+ * Verifica saÃºde da API UAZ
  */
 router.get('/health', async (req, res) => {
   try {
@@ -349,20 +349,20 @@ router.get('/health', async (req, res) => {
 
 /**
  * GET /api/uaz/instances
- * Lista todas as instâncias UAZ
+ * Lista todas as instÃ¢ncias UAZ
  * Query params:
- *  - refresh=true: Atualiza status de todas as instâncias antes de retornar
+ *  - refresh=true: Atualiza status de todas as instÃ¢ncias antes de retornar
  */
 router.get('/instances', async (req, res) => {
   try {
     const { refresh } = req.query;
     
-    // 🔒 SEGURANÇA: Filtrar por tenant_id (usando tenantQuery para respeitar RLS)
+    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id (usando tenantQuery para respeitar RLS)
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        message: 'Tenant não identificado'
+        message: 'Tenant nÃ£o identificado'
       });
     }
     
@@ -381,27 +381,27 @@ router.get('/instances', async (req, res) => {
       ORDER BY ui.created_at DESC
     `, [tenantId]);
 
-    // Se refresh=true, atualiza o status de cada instância
+    // Se refresh=true, atualiza o status de cada instÃ¢ncia
     if (refresh === 'true') {
-      console.log('\n🔄 ========================================');
-      console.log('🔄 INICIANDO SINCRONIZAÇÃO DE INSTÂNCIAS UAZ');
-      console.log('🔄 ========================================');
-      console.log(`📊 Total de instâncias no banco: ${result.rows.length}`);
+      console.log('\nðŸ”„ ========================================');
+      console.log('ðŸ”„ INICIANDO SINCRONIZAÃ‡ÃƒO DE INSTÃ‚NCIAS UAZ');
+      console.log('ðŸ”„ ========================================');
+      console.log(`ðŸ“Š Total de instÃ¢ncias no banco: ${result.rows.length}`);
       
-      // 🔑 BUSCAR CREDENCIAIS DO TENANT
+      // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
       const credentials = await getTenantUazapCredentials(tenantId);
       const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
       
       const instancesWithSync = await Promise.all(result.rows.map(async (instance) => {
-        console.log(`\n🔍 Verificando: ${instance.name} (ID: ${instance.id})`);
+        console.log(`\nðŸ” Verificando: ${instance.name} (ID: ${instance.id})`);
         
-        // Só verifica se tiver token
+        // SÃ³ verifica se tiver token
         if (!instance.instance_token) {
-          console.log(`   ⚠️  Sem token, pulando verificação`);
+          console.log(`   âš ï¸  Sem token, pulando verificaÃ§Ã£o`);
           return instance;
         }
 
-        console.log(`   🔑 Token: ${instance.instance_token?.substring(0, 20)}...`);
+        console.log(`   ðŸ”‘ Token: ${instance.instance_token?.substring(0, 20)}...`);
         
         try {
           const proxyConfig = instance.proxy_host ? {
@@ -415,7 +415,7 @@ router.get('/instances', async (req, res) => {
           const statusResult = await tenantUazService.getStatus(instance.instance_token, proxyConfig);
 
           if (statusResult.success) {
-            // statusResult.connected já vem da função getStatus
+            // statusResult.connected jÃ¡ vem da funÃ§Ã£o getStatus
             const isConnected = statusResult.connected || false;
             const status = isConnected ? 'connected' : 'disconnected';
             
@@ -436,7 +436,7 @@ router.get('/instances', async (req, res) => {
 
             // Atualiza no banco se mudou
             if (instance.is_connected !== isConnected || instance.status !== status) {
-              // 🔒 SEGURANÇA: Filtrar por tenant_id
+              // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id
               await tenantQuery(req,
                 `UPDATE uaz_instances 
                  SET is_connected = $1, status = $2, phone_number = $3, 
@@ -445,7 +445,7 @@ router.get('/instances', async (req, res) => {
                 [isConnected, status, phoneNumber, profileName, profilePicUrl, instance.id, instance.tenant_id]
               );
               
-              console.log(`✅ Instância ${instance.name} (${instance.id}): ${status}`);
+              console.log(`âœ… InstÃ¢ncia ${instance.name} (${instance.id}): ${status}`);
             }
 
             // Retorna dados atualizados
@@ -458,14 +458,14 @@ router.get('/instances', async (req, res) => {
               profile_pic_url: profilePicUrl
             };
           } else {
-            // ⚠️ Se getStatus retornou success=false, lançar exceção para acionar a lógica de sincronização
+            // âš ï¸ Se getStatus retornou success=false, lanÃ§ar exceÃ§Ã£o para acionar a lÃ³gica de sincronizaÃ§Ã£o
             const error = new Error(statusResult.error || 'Falha ao verificar status');
             error.isUazApiError = true;
             error.originalError = statusResult.error;
             throw error;
           }
         } catch (error) {
-          // 🚨 SINCRONIZAÇÃO: Se a instância não existe mais na UAZ API (404 ou 401), deletar do banco local
+          // ðŸš¨ SINCRONIZAÃ‡ÃƒO: Se a instÃ¢ncia nÃ£o existe mais na UAZ API (404 ou 401), deletar do banco local
           const isInvalidToken = error.response?.status === 404 || 
                                  error.response?.status === 401 ||
                                  error.response?.data?.message?.toLowerCase().includes('invalid token') ||
@@ -476,13 +476,13 @@ router.get('/instances', async (req, res) => {
           
           if (isInvalidToken) {
             
-            console.log(`\n🗑️  ========================================`);
-            console.log(`🗑️  SINCRONIZAÇÃO: Instância não existe mais na UAZ API`);
-            console.log(`🗑️  ========================================`);
-            console.log(`📦 Instância: ${instance.name} (ID: ${instance.id})`);
-            console.log(`🔑 Token: ${instance.instance_token?.substring(0, 20)}...`);
-            console.log(`❌ Erro: ${error.response?.status || 'Unknown'} - ${error.response?.data?.message || error.message}`);
-            console.log(`📝 Status: Token inválido ou instância deletada na UAZ API, removendo do banco local...`);
+            console.log(`\nðŸ—‘ï¸  ========================================`);
+            console.log(`ðŸ—‘ï¸  SINCRONIZAÃ‡ÃƒO: InstÃ¢ncia nÃ£o existe mais na UAZ API`);
+            console.log(`ðŸ—‘ï¸  ========================================`);
+            console.log(`ðŸ“¦ InstÃ¢ncia: ${instance.name} (ID: ${instance.id})`);
+            console.log(`ðŸ”‘ Token: ${instance.instance_token?.substring(0, 20)}...`);
+            console.log(`âŒ Erro: ${error.response?.status || 'Unknown'} - ${error.response?.data?.message || error.message}`);
+            console.log(`ðŸ“ Status: Token invÃ¡lido ou instÃ¢ncia deletada na UAZ API, removendo do banco local...`);
             
             try {
               // Deletar do banco local
@@ -491,24 +491,24 @@ router.get('/instances', async (req, res) => {
                 [instance.id, instance.tenant_id]
               );
               
-              console.log(`✅ Instância ${instance.name} (${instance.id}) removida do banco local com sucesso!`);
+              console.log(`âœ… InstÃ¢ncia ${instance.name} (${instance.id}) removida do banco local com sucesso!`);
               console.log(`========================================\n`);
               
               // Retornar null para filtrar depois
               return null;
             } catch (deleteError) {
-              console.error(`❌ Erro ao deletar instância do banco:`, deleteError.message);
+              console.error(`âŒ Erro ao deletar instÃ¢ncia do banco:`, deleteError.message);
             }
           } else {
-            // Outros erros apenas loga e mantém no banco
-            console.error(`⚠️ Erro ao verificar status de ${instance.name}:`, error.message);
+            // Outros erros apenas loga e mantÃ©m no banco
+            console.error(`âš ï¸ Erro ao verificar status de ${instance.name}:`, error.message);
           }
         }
 
         return instance;
       }));
 
-      // Filtrar instâncias null (que foram deletadas na UAZ API)
+      // Filtrar instÃ¢ncias null (que foram deletadas na UAZ API)
       const updatedInstances = instancesWithSync.filter(instance => instance !== null);
       
       return res.json({
@@ -532,18 +532,18 @@ router.get('/instances', async (req, res) => {
 
 /**
  * GET /api/uaz/instances/:id
- * Obtém detalhes de uma instância específica
+ * ObtÃ©m detalhes de uma instÃ¢ncia especÃ­fica
  */
 router.get('/instances/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // 🔒 SEGURANÇA: Filtrar por tenant_id (usando tenantQuery para respeitar RLS)
+    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id (usando tenantQuery para respeitar RLS)
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
     
@@ -564,7 +564,7 @@ router.get('/instances/:id', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -582,7 +582,7 @@ router.get('/instances/:id', async (req, res) => {
 
 /**
  * POST /api/uaz/instances
- * Cria nova instância UAZ
+ * Cria nova instÃ¢ncia UAZ
  */
 router.post('/instances', checkWhatsAppQR, checkWhatsAppLimit, async (req, res) => {
   try {
@@ -595,39 +595,39 @@ router.post('/instances', checkWhatsAppQR, checkWhatsAppLimit, async (req, res) 
       is_active = true
     } = req.body;
 
-    // Gerar nome automático se não fornecido
+    // Gerar nome automÃ¡tico se nÃ£o fornecido
     if (!name || name.trim() === '') {
       const timestamp = Date.now();
       name = `instancia_${timestamp}`;
-      console.log(`📝 Nome não fornecido, gerando automaticamente: ${name}`);
+      console.log(`ðŸ“ Nome nÃ£o fornecido, gerando automaticamente: ${name}`);
     }
 
-    // Gerar session_name automático se não fornecido
+    // Gerar session_name automÃ¡tico se nÃ£o fornecido
     if (!session_name || session_name.trim() === '') {
       // Se o nome foi fornecido, usar o nome como base para session_name
       if (name && name.trim() !== '') {
-        // Limpar o nome para criar um session_name válido (apenas letras e números)
+        // Limpar o nome para criar um session_name vÃ¡lido (apenas letras e nÃºmeros)
         session_name = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        console.log(`📝 Session name não fornecido, usando nome da conexão: ${session_name}`);
+        console.log(`ðŸ“ Session name nÃ£o fornecido, usando nome da conexÃ£o: ${session_name}`);
       } else {
-        // Se ambos estão vazios, gerar automaticamente
+        // Se ambos estÃ£o vazios, gerar automaticamente
         const timestamp = Date.now();
         const randomSuffix = Math.floor(Math.random() * 1000);
         session_name = `session${timestamp}${randomSuffix}`;
-        console.log(`📝 Session name não fornecido, gerando automaticamente: ${session_name}`);
+        console.log(`ðŸ“ Session name nÃ£o fornecido, gerando automaticamente: ${session_name}`);
       }
     }
 
-    // 🔒 SEGURANÇA: Obter tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Obter tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
-    // 🔗 BUSCAR WEBHOOK URL DO TENANT
+    // ðŸ”— BUSCAR WEBHOOK URL DO TENANT
     const tenantResult = await pool.query(
       'SELECT webhook_url FROM tenants WHERE id = $1',
       [tenantId]
@@ -636,16 +636,16 @@ router.post('/instances', checkWhatsAppQR, checkWhatsAppLimit, async (req, res) 
     if (tenantResult.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Tenant não encontrado'
+        error: 'Tenant nÃ£o encontrado'
       });
     }
     
     // Usar webhook do tenant (sobrescreve se veio no body)
     webhook_url = tenantResult.rows[0].webhook_url || webhook_url;
     
-    console.log('🔗 Webhook do tenant será usado:', webhook_url);
+    console.log('ðŸ”— Webhook do tenant serÃ¡ usado:', webhook_url);
 
-    // Verifica se o session_name já existe no tenant
+    // Verifica se o session_name jÃ¡ existe no tenant
     const existingSession = await pool.query(
       'SELECT id FROM uaz_instances WHERE session_name = $1 AND tenant_id = $2',
       [session_name, tenantId]
@@ -654,7 +654,7 @@ router.post('/instances', checkWhatsAppQR, checkWhatsAppLimit, async (req, res) 
     if (existingSession.rows.length > 0) {
       return res.status(400).json({
         success: false,
-        error: 'Já existe uma instância com esse nome de sessão'
+        error: 'JÃ¡ existe uma instÃ¢ncia com esse nome de sessÃ£o'
       });
     }
 
@@ -662,29 +662,29 @@ router.post('/instances', checkWhatsAppQR, checkWhatsAppLimit, async (req, res) 
     let createResponse = null;
     let usedCredentialId = null;
 
-    // Se não foi fornecido token, cria automaticamente via API UAZ
+    // Se nÃ£o foi fornecido token, cria automaticamente via API UAZ
     if (!instance_token || instance_token.trim() === '') {
-      // 🔑 BUSCAR CREDENCIAIS DO TENANT
+      // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
       const credentials = await getTenantUazapCredentials(tenantId);
-      console.log(`🔑 Usando credencial: "${credentials.credentialName}"`);
+      console.log(`ðŸ”‘ Usando credencial: "${credentials.credentialName}"`);
       console.log(`   URL: ${credentials.serverUrl}`);
       console.log(`   Credential ID: ${credentials.credentialId}`);
 
-      // 🔖 SALVAR qual credencial está sendo usada
+      // ðŸ”– SALVAR qual credencial estÃ¡ sendo usada
       usedCredentialId = credentials.credentialId;
 
-      // Criar instância do UazService com as credenciais corretas
+      // Criar instÃ¢ncia do UazService com as credenciais corretas
       const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-      // Obtém configuração do proxy se existir
+      // ObtÃ©m configuraÃ§Ã£o do proxy se existir
       let proxyConfig = null;
       if (proxy_id) {
-        // 🔒 SEGURANÇA: Buscar proxy COM filtro de tenant
+        // ðŸ”’ SEGURANÃ‡A: Buscar proxy COM filtro de tenant
         const tenantId = req.tenant?.id;
         if (!tenantId) {
           return res.status(401).json({
             success: false,
-            message: 'Tenant não identificado'
+            message: 'Tenant nÃ£o identificado'
           });
         }
         
@@ -700,31 +700,31 @@ router.post('/instances', checkWhatsAppQR, checkWhatsAppLimit, async (req, res) 
         }
       }
 
-      // Cria instância no UAZ e obtém o token (usando as credenciais corretas do tenant)
+      // Cria instÃ¢ncia no UAZ e obtÃ©m o token (usando as credenciais corretas do tenant)
       createResponse = await tenantUazService.createInstance(session_name, proxyConfig);
       
       if (!createResponse.success) {
         return res.status(400).json({
           success: false,
-          error: 'Erro ao criar instância no QR Connect: ' + createResponse.error
+          error: 'Erro ao criar instÃ¢ncia no QR Connect: ' + createResponse.error
         });
       }
 
       finalInstanceToken = createResponse.instanceToken;
 
-      // 🔗 CONFIGURAR WEBHOOK NA UAZ API
+      // ðŸ”— CONFIGURAR WEBHOOK NA UAZ API
       try {
         const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
         await tenantUazService.configureWebhook(finalInstanceToken, proxyConfig, webhook_url);
-        console.log('✅ Webhook configurado na UAZ API');
+        console.log('âœ… Webhook configurado na UAZ API');
       } catch (webhookError) {
-        console.warn('⚠️ Erro ao configurar webhook (não crítico):', webhookError.message);
-        // Não impede a criação da instância
+        console.warn('âš ï¸ Erro ao configurar webhook (nÃ£o crÃ­tico):', webhookError.message);
+        // NÃ£o impede a criaÃ§Ã£o da instÃ¢ncia
       }
     }
 
-    // 🔒 SEGURANÇA: Salva no banco com tenant_id E credential_id (usando tenantQuery para respeitar RLS)
-    console.log(`💾 Salvando instância com credencial ID: ${usedCredentialId || 'NULL (token manual)'}`);
+    // ðŸ”’ SEGURANÃ‡A: Salva no banco com tenant_id E credential_id (usando tenantQuery para respeitar RLS)
+    console.log(`ðŸ’¾ Salvando instÃ¢ncia com credencial ID: ${usedCredentialId || 'NULL (token manual)'}`);
     const insertResult = await tenantQuery(req, `
       INSERT INTO uaz_instances (
         name, session_name, instance_token, webhook_url, proxy_id, 
@@ -738,8 +738,8 @@ router.post('/instances', checkWhatsAppQR, checkWhatsAppLimit, async (req, res) 
       data: insertResult.rows[0],
       uaz_response: createResponse,
       message: createResponse 
-        ? 'Instância criada automaticamente com sucesso via QR Connect!'
-        : 'Instância cadastrada com sucesso! Agora você pode gerar o QR Code.'
+        ? 'InstÃ¢ncia criada automaticamente com sucesso via QR Connect!'
+        : 'InstÃ¢ncia cadastrada com sucesso! Agora vocÃª pode gerar o QR Code.'
     });
   } catch (error) {
     res.status(500).json({
@@ -751,7 +751,7 @@ router.post('/instances', checkWhatsAppQR, checkWhatsAppLimit, async (req, res) 
 
 /**
  * PUT /api/uaz/instances/:id
- * Atualiza instância UAZ (nome da instância E nome do perfil do WhatsApp)
+ * Atualiza instÃ¢ncia UAZ (nome da instÃ¢ncia E nome do perfil do WhatsApp)
  */
 router.put('/instances/:id', async (req, res) => {
   try {
@@ -764,16 +764,16 @@ router.put('/instances/:id', async (req, res) => {
       is_active
     } = req.body;
 
-    // 🔒 SEGURANÇA: Validar tenant
+    // ðŸ”’ SEGURANÃ‡A: Validar tenant
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
-    // Busca a instância atual para obter o token e proxy (usando tenantQuery para RLS)
+    // Busca a instÃ¢ncia atual para obter o token e proxy (usando tenantQuery para RLS)
     const currentInstance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -784,13 +784,13 @@ router.put('/instances/:id', async (req, res) => {
     if (currentInstance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
     const inst = currentInstance.rows[0];
     
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
     
@@ -803,9 +803,9 @@ router.put('/instances/:id', async (req, res) => {
 
     let messages = [];
 
-    // Atualiza nome da instância se foi alterado
+    // Atualiza nome da instÃ¢ncia se foi alterado
     if (name && name !== inst.name && inst.instance_token) {
-      console.log(`✏️ Atualizando nome da instância ${inst.name} → ${name} (ID: ${id})`);
+      console.log(`âœï¸ Atualizando nome da instÃ¢ncia ${inst.name} â†’ ${name} (ID: ${id})`);
       
       const updateResult = await tenantUazService.updateInstanceName(
         inst.instance_token, 
@@ -814,17 +814,17 @@ router.put('/instances/:id', async (req, res) => {
       );
 
       if (updateResult.success) {
-        console.log(`✅ Nome da instância atualizado com sucesso na API UAZ`);
-        messages.push('Nome da instância atualizado');
+        console.log(`âœ… Nome da instÃ¢ncia atualizado com sucesso na API UAZ`);
+        messages.push('Nome da instÃ¢ncia atualizado');
       } else {
-        console.warn(`⚠️ Aviso ao atualizar nome na API UAZ: ${updateResult.error}`);
+        console.warn(`âš ï¸ Aviso ao atualizar nome na API UAZ: ${updateResult.error}`);
       }
     }
 
     // Atualiza nome do perfil do WhatsApp se foi fornecido
     let updatedProfileName = profile_name;
     if (profile_name && profile_name.trim() !== '' && inst.instance_token && inst.is_connected) {
-      console.log(`👤 Atualizando nome do perfil do WhatsApp: ${profile_name} (ID: ${id})`);
+      console.log(`ðŸ‘¤ Atualizando nome do perfil do WhatsApp: ${profile_name} (ID: ${id})`);
       
       const profileResult = await tenantUazService.updateProfileName(
         inst.instance_token,
@@ -833,44 +833,44 @@ router.put('/instances/:id', async (req, res) => {
       );
 
       if (profileResult.success) {
-        console.log(`✅ Nome do perfil atualizado com sucesso no WhatsApp`);
+        console.log(`âœ… Nome do perfil atualizado com sucesso no WhatsApp`);
         messages.push('Nome do perfil do WhatsApp atualizado');
         
-        // ⏳ AGUARDA 3 SEGUNDOS PARA API UAZ SINCRONIZAR
-        console.log(`⏳ Aguardando 3 segundos para API UAZ sincronizar o nome...`);
+        // â³ AGUARDA 3 SEGUNDOS PARA API UAZ SINCRONIZAR
+        console.log(`â³ Aguardando 3 segundos para API UAZ sincronizar o nome...`);
         await new Promise(resolve => setTimeout(resolve, 3000));
         
-        // 🔄 BUSCA O NOME ATUALIZADO DO WHATSAPP
-        console.log(`🔍 Buscando nome do perfil atualizado do WhatsApp...`);
+        // ðŸ”„ BUSCA O NOME ATUALIZADO DO WHATSAPP
+        console.log(`ðŸ” Buscando nome do perfil atualizado do WhatsApp...`);
         try {
           const statusResult = await tenantUazService.getStatus(inst.instance_token, proxyConfig);
           if (statusResult.success && statusResult.data) {
-            // Busca no lugar correto de acordo com a documentação UAZ API
+            // Busca no lugar correto de acordo com a documentaÃ§Ã£o UAZ API
             const realProfileName = statusResult.data.instance?.profileName || profile_name;
             
-            console.log('🔍 DEBUG - statusResult.data.instance.profileName:', statusResult.data.instance?.profileName);
-            console.log('🔍 DEBUG - Nome real do perfil:', realProfileName);
+            console.log('ðŸ” DEBUG - statusResult.data.instance.profileName:', statusResult.data.instance?.profileName);
+            console.log('ðŸ” DEBUG - Nome real do perfil:', realProfileName);
             
             if (realProfileName && realProfileName !== profile_name) {
-              console.log(`✅ Nome real do perfil obtido: ${realProfileName} (diferente do enviado: ${profile_name})`);
+              console.log(`âœ… Nome real do perfil obtido: ${realProfileName} (diferente do enviado: ${profile_name})`);
               updatedProfileName = realProfileName;
             } else {
-              console.log(`✅ Nome do perfil confirmado: ${realProfileName}`);
+              console.log(`âœ… Nome do perfil confirmado: ${realProfileName}`);
               updatedProfileName = realProfileName;
             }
           }
         } catch (statusError) {
-          console.warn(`⚠️ Não foi possível buscar nome atualizado, usando o enviado:`, statusError.message);
+          console.warn(`âš ï¸ NÃ£o foi possÃ­vel buscar nome atualizado, usando o enviado:`, statusError.message);
         }
       } else {
-        console.warn(`⚠️ Aviso ao atualizar nome do perfil: ${profileResult.error}`);
+        console.warn(`âš ï¸ Aviso ao atualizar nome do perfil: ${profileResult.error}`);
         if (profileResult.error.includes('No session')) {
-          messages.push('⚠️ Conexão deve estar ativa para atualizar nome do perfil');
+          messages.push('âš ï¸ ConexÃ£o deve estar ativa para atualizar nome do perfil');
         }
       }
     }
 
-    // 🔒 SEGURANÇA: Atualiza no banco de dados local COM filtro tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Atualiza no banco de dados local COM filtro tenant_id
     const result = await tenantQuery(req, `
       UPDATE uaz_instances 
       SET name = COALESCE($1, name),
@@ -883,11 +883,11 @@ router.put('/instances/:id', async (req, res) => {
       RETURNING *
     `, [name, updatedProfileName, webhook_url, proxy_id, is_active, id, tenantId]);
 
-    console.log(`✅ Instância ${result.rows[0].name} (ID: ${id}) atualizada no banco de dados local`);
+    console.log(`âœ… InstÃ¢ncia ${result.rows[0].name} (ID: ${id}) atualizada no banco de dados local`);
 
     const message = messages.length > 0 
       ? messages.join(' e ') 
-      : 'Instância atualizada com sucesso';
+      : 'InstÃ¢ncia atualizada com sucesso';
 
     res.json({
       success: true,
@@ -895,7 +895,7 @@ router.put('/instances/:id', async (req, res) => {
       message: message
     });
   } catch (error) {
-    console.error('❌ Erro ao atualizar instância:', error);
+    console.error('âŒ Erro ao atualizar instÃ¢ncia:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -911,18 +911,18 @@ router.put('/instances/:id/sync-profile', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 🔒 SEGURANÇA: Obter tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Obter tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
-    console.log(`🔄 Sincronizando nome do perfil da instância ID: ${id}`);
+    console.log(`ðŸ”„ Sincronizando nome do perfil da instÃ¢ncia ID: ${id}`);
 
-    // Busca a instância atual (usando tenantQuery para RLS)
+    // Busca a instÃ¢ncia atual (usando tenantQuery para RLS)
     const currentInstance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -933,7 +933,7 @@ router.put('/instances/:id/sync-profile', async (req, res) => {
     if (currentInstance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -942,14 +942,14 @@ router.put('/instances/:id/sync-profile', async (req, res) => {
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Não é possível sincronizar.'
+        error: 'InstÃ¢ncia sem token. NÃ£o Ã© possÃ­vel sincronizar.'
       });
     }
 
     if (!inst.is_connected) {
       return res.status(400).json({
         success: false,
-        error: 'Instância não está conectada. Conecte-se primeiro.'
+        error: 'InstÃ¢ncia nÃ£o estÃ¡ conectada. Conecte-se primeiro.'
       });
     }
 
@@ -960,12 +960,12 @@ router.put('/instances/:id/sync-profile', async (req, res) => {
       password: inst.password
     } : null;
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
     // Busca o status atual do WhatsApp
-    console.log(`🔍 Buscando nome do perfil atual do WhatsApp...`);
+    console.log(`ðŸ” Buscando nome do perfil atual do WhatsApp...`);
     const statusResult = await tenantUazService.getStatus(inst.instance_token, proxyConfig);
 
     if (!statusResult.success) {
@@ -975,22 +975,22 @@ router.put('/instances/:id/sync-profile', async (req, res) => {
       });
     }
 
-    // Extrai o profileName de acordo com a documentação UAZ API
-    // O profileName está em: statusResult.data.instance.profileName
+    // Extrai o profileName de acordo com a documentaÃ§Ã£o UAZ API
+    // O profileName estÃ¡ em: statusResult.data.instance.profileName
     const profileName = statusResult.data?.instance?.profileName || null;
     
-    console.log('🔍 DEBUG - profileName buscado em statusResult.data.instance.profileName:', profileName);
-    console.log('🔍 DEBUG - Estrutura de statusResult.data.instance:');
+    console.log('ðŸ” DEBUG - profileName buscado em statusResult.data.instance.profileName:', profileName);
+    console.log('ðŸ” DEBUG - Estrutura de statusResult.data.instance:');
     console.log(JSON.stringify(statusResult.data?.instance, null, 2));
 
     if (!profileName) {
       return res.status(404).json({
         success: false,
-        error: 'Nome do perfil não disponível no WhatsApp'
+        error: 'Nome do perfil nÃ£o disponÃ­vel no WhatsApp'
       });
     }
 
-    // 🔒 SEGURANÇA: Atualiza no banco de dados COM tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Atualiza no banco de dados COM tenant_id
     await tenantQuery(req, `
       UPDATE uaz_instances 
       SET profile_name = $1,
@@ -998,7 +998,7 @@ router.put('/instances/:id/sync-profile', async (req, res) => {
       WHERE id = $2 AND tenant_id = $3
     `, [profileName, id, tenantId]);
 
-    console.log(`✅ Nome do perfil sincronizado: ${profileName}`);
+    console.log(`âœ… Nome do perfil sincronizado: ${profileName}`);
 
     res.json({
       success: true,
@@ -1006,7 +1006,7 @@ router.put('/instances/:id/sync-profile', async (req, res) => {
       message: 'Nome do perfil sincronizado com sucesso'
     });
   } catch (error) {
-    console.error('❌ Erro ao sincronizar perfil:', error);
+    console.error('âŒ Erro ao sincronizar perfil:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1023,16 +1023,16 @@ router.post('/instances/:id/profile-image', async (req, res) => {
     const { id } = req.params;
     const { image } = req.body;
 
-    console.log(`📸 Atualizando foto do perfil da instância ID: ${id}`);
+    console.log(`ðŸ“¸ Atualizando foto do perfil da instÃ¢ncia ID: ${id}`);
 
     if (!image || image.trim() === '') {
       return res.status(400).json({
         success: false,
-        error: 'URL da imagem é obrigatória'
+        error: 'URL da imagem Ã© obrigatÃ³ria'
       });
     }
 
-    // Busca a instância atual
+    // Busca a instÃ¢ncia atual
     const currentInstance = await pool.query(`
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -1043,7 +1043,7 @@ router.post('/instances/:id/profile-image', async (req, res) => {
     if (currentInstance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -1052,14 +1052,14 @@ router.post('/instances/:id/profile-image', async (req, res) => {
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Não é possível atualizar foto.'
+        error: 'InstÃ¢ncia sem token. NÃ£o Ã© possÃ­vel atualizar foto.'
       });
     }
 
     if (!inst.is_connected) {
       return res.status(400).json({
         success: false,
-        error: 'Instância não está conectada. Conecte-se primeiro.'
+        error: 'InstÃ¢ncia nÃ£o estÃ¡ conectada. Conecte-se primeiro.'
       });
     }
 
@@ -1070,12 +1070,12 @@ router.post('/instances/:id/profile-image', async (req, res) => {
       password: inst.password
     } : null;
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
     // Atualiza a foto do perfil
-    console.log(`📤 Enviando foto do perfil para API UAZ...`);
+    console.log(`ðŸ“¤ Enviando foto do perfil para API UAZ...`);
     const imageResult = await tenantUazService.updateProfileImage(inst.instance_token, image, proxyConfig);
 
     if (!imageResult.success) {
@@ -1085,7 +1085,7 @@ router.post('/instances/:id/profile-image', async (req, res) => {
       });
     }
 
-    console.log(`✅ Foto do perfil atualizada com sucesso`);
+    console.log(`âœ… Foto do perfil atualizada com sucesso`);
 
     res.json({
       success: true,
@@ -1093,7 +1093,7 @@ router.post('/instances/:id/profile-image', async (req, res) => {
       data: imageResult.data
     });
   } catch (error) {
-    console.error('❌ Erro ao atualizar foto do perfil:', error);
+    console.error('âŒ Erro ao atualizar foto do perfil:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1103,21 +1103,21 @@ router.post('/instances/:id/profile-image', async (req, res) => {
 
 /**
  * DELETE /api/uaz/instances/delete-all
- * Remove TODAS as instâncias UAZ (deleta permanentemente da API UAZ também)
+ * Remove TODAS as instÃ¢ncias UAZ (deleta permanentemente da API UAZ tambÃ©m)
  */
 router.delete('/instances/delete-all', async (req, res) => {
   try {
-    console.log('\n🗑️ ========================================');
-    console.log('🗑️ EXCLUINDO TODAS AS INSTÂNCIAS UAZ');
-    console.log('🗑️ ========================================\n');
+    console.log('\nðŸ—‘ï¸ ========================================');
+    console.log('ðŸ—‘ï¸ EXCLUINDO TODAS AS INSTÃ‚NCIAS UAZ');
+    console.log('ðŸ—‘ï¸ ========================================\n');
 
-    // Busca todas as instâncias
-    // 🔒 SEGURANÇA: Filtrar por tenant_id
+    // Busca todas as instÃ¢ncias
+    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        message: 'Tenant não identificado'
+        message: 'Tenant nÃ£o identificado'
       });
     }
     
@@ -1133,24 +1133,24 @@ router.delete('/instances/delete-all', async (req, res) => {
     if (instances.length === 0) {
       return res.json({
         success: true,
-        message: 'Nenhuma instância para excluir',
+        message: 'Nenhuma instÃ¢ncia para excluir',
         deleted: 0
       });
     }
 
-    console.log(`📋 Total de instâncias encontradas: ${instances.length}`);
+    console.log(`ðŸ“‹ Total de instÃ¢ncias encontradas: ${instances.length}`);
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
     let deletedFromAPI = 0;
     let failedFromAPI = 0;
 
-    // Deleta cada instância da API UAZ
+    // Deleta cada instÃ¢ncia da API UAZ
     for (const inst of instances) {
       if (inst.instance_token) {
-        console.log(`\n🗑️ Deletando: ${inst.name} (ID: ${inst.id})`);
+        console.log(`\nðŸ—‘ï¸ Deletando: ${inst.name} (ID: ${inst.id})`);
         
         const proxyConfig = inst.host ? {
           host: inst.host,
@@ -1162,21 +1162,21 @@ router.delete('/instances/delete-all', async (req, res) => {
         const deleteResult = await tenantUazService.deleteInstance(inst.instance_token, proxyConfig);
         
         if (deleteResult.success) {
-          console.log(`   ✅ Deletada com sucesso da API UAZ`);
+          console.log(`   âœ… Deletada com sucesso da API UAZ`);
           deletedFromAPI++;
         } else {
-          console.warn(`   ⚠️ Erro ao deletar da API UAZ: ${deleteResult.error}`);
+          console.warn(`   âš ï¸ Erro ao deletar da API UAZ: ${deleteResult.error}`);
           failedFromAPI++;
         }
       } else {
-        console.log(`\n   ℹ️ ${inst.name} (ID: ${inst.id}) - Sem token, pulando API UAZ`);
+        console.log(`\n   â„¹ï¸ ${inst.name} (ID: ${inst.id}) - Sem token, pulando API UAZ`);
       }
     }
 
-    // Remove todas as referências antes de deletar as instâncias
-    console.log('\n🧹 Removendo todas as referências...');
+    // Remove todas as referÃªncias antes de deletar as instÃ¢ncias
+    console.log('\nðŸ§¹ Removendo todas as referÃªncias...');
     
-    // 🔒 SEGURANÇA: Buscar IDs das instâncias do tenant para filtrar
+    // ðŸ”’ SEGURANÃ‡A: Buscar IDs das instÃ¢ncias do tenant para filtrar
     const instanceIds = instances.map(inst => inst.id);
     
     // 1. Remove apenas de qr_campaign_templates DO TENANT (via instance_id) - usando tenantQuery
@@ -1184,36 +1184,36 @@ router.delete('/instances/delete-all', async (req, res) => {
       'DELETE FROM qr_campaign_templates WHERE instance_id = ANY($1::int[])',
       [instanceIds]
     );
-    console.log(`   ├─ Removidas ${qrCampaignTemplatesResult.rowCount || 0} referências em qr_campaign_templates`);
+    console.log(`   â”œâ”€ Removidas ${qrCampaignTemplatesResult.rowCount || 0} referÃªncias em qr_campaign_templates`);
     
-    // 2. Atualiza apenas qr_campaign_messages DO TENANT para NULL (preserva histórico) - usando tenantQuery
+    // 2. Atualiza apenas qr_campaign_messages DO TENANT para NULL (preserva histÃ³rico) - usando tenantQuery
     const qrCampaignMessagesResult = await tenantQuery(req,
       'UPDATE qr_campaign_messages SET instance_id = NULL WHERE instance_id = ANY($1::int[])',
       [instanceIds]
     );
-    console.log(`   ├─ Atualizadas ${qrCampaignMessagesResult.rowCount || 0} mensagens em qr_campaign_messages`);
+    console.log(`   â”œâ”€ Atualizadas ${qrCampaignMessagesResult.rowCount || 0} mensagens em qr_campaign_messages`);
     
     // 3. Deleta todas do banco de dados local DO TENANT (usando tenantQuery para respeitar RLS)
     const deleteResult = await tenantQuery(req, 'DELETE FROM uaz_instances WHERE tenant_id = $1', [tenantId]);
     const deletedLocal = deleteResult.rowCount || 0;
 
-    console.log('\n📊 ========================================');
-    console.log(`📊 RESUMO DA EXCLUSÃO:`);
-    console.log(`   ├─ Total de instâncias: ${instances.length}`);
-    console.log(`   ├─ Deletadas da API UAZ: ${deletedFromAPI}`);
-    console.log(`   ├─ Falhas na API UAZ: ${failedFromAPI}`);
-    console.log(`   └─ Removidas do banco local: ${deletedLocal}`);
-    console.log('📊 ========================================\n');
+    console.log('\nðŸ“Š ========================================');
+    console.log(`ðŸ“Š RESUMO DA EXCLUSÃƒO:`);
+    console.log(`   â”œâ”€ Total de instÃ¢ncias: ${instances.length}`);
+    console.log(`   â”œâ”€ Deletadas da API UAZ: ${deletedFromAPI}`);
+    console.log(`   â”œâ”€ Falhas na API UAZ: ${failedFromAPI}`);
+    console.log(`   â””â”€ Removidas do banco local: ${deletedLocal}`);
+    console.log('ðŸ“Š ========================================\n');
 
     res.json({
       success: true,
-      message: `${deletedLocal} instância(s) removida(s) com sucesso`,
+      message: `${deletedLocal} instÃ¢ncia(s) removida(s) com sucesso`,
       deleted: deletedLocal,
       deletedFromAPI,
       failedFromAPI
     });
   } catch (error) {
-    console.error('❌ Erro ao remover todas as instâncias:', error);
+    console.error('âŒ Erro ao remover todas as instÃ¢ncias:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1223,19 +1223,19 @@ router.delete('/instances/delete-all', async (req, res) => {
 
 /**
  * DELETE /api/uaz/instances/:id
- * Remove instância UAZ (deleta permanentemente da API UAZ também)
+ * Remove instÃ¢ncia UAZ (deleta permanentemente da API UAZ tambÃ©m)
  */
 router.delete('/instances/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Busca a instância
-    // 🔒 SEGURANÇA: Filtrar por tenant_id
+    // Busca a instÃ¢ncia
+    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        message: 'Tenant não identificado'
+        message: 'Tenant nÃ£o identificado'
       });
     }
     
@@ -1243,60 +1243,60 @@ router.delete('/instances/:id', async (req, res) => {
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
     const inst = instance.rows[0];
     
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
     
     // Deleta permanentemente da API UAZ (se tiver token)
     if (inst.instance_token) {
-      console.log(`🗑️ Deletando instância ${inst.name} (ID: ${id}) da API UAZ...`);
+      console.log(`ðŸ—‘ï¸ Deletando instÃ¢ncia ${inst.name} (ID: ${id}) da API UAZ...`);
       
       const deleteResult = await tenantUazService.deleteInstance(inst.instance_token);
       
       if (deleteResult.success) {
-        console.log(`✅ Instância ${inst.name} deletada com sucesso da API UAZ`);
+        console.log(`âœ… InstÃ¢ncia ${inst.name} deletada com sucesso da API UAZ`);
       } else {
-        console.warn(`⚠️ Aviso ao deletar da API UAZ: ${deleteResult.error}`);
-        console.warn(`   → Continuando com a exclusão do banco de dados local...`);
+        console.warn(`âš ï¸ Aviso ao deletar da API UAZ: ${deleteResult.error}`);
+        console.warn(`   â†’ Continuando com a exclusÃ£o do banco de dados local...`);
       }
     } else {
-      console.log(`ℹ️ Instância ${inst.name} não possui token, removendo apenas do banco local`);
+      console.log(`â„¹ï¸ InstÃ¢ncia ${inst.name} nÃ£o possui token, removendo apenas do banco local`);
     }
 
-    // Remove todas as referências antes de deletar a instância
-    console.log(`🧹 Removendo referências da instância ${inst.name}...`);
+    // Remove todas as referÃªncias antes de deletar a instÃ¢ncia
+    console.log(`ðŸ§¹ Removendo referÃªncias da instÃ¢ncia ${inst.name}...`);
     
-    // 1. Remove de qr_campaign_templates (referência a instance_id) - usando tenantQuery para RLS
+    // 1. Remove de qr_campaign_templates (referÃªncia a instance_id) - usando tenantQuery para RLS
     const qrCampaignTemplatesResult = await tenantQuery(req,
       'DELETE FROM qr_campaign_templates WHERE instance_id = $1',
       [id]
     );
-    console.log(`   ├─ Removidas ${qrCampaignTemplatesResult.rowCount || 0} referências em qr_campaign_templates`);
+    console.log(`   â”œâ”€ Removidas ${qrCampaignTemplatesResult.rowCount || 0} referÃªncias em qr_campaign_templates`);
     
-    // 2. Atualiza qr_campaign_messages para NULL ao invés de deletar (preserva histórico)
+    // 2. Atualiza qr_campaign_messages para NULL ao invÃ©s de deletar (preserva histÃ³rico)
     const qrCampaignMessagesResult = await tenantQuery(req,
       'UPDATE qr_campaign_messages SET instance_id = NULL WHERE instance_id = $1',
       [id]
     );
-    console.log(`   ├─ Atualizadas ${qrCampaignMessagesResult.rowCount || 0} mensagens em qr_campaign_messages`);
+    console.log(`   â”œâ”€ Atualizadas ${qrCampaignMessagesResult.rowCount || 0} mensagens em qr_campaign_messages`);
     
-    // 3. Remove do banco de dados local (já com tenant_id validado acima)
+    // 3. Remove do banco de dados local (jÃ¡ com tenant_id validado acima)
     await tenantQuery(req, 'DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     
-    console.log(`✅ Instância ${inst.name} (ID: ${id}) removida do banco de dados local`);
+    console.log(`âœ… InstÃ¢ncia ${inst.name} (ID: ${id}) removida do banco de dados local`);
 
     res.json({
       success: true,
-      message: 'Instância removida com sucesso da plataforma e do QR Connect'
+      message: 'InstÃ¢ncia removida com sucesso da plataforma e do QR Connect'
     });
   } catch (error) {
-    console.error('❌ Erro ao remover instância:', error);
+    console.error('âŒ Erro ao remover instÃ¢ncia:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1306,7 +1306,7 @@ router.delete('/instances/:id', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/:id/clean-duplicates
- * Limpa duplicatas de uma instância conectada
+ * Limpa duplicatas de uma instÃ¢ncia conectada
  */
 router.post('/instances/:id/clean-duplicates', async (req, res) => {
   try {
@@ -1314,49 +1314,49 @@ router.post('/instances/:id/clean-duplicates', async (req, res) => {
     const tenantId = req.tenant?.id;
     
     if (!tenantId) {
-      return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      return res.status(401).json({ success: false, error: 'Tenant nÃ£o identificado' });
     }
     
-    console.log('\n🧹 ========================================');
-    console.log('🧹 LIMPEZA DE DUPLICATAS - INICIANDO');
-    console.log('🧹 ========================================');
-    console.log('📋 Instância ID:', id);
+    console.log('\nðŸ§¹ ========================================');
+    console.log('ðŸ§¹ LIMPEZA DE DUPLICATAS - INICIANDO');
+    console.log('ðŸ§¹ ========================================');
+    console.log('ðŸ“‹ InstÃ¢ncia ID:', id);
     
-    // Buscar instância no banco local
+    // Buscar instÃ¢ncia no banco local
     const localInstance = await tenantQuery(req, `
       SELECT * FROM uaz_instances WHERE id = $1 AND tenant_id = $2
     `, [id, tenantId]);
     
     if (localInstance.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Instância não encontrada' });
+      return res.status(404).json({ success: false, error: 'InstÃ¢ncia nÃ£o encontrada' });
     }
     
     const instance = localInstance.rows[0];
     const phoneNumber = instance.phone_number;
     
     if (!phoneNumber) {
-      return res.json({ success: false, error: 'Instância sem número de telefone' });
+      return res.json({ success: false, error: 'InstÃ¢ncia sem nÃºmero de telefone' });
     }
     
-    console.log('📱 Número da instância:', phoneNumber);
-    console.log('🔑 Token da instância:', instance.instance_token?.substring(0, 20) + '...');
+    console.log('ðŸ“± NÃºmero da instÃ¢ncia:', phoneNumber);
+    console.log('ðŸ”‘ Token da instÃ¢ncia:', instance.instance_token?.substring(0, 20) + '...');
     
     // Buscar credenciais
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
     
-    // Buscar TODAS as instâncias na UAZ API
-    console.log('🔍 Buscando todas as instâncias na UAZ API...');
+    // Buscar TODAS as instÃ¢ncias na UAZ API
+    console.log('ðŸ” Buscando todas as instÃ¢ncias na UAZ API...');
     const fetchResult = await tenantUazService.fetchInstances();
     
     if (!fetchResult.success) {
-      return res.json({ success: false, error: 'Falha ao buscar instâncias da UAZ API' });
+      return res.json({ success: false, error: 'Falha ao buscar instÃ¢ncias da UAZ API' });
     }
     
     const allInstances = fetchResult.instances || [];
-    console.log(`📊 Total de instâncias na UAZ API: ${allInstances.length}`);
+    console.log(`ðŸ“Š Total de instÃ¢ncias na UAZ API: ${allInstances.length}`);
     
-    // Procurar duplicatas com o mesmo número
+    // Procurar duplicatas com o mesmo nÃºmero
     const duplicates = allInstances.filter(uazInst => {
       const uazPhone = uazInst.owner || uazInst.phoneNumber || '';
       const match = phonesMatch(phoneNumber, uazPhone);
@@ -1364,11 +1364,11 @@ router.post('/instances/:id/clean-duplicates', async (req, res) => {
       return match && isDifferent;
     });
     
-    console.log(`🔍 Duplicatas encontradas: ${duplicates.length}`);
+    console.log(`ðŸ” Duplicatas encontradas: ${duplicates.length}`);
     
     if (duplicates.length === 0) {
-      console.log('✅ Nenhuma duplicata encontrada!');
-      console.log('🧹 ========================================\n');
+      console.log('âœ… Nenhuma duplicata encontrada!');
+      console.log('ðŸ§¹ ========================================\n');
       return res.json({ success: true, message: 'Nenhuma duplicata encontrada', deleted: 0 });
     }
     
@@ -1379,26 +1379,26 @@ router.post('/instances/:id/clean-duplicates', async (req, res) => {
     for (const duplicate of duplicates) {
       const isConnected = duplicate.status === 'connected' || duplicate.state === 'open' || duplicate.connected === true;
       
-      console.log('\n📋 Duplicata encontrada:');
-      console.log('   └─ Token:', duplicate.token?.substring(0, 20) + '...');
-      console.log('   └─ Status:', isConnected ? '🟢 CONECTADA' : '🔴 DESCONECTADA');
-      console.log('   └─ Nome:', duplicate.name);
+      console.log('\nðŸ“‹ Duplicata encontrada:');
+      console.log('   â””â”€ Token:', duplicate.token?.substring(0, 20) + '...');
+      console.log('   â””â”€ Status:', isConnected ? 'ðŸŸ¢ CONECTADA' : 'ðŸ”´ DESCONECTADA');
+      console.log('   â””â”€ Nome:', duplicate.name);
       
       if (isConnected) {
-        // ✅ CASO 1: Duplicata está CONECTADA
-        // REGRA: Deletar a instância ATUAL e importar a ANTIGA
-        console.log('✅ Duplicata está CONECTADA! Mantendo a antiga e removendo a atual...');
+        // âœ… CASO 1: Duplicata estÃ¡ CONECTADA
+        // REGRA: Deletar a instÃ¢ncia ATUAL e importar a ANTIGA
+        console.log('âœ… Duplicata estÃ¡ CONECTADA! Mantendo a antiga e removendo a atual...');
         
         try {
-          // 1. Verificar se a duplicata já está no banco local
+          // 1. Verificar se a duplicata jÃ¡ estÃ¡ no banco local
           const localDuplicate = await tenantQuery(req, `
             SELECT id FROM uaz_instances 
             WHERE instance_token = $1 AND tenant_id = $2
           `, [duplicate.token, tenantId]);
           
-          // 2. Se NÃO estiver, importar
+          // 2. Se NÃƒO estiver, importar
           if (localDuplicate.rows.length === 0) {
-            console.log('📥 Importando instância conectada para o banco local...');
+            console.log('ðŸ“¥ Importando instÃ¢ncia conectada para o banco local...');
             
             const proxyConfig = instance.proxy_id ? await tenantQuery(req, `
               SELECT * FROM proxies WHERE id = $1
@@ -1422,38 +1422,38 @@ router.post('/instances/:id/clean-duplicates', async (req, res) => {
               proxyId
             ]);
             
-            console.log('✅ Instância conectada importada com sucesso!');
+            console.log('âœ… InstÃ¢ncia conectada importada com sucesso!');
           } else {
-            console.log('ℹ️  Instância conectada já existe no banco local');
+            console.log('â„¹ï¸  InstÃ¢ncia conectada jÃ¡ existe no banco local');
           }
           
-          // 3. Deletar a instância ATUAL (nova) do banco local
-          console.log('🗑️  Deletando instância atual (nova) do banco local...');
+          // 3. Deletar a instÃ¢ncia ATUAL (nova) do banco local
+          console.log('ðŸ—‘ï¸  Deletando instÃ¢ncia atual (nova) do banco local...');
           await tenantQuery(req, `
             DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2
           `, [id, tenantId]);
-          console.log('✅ Instância atual deletada!');
+          console.log('âœ… InstÃ¢ncia atual deletada!');
           
           keptOldConnected = true;
           deletedCount++; // Conta como "tratada"
           
         } catch (err) {
-          console.error('❌ Erro ao tratar duplicata conectada:', err.message);
+          console.error('âŒ Erro ao tratar duplicata conectada:', err.message);
         }
         
       } else {
-        // 🗑️ CASO 2: Duplicata está DESCONECTADA
+        // ðŸ—‘ï¸ CASO 2: Duplicata estÃ¡ DESCONECTADA
         // REGRA: Deletar a duplicata antiga e manter a atual
-        console.log('🗑️  Duplicata está DESCONECTADA! Deletando antiga...');
+        console.log('ðŸ—‘ï¸  Duplicata estÃ¡ DESCONECTADA! Deletando antiga...');
         
         try {
           // Deletar da UAZ API
           const deleteResult = await tenantUazService.deleteInstance(duplicate.token, null);
           
           if (deleteResult.success) {
-            console.log('✅ Deletada da UAZ API com sucesso!');
+            console.log('âœ… Deletada da UAZ API com sucesso!');
             
-            // Se estiver no banco local, deletar também
+            // Se estiver no banco local, deletar tambÃ©m
             const localDuplicate = await tenantQuery(req, `
               SELECT id FROM uaz_instances 
               WHERE instance_token = $1 AND tenant_id = $2
@@ -1463,27 +1463,27 @@ router.post('/instances/:id/clean-duplicates', async (req, res) => {
               await tenantQuery(req, `
                 DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2
               `, [localDuplicate.rows[0].id, tenantId]);
-              console.log('✅ Deletada do banco local também!');
+              console.log('âœ… Deletada do banco local tambÃ©m!');
             }
             
             deletedCount++;
           } else {
-            console.warn('⚠️  Falha ao deletar:', deleteResult.error);
+            console.warn('âš ï¸  Falha ao deletar:', deleteResult.error);
           }
         } catch (err) {
-          console.error('❌ Erro ao deletar duplicata desconectada:', err.message);
+          console.error('âŒ Erro ao deletar duplicata desconectada:', err.message);
         }
       }
     }
     
-    console.log(`\n✅ Limpeza concluída! ${deletedCount} duplicata(s) tratada(s)`);
-    console.log('🧹 ========================================\n');
+    console.log(`\nâœ… Limpeza concluÃ­da! ${deletedCount} duplicata(s) tratada(s)`);
+    console.log('ðŸ§¹ ========================================\n');
     
     if (keptOldConnected) {
-      // Se manteve uma duplicata conectada, a instância atual foi deletada
+      // Se manteve uma duplicata conectada, a instÃ¢ncia atual foi deletada
       res.json({
         success: true,
-        message: 'Duplicata conectada encontrada e mantida. Instância atual foi removida.',
+        message: 'Duplicata conectada encontrada e mantida. InstÃ¢ncia atual foi removida.',
         deleted: deletedCount,
         keptOldConnected: true,
         redirect: true
@@ -1500,29 +1500,29 @@ router.post('/instances/:id/clean-duplicates', async (req, res) => {
     }
     
   } catch (error) {
-    console.error('❌ Erro na limpeza de duplicatas:', error);
+    console.error('âŒ Erro na limpeza de duplicatas:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
  * GET /api/uaz/instances/:id/qrcode
- * Obtém QR Code de uma instância
+ * ObtÃ©m QR Code de uma instÃ¢ncia
  */
 router.get('/instances/:id/qrcode', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 🔒 SEGURANÇA: Obter tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Obter tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
-    // Busca instância (com validação de tenant, usando tenantQuery para respeitar RLS)
+    // Busca instÃ¢ncia (com validaÃ§Ã£o de tenant, usando tenantQuery para respeitar RLS)
     const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -1533,7 +1533,7 @@ router.get('/instances/:id/qrcode', async (req, res) => {
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -1543,11 +1543,11 @@ router.get('/instances/:id/qrcode', async (req, res) => {
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Recrie a instância.'
+        error: 'InstÃ¢ncia sem token. Recrie a instÃ¢ncia.'
       });
     }
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
@@ -1558,43 +1558,43 @@ router.get('/instances/:id/qrcode', async (req, res) => {
       password: inst.password
     } : null;
 
-    // 🔗 CONFIGURAR WEBHOOK NA UAZ API (antes de obter QR Code)
+    // ðŸ”— CONFIGURAR WEBHOOK NA UAZ API (antes de obter QR Code)
     try {
       const webhookUrl = inst.webhook_url;
       if (webhookUrl) {
         await tenantUazService.configureWebhook(inst.instance_token, proxyConfig, webhookUrl);
-        console.log('✅ Webhook configurado na UAZ API:', webhookUrl);
+        console.log('âœ… Webhook configurado na UAZ API:', webhookUrl);
       }
     } catch (webhookError) {
-      console.warn('⚠️ Erro ao configurar webhook (não crítico):', webhookError.message);
+      console.warn('âš ï¸ Erro ao configurar webhook (nÃ£o crÃ­tico):', webhookError.message);
     }
 
-    // Obtém QR Code usando instance_token e credenciais corretas do tenant
+    // ObtÃ©m QR Code usando instance_token e credenciais corretas do tenant
     const qrResult = await tenantUazService.getQRCode(inst.instance_token, inst.phone_number, proxyConfig);
 
-    console.log('\n🔍 ============ VALIDAÇÃO DE CONEXÃO ============');
-    console.log('📋 Instância:', inst.name, '(ID:', id, ')');
+    console.log('\nðŸ” ============ VALIDAÃ‡ÃƒO DE CONEXÃƒO ============');
+    console.log('ðŸ“‹ InstÃ¢ncia:', inst.name, '(ID:', id, ')');
     
     if (qrResult.success) {
-      // VALIDAÇÃO RIGOROSA: Múltiplas verificações
+      // VALIDAÃ‡ÃƒO RIGOROSA: MÃºltiplas verificaÃ§Ãµes
       const hasQRCode = qrResult.qrcode && qrResult.qrcode.length > 0;
       const connectedFlag = qrResult.connected === true;
       const loggedInFlag = qrResult.loggedIn === true;
       const instanceState = qrResult.state;
       const instanceStatus = qrResult.data?.instance?.status;
       
-      // Considerar válido se:
-      // - instance.state é 'open' ou 'connected' OU
-      // - instance.status é 'connected' (quando state é undefined)
+      // Considerar vÃ¡lido se:
+      // - instance.state Ã© 'open' ou 'connected' OU
+      // - instance.status Ã© 'connected' (quando state Ã© undefined)
       const hasValidState = instanceState === 'open' || instanceState === 'connected';
       const hasValidStatus = instanceStatus === 'connected';
       const validSession = hasValidState || hasValidStatus;
       
-      // REGRA: Se tem QR code = NÃO está conectado (obviamente)
-      // REGRA: Só está conectado se flags E (state OU status) estiverem corretos
+      // REGRA: Se tem QR code = NÃƒO estÃ¡ conectado (obviamente)
+      // REGRA: SÃ³ estÃ¡ conectado se flags E (state OU status) estiverem corretos
       const isConnected = !hasQRCode && (connectedFlag || loggedInFlag) && validSession;
       
-      // Status baseado em análise completa
+      // Status baseado em anÃ¡lise completa
       let status = 'disconnected';
       if (isConnected) {
         status = 'connected';
@@ -1602,15 +1602,15 @@ router.get('/instances/:id/qrcode', async (req, res) => {
         status = 'connecting'; // Tem QR code = aguardando leitura
       }
       
-      console.log('📊 Análise:');
-      console.log('   ├─ Tem QR Code:', hasQRCode ? '✅ SIM (aguardando leitura)' : '❌ NÃO');
-      console.log('   ├─ Flag connected:', connectedFlag ? '✅' : '❌');
-      console.log('   ├─ Flag loggedIn:', loggedInFlag ? '✅' : '❌');
-      console.log('   ├─ State:', instanceState || 'não informado');
-      console.log('   ├─ Status:', instanceStatus || 'não informado');
-      console.log('   ├─ Valid Session:', validSession ? '✅' : '❌');
-      console.log('   └─ 🎯 DECISÃO FINAL:', isConnected ? '✅ CONECTADO' : '❌ NÃO CONECTADO');
-      console.log('   └─ 📌 STATUS:', status);
+      console.log('ðŸ“Š AnÃ¡lise:');
+      console.log('   â”œâ”€ Tem QR Code:', hasQRCode ? 'âœ… SIM (aguardando leitura)' : 'âŒ NÃƒO');
+      console.log('   â”œâ”€ Flag connected:', connectedFlag ? 'âœ…' : 'âŒ');
+      console.log('   â”œâ”€ Flag loggedIn:', loggedInFlag ? 'âœ…' : 'âŒ');
+      console.log('   â”œâ”€ State:', instanceState || 'nÃ£o informado');
+      console.log('   â”œâ”€ Status:', instanceStatus || 'nÃ£o informado');
+      console.log('   â”œâ”€ Valid Session:', validSession ? 'âœ…' : 'âŒ');
+      console.log('   â””â”€ ðŸŽ¯ DECISÃƒO FINAL:', isConnected ? 'âœ… CONECTADO' : 'âŒ NÃƒO CONECTADO');
+      console.log('   â””â”€ ðŸ“Œ STATUS:', status);
       console.log('============================================\n');
       
       // Atualiza no banco (incluindo is_connected!) - usando tenantQuery para respeitar RLS
@@ -1635,21 +1635,21 @@ router.get('/instances/:id/qrcode', async (req, res) => {
       });
     }
     
-    console.log('❌ Falha ao obter QR Code:', qrResult.error);
+    console.log('âŒ Falha ao obter QR Code:', qrResult.error);
     console.log('============================================\n');
 
-    // 🚨 NOVO COMPORTAMENTO: Não fazer tratativa no erro 409
+    // ðŸš¨ NOVO COMPORTAMENTO: NÃ£o fazer tratativa no erro 409
     // Apenas retornar o erro para o frontend tentar novamente
-    // A tratativa será feita DEPOIS que a conexão for estabelecida com sucesso
+    // A tratativa serÃ¡ feita DEPOIS que a conexÃ£o for estabelecida com sucesso
     
     if (qrResult.errorCode === 409) {
-      console.log('⚠️  ERRO 409 detectado - Retornando para o frontend tentar novamente');
-      console.log('   └─ Mensagem:', qrResult.error);
-      console.log('   └─ O frontend vai aguardar e tentar de novo até conseguir conectar');
-      console.log('   └─ Tratativa de duplicatas será feita APÓS a conexão ser estabelecida\n');
+      console.log('âš ï¸  ERRO 409 detectado - Retornando para o frontend tentar novamente');
+      console.log('   â””â”€ Mensagem:', qrResult.error);
+      console.log('   â””â”€ O frontend vai aguardar e tentar de novo atÃ© conseguir conectar');
+      console.log('   â””â”€ Tratativa de duplicatas serÃ¡ feita APÃ“S a conexÃ£o ser estabelecida\n');
     }
 
-    // Retorna o erro para o frontend lidar (retry automático)
+    // Retorna o erro para o frontend lidar (retry automÃ¡tico)
     res.json(qrResult);
   } catch (error) {
     res.status(500).json({
@@ -1661,22 +1661,22 @@ router.get('/instances/:id/qrcode', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/:id/logout
- * Força logout/desconexão de uma instância
+ * ForÃ§a logout/desconexÃ£o de uma instÃ¢ncia
  */
 router.post('/instances/:id/logout', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 🔒 SEGURANÇA: Obter tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Obter tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
-    // Busca instância usando tenantQuery para RLS
+    // Busca instÃ¢ncia usando tenantQuery para RLS
     const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -1687,7 +1687,7 @@ router.post('/instances/:id/logout', async (req, res) => {
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -1696,7 +1696,7 @@ router.post('/instances/:id/logout', async (req, res) => {
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Recrie a instância.'
+        error: 'InstÃ¢ncia sem token. Recrie a instÃ¢ncia.'
       });
     }
 
@@ -1707,17 +1707,17 @@ router.post('/instances/:id/logout', async (req, res) => {
       password: inst.password
     } : null;
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    console.log('\n🔌 ============ FORÇANDO LOGOUT ============');
-    console.log('📋 Instância:', inst.name, '(ID:', id, ')');
+    console.log('\nðŸ”Œ ============ FORÃ‡ANDO LOGOUT ============');
+    console.log('ðŸ“‹ InstÃ¢ncia:', inst.name, '(ID:', id, ')');
 
     // Tenta fazer logout na API UAZ
     const logoutResult = await tenantUazService.logout(inst.instance_token, proxyConfig);
 
-    console.log('📊 Resultado do logout:', logoutResult);
+    console.log('ðŸ“Š Resultado do logout:', logoutResult);
     await tenantQuery(req, `
       UPDATE uaz_instances 
       SET is_connected = false,
@@ -1730,17 +1730,17 @@ router.post('/instances/:id/logout', async (req, res) => {
       WHERE id = $1 AND tenant_id = $2
     `, [id, tenantId]);
 
-    console.log('✅ Instância desconectada e resetada no banco de dados');
+    console.log('âœ… InstÃ¢ncia desconectada e resetada no banco de dados');
     console.log('============================================\n');
 
     res.json({
       success: true,
-      message: 'Instância desconectada com sucesso',
+      message: 'InstÃ¢ncia desconectada com sucesso',
       data: logoutResult
     });
 
   } catch (error) {
-    console.error('❌ Erro ao fazer logout:', error);
+    console.error('âŒ Erro ao fazer logout:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1750,52 +1750,52 @@ router.post('/instances/:id/logout', async (req, res) => {
 
 /**
  * GET /api/uaz/instances/:id/status
- * Verifica status de conexão da instância
+ * Verifica status de conexÃ£o da instÃ¢ncia
  */
 router.get('/instances/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 🔒 SEGURANÇA: Obter tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Obter tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
-    // 🔑 Buscar instância com credenciais corretas
+    // ðŸ”‘ Buscar instÃ¢ncia com credenciais corretas
     const { instance: inst, credentials, uazService: tenantUazService, proxyConfig } = await getInstanceWithCredentials(id, tenantId);
 
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Recrie a instância.'
+        error: 'InstÃ¢ncia sem token. Recrie a instÃ¢ncia.'
       });
     }
 
-    // Verifica status usando instance_token e credenciais corretas DA INSTÂNCIA
+    // Verifica status usando instance_token e credenciais corretas DA INSTÃ‚NCIA
     const statusResult = await tenantUazService.getStatus(inst.instance_token, proxyConfig);
 
-    console.log('\n🔍 ============ VERIFICAÇÃO DE STATUS ============');
-    console.log('📋 Instância:', inst.name, '(ID:', id, ')');
+    console.log('\nðŸ” ============ VERIFICAÃ‡ÃƒO DE STATUS ============');
+    console.log('ðŸ“‹ InstÃ¢ncia:', inst.name, '(ID:', id, ')');
 
     if (statusResult.success) {
-      // VALIDAÇÃO RIGOROSA: uazService já faz a validação, usar o resultado dele
+      // VALIDAÃ‡ÃƒO RIGOROSA: uazService jÃ¡ faz a validaÃ§Ã£o, usar o resultado dele
       const isConnected = statusResult.connected === true;
       
-      // DEBUG: Verificando onde está o número de telefone
-      console.log('📞 ========== DEBUG NÚMERO DE TELEFONE ==========');
-      console.log('🔍 statusResult.data?.jid:', JSON.stringify(statusResult.data?.jid, null, 2));
-      console.log('🔍 statusResult.data?.status?.jid:', statusResult.data?.status?.jid);
-      console.log('🔍 statusResult.data?.instance?.owner:', statusResult.data?.instance?.owner);
-      console.log('🔍 statusResult.data?.phone:', statusResult.data?.phone);
-      console.log('🔍 statusResult.data?.instance?.wid:', JSON.stringify(statusResult.data?.instance?.wid, null, 2));
-      console.log('🔍 statusResult.data?.instance?.number:', statusResult.data?.instance?.number);
-      console.log('🔍 inst.phone_number (banco):', inst.phone_number);
+      // DEBUG: Verificando onde estÃ¡ o nÃºmero de telefone
+      console.log('ðŸ“ž ========== DEBUG NÃšMERO DE TELEFONE ==========');
+      console.log('ðŸ” statusResult.data?.jid:', JSON.stringify(statusResult.data?.jid, null, 2));
+      console.log('ðŸ” statusResult.data?.status?.jid:', statusResult.data?.status?.jid);
+      console.log('ðŸ” statusResult.data?.instance?.owner:', statusResult.data?.instance?.owner);
+      console.log('ðŸ” statusResult.data?.phone:', statusResult.data?.phone);
+      console.log('ðŸ” statusResult.data?.instance?.wid:', JSON.stringify(statusResult.data?.instance?.wid, null, 2));
+      console.log('ðŸ” statusResult.data?.instance?.number:', statusResult.data?.instance?.number);
+      console.log('ðŸ” inst.phone_number (banco):', inst.phone_number);
       
-      // Função auxiliar para extrair número do JID (formato: "5511999999999:3@s.whatsapp.net")
+      // FunÃ§Ã£o auxiliar para extrair nÃºmero do JID (formato: "5511999999999:3@s.whatsapp.net")
       const extractPhoneFromJid = (jid) => {
         if (!jid) return null;
         // JID pode ser: "5511999999999:3@s.whatsapp.net" ou "5511999999999@s.whatsapp.net"
@@ -1803,23 +1803,23 @@ router.get('/instances/:id/status', async (req, res) => {
         return match ? match[1] : null;
       };
       
-      // Número de telefone pode estar em vários lugares dependendo da versão da API
+      // NÃºmero de telefone pode estar em vÃ¡rios lugares dependendo da versÃ£o da API
       let phoneNumber = null;
       
-      // 1. Tenta extrair do owner (campo mais confiável nesta API)
+      // 1. Tenta extrair do owner (campo mais confiÃ¡vel nesta API)
       phoneNumber = statusResult.data?.instance?.owner;
       
-      // 2. Se não encontrou, tenta extrair do JID no status
+      // 2. Se nÃ£o encontrou, tenta extrair do JID no status
       if (!phoneNumber && statusResult.data?.status?.jid) {
         phoneNumber = extractPhoneFromJid(statusResult.data.status.jid);
       }
       
-      // 3. Se não encontrou, tenta extrair do JID no root
+      // 3. Se nÃ£o encontrou, tenta extrair do JID no root
       if (!phoneNumber && statusResult.data?.jid) {
         phoneNumber = extractPhoneFromJid(statusResult.data.jid);
       }
       
-      // 4. Outras tentativas (outras versões da API)
+      // 4. Outras tentativas (outras versÃµes da API)
       if (!phoneNumber) {
         phoneNumber = statusResult.data?.instance?.wid?.user ||
                      statusResult.data?.instance?.number ||
@@ -1827,26 +1827,26 @@ router.get('/instances/:id/status', async (req, res) => {
                      inst.phone_number;
       }
       
-      console.log('🎯 NÚMERO FINAL EXTRAÍDO:', phoneNumber);
+      console.log('ðŸŽ¯ NÃšMERO FINAL EXTRAÃDO:', phoneNumber);
       console.log('==============================================\n');
       
-      // Busca profileName e profilePicUrl de acordo com a documentação UAZ API
-      // O profileName está em: statusResult.data.instance.profileName
-      // O profilePicUrl está em: statusResult.data.instance.profilePicUrl
+      // Busca profileName e profilePicUrl de acordo com a documentaÃ§Ã£o UAZ API
+      // O profileName estÃ¡ em: statusResult.data.instance.profileName
+      // O profilePicUrl estÃ¡ em: statusResult.data.instance.profilePicUrl
       let profileName = null;
       let profilePicUrl = null;
       if (statusResult.data) {
-        // Primeiro tenta buscar no lugar correto (documentação oficial)
+        // Primeiro tenta buscar no lugar correto (documentaÃ§Ã£o oficial)
         profileName = statusResult.data.instance?.profileName || null;
         profilePicUrl = statusResult.data.instance?.profilePicUrl || null;
         
-        console.log('🔍 DEBUG - Estrutura completa de statusResult.data.instance:');
+        console.log('ðŸ” DEBUG - Estrutura completa de statusResult.data.instance:');
         console.log(JSON.stringify(statusResult.data.instance, null, 2));
-        console.log('🔍 DEBUG - profileName extraído:', profileName);
-        console.log('🔍 DEBUG - profilePicUrl extraído:', profilePicUrl);
+        console.log('ðŸ” DEBUG - profileName extraÃ­do:', profileName);
+        console.log('ðŸ” DEBUG - profilePicUrl extraÃ­do:', profilePicUrl);
       }
       
-      // Status baseado na validação rigorosa
+      // Status baseado na validaÃ§Ã£o rigorosa
       let statusState = 'disconnected';
       if (isConnected) {
         statusState = 'connected';
@@ -1854,16 +1854,16 @@ router.get('/instances/:id/status', async (req, res) => {
         statusState = 'connecting';
       }
 
-      console.log('📊 Resultado:');
-      console.log('   ├─ Conectado:', isConnected ? '✅ SIM' : '❌ NÃO');
-      console.log('   ├─ Status:', statusState);
-      console.log('   ├─ Telefone:', phoneNumber || 'não informado');
-      console.log('   ├─ Nome do Perfil:', profileName || 'não informado');
-      console.log('   └─ Foto do Perfil:', profilePicUrl || 'não informada');
-      console.log('🔍 DEBUG - statusResult.data completo:', JSON.stringify(statusResult.data, null, 2));
+      console.log('ðŸ“Š Resultado:');
+      console.log('   â”œâ”€ Conectado:', isConnected ? 'âœ… SIM' : 'âŒ NÃƒO');
+      console.log('   â”œâ”€ Status:', statusState);
+      console.log('   â”œâ”€ Telefone:', phoneNumber || 'nÃ£o informado');
+      console.log('   â”œâ”€ Nome do Perfil:', profileName || 'nÃ£o informado');
+      console.log('   â””â”€ Foto do Perfil:', profilePicUrl || 'nÃ£o informada');
+      console.log('ðŸ” DEBUG - statusResult.data completo:', JSON.stringify(statusResult.data, null, 2));
       console.log('============================================\n');
 
-      // ✅ Usando tenantQuery para respeitar RLS e garantir tenant correto
+      // âœ… Usando tenantQuery para respeitar RLS e garantir tenant correto
       await tenantQuery(req, `
         UPDATE uaz_instances 
         SET is_connected = $1,
@@ -1876,67 +1876,67 @@ router.get('/instances/:id/status', async (req, res) => {
         WHERE id = $6 AND tenant_id = $7
       `, [isConnected, statusState, phoneNumber, profileName, profilePicUrl, id, tenantId]);
 
-      // 🔍 VERIFICAÇÃO DE DUPLICAÇÃO AUTOMÁTICA
-      // Se acabou de conectar E tem número, verificar se já existe em outra instância
+      // ðŸ” VERIFICAÃ‡ÃƒO DE DUPLICAÃ‡ÃƒO AUTOMÃTICA
+      // Se acabou de conectar E tem nÃºmero, verificar se jÃ¡ existe em outra instÃ¢ncia
       if (isConnected && phoneNumber && !inst.phone_number) {
-        console.log('\n🔍 ========================================');
-        console.log('🔍 VERIFICANDO DUPLICAÇÃO DE NÚMERO');
-        console.log('🔍 ========================================');
-        console.log('📱 Número detectado:', phoneNumber);
-        console.log('🆔 Instância NOVA (acabou de conectar):', inst.name, '(ID:', id, ')');
+        console.log('\nðŸ” ========================================');
+        console.log('ðŸ” VERIFICANDO DUPLICAÃ‡ÃƒO DE NÃšMERO');
+        console.log('ðŸ” ========================================');
+        console.log('ðŸ“± NÃºmero detectado:', phoneNumber);
+        console.log('ðŸ†” InstÃ¢ncia NOVA (acabou de conectar):', inst.name, '(ID:', id, ')');
         
         try {
-          // Buscar todas as instâncias da UAZ API
+          // Buscar todas as instÃ¢ncias da UAZ API
           const fetchResult = await uazService.fetchInstances(proxyConfig);
           
           if (fetchResult.success && fetchResult.instances.length > 0) {
-            // Procurar se este número já existe em OUTRA instância (conectada OU desconectada)
+            // Procurar se este nÃºmero jÃ¡ existe em OUTRA instÃ¢ncia (conectada OU desconectada)
             const instanciaDuplicada = fetchResult.instances.find(i => 
               i.owner === phoneNumber && 
               i.token !== inst.instance_token
             );
             
             if (instanciaDuplicada) {
-              console.log('\n⚠️  ========================================');
-              console.log('⚠️  DUPLICAÇÃO DETECTADA!');
-              console.log('⚠️  ========================================');
-              console.log('📱 Número:', phoneNumber);
-              console.log('📦 Instância NOVA:', inst.name, '(ID:', id, ') - Status: CONECTADA');
-              console.log('📦 Instância ANTIGA:', instanciaDuplicada.name, '(Token:', instanciaDuplicada.token?.substring(0, 20) + '...) - Status:', instanciaDuplicada.status.toUpperCase());
+              console.log('\nâš ï¸  ========================================');
+              console.log('âš ï¸  DUPLICAÃ‡ÃƒO DETECTADA!');
+              console.log('âš ï¸  ========================================');
+              console.log('ðŸ“± NÃºmero:', phoneNumber);
+              console.log('ðŸ“¦ InstÃ¢ncia NOVA:', inst.name, '(ID:', id, ') - Status: CONECTADA');
+              console.log('ðŸ“¦ InstÃ¢ncia ANTIGA:', instanciaDuplicada.name, '(Token:', instanciaDuplicada.token?.substring(0, 20) + '...) - Status:', instanciaDuplicada.status.toUpperCase());
               
-              // 🎯 DECISÃO INTELIGENTE: Qual instância manter?
+              // ðŸŽ¯ DECISÃƒO INTELIGENTE: Qual instÃ¢ncia manter?
               const antigaEstaConectada = instanciaDuplicada.status === 'connected';
               
               if (antigaEstaConectada) {
-                // ✅ CASO 1: Instância ANTIGA está CONECTADA → Manter ANTIGA, deletar NOVA
-                console.log('\n💡 DECISÃO: Instância ANTIGA está CONECTADA');
-                console.log('   ├─ ✅ MANTER: Instância ANTIGA (já está funcionando)');
-                console.log('   └─ ❌ DELETAR: Instância NOVA (duplicada)');
+                // âœ… CASO 1: InstÃ¢ncia ANTIGA estÃ¡ CONECTADA â†’ Manter ANTIGA, deletar NOVA
+                console.log('\nðŸ’¡ DECISÃƒO: InstÃ¢ncia ANTIGA estÃ¡ CONECTADA');
+                console.log('   â”œâ”€ âœ… MANTER: InstÃ¢ncia ANTIGA (jÃ¡ estÃ¡ funcionando)');
+                console.log('   â””â”€ âŒ DELETAR: InstÃ¢ncia NOVA (duplicada)');
                 
-                // 1️⃣ DELETAR a instância NOVA da UAZ API
-                console.log('\n🗑️  Deletando instância NOVA da UAZ API...');
+                // 1ï¸âƒ£ DELETAR a instÃ¢ncia NOVA da UAZ API
+                console.log('\nðŸ—‘ï¸  Deletando instÃ¢ncia NOVA da UAZ API...');
                 const deleteResult = await uazService.deleteInstance(inst.instance_token, proxyConfig);
                 
                 if (deleteResult.success) {
-                  console.log('   ✅ Instância NOVA deletada da UAZ API');
+                  console.log('   âœ… InstÃ¢ncia NOVA deletada da UAZ API');
                 } else {
-                  console.warn('   ⚠️  Erro ao deletar da UAZ API:', deleteResult.error);
+                  console.warn('   âš ï¸  Erro ao deletar da UAZ API:', deleteResult.error);
                 }
                 
-                // 2️⃣ DELETAR a instância NOVA do banco local (COM filtro de tenant)
-                console.log('🗑️  Deletando instância NOVA do banco local...');
+                // 2ï¸âƒ£ DELETAR a instÃ¢ncia NOVA do banco local (COM filtro de tenant)
+                console.log('ðŸ—‘ï¸  Deletando instÃ¢ncia NOVA do banco local...');
                 await tenantQuery(req, 'DELETE FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
-                console.log('   ✅ Instância NOVA deletada do banco local');
+                console.log('   âœ… InstÃ¢ncia NOVA deletada do banco local');
                 
-                // 3️⃣ VERIFICAR se a instância ANTIGA já está no banco (usando tenantQuery para respeitar RLS)
+                // 3ï¸âƒ£ VERIFICAR se a instÃ¢ncia ANTIGA jÃ¡ estÃ¡ no banco (usando tenantQuery para respeitar RLS)
                 const existenteNoBanco = await tenantQuery(req,
                   'SELECT id FROM uaz_instances WHERE instance_token = $1 AND tenant_id = $2',
                   [instanciaDuplicada.token, tenantId]
                 );
                 
                 if (existenteNoBanco.rows.length === 0) {
-                  // 4️⃣ IMPORTAR a instância ANTIGA (usando tenantQuery para respeitar RLS)
-                  console.log('📥 Importando instância ANTIGA para o banco local...');
+                  // 4ï¸âƒ£ IMPORTAR a instÃ¢ncia ANTIGA (usando tenantQuery para respeitar RLS)
+                  console.log('ðŸ“¥ Importando instÃ¢ncia ANTIGA para o banco local...');
                   
                   const importResult = await tenantQuery(req, `
                     INSERT INTO uaz_instances (
@@ -1967,10 +1967,10 @@ router.get('/instances/:id/status', async (req, res) => {
                   
                   const instanciaImportada = importResult.rows[0];
                   
-                  console.log('   ✅ Instância ANTIGA importada! Novo ID:', instanciaImportada.id);
+                  console.log('   âœ… InstÃ¢ncia ANTIGA importada! Novo ID:', instanciaImportada.id);
                   console.log('========================================\n');
                   
-                  // 5️⃣ RETORNAR indicação de que houve importação
+                  // 5ï¸âƒ£ RETORNAR indicaÃ§Ã£o de que houve importaÃ§Ã£o
                   return res.json({
                     ...statusResult,
                     duplicateDetected: true,
@@ -1981,10 +1981,10 @@ router.get('/instances/:id/status', async (req, res) => {
                       phone_number: instanciaImportada.phone_number,
                       profile_name: instanciaImportada.profile_name
                     },
-                    message: `✅ Número já existente e CONECTADO detectado! Mantivemos a instância original: ${instanciaImportada.name}`
+                    message: `âœ… NÃºmero jÃ¡ existente e CONECTADO detectado! Mantivemos a instÃ¢ncia original: ${instanciaImportada.name}`
                   });
                 } else {
-                  console.log('   ℹ️  Instância ANTIGA já está no banco (ID:', existenteNoBanco.rows[0].id, ')');
+                  console.log('   â„¹ï¸  InstÃ¢ncia ANTIGA jÃ¡ estÃ¡ no banco (ID:', existenteNoBanco.rows[0].id, ')');
                   console.log('========================================\n');
                   
                   return res.json({
@@ -1994,27 +1994,27 @@ router.get('/instances/:id/status', async (req, res) => {
                     existingInstance: {
                       id: existenteNoBanco.rows[0].id
                     },
-                    message: `✅ Número já existente e CONECTADO detectado! A instância original já estava cadastrada.`
+                    message: `âœ… NÃºmero jÃ¡ existente e CONECTADO detectado! A instÃ¢ncia original jÃ¡ estava cadastrada.`
                   });
                 }
               } else {
-                // ✅ CASO 2: Instância ANTIGA está DESCONECTADA → Manter NOVA, deletar ANTIGA
-                console.log('\n💡 DECISÃO: Instância ANTIGA está DESCONECTADA');
-                console.log('   ├─ ✅ MANTER: Instância NOVA (acabou de conectar)');
-                console.log('   └─ ❌ DELETAR: Instância ANTIGA (não está funcionando)');
+                // âœ… CASO 2: InstÃ¢ncia ANTIGA estÃ¡ DESCONECTADA â†’ Manter NOVA, deletar ANTIGA
+                console.log('\nðŸ’¡ DECISÃƒO: InstÃ¢ncia ANTIGA estÃ¡ DESCONECTADA');
+                console.log('   â”œâ”€ âœ… MANTER: InstÃ¢ncia NOVA (acabou de conectar)');
+                console.log('   â””â”€ âŒ DELETAR: InstÃ¢ncia ANTIGA (nÃ£o estÃ¡ funcionando)');
                 
-                // 1️⃣ DELETAR a instância ANTIGA da UAZ API
-                console.log('\n🗑️  Deletando instância ANTIGA da UAZ API...');
+                // 1ï¸âƒ£ DELETAR a instÃ¢ncia ANTIGA da UAZ API
+                console.log('\nðŸ—‘ï¸  Deletando instÃ¢ncia ANTIGA da UAZ API...');
                 const deleteResult = await uazService.deleteInstance(instanciaDuplicada.token, proxyConfig);
                 
                 if (deleteResult.success) {
-                  console.log('   ✅ Instância ANTIGA deletada da UAZ API');
+                  console.log('   âœ… InstÃ¢ncia ANTIGA deletada da UAZ API');
                 } else {
-                  console.warn('   ⚠️  Erro ao deletar da UAZ API:', deleteResult.error);
+                  console.warn('   âš ï¸  Erro ao deletar da UAZ API:', deleteResult.error);
                 }
                 
-                // 2️⃣ DELETAR a instância ANTIGA do banco local (se existir) - COM filtro de tenant (usando tenantQuery para respeitar RLS)
-                console.log('🗑️  Verificando se instância ANTIGA existe no banco local...');
+                // 2ï¸âƒ£ DELETAR a instÃ¢ncia ANTIGA do banco local (se existir) - COM filtro de tenant (usando tenantQuery para respeitar RLS)
+                console.log('ðŸ—‘ï¸  Verificando se instÃ¢ncia ANTIGA existe no banco local...');
                 const antigaNoBanco = await tenantQuery(req,
                   'SELECT id FROM uaz_instances WHERE instance_token = $1 AND tenant_id = $2',
                   [instanciaDuplicada.token, tenantId]
@@ -2022,15 +2022,15 @@ router.get('/instances/:id/status', async (req, res) => {
                 
                 if (antigaNoBanco.rows.length > 0) {
                   await tenantQuery(req, 'DELETE FROM uaz_instances WHERE instance_token = $1 AND tenant_id = $2', [instanciaDuplicada.token, tenantId]);
-                  console.log('   ✅ Instância ANTIGA deletada do banco local (ID:', antigaNoBanco.rows[0].id, ')');
+                  console.log('   âœ… InstÃ¢ncia ANTIGA deletada do banco local (ID:', antigaNoBanco.rows[0].id, ')');
                 } else {
-                  console.log('   ℹ️  Instância ANTIGA não estava no banco local');
+                  console.log('   â„¹ï¸  InstÃ¢ncia ANTIGA nÃ£o estava no banco local');
                 }
                 
-                console.log('✅ Instância NOVA mantida! ID:', id);
+                console.log('âœ… InstÃ¢ncia NOVA mantida! ID:', id);
                 console.log('========================================\n');
                 
-                // 3️⃣ RETORNAR indicação de que a nova foi mantida
+                // 3ï¸âƒ£ RETORNAR indicaÃ§Ã£o de que a nova foi mantida
                 return res.json({
                   ...statusResult,
                   duplicateDetected: true,
@@ -2041,21 +2041,21 @@ router.get('/instances/:id/status', async (req, res) => {
                     phone_number: phoneNumber,
                     profile_name: profileName
                   },
-                  message: `✅ Número já existente mas DESCONECTADO detectado! Mantivemos a nova conexão e removemos a antiga.`
+                  message: `âœ… NÃºmero jÃ¡ existente mas DESCONECTADO detectado! Mantivemos a nova conexÃ£o e removemos a antiga.`
                 });
               }
             } else {
-              console.log('✅ Nenhuma duplicação encontrada. Número único!');
+              console.log('âœ… Nenhuma duplicaÃ§Ã£o encontrada. NÃºmero Ãºnico!');
               console.log('========================================\n');
             }
           }
         } catch (error) {
-          console.error('❌ Erro ao verificar duplicação:', error.message);
-          // Não bloquear o fluxo, apenas logar o erro
+          console.error('âŒ Erro ao verificar duplicaÃ§Ã£o:', error.message);
+          // NÃ£o bloquear o fluxo, apenas logar o erro
         }
       }
 
-      // Retorna os dados com profile_name e profile_pic_url incluídos explicitamente
+      // Retorna os dados com profile_name e profile_pic_url incluÃ­dos explicitamente
       res.json({
         ...statusResult,
         profile_name: profileName,
@@ -2063,13 +2063,13 @@ router.get('/instances/:id/status', async (req, res) => {
         phone_number: phoneNumber
       });
     } else {
-      console.log('❌ Erro ao verificar status:', statusResult.error);
+      console.log('âŒ Erro ao verificar status:', statusResult.error);
       console.log('============================================\n');
       
-      // Se o erro for "Invalid token", marcar a instância como desconectada no banco
+      // Se o erro for "Invalid token", marcar a instÃ¢ncia como desconectada no banco
       if (statusResult.error && statusResult.error.toLowerCase().includes('invalid token')) {
-        console.log('⚠️ Token inválido detectado! Marcando instância como desconectada no banco...');
-        // ✅ Usando tenantQuery para respeitar RLS e garantir tenant correto
+        console.log('âš ï¸ Token invÃ¡lido detectado! Marcando instÃ¢ncia como desconectada no banco...');
+        // âœ… Usando tenantQuery para respeitar RLS e garantir tenant correto
         await tenantQuery(req, `
           UPDATE uaz_instances 
           SET is_connected = false,
@@ -2077,14 +2077,14 @@ router.get('/instances/:id/status', async (req, res) => {
               updated_at = NOW()
           WHERE id = $1 AND tenant_id = $2
         `, [id, tenantId]);
-        console.log('✅ Instância marcada como desconectada no banco de dados');
+        console.log('âœ… InstÃ¢ncia marcada como desconectada no banco de dados');
       }
       
       res.json(statusResult);
     }
   } catch (error) {
-    console.error('❌ Erro ao verificar status da instância:', error);
-    console.error('   └─ Stack:', error.stack);
+    console.error('âŒ Erro ao verificar status da instÃ¢ncia:', error);
+    console.error('   â””â”€ Stack:', error.stack);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -2095,18 +2095,18 @@ router.get('/instances/:id/status', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/:id/disconnect
- * Desconecta instância
+ * Desconecta instÃ¢ncia
  */
 router.post('/instances/:id/disconnect', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // 🔒 SEGURANÇA: Filtrar por tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        message: 'Tenant não identificado'
+        message: 'Tenant nÃ£o identificado'
       });
     }
 
@@ -2114,7 +2114,7 @@ router.post('/instances/:id/disconnect', async (req, res) => {
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -2122,11 +2122,11 @@ router.post('/instances/:id/disconnect', async (req, res) => {
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Recrie a instância.'
+        error: 'InstÃ¢ncia sem token. Recrie a instÃ¢ncia.'
       });
     }
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
@@ -2153,30 +2153,30 @@ router.post('/instances/:id/disconnect', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/:id/toggle-active
- * Ativa ou desativa uma instância (pausa/retoma)
+ * Ativa ou desativa uma instÃ¢ncia (pausa/retoma)
  * 
- * ⚠️ IMPORTANTE: Quando pausar, a instância é tratada como DESCONECTADA nas campanhas
- * ⚠️ Quando despausar, ela é automaticamente REATIVADA nas campanhas
+ * âš ï¸ IMPORTANTE: Quando pausar, a instÃ¢ncia Ã© tratada como DESCONECTADA nas campanhas
+ * âš ï¸ Quando despausar, ela Ã© automaticamente REATIVADA nas campanhas
  */
 router.post('/instances/:id/toggle-active', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // 🔒 SEGURANÇA: Filtrar por tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        message: 'Tenant não identificado'
+        message: 'Tenant nÃ£o identificado'
       });
     }
 
-    // Busca instância atual
+    // Busca instÃ¢ncia atual
     const instance = await tenantQuery(req, 'SELECT * FROM uaz_instances WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -2190,9 +2190,9 @@ router.post('/instances/:id/toggle-active', async (req, res) => {
       WHERE id = $2 AND tenant_id = $3
     `, [newActiveState, id, tenantId]);
 
-    console.log(`${newActiveState ? '▶️' : '⏸️'} Instância ${inst.name} (ID: ${id}) ${newActiveState ? 'ativada' : 'pausada'}`);
+    console.log(`${newActiveState ? 'â–¶ï¸' : 'â¸ï¸'} InstÃ¢ncia ${inst.name} (ID: ${id}) ${newActiveState ? 'ativada' : 'pausada'}`);
 
-    // 🔄 DESATIVAR templates nas campanhas ATIVAS quando PAUSAR a instância
+    // ðŸ”„ DESATIVAR templates nas campanhas ATIVAS quando PAUSAR a instÃ¢ncia
     if (!newActiveState) {
       // Desativa templates de campanhas tradicionais
       const deactivatedCampaigns = await pool.query(`
@@ -2218,21 +2218,21 @@ router.post('/instances/:id/toggle-active', async (req, res) => {
 
       const totalDeactivated = deactivatedCampaigns.rows.length + deactivatedQrCampaigns.rows.length;
       if (totalDeactivated > 0) {
-        console.log(`   ⚠️  ${totalDeactivated} template(s) desativado(s) nas campanhas ativas`);
+        console.log(`   âš ï¸  ${totalDeactivated} template(s) desativado(s) nas campanhas ativas`);
       }
     }
 
-    // ✅ REATIVAR templates quando DESPAUSAR (será feito automaticamente pelo worker via checkAndReactivateInstances)
+    // âœ… REATIVAR templates quando DESPAUSAR (serÃ¡ feito automaticamente pelo worker via checkAndReactivateInstances)
     if (newActiveState) {
-      console.log(`   ✅ Templates serão reativados automaticamente nas campanhas ativas`);
+      console.log(`   âœ… Templates serÃ£o reativados automaticamente nas campanhas ativas`);
     }
 
     res.json({
       success: true,
       is_active: newActiveState,
       message: newActiveState 
-        ? 'Instância ativada com sucesso. Templates serão reativados nas campanhas.' 
-        : 'Instância pausada com sucesso. Templates foram desativados nas campanhas.'
+        ? 'InstÃ¢ncia ativada com sucesso. Templates serÃ£o reativados nas campanhas.' 
+        : 'InstÃ¢ncia pausada com sucesso. Templates foram desativados nas campanhas.'
     });
   } catch (error) {
     res.status(500).json({
@@ -2244,16 +2244,16 @@ router.post('/instances/:id/toggle-active', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/pause-all
- * Pausa todas as instâncias
+ * Pausa todas as instÃ¢ncias
  * 
- * ⚠️ IMPORTANTE: Todas as instâncias são tratadas como DESCONECTADAS nas campanhas
+ * âš ï¸ IMPORTANTE: Todas as instÃ¢ncias sÃ£o tratadas como DESCONECTADAS nas campanhas
  */
 router.post('/instances/pause-all', async (req, res) => {
   try {
-    // 🔒 SEGURANÇA: Filtrar por tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
-      return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      return res.status(401).json({ success: false, error: 'Tenant nÃ£o identificado' });
     }
     
     const result = await tenantQuery(req, `
@@ -2264,9 +2264,9 @@ router.post('/instances/pause-all', async (req, res) => {
       RETURNING id, name
     `, [tenantId]);
 
-    console.log(`⏸️ ${result.rows.length} instância(s) pausada(s)`);
+    console.log(`â¸ï¸ ${result.rows.length} instÃ¢ncia(s) pausada(s)`);
 
-    // 🔄 DESATIVAR todos os templates nas campanhas ATIVAS
+    // ðŸ”„ DESATIVAR todos os templates nas campanhas ATIVAS
     const deactivatedCampaigns = await pool.query(`
       UPDATE campaign_templates
       SET is_active = false,
@@ -2287,7 +2287,7 @@ router.post('/instances/pause-all', async (req, res) => {
 
     const totalDeactivated = deactivatedCampaigns.rows.length + deactivatedQrCampaigns.rows.length;
     if (totalDeactivated > 0) {
-      console.log(`   ⚠️  ${totalDeactivated} template(s) desativado(s) nas campanhas ativas`);
+      console.log(`   âš ï¸  ${totalDeactivated} template(s) desativado(s) nas campanhas ativas`);
     }
     
     res.json({
@@ -2295,7 +2295,7 @@ router.post('/instances/pause-all', async (req, res) => {
       paused_count: result.rows.length,
       deactivated_templates: totalDeactivated,
       instances: result.rows,
-      message: `${result.rows.length} instância(s) pausada(s). ${totalDeactivated} template(s) desativados nas campanhas.`
+      message: `${result.rows.length} instÃ¢ncia(s) pausada(s). ${totalDeactivated} template(s) desativados nas campanhas.`
     });
   } catch (error) {
     res.status(500).json({
@@ -2307,16 +2307,16 @@ router.post('/instances/pause-all', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/activate-all
- * Ativa todas as instâncias
+ * Ativa todas as instÃ¢ncias
  * 
- * ✅ Templates serão automaticamente REATIVADOS nas campanhas pelo worker
+ * âœ… Templates serÃ£o automaticamente REATIVADOS nas campanhas pelo worker
  */
 router.post('/instances/activate-all', async (req, res) => {
   try {
-    // 🔒 SEGURANÇA: Filtrar por tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
-      return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      return res.status(401).json({ success: false, error: 'Tenant nÃ£o identificado' });
     }
     
     const result = await tenantQuery(req, `
@@ -2327,14 +2327,14 @@ router.post('/instances/activate-all', async (req, res) => {
       RETURNING id, name
     `, [tenantId]);
 
-    console.log(`▶️ ${result.rows.length} instância(s) ativada(s)`);
-    console.log(`   ✅ Templates serão reativados automaticamente nas campanhas ativas`);
+    console.log(`â–¶ï¸ ${result.rows.length} instÃ¢ncia(s) ativada(s)`);
+    console.log(`   âœ… Templates serÃ£o reativados automaticamente nas campanhas ativas`);
     
     res.json({
       success: true,
       activated_count: result.rows.length,
       instances: result.rows,
-      message: `${result.rows.length} instância(s) ativada(s). Templates serão reativados nas campanhas.`
+      message: `${result.rows.length} instÃ¢ncia(s) ativada(s). Templates serÃ£o reativados nas campanhas.`
     });
   } catch (error) {
     res.status(500).json({
@@ -2346,7 +2346,7 @@ router.post('/instances/activate-all', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/deactivate-multiple
- * Desativa múltiplas instâncias selecionadas
+ * Desativa mÃºltiplas instÃ¢ncias selecionadas
  */
 router.post('/instances/deactivate-multiple', async (req, res) => {
   try {
@@ -2355,13 +2355,13 @@ router.post('/instances/deactivate-multiple', async (req, res) => {
     if (!instance_ids || !Array.isArray(instance_ids) || instance_ids.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'instance_ids deve ser um array não-vazio'
+        error: 'instance_ids deve ser um array nÃ£o-vazio'
       });
     }
 
-    console.log(`⏸️ Desativando instâncias:`, instance_ids);
+    console.log(`â¸ï¸ Desativando instÃ¢ncias:`, instance_ids);
 
-    // Converter para números para garantir
+    // Converter para nÃºmeros para garantir
     const ids = instance_ids.map(id => parseInt(id, 10));
 
     const result = await tenantQuery(req, `
@@ -2372,9 +2372,9 @@ router.post('/instances/deactivate-multiple', async (req, res) => {
       RETURNING id, name
     `, [ids]);
 
-    console.log(`⏸️ ${result.rows.length} instância(s) desativada(s)`);
+    console.log(`â¸ï¸ ${result.rows.length} instÃ¢ncia(s) desativada(s)`);
 
-    // Desativar templates nas campanhas (com try-catch para não quebrar se a tabela não existir)
+    // Desativar templates nas campanhas (com try-catch para nÃ£o quebrar se a tabela nÃ£o existir)
     let totalDeactivated = 0;
     try {
       const deactivatedCampaigns = await pool.query(`
@@ -2390,9 +2390,9 @@ router.post('/instances/deactivate-multiple', async (req, res) => {
         RETURNING id, campaign_id, instance_id
       `, [ids]);
       totalDeactivated = deactivatedCampaigns.rows.length;
-      console.log(`   📊 ${totalDeactivated} template(s) desativados nas campanhas ativas`);
+      console.log(`   ðŸ“Š ${totalDeactivated} template(s) desativados nas campanhas ativas`);
     } catch (campErr) {
-      console.log(`   ℹ️ Campanhas não disponíveis ou já desativadas`);
+      console.log(`   â„¹ï¸ Campanhas nÃ£o disponÃ­veis ou jÃ¡ desativadas`);
     }
 
     res.json({
@@ -2400,10 +2400,10 @@ router.post('/instances/deactivate-multiple', async (req, res) => {
       deactivated_count: result.rows.length,
       deactivated_templates: totalDeactivated,
       instances: result.rows,
-      message: `${result.rows.length} instância(s) desativada(s). ${totalDeactivated} template(s) desativados nas campanhas.`
+      message: `${result.rows.length} instÃ¢ncia(s) desativada(s). ${totalDeactivated} template(s) desativados nas campanhas.`
     });
   } catch (error) {
-    console.error('❌ Erro ao desativar instâncias:', error);
+    console.error('âŒ Erro ao desativar instÃ¢ncias:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -2413,11 +2413,11 @@ router.post('/instances/deactivate-multiple', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/deactivate-all
- * Desativa todas as instâncias
+ * Desativa todas as instÃ¢ncias
  */
 router.post('/instances/deactivate-all', async (req, res) => {
   try {
-    console.log(`⏸️ Desativando TODAS as instâncias`);
+    console.log(`â¸ï¸ Desativando TODAS as instÃ¢ncias`);
 
     const result = await tenantQuery(req, `
       UPDATE uaz_instances 
@@ -2426,9 +2426,9 @@ router.post('/instances/deactivate-all', async (req, res) => {
       RETURNING id, name
     `);
 
-    console.log(`⏸️ ${result.rows.length} instância(s) desativada(s)`);
+    console.log(`â¸ï¸ ${result.rows.length} instÃ¢ncia(s) desativada(s)`);
 
-    // Desativar todos os templates nas campanhas (com try-catch para não quebrar)
+    // Desativar todos os templates nas campanhas (com try-catch para nÃ£o quebrar)
     let totalDeactivated = 0;
     try {
       const deactivatedCampaigns = await pool.query(`
@@ -2442,9 +2442,9 @@ router.post('/instances/deactivate-all', async (req, res) => {
         RETURNING id, campaign_id, instance_id
       `);
       totalDeactivated = deactivatedCampaigns.rows.length;
-      console.log(`   📊 ${totalDeactivated} template(s) desativados nas campanhas ativas`);
+      console.log(`   ðŸ“Š ${totalDeactivated} template(s) desativados nas campanhas ativas`);
     } catch (campErr) {
-      console.log(`   ℹ️ Campanhas não disponíveis ou já desativadas`);
+      console.log(`   â„¹ï¸ Campanhas nÃ£o disponÃ­veis ou jÃ¡ desativadas`);
     }
 
     res.json({
@@ -2452,10 +2452,10 @@ router.post('/instances/deactivate-all', async (req, res) => {
       deactivated_count: result.rows.length,
       deactivated_templates: totalDeactivated,
       instances: result.rows,
-      message: `${result.rows.length} instância(s) desativada(s). ${totalDeactivated} template(s) desativados nas campanhas.`
+      message: `${result.rows.length} instÃ¢ncia(s) desativada(s). ${totalDeactivated} template(s) desativados nas campanhas.`
     });
   } catch (error) {
-    console.error('❌ Erro ao desativar todas as instâncias:', error);
+    console.error('âŒ Erro ao desativar todas as instÃ¢ncias:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -2465,7 +2465,7 @@ router.post('/instances/deactivate-all', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/activate-multiple
- * Ativa múltiplas instâncias selecionadas
+ * Ativa mÃºltiplas instÃ¢ncias selecionadas
  */
 router.post('/instances/activate-multiple', async (req, res) => {
   try {
@@ -2474,13 +2474,13 @@ router.post('/instances/activate-multiple', async (req, res) => {
     if (!instance_ids || !Array.isArray(instance_ids) || instance_ids.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'instance_ids deve ser um array não vazio'
+        message: 'instance_ids deve ser um array nÃ£o vazio'
       });
     }
 
-    console.log(`✅ Ativando instâncias:`, instance_ids);
+    console.log(`âœ… Ativando instÃ¢ncias:`, instance_ids);
 
-    // Converter para números para garantir
+    // Converter para nÃºmeros para garantir
     const ids = instance_ids.map(id => parseInt(id, 10));
 
     const result = await tenantQuery(req, `
@@ -2490,18 +2490,18 @@ router.post('/instances/activate-multiple', async (req, res) => {
       RETURNING id, name
     `, [ids]);
 
-    console.log(`✅ ${result.rows.length} instância(s) ativada(s)`);
+    console.log(`âœ… ${result.rows.length} instÃ¢ncia(s) ativada(s)`);
 
     res.json({
       success: true,
       count: result.rows.length,
-      message: `${result.rows.length} instância(s) ativada(s) com sucesso`
+      message: `${result.rows.length} instÃ¢ncia(s) ativada(s) com sucesso`
     });
   } catch (error) {
-    console.error('❌ Erro ao ativar instâncias:', error);
+    console.error('âŒ Erro ao ativar instÃ¢ncias:', error);
     res.status(500).json({
       success: false,
-      message: 'Erro ao ativar instâncias',
+      message: 'Erro ao ativar instÃ¢ncias',
       error: error.message
     });
   }
@@ -2509,11 +2509,11 @@ router.post('/instances/activate-multiple', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/activate-all
- * Ativa todas as instâncias
+ * Ativa todas as instÃ¢ncias
  */
 router.post('/instances/activate-all', async (req, res) => {
   try {
-    console.log(`✅ Ativando TODAS as instâncias`);
+    console.log(`âœ… Ativando TODAS as instÃ¢ncias`);
 
     const result = await tenantQuery(req, `
       UPDATE uaz_instances
@@ -2521,18 +2521,18 @@ router.post('/instances/activate-all', async (req, res) => {
       RETURNING id, name
     `);
 
-    console.log(`✅ ${result.rows.length} instância(s) ativada(s)`);
+    console.log(`âœ… ${result.rows.length} instÃ¢ncia(s) ativada(s)`);
 
     res.json({
       success: true,
       count: result.rows.length,
-      message: `${result.rows.length} instância(s) ativada(s) com sucesso`
+      message: `${result.rows.length} instÃ¢ncia(s) ativada(s) com sucesso`
     });
   } catch (error) {
-    console.error('❌ Erro ao ativar todas as instâncias:', error);
+    console.error('âŒ Erro ao ativar todas as instÃ¢ncias:', error);
     res.status(500).json({
       success: false,
-      message: 'Erro ao ativar instâncias',
+      message: 'Erro ao ativar instÃ¢ncias',
       error: error.message
     });
   }
@@ -2551,18 +2551,18 @@ router.post('/instances/:id/send-text', checkMessageLimit, async (req, res) => {
     if (!tenantId) {
       return res.status(400).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
     if (!number || !text) {
       return res.status(400).json({
         success: false,
-        error: 'Número e texto são obrigatórios'
+        error: 'NÃºmero e texto sÃ£o obrigatÃ³rios'
       });
     }
 
-    // Busca instância (usando tenantQuery para RLS)
+    // Busca instÃ¢ncia (usando tenantQuery para RLS)
     const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -2573,7 +2573,7 @@ router.post('/instances/:id/send-text', checkMessageLimit, async (req, res) => {
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -2582,33 +2582,33 @@ router.post('/instances/:id/send-text', checkMessageLimit, async (req, res) => {
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Recrie a instância.'
+        error: 'InstÃ¢ncia sem token. Recrie a instÃ¢ncia.'
       });
     }
     
-    // ⏸️ VALIDAÇÃO: Verifica se a instância está ativa (não pausada)
+    // â¸ï¸ VALIDAÃ‡ÃƒO: Verifica se a instÃ¢ncia estÃ¡ ativa (nÃ£o pausada)
     if (!inst.is_active) {
-      console.log(`⏸️ Tentativa de envio bloqueada - Instância ${inst.name} (ID: ${id}) está PAUSADA`);
+      console.log(`â¸ï¸ Tentativa de envio bloqueada - InstÃ¢ncia ${inst.name} (ID: ${id}) estÃ¡ PAUSADA`);
       return res.status(400).json({
         success: false,
-        error: '⏸️ Conexão pausada. Ative a conexão nas configurações para enviar mensagens.'
+        error: 'â¸ï¸ ConexÃ£o pausada. Ative a conexÃ£o nas configuraÃ§Ãµes para enviar mensagens.'
       });
     }
     
     if (!inst.is_connected) {
       return res.status(400).json({
         success: false,
-        error: 'Instância não está conectada'
+        error: 'InstÃ¢ncia nÃ£o estÃ¡ conectada'
       });
     }
 
-    // 🚨 VERIFICAR LISTA DE RESTRIÇÃO (ENVIO ÚNICO QR)
-    console.log('═══════════════════════════════════════════════════════');
-    console.log('🔍 VERIFICANDO LISTA DE RESTRIÇÃO (ENVIO ÚNICO QR)');
-    console.log('═══════════════════════════════════════════════════════');
-    console.log('   📞 Número:', number);
-    console.log('   📱 Instância ID:', id);
-    console.log('   🏢 Tenant ID:', tenantId);
+    // ðŸš¨ VERIFICAR LISTA DE RESTRIÃ‡ÃƒO (ENVIO ÃšNICO QR)
+    console.log('â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
+    console.log('ðŸ” VERIFICANDO LISTA DE RESTRIÃ‡ÃƒO (ENVIO ÃšNICO QR)');
+    console.log('â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
+    console.log('   ðŸ“ž NÃºmero:', number);
+    console.log('   ðŸ“± InstÃ¢ncia ID:', id);
+    console.log('   ðŸ¢ Tenant ID:', tenantId);
     
     try {
       const restrictionController = new RestrictionListController();
@@ -2634,22 +2634,22 @@ router.post('/instances/:id/send-text', checkMessageLimit, async (req, res) => {
       
       if (restrictionResult && restrictionResult.restricted_count > 0) {
         const detail = restrictionResult.restricted_details[0];
-        const listNames = detail.list_names?.join(', ') || 'Lista de Restrição';
+        const listNames = detail.list_names?.join(', ') || 'Lista de RestriÃ§Ã£o';
         const types = detail.types || [];
         
-        console.log('🚫 ═══════════════════════════════════════════════════');
-        console.log('🚫 NÚMERO BLOQUEADO - ESTÁ NA LISTA DE RESTRIÇÃO!');
-        console.log('🚫 ═══════════════════════════════════════════════════');
-        console.log('   📝 Listas:', listNames);
-        console.log('   🏷️  Tipos:', types.join(', '));
-        console.log('   📞 Número:', number);
-        console.log('   ❌ ENVIO CANCELADO!');
-        console.log('═══════════════════════════════════════════════════════\n');
+        console.log('ðŸš« â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
+        console.log('ðŸš« NÃšMERO BLOQUEADO - ESTÃ NA LISTA DE RESTRIÃ‡ÃƒO!');
+        console.log('ðŸš« â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
+        console.log('   ðŸ“ Listas:', listNames);
+        console.log('   ðŸ·ï¸  Tipos:', types.join(', '));
+        console.log('   ðŸ“ž NÃºmero:', number);
+        console.log('   âŒ ENVIO CANCELADO!');
+        console.log('â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n');
         
         return res.status(403).json({
           success: false,
-          error: 'Número bloqueado',
-          message: `Este número está na lista de restrição: ${listNames}`,
+          error: 'NÃºmero bloqueado',
+          message: `Este nÃºmero estÃ¡ na lista de restriÃ§Ã£o: ${listNames}`,
           details: {
             lists: listNames,
             types: types,
@@ -2658,14 +2658,14 @@ router.post('/instances/:id/send-text', checkMessageLimit, async (req, res) => {
         });
       }
       
-      console.log('   ✅ Número livre - Prosseguindo com envio');
-      console.log('═══════════════════════════════════════════════════════\n');
+      console.log('   âœ… NÃºmero livre - Prosseguindo com envio');
+      console.log('â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n');
     } catch (error) {
-      console.error('❌ Erro ao verificar lista de restrição:', error);
-      // ⚠️ Por segurança, se der erro na verificação, bloqueamos o envio
+      console.error('âŒ Erro ao verificar lista de restriÃ§Ã£o:', error);
+      // âš ï¸ Por seguranÃ§a, se der erro na verificaÃ§Ã£o, bloqueamos o envio
       return res.status(500).json({
         success: false,
-        error: 'Erro ao verificar lista de restrição - Envio bloqueado por segurança',
+        error: 'Erro ao verificar lista de restriÃ§Ã£o - Envio bloqueado por seguranÃ§a',
         details: error.message
       });
     }
@@ -2677,20 +2677,20 @@ router.post('/instances/:id/send-text', checkMessageLimit, async (req, res) => {
       password: inst.password
     } : null;
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    // 🔤 SUBSTITUIR VARIÁVEIS AUTOMÁTICAS NO TEXTO
-    console.log('🔍 [DEBUG] Texto original recebido:', text);
+    // ðŸ”¤ SUBSTITUIR VARIÃVEIS AUTOMÃTICAS NO TEXTO
+    console.log('ðŸ” [DEBUG] Texto original recebido:', text);
     let processedText = processAutoVariables(text);
-    console.log('🔍 [DEBUG] Texto após variáveis automáticas:', processedText);
+    console.log('ðŸ” [DEBUG] Texto apÃ³s variÃ¡veis automÃ¡ticas:', processedText);
     
-    // 🔤 SUBSTITUIR VARIÁVEIS PERSONALIZADAS (se fornecidas)
+    // ðŸ”¤ SUBSTITUIR VARIÃVEIS PERSONALIZADAS (se fornecidas)
     if (variables && Object.keys(variables).length > 0) {
-      console.log('🔤 [DEBUG] Variáveis personalizadas recebidas:', variables);
+      console.log('ðŸ”¤ [DEBUG] VariÃ¡veis personalizadas recebidas:', variables);
       processedText = replaceVariables(processedText, variables);
-      console.log('🔤 [DEBUG] Texto após variáveis personalizadas:', processedText);
+      console.log('ðŸ”¤ [DEBUG] Texto apÃ³s variÃ¡veis personalizadas:', processedText);
     }
 
     // Envia mensagem usando instance_token (com texto processado)
@@ -2700,7 +2700,7 @@ router.post('/instances/:id/send-text', checkMessageLimit, async (req, res) => {
       ...options
     }, proxyConfig);
 
-    // Salva no histórico (com texto processado)
+    // Salva no histÃ³rico (com texto processado)
     await pool.query(`
       INSERT INTO uaz_messages (
         instance_id, phone_number, message_type, 
@@ -2737,18 +2737,18 @@ router.post('/instances/:id/send-image', checkMessageLimit, async (req, res) => 
     if (!tenantId) {
       return res.status(400).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
     if (!number || !image) {
       return res.status(400).json({
         success: false,
-        error: 'Número e imagem são obrigatórios'
+        error: 'NÃºmero e imagem sÃ£o obrigatÃ³rios'
       });
     }
 
-    // Busca instância (usando tenantQuery para RLS)
+    // Busca instÃ¢ncia (usando tenantQuery para RLS)
     const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -2759,7 +2759,7 @@ router.post('/instances/:id/send-image', checkMessageLimit, async (req, res) => 
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -2768,29 +2768,29 @@ router.post('/instances/:id/send-image', checkMessageLimit, async (req, res) => 
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Recrie a instância.'
+        error: 'InstÃ¢ncia sem token. Recrie a instÃ¢ncia.'
       });
     }
     
-    // ⏸️ VALIDAÇÃO: Verifica se a instância está ativa (não pausada)
+    // â¸ï¸ VALIDAÃ‡ÃƒO: Verifica se a instÃ¢ncia estÃ¡ ativa (nÃ£o pausada)
     if (!inst.is_active) {
-      console.log(`⏸️ Tentativa de envio bloqueada - Instância ${inst.name} (ID: ${id}) está PAUSADA`);
+      console.log(`â¸ï¸ Tentativa de envio bloqueada - InstÃ¢ncia ${inst.name} (ID: ${id}) estÃ¡ PAUSADA`);
       return res.status(400).json({
         success: false,
-        error: '⏸️ Conexão pausada. Ative a conexão nas configurações para enviar mensagens.'
+        error: 'â¸ï¸ ConexÃ£o pausada. Ative a conexÃ£o nas configuraÃ§Ãµes para enviar mensagens.'
       });
     }
     
     if (!inst.is_connected) {
       return res.status(400).json({
         success: false,
-        error: 'Instância não está conectada'
+        error: 'InstÃ¢ncia nÃ£o estÃ¡ conectada'
       });
     }
 
-    // 🚨 VERIFICAR LISTA DE RESTRIÇÃO (ENVIO ÚNICO QR - IMAGEM)
-    console.log('🔍 VERIFICANDO LISTA DE RESTRIÇÃO (ENVIO IMAGEM QR)');
-    console.log('   📞 Número:', number);
+    // ðŸš¨ VERIFICAR LISTA DE RESTRIÃ‡ÃƒO (ENVIO ÃšNICO QR - IMAGEM)
+    console.log('ðŸ” VERIFICANDO LISTA DE RESTRIÃ‡ÃƒO (ENVIO IMAGEM QR)');
+    console.log('   ðŸ“ž NÃºmero:', number);
     
     try {
       const restrictionController = new RestrictionListController();
@@ -2812,24 +2812,24 @@ router.post('/instances/:id/send-image', checkMessageLimit, async (req, res) => 
       
       if (restrictionResult && restrictionResult.restricted_count > 0) {
         const detail = restrictionResult.restricted_details[0];
-        const listNames = detail.list_names?.join(', ') || 'Lista de Restrição';
+        const listNames = detail.list_names?.join(', ') || 'Lista de RestriÃ§Ã£o';
         
-        console.log('🚫 NÚMERO BLOQUEADO - Lista:', listNames);
+        console.log('ðŸš« NÃšMERO BLOQUEADO - Lista:', listNames);
         
         return res.status(403).json({
           success: false,
-          error: 'Número bloqueado',
-          message: `Este número está na lista de restrição: ${listNames}`,
+          error: 'NÃºmero bloqueado',
+          message: `Este nÃºmero estÃ¡ na lista de restriÃ§Ã£o: ${listNames}`,
           details: { lists: listNames, restricted: true }
         });
       }
       
-      console.log('   ✅ Número livre\n');
+      console.log('   âœ… NÃºmero livre\n');
     } catch (error) {
-      console.error('❌ Erro ao verificar lista de restrição:', error);
+      console.error('âŒ Erro ao verificar lista de restriÃ§Ã£o:', error);
       return res.status(500).json({
         success: false,
-        error: 'Erro ao verificar lista de restrição - Envio bloqueado por segurança'
+        error: 'Erro ao verificar lista de restriÃ§Ã£o - Envio bloqueado por seguranÃ§a'
       });
     }
 
@@ -2853,22 +2853,22 @@ router.post('/instances/:id/send-image', checkMessageLimit, async (req, res) => 
       fileToSend = conversion.file;
     }
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    // 🔤 SUBSTITUIR VARIÁVEIS AUTOMÁTICAS NO CAPTION (se houver)
+    // ðŸ”¤ SUBSTITUIR VARIÃVEIS AUTOMÃTICAS NO CAPTION (se houver)
     let processedCaption = processAutoVariables(caption || '');
     
-    // 🔤 SUBSTITUIR VARIÁVEIS PERSONALIZADAS NO CAPTION (se fornecidas)
+    // ðŸ”¤ SUBSTITUIR VARIÃVEIS PERSONALIZADAS NO CAPTION (se fornecidas)
     const { variables } = req.body;
     if (variables && Object.keys(variables).length > 0) {
-      console.log('🔤 [DEBUG] Substituindo variáveis personalizadas no caption da imagem:', variables);
+      console.log('ðŸ”¤ [DEBUG] Substituindo variÃ¡veis personalizadas no caption da imagem:', variables);
       processedCaption = replaceVariables(processedCaption, variables);
     }
 
     // Envia imagem usando o endpoint correto /send/media
-    console.log('📤 Enviando imagem via UAZ API...', {
+    console.log('ðŸ“¤ Enviando imagem via UAZ API...', {
       number,
       type: 'image',
       isBase64: fileToSend.startsWith('data:'),
@@ -2882,9 +2882,9 @@ router.post('/instances/:id/send-image', checkMessageLimit, async (req, res) => 
       text: processedCaption
     }, proxyConfig);
 
-    console.log('✅ Resultado do envio:', sendResult);
+    console.log('âœ… Resultado do envio:', sendResult);
 
-    // Salva no histórico (com caption processado)
+    // Salva no histÃ³rico (com caption processado)
     await pool.query(`
       INSERT INTO uaz_messages (
         instance_id, phone_number, message_type, message_content, media_url, status
@@ -2902,7 +2902,7 @@ router.post('/instances/:id/send-image', checkMessageLimit, async (req, res) => 
 
 /**
  * POST /api/uaz/instances/:id/send-video
- * Envia mensagem com vídeo
+ * Envia mensagem com vÃ­deo
  */
 router.post('/instances/:id/send-video', checkMessageLimit, async (req, res) => {
   try {
@@ -2913,18 +2913,18 @@ router.post('/instances/:id/send-video', checkMessageLimit, async (req, res) => 
     if (!tenantId) {
       return res.status(400).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
     if (!number || !video) {
       return res.status(400).json({
         success: false,
-        error: 'Número e vídeo são obrigatórios'
+        error: 'NÃºmero e vÃ­deo sÃ£o obrigatÃ³rios'
       });
     }
 
-    // Busca instância (usando tenantQuery para RLS)
+    // Busca instÃ¢ncia (usando tenantQuery para RLS)
     const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -2935,7 +2935,7 @@ router.post('/instances/:id/send-video', checkMessageLimit, async (req, res) => 
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -2944,28 +2944,28 @@ router.post('/instances/:id/send-video', checkMessageLimit, async (req, res) => 
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Recrie a instância.'
+        error: 'InstÃ¢ncia sem token. Recrie a instÃ¢ncia.'
       });
     }
     
-    // ⏸️ VALIDAÇÃO: Verifica se a instância está ativa (não pausada)
+    // â¸ï¸ VALIDAÃ‡ÃƒO: Verifica se a instÃ¢ncia estÃ¡ ativa (nÃ£o pausada)
     if (!inst.is_active) {
-      console.log(`⏸️ Tentativa de envio bloqueada - Instância ${inst.name} (ID: ${id}) está PAUSADA`);
+      console.log(`â¸ï¸ Tentativa de envio bloqueada - InstÃ¢ncia ${inst.name} (ID: ${id}) estÃ¡ PAUSADA`);
       return res.status(400).json({
         success: false,
-        error: '⏸️ Conexão pausada. Ative a conexão nas configurações para enviar mensagens.'
+        error: 'â¸ï¸ ConexÃ£o pausada. Ative a conexÃ£o nas configuraÃ§Ãµes para enviar mensagens.'
       });
     }
     
     if (!inst.is_connected) {
       return res.status(400).json({
         success: false,
-        error: 'Instância não está conectada'
+        error: 'InstÃ¢ncia nÃ£o estÃ¡ conectada'
       });
     }
 
-    // 🚨 VERIFICAR LISTA DE RESTRIÇÃO (ENVIO ÚNICO QR - VÍDEO)
-    console.log('🔍 VERIFICANDO LISTA DE RESTRIÇÃO (ENVIO VÍDEO QR) - Número:', number);
+    // ðŸš¨ VERIFICAR LISTA DE RESTRIÃ‡ÃƒO (ENVIO ÃšNICO QR - VÃDEO)
+    console.log('ðŸ” VERIFICANDO LISTA DE RESTRIÃ‡ÃƒO (ENVIO VÃDEO QR) - NÃºmero:', number);
     
     try {
       const restrictionController = new RestrictionListController();
@@ -2981,20 +2981,20 @@ router.post('/instances/:id/send-video', checkMessageLimit, async (req, res) => 
       });
       
       if (restrictionResult && restrictionResult.restricted_count > 0) {
-        const listNames = restrictionResult.restricted_details[0].list_names?.join(', ') || 'Lista de Restrição';
-        console.log('🚫 BLOQUEADO -', listNames);
+        const listNames = restrictionResult.restricted_details[0].list_names?.join(', ') || 'Lista de RestriÃ§Ã£o';
+        console.log('ðŸš« BLOQUEADO -', listNames);
         return res.status(403).json({
           success: false,
-          error: 'Número bloqueado',
-          message: `Este número está na lista de restrição: ${listNames}`
+          error: 'NÃºmero bloqueado',
+          message: `Este nÃºmero estÃ¡ na lista de restriÃ§Ã£o: ${listNames}`
         });
       }
-      console.log('   ✅ Livre\n');
+      console.log('   âœ… Livre\n');
     } catch (error) {
-      console.error('❌ Erro ao verificar lista:', error);
+      console.error('âŒ Erro ao verificar lista:', error);
       return res.status(500).json({
         success: false,
-        error: 'Erro ao verificar lista de restrição'
+        error: 'Erro ao verificar lista de restriÃ§Ã£o'
       });
     }
 
@@ -3012,27 +3012,27 @@ router.post('/instances/:id/send-video', checkMessageLimit, async (req, res) => 
       if (!conversion.success) {
         return res.status(500).json({
           success: false,
-          error: 'Erro ao processar vídeo: ' + conversion.error
+          error: 'Erro ao processar vÃ­deo: ' + conversion.error
         });
       }
       fileToSend = conversion.file;
     }
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    // 🔤 SUBSTITUIR VARIÁVEIS AUTOMÁTICAS NO CAPTION (se houver)
+    // ðŸ”¤ SUBSTITUIR VARIÃVEIS AUTOMÃTICAS NO CAPTION (se houver)
     let processedCaption = processAutoVariables(caption || '');
     
-    // 🔤 SUBSTITUIR VARIÁVEIS PERSONALIZADAS NO CAPTION (se fornecidas)
+    // ðŸ”¤ SUBSTITUIR VARIÃVEIS PERSONALIZADAS NO CAPTION (se fornecidas)
     const { variables } = req.body;
     if (variables && Object.keys(variables).length > 0) {
-      console.log('🔤 [DEBUG] Substituindo variáveis personalizadas no caption do vídeo:', variables);
+      console.log('ðŸ”¤ [DEBUG] Substituindo variÃ¡veis personalizadas no caption do vÃ­deo:', variables);
       processedCaption = replaceVariables(processedCaption, variables);
     }
 
-    // Envia vídeo usando o endpoint correto /send/media
+    // Envia vÃ­deo usando o endpoint correto /send/media
     const sendResult = await tenantUazService.sendMedia(inst.instance_token, {
       number,
       type: 'video',
@@ -3040,7 +3040,7 @@ router.post('/instances/:id/send-video', checkMessageLimit, async (req, res) => 
       text: processedCaption
     }, proxyConfig);
 
-    // Salva no histórico (com caption processado)
+    // Salva no histÃ³rico (com caption processado)
     await pool.query(`
       INSERT INTO uaz_messages (
         instance_id, phone_number, message_type, message_content, media_url, status
@@ -3069,18 +3069,18 @@ router.post('/instances/:id/send-document', checkMessageLimit, async (req, res) 
     if (!tenantId) {
       return res.status(400).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
     if (!number || !document) {
       return res.status(400).json({
         success: false,
-        error: 'Número e documento são obrigatórios'
+        error: 'NÃºmero e documento sÃ£o obrigatÃ³rios'
       });
     }
 
-    // Busca instância (usando tenantQuery para RLS)
+    // Busca instÃ¢ncia (usando tenantQuery para RLS)
     const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -3091,7 +3091,7 @@ router.post('/instances/:id/send-document', checkMessageLimit, async (req, res) 
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -3100,28 +3100,28 @@ router.post('/instances/:id/send-document', checkMessageLimit, async (req, res) 
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Recrie a instância.'
+        error: 'InstÃ¢ncia sem token. Recrie a instÃ¢ncia.'
       });
     }
     
-    // ⏸️ VALIDAÇÃO: Verifica se a instância está ativa (não pausada)
+    // â¸ï¸ VALIDAÃ‡ÃƒO: Verifica se a instÃ¢ncia estÃ¡ ativa (nÃ£o pausada)
     if (!inst.is_active) {
-      console.log(`⏸️ Tentativa de envio bloqueada - Instância ${inst.name} (ID: ${id}) está PAUSADA`);
+      console.log(`â¸ï¸ Tentativa de envio bloqueada - InstÃ¢ncia ${inst.name} (ID: ${id}) estÃ¡ PAUSADA`);
       return res.status(400).json({
         success: false,
-        error: '⏸️ Conexão pausada. Ative a conexão nas configurações para enviar mensagens.'
+        error: 'â¸ï¸ ConexÃ£o pausada. Ative a conexÃ£o nas configuraÃ§Ãµes para enviar mensagens.'
       });
     }
     
     if (!inst.is_connected) {
       return res.status(400).json({
         success: false,
-        error: 'Instância não está conectada'
+        error: 'InstÃ¢ncia nÃ£o estÃ¡ conectada'
       });
     }
 
-    // 🚨 VERIFICAR LISTA DE RESTRIÇÃO (ENVIO ÚNICO QR - DOCUMENTO)
-    console.log('🔍 VERIFICANDO LISTA DE RESTRIÇÃO (ENVIO DOC QR) - Número:', number);
+    // ðŸš¨ VERIFICAR LISTA DE RESTRIÃ‡ÃƒO (ENVIO ÃšNICO QR - DOCUMENTO)
+    console.log('ðŸ” VERIFICANDO LISTA DE RESTRIÃ‡ÃƒO (ENVIO DOC QR) - NÃºmero:', number);
     
     try {
       const restrictionController = new RestrictionListController();
@@ -3137,20 +3137,20 @@ router.post('/instances/:id/send-document', checkMessageLimit, async (req, res) 
       });
       
       if (restrictionResult && restrictionResult.restricted_count > 0) {
-        const listNames = restrictionResult.restricted_details[0].list_names?.join(', ') || 'Lista de Restrição';
-        console.log('🚫 BLOQUEADO -', listNames);
+        const listNames = restrictionResult.restricted_details[0].list_names?.join(', ') || 'Lista de RestriÃ§Ã£o';
+        console.log('ðŸš« BLOQUEADO -', listNames);
         return res.status(403).json({
           success: false,
-          error: 'Número bloqueado',
-          message: `Este número está na lista de restrição: ${listNames}`
+          error: 'NÃºmero bloqueado',
+          message: `Este nÃºmero estÃ¡ na lista de restriÃ§Ã£o: ${listNames}`
         });
       }
-      console.log('   ✅ Livre\n');
+      console.log('   âœ… Livre\n');
     } catch (error) {
-      console.error('❌ Erro ao verificar lista:', error);
+      console.error('âŒ Erro ao verificar lista:', error);
       return res.status(500).json({
         success: false,
-        error: 'Erro ao verificar lista de restrição'
+        error: 'Erro ao verificar lista de restriÃ§Ã£o'
       });
     }
 
@@ -3174,17 +3174,17 @@ router.post('/instances/:id/send-document', checkMessageLimit, async (req, res) 
       fileToSend = conversion.file;
     }
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    // 🔤 SUBSTITUIR VARIÁVEIS AUTOMÁTICAS NO CAPTION (se houver)
+    // ðŸ”¤ SUBSTITUIR VARIÃVEIS AUTOMÃTICAS NO CAPTION (se houver)
     let processedCaption = processAutoVariables(caption || '');
     
-    // 🔤 SUBSTITUIR VARIÁVEIS PERSONALIZADAS NO CAPTION (se fornecidas)
+    // ðŸ”¤ SUBSTITUIR VARIÃVEIS PERSONALIZADAS NO CAPTION (se fornecidas)
     const { variables } = req.body;
     if (variables && Object.keys(variables).length > 0) {
-      console.log('🔤 [DEBUG] Substituindo variáveis personalizadas no caption do documento:', variables);
+      console.log('ðŸ”¤ [DEBUG] Substituindo variÃ¡veis personalizadas no caption do documento:', variables);
       processedCaption = replaceVariables(processedCaption, variables);
     }
 
@@ -3197,7 +3197,7 @@ router.post('/instances/:id/send-document', checkMessageLimit, async (req, res) 
       text: processedCaption
     }, proxyConfig);
 
-    // Salva no histórico (com caption processado)
+    // Salva no histÃ³rico (com caption processado)
     await pool.query(`
       INSERT INTO uaz_messages (
         instance_id, phone_number, message_type, message_content, media_url, status
@@ -3215,7 +3215,7 @@ router.post('/instances/:id/send-document', checkMessageLimit, async (req, res) 
 
 /**
  * POST /api/uaz/instances/:id/send-audio
- * Envia mensagem com áudio
+ * Envia mensagem com Ã¡udio
  */
 router.post('/instances/:id/send-audio', checkMessageLimit, async (req, res) => {
   try {
@@ -3226,18 +3226,18 @@ router.post('/instances/:id/send-audio', checkMessageLimit, async (req, res) => 
     if (!tenantId) {
       return res.status(400).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
     if (!number || !audio) {
       return res.status(400).json({
         success: false,
-        error: 'Número e áudio são obrigatórios'
+        error: 'NÃºmero e Ã¡udio sÃ£o obrigatÃ³rios'
       });
     }
 
-    // Busca instância (usando tenantQuery para RLS)
+    // Busca instÃ¢ncia (usando tenantQuery para RLS)
     const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -3248,7 +3248,7 @@ router.post('/instances/:id/send-audio', checkMessageLimit, async (req, res) => 
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -3257,28 +3257,28 @@ router.post('/instances/:id/send-audio', checkMessageLimit, async (req, res) => 
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Recrie a instância.'
+        error: 'InstÃ¢ncia sem token. Recrie a instÃ¢ncia.'
       });
     }
     
-    // ⏸️ VALIDAÇÃO: Verifica se a instância está ativa (não pausada)
+    // â¸ï¸ VALIDAÃ‡ÃƒO: Verifica se a instÃ¢ncia estÃ¡ ativa (nÃ£o pausada)
     if (!inst.is_active) {
-      console.log(`⏸️ Tentativa de envio bloqueada - Instância ${inst.name} (ID: ${id}) está PAUSADA`);
+      console.log(`â¸ï¸ Tentativa de envio bloqueada - InstÃ¢ncia ${inst.name} (ID: ${id}) estÃ¡ PAUSADA`);
       return res.status(400).json({
         success: false,
-        error: '⏸️ Conexão pausada. Ative a conexão nas configurações para enviar mensagens.'
+        error: 'â¸ï¸ ConexÃ£o pausada. Ative a conexÃ£o nas configuraÃ§Ãµes para enviar mensagens.'
       });
     }
     
     if (!inst.is_connected) {
       return res.status(400).json({
         success: false,
-        error: 'Instância não está conectada'
+        error: 'InstÃ¢ncia nÃ£o estÃ¡ conectada'
       });
     }
 
-    // 🚨 VERIFICAR LISTA DE RESTRIÇÃO (ENVIO ÚNICO QR - ÁUDIO)
-    console.log('🔍 VERIFICANDO LISTA DE RESTRIÇÃO (ENVIO ÁUDIO QR) - Número:', number);
+    // ðŸš¨ VERIFICAR LISTA DE RESTRIÃ‡ÃƒO (ENVIO ÃšNICO QR - ÃUDIO)
+    console.log('ðŸ” VERIFICANDO LISTA DE RESTRIÃ‡ÃƒO (ENVIO ÃUDIO QR) - NÃºmero:', number);
     
     try {
       const restrictionController = new RestrictionListController();
@@ -3294,20 +3294,20 @@ router.post('/instances/:id/send-audio', checkMessageLimit, async (req, res) => 
       });
       
       if (restrictionResult && restrictionResult.restricted_count > 0) {
-        const listNames = restrictionResult.restricted_details[0].list_names?.join(', ') || 'Lista de Restrição';
-        console.log('🚫 BLOQUEADO -', listNames);
+        const listNames = restrictionResult.restricted_details[0].list_names?.join(', ') || 'Lista de RestriÃ§Ã£o';
+        console.log('ðŸš« BLOQUEADO -', listNames);
         return res.status(403).json({
           success: false,
-          error: 'Número bloqueado',
-          message: `Este número está na lista de restrição: ${listNames}`
+          error: 'NÃºmero bloqueado',
+          message: `Este nÃºmero estÃ¡ na lista de restriÃ§Ã£o: ${listNames}`
         });
       }
-      console.log('   ✅ Livre\n');
+      console.log('   âœ… Livre\n');
     } catch (error) {
-      console.error('❌ Erro ao verificar lista:', error);
+      console.error('âŒ Erro ao verificar lista:', error);
       return res.status(500).json({
         success: false,
-        error: 'Erro ao verificar lista de restrição'
+        error: 'Erro ao verificar lista de restriÃ§Ã£o'
       });
     }
 
@@ -3321,28 +3321,28 @@ router.post('/instances/:id/send-audio', checkMessageLimit, async (req, res) => 
     // Converte arquivo para Base64 se for URL local
     let fileToSend = audio;
     if (audio.startsWith('http://localhost') || audio.startsWith('/uploads/')) {
-      const conversion = await convertFileToBase64(audio, false); // Não comprimir áudio
+      const conversion = await convertFileToBase64(audio, false); // NÃ£o comprimir Ã¡udio
       if (!conversion.success) {
         return res.status(500).json({
           success: false,
-          error: 'Erro ao processar áudio: ' + conversion.error
+          error: 'Erro ao processar Ã¡udio: ' + conversion.error
         });
       }
       fileToSend = conversion.file;
     }
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    // Envia áudio usando o endpoint correto /send/media
+    // Envia Ã¡udio usando o endpoint correto /send/media
     const sendResult = await tenantUazService.sendMedia(inst.instance_token, {
       number,
       type: 'audio',
       file: fileToSend
     }, proxyConfig);
 
-    // Salva no histórico
+    // Salva no histÃ³rico
     await pool.query(`
       INSERT INTO uaz_messages (
         instance_id, phone_number, message_type, message_content, media_url, status
@@ -3360,7 +3360,7 @@ router.post('/instances/:id/send-audio', checkMessageLimit, async (req, res) => 
 
 /**
  * POST /api/uaz/instances/:id/check-number
- * Verifica se um número existe no WhatsApp
+ * Verifica se um nÃºmero existe no WhatsApp
  */
 router.post('/instances/:id/check-number', async (req, res) => {
   try {
@@ -3370,11 +3370,11 @@ router.post('/instances/:id/check-number', async (req, res) => {
     if (!number) {
       return res.status(400).json({
         success: false,
-        error: 'Número é obrigatório'
+        error: 'NÃºmero Ã© obrigatÃ³rio'
       });
     }
 
-    // Busca instância (usando tenantQuery para RLS)
+    // Busca instÃ¢ncia (usando tenantQuery para RLS)
     const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -3385,7 +3385,7 @@ router.post('/instances/:id/check-number', async (req, res) => {
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -3394,7 +3394,7 @@ router.post('/instances/:id/check-number', async (req, res) => {
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Recrie a instância.'
+        error: 'InstÃ¢ncia sem token. Recrie a instÃ¢ncia.'
       });
     }
 
@@ -3405,11 +3405,11 @@ router.post('/instances/:id/check-number', async (req, res) => {
       password: inst.password
     } : null;
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    // Verifica número usando instance_token
+    // Verifica nÃºmero usando instance_token
     const checkResult = await tenantUazService.checkNumber(inst.instance_token, number, proxyConfig);
 
     res.json(checkResult);
@@ -3423,30 +3423,30 @@ router.post('/instances/:id/check-number', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/:id/check-numbers
- * Verifica múltiplos números no WhatsApp
+ * Verifica mÃºltiplos nÃºmeros no WhatsApp
  */
 router.post('/instances/:id/check-numbers', async (req, res) => {
   try {
     const { id } = req.params;
     const { numbers, delaySeconds } = req.body;
 
-    // 🔒 SEGURANÇA: Obter tenant_id do request
+    // ðŸ”’ SEGURANÃ‡A: Obter tenant_id do request
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
     if (!numbers || !Array.isArray(numbers) || numbers.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Array de números é obrigatório'
+        error: 'Array de nÃºmeros Ã© obrigatÃ³rio'
       });
     }
 
-    // Busca instância (usando tenantQuery para RLS)
+    // Busca instÃ¢ncia (usando tenantQuery para RLS)
     const instance = await tenantQuery(req, `
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -3457,7 +3457,7 @@ router.post('/instances/:id/check-numbers', async (req, res) => {
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -3466,7 +3466,7 @@ router.post('/instances/:id/check-numbers', async (req, res) => {
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token. Recrie a instância.'
+        error: 'InstÃ¢ncia sem token. Recrie a instÃ¢ncia.'
       });
     }
 
@@ -3477,25 +3477,26 @@ router.post('/instances/:id/check-numbers', async (req, res) => {
       password: inst.password
     } : null;
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    // Verifica números usando instance_token com delay configurável
+    // Verifica nÃºmeros usando instance_token com delay configurÃ¡vel
     const delay = parseFloat(delaySeconds) || 0;
     const checkResult = await tenantUazService.checkNumbers(inst.instance_token, numbers, proxyConfig, delay);
 
-    // 💾 SALVAR HISTÓRICO DE VERIFICAÇÕES
+    // ðŸ’¾ SALVAR HISTÃ“RICO DE VERIFICAÃ‡Ã•ES
     if (checkResult.success && checkResult.data) {
-      console.log(`💾 Salvando ${checkResult.data.length} verificações no histórico...`);
+      console.log(`ðŸ’¾ Salvando ${checkResult.data.length} verificaÃ§Ãµes no histÃ³rico...`);
       
       for (const result of checkResult.data) {
         try {
-          await pool.query(`
+          await tenantQuery(req, `
             INSERT INTO uaz_verification_history 
-            (instance_id, phone_number, is_in_whatsapp, verified_name, jid, error_message)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            (tenant_id, instance_id, phone_number, is_in_whatsapp, verified_name, jid, error_message)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
           `, [
+            tenantId,
             id,
             result.phone,
             result.exists || false,
@@ -3504,13 +3505,13 @@ router.post('/instances/:id/check-numbers', async (req, res) => {
             result.error || null
           ]);
           
-          console.log(`  ✅ Histórico salvo: ${result.phone} - ${result.exists ? 'TEM WhatsApp' : 'NÃO tem WhatsApp'}`);
+          console.log(`  âœ… HistÃ³rico salvo: ${result.phone} - ${result.exists ? 'TEM WhatsApp' : 'NÃƒO tem WhatsApp'}`);
         } catch (error) {
-          console.error(`  ❌ Erro ao salvar histórico de ${result.phone}:`, error.message);
+          console.error(`  âŒ Erro ao salvar histÃ³rico de ${result.phone}:`, error.message);
         }
       }
       
-      console.log(`✅ Histórico de verificações salvo com sucesso!\n`);
+      console.log(`âœ… HistÃ³rico de verificaÃ§Ãµes salvo com sucesso!\n`);
     }
 
     res.json(checkResult);
@@ -3524,10 +3525,15 @@ router.post('/instances/:id/check-numbers', async (req, res) => {
 
 /**
  * GET /api/uaz/verification-history
- * Lista histórico de verificações de números
+ * Lista histÃ³rico de verificaÃ§Ãµes de nÃºmeros
  */
 router.get('/verification-history', async (req, res) => {
   try {
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ success: false, message: 'Tenant nÃ£o identificado' });
+    }
+
     const { instance_id, limit = 100, offset = 0 } = req.query;
 
     let query = `
@@ -3537,25 +3543,28 @@ router.get('/verification-history', async (req, res) => {
         ui.session_name
       FROM uaz_verification_history vh
       JOIN uaz_instances ui ON vh.instance_id = ui.id
+      WHERE vh.tenant_id = $1
     `;
     
-    const params = [];
+    const params = [tenantId];
     if (instance_id) {
-      query += ' WHERE vh.instance_id = $1';
+      query += ' AND vh.instance_id = $2';
       params.push(instance_id);
     }
 
     query += ' ORDER BY vh.verified_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
     params.push(limit, offset);
 
-    const result = await pool.query(query, params);
+    const result = await tenantQuery(req, query, params);
 
     // Contar total
-    let countQuery = 'SELECT COUNT(*) FROM uaz_verification_history vh';
+    let countQuery = 'SELECT COUNT(*) FROM uaz_verification_history vh WHERE vh.tenant_id = $1';
+    const countParams = [tenantId];
     if (instance_id) {
-      countQuery += ' WHERE vh.instance_id = $1';
+      countQuery += ' AND vh.instance_id = $2';
+      countParams.push(instance_id);
     }
-    const countResult = await pool.query(countQuery, instance_id ? [instance_id] : []);
+    const countResult = await tenantQuery(req, countQuery, countParams);
     const total = parseInt(countResult.rows[0].count);
 
     res.json({
@@ -3584,7 +3593,7 @@ router.get('/messages', async (req, res) => {
   try {
     const tenantId = req.tenant?.id;
     if (!tenantId) {
-      return res.status(401).json({ success: false, message: 'Tenant não identificado' });
+      return res.status(401).json({ success: false, message: 'Tenant nÃ£o identificado' });
     }
 
     const { instance_id, limit = 50, offset = 0 } = req.query;
@@ -3615,7 +3624,7 @@ router.get('/messages', async (req, res) => {
       WHERE qc.tenant_id = $1
     `;
 
-    // Mensagens únicas (uaz_messages)
+    // Mensagens Ãºnicas (uaz_messages)
     let uniqueQuery = `
       SELECT 
         um.id,
@@ -3642,7 +3651,7 @@ router.get('/messages', async (req, res) => {
 
     const params = [tenantId, tenantId];
 
-    // Filtro por instância (aplica nos dois blocos)
+    // Filtro por instÃ¢ncia (aplica nos dois blocos)
     if (instance_id) {
       campaignQuery += ` AND qcm.instance_id = $3`;
       uniqueQuery += ` AND um.instance_id = $3`;
@@ -3667,7 +3676,7 @@ router.get('/messages', async (req, res) => {
 
     const result = await tenantQuery(req, combinedQuery, params);
 
-    // Contagem total (sem paginação)
+    // Contagem total (sem paginaÃ§Ã£o)
     const countQuery = `
       SELECT COUNT(*) FROM (
         ${campaignQuery}
@@ -3693,36 +3702,36 @@ router.get('/messages', async (req, res) => {
 
 /**
  * GET /api/uaz/stats
- * Estatísticas gerais UAZ com filtros de data e separação por tipo
+ * EstatÃ­sticas gerais UAZ com filtros de data e separaÃ§Ã£o por tipo
  */
 router.get('/stats', async (req, res) => {
   try {
-    // 🔒 SEGURANÇA: Filtrar por tenant_id
+    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        message: 'Tenant não identificado'
+        message: 'Tenant nÃ£o identificado'
       });
     }
 
     const { startDate, endDate, filterType } = req.query;
 
-    console.log('📊 Buscando estatísticas UAZ/QR Connect');
+    console.log('ðŸ“Š Buscando estatÃ­sticas UAZ/QR Connect');
     console.log('Filtros:', { startDate, endDate, filterType, tenantId });
 
     // ===============================================
-    // 1. ESTATÍSTICAS DE INSTÂNCIAS (sem filtro de data)
+    // 1. ESTATÃSTICAS DE INSTÃ‚NCIAS (sem filtro de data)
     // ===============================================
     
-    // 🐛 DEBUG: Verificar instâncias do tenant
+    // ðŸ› DEBUG: Verificar instÃ¢ncias do tenant
     const debugInstances = await pool.query(`
       SELECT id, name, session_name, tenant_id
       FROM uaz_instances
       WHERE tenant_id = $1
     `, [tenantId]);
     
-    console.log('🔍 DEBUG - Instâncias do tenant:', {
+    console.log('ðŸ” DEBUG - InstÃ¢ncias do tenant:', {
       tenant_id: tenantId,
       total_instances: debugInstances.rows.length,
       instances: debugInstances.rows.map(i => ({
@@ -3741,7 +3750,7 @@ router.get('/stats', async (req, res) => {
     `, [tenantId]);
 
     // ===============================================
-    // 2. ESTATÍSTICAS DE MENSAGENS POR CAMPANHA
+    // 2. ESTATÃSTICAS DE MENSAGENS POR CAMPANHA
     // ===============================================
     let campaignQuery = `
       SELECT 
@@ -3775,10 +3784,10 @@ router.get('/stats', async (req, res) => {
     const campaignStats = await tenantQuery(req, campaignQuery, campaignParams);
 
     // ===============================================
-    // 3. ESTATÍSTICAS DE MENSAGENS ÚNICAS (não-campanha)
+    // 3. ESTATÃSTICAS DE MENSAGENS ÃšNICAS (nÃ£o-campanha)
     // ===============================================
     
-    // 🐛 DEBUG: Verificar se há duplicação
+    // ðŸ› DEBUG: Verificar se hÃ¡ duplicaÃ§Ã£o
     const debugQuery = `
       SELECT 
         um.id,
@@ -3795,7 +3804,7 @@ router.get('/stats', async (req, res) => {
     `;
     
     const debugResult = await tenantQuery(req, debugQuery, [tenantId]);
-    console.log('🔍 DEBUG - Últimas 10 mensagens únicas:', {
+    console.log('ðŸ” DEBUG - Ãšltimas 10 mensagens Ãºnicas:', {
       total_found: debugResult.rows.length,
       messages: debugResult.rows.map(m => ({
         id: m.id,
@@ -3821,7 +3830,7 @@ router.get('/stats', async (req, res) => {
     const uniqueParams = [tenantId];
     let uniqueParamIndex = 2;
 
-    // Aplicar filtros de data nas mensagens únicas
+    // Aplicar filtros de data nas mensagens Ãºnicas
     if (startDate) {
       uniqueQuery += ` AND um.created_at >= $${uniqueParamIndex}::timestamp`;
       uniqueParams.push(startDate);
@@ -3836,10 +3845,10 @@ router.get('/stats', async (req, res) => {
 
     const uniqueStats = await tenantQuery(req, uniqueQuery, uniqueParams);
     
-    console.log('📊 Resultado da query de mensagens únicas:', uniqueStats.rows[0]);
+    console.log('ðŸ“Š Resultado da query de mensagens Ãºnicas:', uniqueStats.rows[0]);
 
     // ===============================================
-    // 4. CAMPANHAS RECENTES (últimas 5)
+    // 4. CAMPANHAS RECENTES (Ãºltimas 5)
     // ===============================================
     const recentCampaignsQuery = `
       SELECT 
@@ -3854,7 +3863,7 @@ router.get('/stats', async (req, res) => {
 
     const recentCampaigns = await tenantQuery(req, recentCampaignsQuery, [tenantId]);
 
-    console.log('✅ Estatísticas UAZ carregadas:', {
+    console.log('âœ… EstatÃ­sticas UAZ carregadas:', {
       instances: instancesStats.rows[0],
       campaign_messages: campaignStats.rows[0]?.total_messages || 0,
       unique_messages: uniqueStats.rows[0]?.total_messages || 0,
@@ -3864,7 +3873,7 @@ router.get('/stats', async (req, res) => {
     res.json({
       success: true,
       data: {
-        // Instâncias
+        // InstÃ¢ncias
         instances: {
           total: parseInt(instancesStats.rows[0].total_instances) || 0,
           connected: parseInt(instancesStats.rows[0].connected_instances) || 0,
@@ -3881,7 +3890,7 @@ router.get('/stats', async (req, res) => {
           total_campaigns: parseInt(campaignStats.rows[0]?.total_campaigns) || 0
         },
         
-        // Mensagens Únicas (não-campanha)
+        // Mensagens Ãšnicas (nÃ£o-campanha)
         unique_messages: {
           total: parseInt(uniqueStats.rows[0]?.total_messages) || 0,
           sent: parseInt(uniqueStats.rows[0]?.sent_messages) || 0,
@@ -3902,7 +3911,7 @@ router.get('/stats', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('❌ Erro ao buscar estatísticas UAZ:', error);
+    console.error('âŒ Erro ao buscar estatÃ­sticas UAZ:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -3912,7 +3921,7 @@ router.get('/stats', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/:id/send-menu
- * Envia menu interativo (botões, lista, enquete ou carousel)
+ * Envia menu interativo (botÃµes, lista, enquete ou carousel)
  */
 router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
   try {
@@ -3932,13 +3941,13 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
     if (!tenantId) {
       return res.status(400).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
-    console.log('📤 Enviando menu interativo:', type);
+    console.log('ðŸ“¤ Enviando menu interativo:', type);
 
-    // Buscar instância (usando tenantQuery para RLS)
+    // Buscar instÃ¢ncia (usando tenantQuery para RLS)
     const result = await tenantQuery(req,
       `SELECT 
         ui.*,
@@ -3957,13 +3966,13 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
     const instance = result.rows[0];
     
-    // Preparar configuração de proxy se existir
+    // Preparar configuraÃ§Ã£o de proxy se existir
     const proxyConfig = instance.proxy_id ? {
       host: instance.proxy_host,
       port: instance.proxy_port,
@@ -3972,35 +3981,35 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
       type: instance.proxy_type
     } : null;
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    // Validações
+    // ValidaÃ§Ãµes
     if (!['button', 'list', 'poll', 'carousel'].includes(type)) {
       return res.status(400).json({
         success: false,
-        error: 'Tipo inválido. Use: button, list, poll ou carousel'
+        error: 'Tipo invÃ¡lido. Use: button, list, poll ou carousel'
       });
     }
 
     if (!choices || !Array.isArray(choices) || choices.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'É necessário fornecer opções (choices)'
+        error: 'Ã‰ necessÃ¡rio fornecer opÃ§Ãµes (choices)'
       });
     }
 
-    console.log('📋 Tipo:', type);
-    console.log('📋 Choices recebidos:', JSON.stringify(choices, null, 2));
+    console.log('ðŸ“‹ Tipo:', type);
+    console.log('ðŸ“‹ Choices recebidos:', JSON.stringify(choices, null, 2));
     
-    // 🔤 PROCESSAR VARIÁVEIS NO TEXTO E FOOTER
+    // ðŸ”¤ PROCESSAR VARIÃVEIS NO TEXTO E FOOTER
     const { variables } = req.body;
     let processedText = processAutoVariables(text || '');
     let processedFooter = processAutoVariables(footerText || '');
     
     if (variables && Object.keys(variables).length > 0) {
-      console.log('🔤 [DEBUG] Substituindo variáveis personalizadas no menu:', variables);
+      console.log('ðŸ”¤ [DEBUG] Substituindo variÃ¡veis personalizadas no menu:', variables);
       processedText = replaceVariables(processedText, variables);
       processedFooter = replaceVariables(processedFooter, variables);
     }
@@ -4012,10 +4021,10 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
       text: processedText
     };
     
-    // Para listas, formatar com [Seção] e texto|id|descrição
+    // Para listas, formatar com [SeÃ§Ã£o] e texto|id|descriÃ§Ã£o
     if (type === 'list') {
       menuData.choices = formatListChoices(choices);
-      console.log('📋 Choices formatados para lista:', JSON.stringify(menuData.choices, null, 2));
+      console.log('ðŸ“‹ Choices formatados para lista:', JSON.stringify(menuData.choices, null, 2));
     } else {
       menuData.choices = choices;  // Para buttons e polls, usar choices direto
     }
@@ -4033,17 +4042,17 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
       if (selectableCount) menuData.selectableCount = selectableCount;
     }
     
-    // Processar imageButton se necessário (converter local para Base64)
+    // Processar imageButton se necessÃ¡rio (converter local para Base64)
     if (imageButton) {
       if (imageButton.includes('localhost') || imageButton.startsWith('/uploads/')) {
-        console.log('🔄 Convertendo imagem do botão para Base64...');
+        console.log('ðŸ”„ Convertendo imagem do botÃ£o para Base64...');
         const conversionResult = await convertFileToBase64(imageButton);
         
         if (conversionResult.success) {
           menuData.imageButton = conversionResult.file;
-          console.log(`✅ Imagem do botão convertida (tamanho: ${(conversionResult.file.length / 1024).toFixed(2)} KB)`);
+          console.log(`âœ… Imagem do botÃ£o convertida (tamanho: ${(conversionResult.file.length / 1024).toFixed(2)} KB)`);
         } else {
-          console.error('❌ Erro ao converter imagem:', conversionResult.error);
+          console.error('âŒ Erro ao converter imagem:', conversionResult.error);
           return res.status(400).json({
             success: false,
             error: `Erro ao processar imagem: ${conversionResult.error}`
@@ -4055,10 +4064,10 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
     }
 
     // Log do payload completo
-    console.log('📤 Payload completo do menu:', JSON.stringify(menuData, null, 2));
+    console.log('ðŸ“¤ Payload completo do menu:', JSON.stringify(menuData, null, 2));
     
     // Enviar via UAZ API usando sendMenu (suporta button, list, poll, carousel)
-    console.log(`📋 Enviando ${type.toUpperCase()} via método sendMenu...`);
+    console.log(`ðŸ“‹ Enviando ${type.toUpperCase()} via mÃ©todo sendMenu...`);
     const response = await uazService.sendMenu(instance.instance_token, menuData, proxyConfig);
 
     // Registrar no banco
@@ -4073,7 +4082,7 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
       data: response
     });
   } catch (error) {
-    console.error('❌ ERRO DETALHADO ao enviar menu:');
+    console.error('âŒ ERRO DETALHADO ao enviar menu:');
     console.error('   Mensagem:', error.message);
     console.error('   Stack:', error.stack);
     
@@ -4093,7 +4102,7 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
 
 /**
  * POST /api/uaz/instances/:id/send-carousel
- * Envia carrossel de mídia com botões
+ * Envia carrossel de mÃ­dia com botÃµes
  */
 router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) => {
   try {
@@ -4104,18 +4113,18 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
     if (!tenantId) {
       return res.status(400).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
-    console.log('📤 Enviando carrossel para:', number);
-    console.log('📦 Payload recebido:', JSON.stringify({ id, number, text, cards }, null, 2));
+    console.log('ðŸ“¤ Enviando carrossel para:', number);
+    console.log('ðŸ“¦ Payload recebido:', JSON.stringify({ id, number, text, cards }, null, 2));
 
-    // Validações básicas
+    // ValidaÃ§Ãµes bÃ¡sicas
     if (!number) {
       return res.status(400).json({
         success: false,
-        error: 'Número é obrigatório'
+        error: 'NÃºmero Ã© obrigatÃ³rio'
       });
     }
 
@@ -4123,13 +4132,13 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
     if (!cards || !Array.isArray(cards) || cards.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'É necessário fornecer pelo menos um card'
+        error: 'Ã‰ necessÃ¡rio fornecer pelo menos um card'
       });
     }
 
-    console.log(`📋 Total de cards recebidos: ${cards.length}`);
+    console.log(`ðŸ“‹ Total de cards recebidos: ${cards.length}`);
 
-    // Buscar instância (usando tenantQuery para RLS)
+    // Buscar instÃ¢ncia (usando tenantQuery para RLS)
     const result = await tenantQuery(req,
       `SELECT 
         ui.*,
@@ -4148,21 +4157,21 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
     const instance = result.rows[0];
-    console.log(`✅ Instância encontrada: ${instance.name} (Token: ${instance.instance_token ? 'OK' : 'FALTANDO'})`);
+    console.log(`âœ… InstÃ¢ncia encontrada: ${instance.name} (Token: ${instance.instance_token ? 'OK' : 'FALTANDO'})`);
 
     if (!instance.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token configurado'
+        error: 'InstÃ¢ncia sem token configurado'
       });
     }
     
-    // Preparar configuração de proxy se existir
+    // Preparar configuraÃ§Ã£o de proxy se existir
     const proxyConfig = instance.proxy_id ? {
       host: instance.proxy_host,
       port: instance.proxy_port,
@@ -4171,15 +4180,15 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
       type: instance.proxy_type
     } : null;
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    // 🔤 PROCESSAR VARIÁVEIS NO TEXTO PRINCIPAL DO CAROUSEL
+    // ðŸ”¤ PROCESSAR VARIÃVEIS NO TEXTO PRINCIPAL DO CAROUSEL
     const { variables } = req.body;
     let processedText = processAutoVariables(text || '');
     if (variables && Object.keys(variables).length > 0) {
-      console.log('🔤 [DEBUG] Substituindo variáveis personalizadas no carousel:', variables);
+      console.log('ðŸ”¤ [DEBUG] Substituindo variÃ¡veis personalizadas no carousel:', variables);
       processedText = replaceVariables(processedText, variables);
     }
 
@@ -4187,14 +4196,14 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
     const processedCards = [];
     for (let i = 0; i < cards.length; i++) {
       const card = cards[i];
-      console.log(`\n🔍 Processando card ${i + 1}:`, {
+      console.log(`\nðŸ” Processando card ${i + 1}:`, {
         text: card.text?.substring(0, 50),
         image: card.image?.substring(0, 100),
         buttons: card.buttons?.length
       });
 
       if (!card.text || !card.image || !card.buttons) {
-        console.error('❌ Card inválido:', card);
+        console.error('âŒ Card invÃ¡lido:', card);
         return res.status(400).json({
           success: false,
           error: `Card ${i + 1} precisa ter text, image e buttons`
@@ -4202,30 +4211,30 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
       }
 
       if (!Array.isArray(card.buttons) || card.buttons.length === 0) {
-        console.error('❌ Botões inválidos no card:', card.buttons);
+        console.error('âŒ BotÃµes invÃ¡lidos no card:', card.buttons);
         return res.status(400).json({
           success: false,
-          error: `Card ${i + 1} precisa ter pelo menos um botão`
+          error: `Card ${i + 1} precisa ter pelo menos um botÃ£o`
         });
       }
 
-      // Converter imagem local para Base64 se necessário
+      // Converter imagem local para Base64 se necessÃ¡rio
       let imageUrl = card.image;
       if (card.image.includes('localhost') || card.image.startsWith('/uploads/')) {
-        console.log(`🔄 Convertendo imagem ${i + 1} para Base64 com compressão agressiva...`);
+        console.log(`ðŸ”„ Convertendo imagem ${i + 1} para Base64 com compressÃ£o agressiva...`);
         const conversionResult = await convertFileToBase64(card.image, true); // true = comprimir
         
         if (conversionResult.success) {
           imageUrl = conversionResult.file;
           const sizeKB = (imageUrl.length / 1024).toFixed(2);
-          console.log(`✅ Imagem ${i + 1} convertida: ${sizeKB} KB`);
+          console.log(`âœ… Imagem ${i + 1} convertida: ${sizeKB} KB`);
           
           // Avisar se ainda estiver muito grande
           if (imageUrl.length > 10 * 1024 * 1024) { // > 10MB
-            console.warn(`⚠️ Imagem ${i + 1} muito grande (${sizeKB} KB) após compressão`);
+            console.warn(`âš ï¸ Imagem ${i + 1} muito grande (${sizeKB} KB) apÃ³s compressÃ£o`);
           }
         } else {
-          console.error(`❌ Erro ao converter imagem ${i + 1}:`, conversionResult.error);
+          console.error(`âŒ Erro ao converter imagem ${i + 1}:`, conversionResult.error);
           return res.status(400).json({
             success: false,
             error: `Erro ao processar imagem do card ${i + 1}: ${conversionResult.error}`
@@ -4233,7 +4242,7 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
         }
       }
 
-      // 🔤 PROCESSAR VARIÁVEIS NO TEXTO DO CARD
+      // ðŸ”¤ PROCESSAR VARIÃVEIS NO TEXTO DO CARD
       let cardText = processAutoVariables(card.text);
       if (variables && Object.keys(variables).length > 0) {
         cardText = replaceVariables(cardText, variables);
@@ -4246,24 +4255,24 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
       });
     }
 
-    console.log(`\n✅ ${processedCards.length} cards processados com sucesso`);
+    console.log(`\nâœ… ${processedCards.length} cards processados com sucesso`);
     
     // Calcular tamanho total do payload
     const payloadStr = JSON.stringify({ number, text, cards: processedCards });
     const payloadSizeKB = (payloadStr.length / 1024).toFixed(2);
     const payloadSizeMB = (payloadStr.length / 1024 / 1024).toFixed(2);
-    console.log(`📊 Tamanho total do payload: ${payloadSizeKB} KB (${payloadSizeMB} MB)`);
+    console.log(`ðŸ“Š Tamanho total do payload: ${payloadSizeKB} KB (${payloadSizeMB} MB)`);
     
     if (payloadStr.length > 200 * 1024 * 1024) {
-      console.warn(`⚠️ AVISO: Payload extremamente grande (${payloadSizeMB} MB). Pode falhar no envio.`);
+      console.warn(`âš ï¸ AVISO: Payload extremamente grande (${payloadSizeMB} MB). Pode falhar no envio.`);
     }
     
-    console.log('🚀 Enviando para UAZ API...');
+    console.log('ðŸš€ Enviando para UAZ API...');
 
     // Enviar carrossel via UAZ API (com texto processado)
     const response = await uazService.sendCarousel(instance.instance_token, number, processedText, processedCards, proxyConfig);
 
-    console.log('✅ Resposta da UAZ:', response);
+    console.log('âœ… Resposta da UAZ:', response);
 
     // Registrar mensagem no banco (com texto processado) - usando tenantQuery para RLS
     await tenantQuery(req,
@@ -4272,14 +4281,14 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
       [id, number, 'carousel', JSON.stringify({ text: processedText, cards: processedCards }), 'sent']
     );
 
-    console.log('✅ Mensagem registrada no banco');
+    console.log('âœ… Mensagem registrada no banco');
 
     res.json({
       success: true,
       data: response
     });
   } catch (error) {
-    console.error('❌ ERRO DETALHADO ao enviar carrossel:');
+    console.error('âŒ ERRO DETALHADO ao enviar carrossel:');
     console.error('Mensagem:', error.message);
     console.error('Stack:', error.stack);
     if (error.response) {
@@ -4296,12 +4305,12 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
 });
 
 // ========================================
-// HISTÓRICO DE MENSAGENS
+// HISTÃ“RICO DE MENSAGENS
 // ========================================
 
 /**
  * POST /uaz/messages/save
- * Salva uma mensagem no histórico do banco de dados
+ * Salva uma mensagem no histÃ³rico do banco de dados
  */
 router.post('/messages/save', async (req, res) => {
   try {
@@ -4315,23 +4324,23 @@ router.post('/messages/save', async (req, res) => {
       jobId
     } = req.body;
 
-    console.log('💾 Salvando mensagem no histórico:', {
+    console.log('ðŸ’¾ Salvando mensagem no histÃ³rico:', {
       instanceId,
       phoneNumber,
       messageType,
       status
     });
 
-    // Validar dados obrigatórios
+    // Validar dados obrigatÃ³rios
     if (!instanceId || !phoneNumber || !messageType) {
       return res.status(400).json({
         success: false,
-        error: 'instanceId, phoneNumber e messageType são obrigatórios'
+        error: 'instanceId, phoneNumber e messageType sÃ£o obrigatÃ³rios'
       });
     }
 
-    // 🐛 CORREÇÃO: Verificar se já existe mensagem recente (últimos 5 segundos)
-    // para evitar duplicação quando frontend chama após o envio
+    // ðŸ› CORREÃ‡ÃƒO: Verificar se jÃ¡ existe mensagem recente (Ãºltimos 5 segundos)
+    // para evitar duplicaÃ§Ã£o quando frontend chama apÃ³s o envio
     const checkExisting = await pool.query(
       `SELECT id, status FROM uaz_messages 
        WHERE instance_id = $1 
@@ -4344,9 +4353,9 @@ router.post('/messages/save', async (req, res) => {
     );
 
     if (checkExisting.rows.length > 0) {
-      // Mensagem já existe, fazer UPDATE ao invés de INSERT
+      // Mensagem jÃ¡ existe, fazer UPDATE ao invÃ©s de INSERT
       const existingId = checkExisting.rows[0].id;
-      console.log(`⚠️ Mensagem já existe (ID: ${existingId}), atualizando status...`);
+      console.log(`âš ï¸ Mensagem jÃ¡ existe (ID: ${existingId}), atualizando status...`);
       
       const result = await pool.query(
         `UPDATE uaz_messages 
@@ -4358,7 +4367,7 @@ router.post('/messages/save', async (req, res) => {
         [status || 'completed', error || null, existingId]
       );
 
-      console.log(`✅ Mensagem atualizada (ID: ${existingId})`);
+      console.log(`âœ… Mensagem atualizada (ID: ${existingId})`);
 
       res.json({
         success: true,
@@ -4366,7 +4375,7 @@ router.post('/messages/save', async (req, res) => {
         updated: true
       });
     } else {
-      // Mensagem não existe, fazer INSERT normal
+      // Mensagem nÃ£o existe, fazer INSERT normal
       const result = await pool.query(
         `INSERT INTO uaz_messages (
           instance_id, 
@@ -4394,7 +4403,7 @@ router.post('/messages/save', async (req, res) => {
 
       const savedMessage = result.rows[0];
 
-      console.log('✅ Mensagem salva no banco com ID:', savedMessage.id);
+      console.log('âœ… Mensagem salva no banco com ID:', savedMessage.id);
 
       res.json({
         success: true,
@@ -4404,7 +4413,7 @@ router.post('/messages/save', async (req, res) => {
     }
 
   } catch (error) {
-    console.error('❌ Erro ao salvar mensagem:', error);
+    console.error('âŒ Erro ao salvar mensagem:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -4414,19 +4423,19 @@ router.post('/messages/save', async (req, res) => {
 
 /**
  * GET /uaz/messages/history
- * Busca histórico de mensagens com filtros
+ * Busca histÃ³rico de mensagens com filtros
  * Query params:
  *   - startDate: Data inicial (ISO format)
  *   - endDate: Data final (ISO format)
- *   - instanceId: ID da instância (opcional)
+ *   - instanceId: ID da instÃ¢ncia (opcional)
  *   - status: Status da mensagem (opcional)
- *   - limit: Limite de resultados (padrão: 100)
+ *   - limit: Limite de resultados (padrÃ£o: 100)
  */
 router.get('/messages/history', async (req, res) => {
   try {
     const { startDate, endDate, instanceId, status, limit = 100 } = req.query;
 
-    console.log('📊 Buscando histórico de mensagens:', {
+    console.log('ðŸ“Š Buscando histÃ³rico de mensagens:', {
       startDate,
       endDate,
       instanceId,
@@ -4434,7 +4443,7 @@ router.get('/messages/history', async (req, res) => {
       limit
     });
 
-    // Construir query dinâmica
+    // Construir query dinÃ¢mica
     let query = `
       SELECT 
         m.id,
@@ -4471,7 +4480,7 @@ router.get('/messages/history', async (req, res) => {
       paramIndex++;
     }
 
-    // Filtro por instância
+    // Filtro por instÃ¢ncia
     if (instanceId) {
       query += ` AND m.instance_id = $${paramIndex}`;
       params.push(instanceId);
@@ -4492,12 +4501,12 @@ router.get('/messages/history', async (req, res) => {
     query += ` LIMIT $${paramIndex}`;
     params.push(limit);
 
-    console.log('🔍 Query SQL:', query);
-    console.log('🔍 Parâmetros:', params);
+    console.log('ðŸ” Query SQL:', query);
+    console.log('ðŸ” ParÃ¢metros:', params);
 
     const result = await pool.query(query, params);
 
-    console.log(`✅ ${result.rows.length} mensagens encontradas no histórico`);
+    console.log(`âœ… ${result.rows.length} mensagens encontradas no histÃ³rico`);
 
     res.json({
       success: true,
@@ -4506,7 +4515,7 @@ router.get('/messages/history', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro ao buscar histórico:', error);
+    console.error('âŒ Erro ao buscar histÃ³rico:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -4516,15 +4525,15 @@ router.get('/messages/history', async (req, res) => {
 
 /**
  * GET /uaz/messages/stats
- * Retorna estatísticas do histórico de mensagens
+ * Retorna estatÃ­sticas do histÃ³rico de mensagens
  */
 router.get('/messages/stats', async (req, res) => {
   try {
     const { startDate, endDate, instanceId } = req.query;
 
-    console.log('📊 Buscando estatísticas de mensagens');
+    console.log('ðŸ“Š Buscando estatÃ­sticas de mensagens');
 
-    // Construir query de estatísticas
+    // Construir query de estatÃ­sticas
     let query = `
       SELECT 
         COUNT(*) as total,
@@ -4560,7 +4569,7 @@ router.get('/messages/stats', async (req, res) => {
     const result = await pool.query(query, params);
     const stats = result.rows[0];
 
-    console.log('✅ Estatísticas:', stats);
+    console.log('âœ… EstatÃ­sticas:', stats);
 
     res.json({
       success: true,
@@ -4574,7 +4583,7 @@ router.get('/messages/stats', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro ao buscar estatísticas:', error);
+    console.error('âŒ Erro ao buscar estatÃ­sticas:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -4584,19 +4593,19 @@ router.get('/messages/stats', async (req, res) => {
 
 /**
  * GET /api/uaz/instances/:id/history
- * Obtém histórico completo de eventos de uma instância
+ * ObtÃ©m histÃ³rico completo de eventos de uma instÃ¢ncia
  */
 router.get('/instances/:id/history', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Verifica se instância existe
-    // 🔒 SEGURANÇA: Filtrar por tenant_id
+    // Verifica se instÃ¢ncia existe
+    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        message: 'Tenant não identificado'
+        message: 'Tenant nÃ£o identificado'
       });
     }
     
@@ -4604,16 +4613,16 @@ router.get('/instances/:id/history', async (req, res) => {
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
     
     const inst = instance.rows[0];
     
-    // Busca histórico
+    // Busca histÃ³rico
     const history = await getInstanceHistory(id);
     
-    console.log(`📝 Histórico da instância "${inst.name}" (ID: ${id}) - ${history.length} eventos`);
+    console.log(`ðŸ“ HistÃ³rico da instÃ¢ncia "${inst.name}" (ID: ${id}) - ${history.length} eventos`);
     
     res.json({
       success: true,
@@ -4629,7 +4638,7 @@ router.get('/instances/:id/history', async (req, res) => {
       total: history.length
     });
   } catch (error) {
-    console.error('❌ Erro ao buscar histórico:', error);
+    console.error('âŒ Erro ao buscar histÃ³rico:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -4639,46 +4648,51 @@ router.get('/instances/:id/history', async (req, res) => {
 
 /**
  * POST /api/uaz/verification-jobs
- * Cria um novo job de verificação em massa para rodar em background
+ * Cria um novo job de verificaÃ§Ã£o em massa para rodar em background
  */
 router.post('/verification-jobs', async (req, res) => {
   try {
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ success: false, message: 'Tenant nÃ£o identificado' });
+    }
+
     const { instanceIds, numbers, delaySeconds = 2, userIdentifier = 'default' } = req.body;
 
     if (!instanceIds || instanceIds.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Selecione pelo menos uma instância'
+        error: 'Selecione pelo menos uma instÃ¢ncia'
       });
     }
 
     if (!numbers || numbers.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Forneça pelo menos um número'
+        error: 'ForneÃ§a pelo menos um nÃºmero'
       });
     }
 
-    console.log(`\n🚀 Criando job de verificação em massa:`);
-    console.log(`   📱 Instâncias: ${instanceIds.length} - IDs: [${instanceIds.join(', ')}]`);
-    console.log(`   📞 Números: ${numbers.length}`);
-    console.log(`   ⏱️  Delay: ${delaySeconds}s`);
+    console.log(`\nðŸš€ Criando job de verificaÃ§Ã£o em massa:`);
+    console.log(`   ðŸ“± InstÃ¢ncias: ${instanceIds.length} - IDs: [${instanceIds.join(', ')}]`);
+    console.log(`   ðŸ“ž NÃºmeros: ${numbers.length}`);
+    console.log(`   â±ï¸  Delay: ${delaySeconds}s`);
 
     // Criar job no banco
-    const result = await pool.query(`
+    const result = await tenantQuery(req, `
       INSERT INTO uaz_verification_jobs 
-      (user_identifier, instance_ids, numbers, delay_seconds, progress_total, status)
-      VALUES ($1, $2, $3, $4, $5, 'pending')
+      (tenant_id, user_identifier, instance_ids, numbers, delay_seconds, progress_total, status)
+      VALUES ($1, $2, $3, $4, $5, $6, 'pending')
       RETURNING *
-    `, [userIdentifier, instanceIds, numbers, delaySeconds, numbers.length]);
+    `, [tenantId, userIdentifier, instanceIds, numbers, delaySeconds, numbers.length]);
 
     const job = result.rows[0];
 
-    console.log(`✅ Job criado com ID: ${job.id}`);
+    console.log(`âœ… Job criado com ID: ${job.id}`);
 
     // Iniciar processamento em background
-    processVerificationJob(job.id).catch(err => {
-      console.error(`❌ Erro ao processar job ${job.id}:`, err);
+    processVerificationJob(job.id, tenantId).catch(err => {
+      console.error(`âŒ Erro ao processar job ${job.id}:`, err);
     });
 
     res.json({
@@ -4691,7 +4705,7 @@ router.post('/verification-jobs', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro ao criar job:', error);
+    console.error('âŒ Erro ao criar job:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -4701,18 +4715,23 @@ router.post('/verification-jobs', async (req, res) => {
 
 /**
  * GET /api/uaz/verification-jobs/:id
- * Obtém status e progresso de um job
+ * ObtÃ©m status e progresso de um job
  */
 router.get('/verification-jobs/:id', async (req, res) => {
   try {
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ success: false, message: 'Tenant não identificado' });
+    }
+
     const { id } = req.params;
 
-    const result = await pool.query('SELECT * FROM uaz_verification_jobs WHERE id = $1', [id]);
+    const result = await tenantQuery(req, 'SELECT * FROM uaz_verification_jobs WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Job não encontrado'
+        error: 'Job nÃ£o encontrado'
       });
     }
 
@@ -4737,7 +4756,7 @@ router.get('/verification-jobs/:id', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro ao buscar job:', error);
+    console.error('âŒ Erro ao buscar job:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -4747,18 +4766,23 @@ router.get('/verification-jobs/:id', async (req, res) => {
 
 /**
  * GET /api/uaz/verification-jobs
- * Lista todos os jobs do usuário
+ * Lista todos os jobs do usuÃ¡rio
  */
 router.get('/verification-jobs', async (req, res) => {
   try {
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ success: false, message: 'Tenant não identificado' });
+    }
+
     const { userIdentifier = 'default', limit = 50 } = req.query;
 
-    const result = await pool.query(`
+    const result = await tenantQuery(req, `
       SELECT * FROM uaz_verification_jobs 
-      WHERE user_identifier = $1 
+      WHERE user_identifier = $1 AND tenant_id = $2
       ORDER BY created_at DESC 
-      LIMIT $2
-    `, [userIdentifier, limit]);
+      LIMIT $3
+    `, [userIdentifier, tenantId, limit]);
 
     res.json({
       success: true,
@@ -4776,7 +4800,7 @@ router.get('/verification-jobs', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro ao listar jobs:', error);
+    console.error('âŒ Erro ao listar jobs:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -4786,24 +4810,29 @@ router.get('/verification-jobs', async (req, res) => {
 
 /**
  * POST /api/uaz/verification-jobs/:id/pause
- * Pausa um job em execução
+ * Pausa um job em execuÃ§Ã£o
  */
 router.post('/verification-jobs/:id/pause', async (req, res) => {
   try {
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ success: false, message: 'Tenant não identificado' });
+    }
+
     const { id } = req.params;
 
-    await pool.query(`
+    await tenantQuery(req, `
       UPDATE uaz_verification_jobs 
       SET status = 'paused', updated_at = NOW() 
-      WHERE id = $1 AND status = 'running'
-    `, [id]);
+      WHERE id = $1 AND tenant_id = $2 AND status = 'running'
+    `, [id, tenantId]);
 
-    console.log(`⏸️ Job ${id} pausado`);
+    console.log(`â¸ï¸ Job ${id} pausado`);
 
     res.json({ success: true, message: 'Job pausado' });
 
   } catch (error) {
-    console.error('❌ Erro ao pausar job:', error);
+    console.error('âŒ Erro ao pausar job:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -4817,20 +4846,25 @@ router.post('/verification-jobs/:id/pause', async (req, res) => {
  */
 router.post('/verification-jobs/:id/resume', async (req, res) => {
   try {
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ success: false, message: 'Tenant não identificado' });
+    }
+
     const { id } = req.params;
 
-    await pool.query(`
+    await tenantQuery(req, `
       UPDATE uaz_verification_jobs 
       SET status = 'running', updated_at = NOW() 
-      WHERE id = $1 AND status = 'paused'
-    `, [id]);
+      WHERE id = $1 AND tenant_id = $2 AND status = 'paused'
+    `, [id, tenantId]);
 
-    console.log(`▶️ Job ${id} retomado`);
+    console.log(`â–¶ï¸ Job ${id} retomado`);
 
     res.json({ success: true, message: 'Job retomado' });
 
   } catch (error) {
-    console.error('❌ Erro ao retomar job:', error);
+    console.error('âŒ Erro ao retomar job:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -4844,20 +4878,25 @@ router.post('/verification-jobs/:id/resume', async (req, res) => {
  */
 router.post('/verification-jobs/:id/cancel', async (req, res) => {
   try {
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ success: false, message: 'Tenant não identificado' });
+    }
+
     const { id } = req.params;
 
-    await pool.query(`
+    await tenantQuery(req, `
       UPDATE uaz_verification_jobs 
       SET status = 'cancelled', completed_at = NOW(), updated_at = NOW() 
-      WHERE id = $1 AND status IN ('pending', 'running', 'paused')
-    `, [id]);
+      WHERE id = $1 AND tenant_id = $2 AND status IN ('pending', 'running', 'paused')
+    `, [id, tenantId]);
 
-    console.log(`⛔ Job ${id} cancelado`);
+    console.log(`â›” Job ${id} cancelado`);
 
     res.json({ success: true, message: 'Job cancelado' });
 
   } catch (error) {
-    console.error('❌ Erro ao cancelar job:', error);
+    console.error('âŒ Erro ao cancelar job:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -4866,14 +4905,14 @@ router.post('/verification-jobs/:id/cancel', async (req, res) => {
 });
 
 /**
- * Função para processar job em background
+ * FunÃ§Ã£o para processar job em background
  */
-async function processVerificationJob(jobId) {
+async function processVerificationJob(jobId, tenantId) {
   try {
-    console.log(`\n🔄 Iniciando processamento do job ${jobId}...`);
+    console.log(`\n✅ Iniciando processamento do job ${jobId}...`);
 
     // Buscar job
-    const jobResult = await pool.query('SELECT * FROM uaz_verification_jobs WHERE id = $1', [jobId]);
+    const jobResult = await queryWithTenantId(tenantId, 'SELECT * FROM uaz_verification_jobs WHERE id = $1', [jobId]);
     if (jobResult.rows.length === 0) {
       console.error(`❌ Job ${jobId} não encontrado`);
       return;
@@ -4882,7 +4921,7 @@ async function processVerificationJob(jobId) {
     const job = jobResult.rows[0];
 
     // Atualizar para status "running"
-    await pool.query(`
+    await queryWithTenantId(tenantId, `
       UPDATE uaz_verification_jobs 
       SET status = 'running', started_at = NOW(), updated_at = NOW() 
       WHERE id = $1
@@ -4893,20 +4932,19 @@ async function processVerificationJob(jobId) {
     const instanceIds = job.instance_ids;
 
     // Buscar instâncias (incluir tenant_id para buscar credenciais corretas)
-    const instancesResult = await pool.query(`
+    const instancesResult = await queryWithTenantId(tenantId, `
       SELECT id, name, instance_token, is_connected, tenant_id FROM uaz_instances WHERE id = ANY($1)
     `, [instanceIds]);
     const instances = instancesResult.rows;
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT (usando a primeira instância para obter o tenant)
-    const tenantId = instances.length > 0 ? instances[0].tenant_id : null;
+    // ✅ BUSCAR CREDENCIAIS DO TENANT (usando a primeira instância para obter o tenant)
     if (!tenantId) {
       throw new Error('Tenant ID não encontrado nas instâncias');
     }
     const credentials = await getTenantUazapCredentials(tenantId);
     const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    console.log(`📊 Processando ${numbers.length} números com ${instances.length} instância(s):`);
+    console.log(`🔍 Processando ${numbers.length} números com ${instances.length} instância(s):`);
     instances.forEach((inst, idx) => {
       console.log(`   ${idx + 1}. ID: ${inst.id} | Nome: ${inst.name} | Conectada: ${inst.is_connected ? '✅' : '❌'}`);
     });
@@ -4914,18 +4952,18 @@ async function processVerificationJob(jobId) {
     // Processar números
     for (let i = 0; i < numbers.length; i++) {
       // Verificar se foi pausado ou cancelado
-      const statusCheck = await pool.query('SELECT status FROM uaz_verification_jobs WHERE id = $1', [jobId]);
+      const statusCheck = await queryWithTenantId(tenantId, 'SELECT status FROM uaz_verification_jobs WHERE id = $1', [jobId]);
       const currentStatus = statusCheck.rows[0].status;
 
       if (currentStatus === 'cancelled') {
-        console.log(`⛔ Job ${jobId} foi cancelado`);
+        console.log(`⚠️ Job ${jobId} foi cancelado`);
         break;
       }
 
       // Aguardar se pausado
       while (currentStatus === 'paused') {
         await new Promise(resolve => setTimeout(resolve, 1000));
-        const pauseCheck = await pool.query('SELECT status FROM uaz_verification_jobs WHERE id = $1', [jobId]);
+        const pauseCheck = await queryWithTenantId(tenantId, 'SELECT status FROM uaz_verification_jobs WHERE id = $1', [jobId]);
         if (pauseCheck.rows[0].status !== 'paused') break;
       }
 
@@ -4935,7 +4973,7 @@ async function processVerificationJob(jobId) {
 
       try {
         console.log(`\n🔍 [${i + 1}/${numbers.length}] Verificando ${phone}`);
-        console.log(`   └─ Usando instância [${instanceIndex + 1}/${instances.length}]: ID=${instance.id} | ${instance.name}`);
+        console.log(`   ✅ Usando instância [${instanceIndex + 1}/${instances.length}]: ID=${instance.id} | ${instance.name}`);
 
         const checkResult = await uazService.checkNumber(instance.instance_token, phone);
 
@@ -4959,11 +4997,11 @@ async function processVerificationJob(jobId) {
         results.push(result);
 
         // Salvar histórico individual
-        await pool.query(`
+        await queryWithTenantId(tenantId, `
           INSERT INTO uaz_verification_history
-          (instance_id, phone_number, is_in_whatsapp, verified_name, jid)
-          VALUES ($1, $2, $3, $4, $5)
-        `, [instance.id, phone, result.exists, result.verifiedName, result.jid]);
+          (tenant_id, instance_id, phone_number, is_in_whatsapp, verified_name, jid)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [tenantId, instance.id, phone, result.exists, result.verifiedName, result.jid]);
 
       } catch (error) {
         console.error(`❌ Erro ao verificar ${phone} com ${instance.name}:`, error.message);
@@ -4977,7 +5015,7 @@ async function processVerificationJob(jobId) {
       }
 
       // Atualizar progresso
-      await pool.query(`
+      await queryWithTenantId(tenantId, `
         UPDATE uaz_verification_jobs 
         SET progress_current = $1, results = $2, updated_at = NOW() 
         WHERE id = $3
@@ -4990,9 +5028,9 @@ async function processVerificationJob(jobId) {
     }
 
     // Finalizar job
-    const finalStatus = await pool.query('SELECT status FROM uaz_verification_jobs WHERE id = $1', [jobId]);
+    const finalStatus = await queryWithTenantId(tenantId, 'SELECT status FROM uaz_verification_jobs WHERE id = $1', [jobId]);
     if (finalStatus.rows[0].status !== 'cancelled') {
-      await pool.query(`
+      await queryWithTenantId(tenantId, `
         UPDATE uaz_verification_jobs 
         SET status = 'completed', completed_at = NOW(), updated_at = NOW() 
         WHERE id = $1
@@ -5005,7 +5043,7 @@ async function processVerificationJob(jobId) {
 
   } catch (error) {
     console.error(`❌ Erro ao processar job ${jobId}:`, error);
-    await pool.query(`
+    await queryWithTenantId(tenantId, `
       UPDATE uaz_verification_jobs 
       SET status = 'error', error_message = $1, completed_at = NOW(), updated_at = NOW() 
       WHERE id = $2
@@ -5015,42 +5053,42 @@ async function processVerificationJob(jobId) {
 
 /**
  * GET /api/uaz/fetch-instances?phoneNumber=5562981045992
- * Busca UMA instância específica na UAZ API filtrando por número de telefone
+ * Busca UMA instÃ¢ncia especÃ­fica na UAZ API filtrando por nÃºmero de telefone
  * 
- * @query {string} phoneNumber - Número de telefone para buscar (obrigatório)
+ * @query {string} phoneNumber - NÃºmero de telefone para buscar (obrigatÃ³rio)
  */
 router.get('/fetch-instances', async (req, res) => {
   try {
-    console.log('\n📥 ========================================');
-    console.log('📥 BUSCANDO INSTÂNCIA ESPECÍFICA NA UAZ API');
-    console.log('📥 ========================================\n');
+    console.log('\nðŸ“¥ ========================================');
+    console.log('ðŸ“¥ BUSCANDO INSTÃ‚NCIA ESPECÃFICA NA UAZ API');
+    console.log('ðŸ“¥ ========================================\n');
 
-    // 🔒 Verificar tenant ANTES de tudo
+    // ðŸ”’ Verificar tenant ANTES de tudo
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
-    // 📞 OBRIGATÓRIO: Receber número de telefone
+    // ðŸ“ž OBRIGATÃ“RIO: Receber nÃºmero de telefone
     const { phoneNumber } = req.query;
     if (!phoneNumber) {
       return res.status(400).json({
         success: false,
-        error: 'Número de telefone é obrigatório'
+        error: 'NÃºmero de telefone Ã© obrigatÃ³rio'
       });
     }
 
-    console.log(`📞 Buscando instância com número: ${phoneNumber}`);
+    console.log(`ðŸ“ž Buscando instÃ¢ncia com nÃºmero: ${phoneNumber}`);
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
-    console.log(`🔑 Buscando credenciais UAZAP para tenant ${tenantId}...`);
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
+    console.log(`ðŸ”‘ Buscando credenciais UAZAP para tenant ${tenantId}...`);
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
-    // Buscar TODAS as instâncias da UAZ API (mas vamos filtrar depois)
+    // Buscar TODAS as instÃ¢ncias da UAZ API (mas vamos filtrar depois)
     const fetchResult = await tenantUazService.fetchInstances();
 
     if (!fetchResult.success) {
@@ -5061,50 +5099,50 @@ router.get('/fetch-instances', async (req, res) => {
     }
 
     const allInstances = fetchResult.instances || [];
-    console.log(`📊 Total de instâncias na UAZ API: ${allInstances.length}`);
+    console.log(`ðŸ“Š Total de instÃ¢ncias na UAZ API: ${allInstances.length}`);
 
     if (allInstances.length === 0) {
-      console.log('⚠️  Nenhuma instância encontrada na UAZ API');
+      console.log('âš ï¸  Nenhuma instÃ¢ncia encontrada na UAZ API');
       return res.json({
         success: true,
         found: false,
-        message: 'Nenhuma instância encontrada na UAZ API',
+        message: 'Nenhuma instÃ¢ncia encontrada na UAZ API',
         instance: null
       });
     }
 
-    // 🔍 FILTRAR: Buscar APENAS a instância com o número informado
-    console.log(`🔍 Filtrando instâncias pelo número: ${phoneNumber}`);
-    console.log(`📊 Testando ${allInstances.length} instâncias...`);
+    // ðŸ” FILTRAR: Buscar APENAS a instÃ¢ncia com o nÃºmero informado
+    console.log(`ðŸ” Filtrando instÃ¢ncias pelo nÃºmero: ${phoneNumber}`);
+    console.log(`ðŸ“Š Testando ${allInstances.length} instÃ¢ncias...`);
     
     const matchedInstance = allInstances.find(inst => {
       const instancePhone = inst.owner || inst.phoneNumber || '';
-      console.log(`   🔎 Testando: ${instancePhone} (owner) vs ${phoneNumber} (buscado)`);
+      console.log(`   ðŸ”Ž Testando: ${instancePhone} (owner) vs ${phoneNumber} (buscado)`);
       
       const matches = phonesMatch(phoneNumber, instancePhone);
-      console.log(`      └─ Resultado: ${matches ? '✅ MATCH!' : '❌ Não bateu'}`);
+      console.log(`      â””â”€ Resultado: ${matches ? 'âœ… MATCH!' : 'âŒ NÃ£o bateu'}`);
       
       if (matches) {
-        console.log(`   ✅✅✅ ENCONTRADO: ${instancePhone} corresponde a ${phoneNumber}`);
+        console.log(`   âœ…âœ…âœ… ENCONTRADO: ${instancePhone} corresponde a ${phoneNumber}`);
       }
       
       return matches;
     });
 
     if (!matchedInstance) {
-      console.log(`❌ Nenhuma instância encontrada com o número: ${phoneNumber}`);
+      console.log(`âŒ Nenhuma instÃ¢ncia encontrada com o nÃºmero: ${phoneNumber}`);
       console.log('========================================\n');
       return res.json({
         success: true,
         found: false,
-        message: `Nenhuma instância encontrada com o número ${phoneNumber}`,
+        message: `Nenhuma instÃ¢ncia encontrada com o nÃºmero ${phoneNumber}`,
         instance: null
       });
     }
 
-    console.log(`✅ Instância encontrada: ${matchedInstance.name || matchedInstance.id}`);
+    console.log(`âœ… InstÃ¢ncia encontrada: ${matchedInstance.name || matchedInstance.id}`);
     
-    // 🔒 Verificar se já está cadastrada no banco local DO TENANT
+    // ðŸ”’ Verificar se jÃ¡ estÃ¡ cadastrada no banco local DO TENANT
     const localInstances = await tenantQuery(req, 
       'SELECT instance_token FROM uaz_instances WHERE tenant_id = $1 AND instance_token = $2', 
       [tenantId, matchedInstance.token]
@@ -5113,7 +5151,7 @@ router.get('/fetch-instances', async (req, res) => {
     const alreadyImported = localInstances.rows.length > 0;
 
     if (alreadyImported) {
-      console.log(`⚠️  Esta instância já está importada no sistema`);
+      console.log(`âš ï¸  Esta instÃ¢ncia jÃ¡ estÃ¡ importada no sistema`);
     }
 
     console.log('========================================\n');
@@ -5123,8 +5161,8 @@ router.get('/fetch-instances', async (req, res) => {
       found: true,
       alreadyImported,
       message: alreadyImported 
-        ? 'Esta instância já está importada no sistema' 
-        : 'Instância encontrada! Deseja importá-la?',
+        ? 'Esta instÃ¢ncia jÃ¡ estÃ¡ importada no sistema' 
+        : 'InstÃ¢ncia encontrada! Deseja importÃ¡-la?',
       instance: {
         token: matchedInstance.token,
         id: matchedInstance.id,
@@ -5139,7 +5177,7 @@ router.get('/fetch-instances', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro ao buscar instâncias:', error);
+    console.error('âŒ Erro ao buscar instÃ¢ncias:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -5149,34 +5187,34 @@ router.get('/fetch-instances', async (req, res) => {
 
 /**
  * POST /api/uaz/import-instances
- * Importa instâncias selecionadas da UAZ API para o banco local
+ * Importa instÃ¢ncias selecionadas da UAZ API para o banco local
  */
 router.post('/import-instances', async (req, res) => {
   try {
     const { instances } = req.body;
-    const tenantId = req.tenant.id; // ✅ Obter tenant_id do request
+    const tenantId = req.tenant.id; // âœ… Obter tenant_id do request
 
     if (!instances || !Array.isArray(instances) || instances.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Selecione pelo menos uma instância para importar'
+        error: 'Selecione pelo menos uma instÃ¢ncia para importar'
       });
     }
 
-    console.log('\n📥 ========================================');
-    console.log('📥 IMPORTANDO INSTÂNCIAS DA UAZ API');
-    console.log('📥 ========================================\n');
-    console.log(`📊 Total de instâncias a importar: ${instances.length}`);
+    console.log('\nðŸ“¥ ========================================');
+    console.log('ðŸ“¥ IMPORTANDO INSTÃ‚NCIAS DA UAZ API');
+    console.log('ðŸ“¥ ========================================\n');
+    console.log(`ðŸ“Š Total de instÃ¢ncias a importar: ${instances.length}`);
 
     const imported = [];
     const errors = [];
 
     for (const inst of instances) {
       try {
-        console.log(`\n📥 Importando: ${inst.name || inst.token}`);
-        console.log(`   └─ Token: ${inst.token?.substring(0, 20)}...`);
-        console.log(`   └─ Status: ${inst.status}`);
-        console.log(`   └─ Owner: ${inst.owner || 'não informado'}`);
+        console.log(`\nðŸ“¥ Importando: ${inst.name || inst.token}`);
+        console.log(`   â””â”€ Token: ${inst.token?.substring(0, 20)}...`);
+        console.log(`   â””â”€ Status: ${inst.status}`);
+        console.log(`   â””â”€ Owner: ${inst.owner || 'nÃ£o informado'}`);
 
         // Inserir no banco (usando tenantQuery para respeitar RLS)
         const result = await tenantQuery(req, `
@@ -5209,10 +5247,10 @@ router.post('/import-instances', async (req, res) => {
         const importedInstance = result.rows[0];
         imported.push(importedInstance);
 
-        console.log(`   ✅ Importada com sucesso (ID: ${importedInstance.id})`);
+        console.log(`   âœ… Importada com sucesso (ID: ${importedInstance.id})`);
 
       } catch (error) {
-        console.error(`   ❌ Erro ao importar ${inst.name}:`, error.message);
+        console.error(`   âŒ Erro ao importar ${inst.name}:`, error.message);
         errors.push({
           instance: inst.name || inst.token,
           error: error.message
@@ -5220,12 +5258,12 @@ router.post('/import-instances', async (req, res) => {
       }
     }
 
-    console.log('\n📊 ========================================');
-    console.log(`📊 RESUMO DA IMPORTAÇÃO:`);
-    console.log(`   ├─ Total solicitado: ${instances.length}`);
-    console.log(`   ├─ Importadas com sucesso: ${imported.length}`);
-    console.log(`   └─ Erros: ${errors.length}`);
-    console.log('📊 ========================================\n');
+    console.log('\nðŸ“Š ========================================');
+    console.log(`ðŸ“Š RESUMO DA IMPORTAÃ‡ÃƒO:`);
+    console.log(`   â”œâ”€ Total solicitado: ${instances.length}`);
+    console.log(`   â”œâ”€ Importadas com sucesso: ${imported.length}`);
+    console.log(`   â””â”€ Erros: ${errors.length}`);
+    console.log('ðŸ“Š ========================================\n');
 
     res.json({
       success: true,
@@ -5236,7 +5274,7 @@ router.post('/import-instances', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro ao importar instâncias:', error);
+    console.error('âŒ Erro ao importar instÃ¢ncias:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -5246,36 +5284,36 @@ router.post('/import-instances', async (req, res) => {
 
 /**
  * POST /api/uaz/contact/details
- * Obtém detalhes completos de um contato, incluindo foto de perfil
+ * ObtÃ©m detalhes completos de um contato, incluindo foto de perfil
  */
 router.post('/contact/details', async (req, res) => {
   try {
     const { instance_id, phone_number, preview = false } = req.body;
 
-    // 🔒 SEGURANÇA: Obter tenant_id do request
+    // ðŸ”’ SEGURANÃ‡A: Obter tenant_id do request
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
     if (!instance_id || !phone_number) {
       return res.status(400).json({
         success: false,
-        error: 'instance_id e phone_number são obrigatórios'
+        error: 'instance_id e phone_number sÃ£o obrigatÃ³rios'
       });
     }
 
-    console.log('\n📸 ========================================');
-    console.log('📸 BUSCANDO DETALHES DO CONTATO');
-    console.log('📸 ========================================');
-    console.log(`   ├─ Instância ID: ${instance_id}`);
-    console.log(`   ├─ Número: ${phone_number}`);
-    console.log(`   └─ Tamanho foto: ${preview ? 'Preview (pequeno)' : 'Full (original)'}`);
+    console.log('\nðŸ“¸ ========================================');
+    console.log('ðŸ“¸ BUSCANDO DETALHES DO CONTATO');
+    console.log('ðŸ“¸ ========================================');
+    console.log(`   â”œâ”€ InstÃ¢ncia ID: ${instance_id}`);
+    console.log(`   â”œâ”€ NÃºmero: ${phone_number}`);
+    console.log(`   â””â”€ Tamanho foto: ${preview ? 'Preview (pequeno)' : 'Full (original)'}`);
 
-    // Busca instância e proxy com filtro de tenant
+    // Busca instÃ¢ncia e proxy com filtro de tenant
     const instance = await pool.query(`
       SELECT ui.*, p.host, p.port, p.username, p.password
       FROM uaz_instances ui
@@ -5286,7 +5324,7 @@ router.post('/contact/details', async (req, res) => {
     if (instance.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -5295,11 +5333,11 @@ router.post('/contact/details', async (req, res) => {
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância não possui token'
+        error: 'InstÃ¢ncia nÃ£o possui token'
       });
     }
 
-    // Configuração do proxy
+    // ConfiguraÃ§Ã£o do proxy
     const proxyConfig = inst.host ? {
       host: inst.host,
       port: inst.port,
@@ -5307,7 +5345,7 @@ router.post('/contact/details', async (req, res) => {
       password: inst.password
     } : null;
 
-    // 🔑 BUSCAR CREDENCIAIS DO TENANT
+    // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
@@ -5326,11 +5364,11 @@ router.post('/contact/details', async (req, res) => {
       });
     }
 
-    // 📸 Se houver foto de perfil, baixar e salvar localmente
+    // ðŸ“¸ Se houver foto de perfil, baixar e salvar localmente
     let localProfilePicUrl = null;
     if (result.profilePicUrl && result.profilePicUrl.includes('pps.whatsapp.net')) {
       try {
-        console.log('📥 Baixando foto de perfil para salvar localmente...');
+        console.log('ðŸ“¥ Baixando foto de perfil para salvar localmente...');
         console.log('   URL original:', result.profilePicUrl);
         
         const axios = require('axios');
@@ -5352,17 +5390,17 @@ router.post('/contact/details', async (req, res) => {
         console.log('   Status do download:', imageResponse.status);
         console.log('   Tamanho:', imageResponse.data.length, 'bytes');
 
-        // Gerar nome único para o arquivo
+        // Gerar nome Ãºnico para o arquivo
         const hash = crypto.createHash('md5').update(phone_number).digest('hex');
         const timestamp = Date.now();
         const filename = `profile_${hash}_${timestamp}.jpg`;
         const filepath = path.join(__dirname, '../../uploads/profile-pics', filename);
 
-        // Criar diretório se não existir
+        // Criar diretÃ³rio se nÃ£o existir
         const dir = path.dirname(filepath);
         if (!fs.existsSync(dir)) {
           fs.mkdirSync(dir, { recursive: true });
-          console.log('   📁 Diretório criado:', dir);
+          console.log('   ðŸ“ DiretÃ³rio criado:', dir);
         }
 
         // Salvar arquivo
@@ -5371,21 +5409,21 @@ router.post('/contact/details', async (req, res) => {
         // URL relativa para retornar ao frontend
         localProfilePicUrl = `/uploads/profile-pics/${filename}`;
         
-        console.log('✅ Foto salva localmente:', localProfilePicUrl);
+        console.log('âœ… Foto salva localmente:', localProfilePicUrl);
         console.log('   Caminho completo:', filepath);
       } catch (downloadError) {
-        console.error('❌ Erro ao baixar foto:', downloadError.message);
+        console.error('âŒ Erro ao baixar foto:', downloadError.message);
         console.error('   Status:', downloadError.response?.status);
         console.error('   URL tentada:', result.profilePicUrl);
-        // Se falhar, retorna null (não usa a URL original que não funciona)
+        // Se falhar, retorna null (nÃ£o usa a URL original que nÃ£o funciona)
         localProfilePicUrl = null;
       }
     } else if (result.profilePicUrl) {
-      // Se não for URL do WhatsApp, usa direto
+      // Se nÃ£o for URL do WhatsApp, usa direto
       localProfilePicUrl = result.profilePicUrl;
     }
 
-    console.log('✅ Detalhes do contato retornados com sucesso!');
+    console.log('âœ… Detalhes do contato retornados com sucesso!');
     console.log('========================================\n');
 
     res.json({
@@ -5401,7 +5439,7 @@ router.post('/contact/details', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro ao buscar detalhes do contato:', error);
+    console.error('âŒ Erro ao buscar detalhes do contato:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -5420,13 +5458,13 @@ router.get('/proxy-image', async (req, res) => {
     if (!url) {
       return res.status(400).json({
         success: false,
-        error: 'URL é obrigatória'
+        error: 'URL Ã© obrigatÃ³ria'
       });
     }
 
-    console.log('🖼️ Proxy de imagem solicitado:', url);
+    console.log('ðŸ–¼ï¸ Proxy de imagem solicitado:', url);
 
-    // Fazer requisição para buscar a imagem
+    // Fazer requisiÃ§Ã£o para buscar a imagem
     const axios = require('axios');
     const imageResponse = await axios.get(url, {
       responseType: 'arraybuffer',
@@ -5436,7 +5474,7 @@ router.get('/proxy-image', async (req, res) => {
       }
     });
 
-    // Detectar tipo de conteúdo
+    // Detectar tipo de conteÃºdo
     const contentType = imageResponse.headers['content-type'] || 'image/jpeg';
     
     // Definir headers corretos
@@ -5447,15 +5485,15 @@ router.get('/proxy-image', async (req, res) => {
     // Enviar imagem
     res.send(Buffer.from(imageResponse.data));
 
-    console.log('✅ Imagem proxy servida com sucesso!');
+    console.log('âœ… Imagem proxy servida com sucesso!');
 
   } catch (error) {
-    console.error('❌ Erro ao fazer proxy da imagem:', error.message);
-    console.error('   └─ Status:', error.response?.status);
-    console.error('   └─ StatusText:', error.response?.statusText);
-    console.error('   └─ URL:', url);
+    console.error('âŒ Erro ao fazer proxy da imagem:', error.message);
+    console.error('   â””â”€ Status:', error.response?.status);
+    console.error('   â””â”€ StatusText:', error.response?.statusText);
+    console.error('   â””â”€ URL:', url);
     
-    // Se o erro for de rede/timeout, retornar um placeholder ou erro mais específico
+    // Se o erro for de rede/timeout, retornar um placeholder ou erro mais especÃ­fico
     const statusCode = error.response?.status || 500;
     res.status(statusCode).json({
       success: false,
@@ -5466,23 +5504,23 @@ router.get('/proxy-image', async (req, res) => {
 
 /**
  * POST /api/uaz/reconfigure-webhooks
- * Reconfigura webhooks de TODAS as instâncias ativas do tenant
- * Útil quando a URL do webhook muda ou para corrigir configurações
+ * Reconfigura webhooks de TODAS as instÃ¢ncias ativas do tenant
+ * Ãštil quando a URL do webhook muda ou para corrigir configuraÃ§Ãµes
  */
 router.post('/reconfigure-webhooks', async (req, res) => {
   try {
-    console.log('\n🔧 ===== RECONFIGURANDO WEBHOOKS DE TODAS AS INSTÂNCIAS =====');
+    console.log('\nðŸ”§ ===== RECONFIGURANDO WEBHOOKS DE TODAS AS INSTÃ‚NCIAS =====');
     
-    // 🔒 SEGURANÇA: Verificar tenant
+    // ðŸ”’ SEGURANÃ‡A: Verificar tenant
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
-    // Buscar todas as instâncias ativas do tenant
+    // Buscar todas as instÃ¢ncias ativas do tenant
     const instancesResult = await tenantQuery(req, `
       SELECT 
         ui.*,
@@ -5496,12 +5534,12 @@ router.post('/reconfigure-webhooks', async (req, res) => {
     `, [tenantId]);
 
     const instances = instancesResult.rows;
-    console.log(`📋 Encontradas ${instances.length} instâncias ativas`);
+    console.log(`ðŸ“‹ Encontradas ${instances.length} instÃ¢ncias ativas`);
 
     if (instances.length === 0) {
       return res.json({
         success: true,
-        message: 'Nenhuma instância ativa encontrada',
+        message: 'Nenhuma instÃ¢ncia ativa encontrada',
         results: []
       });
     }
@@ -5511,9 +5549,9 @@ router.post('/reconfigure-webhooks', async (req, res) => {
       (process.env.WEBHOOK_BASE_URL ? `${process.env.WEBHOOK_BASE_URL}/api/qr-webhook/uaz-event` : null) ||
       'https://api.sistemasnettsistemas.com.br/api/qr-webhook/uaz-event';
 
-    console.log(`🔗 Webhook URL: ${webhookUrl}`);
+    console.log(`ðŸ”— Webhook URL: ${webhookUrl}`);
 
-    // 🔑 Buscar credenciais do tenant
+    // ðŸ”‘ Buscar credenciais do tenant
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
@@ -5521,15 +5559,15 @@ router.post('/reconfigure-webhooks', async (req, res) => {
 
     for (const inst of instances) {
       try {
-        console.log(`\n📡 Configurando webhook para: ${inst.name} (ID: ${inst.id})`);
+        console.log(`\nðŸ“¡ Configurando webhook para: ${inst.name} (ID: ${inst.id})`);
 
         if (!inst.instance_token) {
-          console.log('   ⚠️ Sem token, pulando...');
+          console.log('   âš ï¸ Sem token, pulando...');
           results.push({
             id: inst.id,
             name: inst.name,
             success: false,
-            error: 'Instância sem token'
+            error: 'InstÃ¢ncia sem token'
           });
           continue;
         }
@@ -5549,7 +5587,7 @@ router.post('/reconfigure-webhooks', async (req, res) => {
         );
 
         if (result.success) {
-          console.log(`   ✅ Webhook configurado com sucesso!`);
+          console.log(`   âœ… Webhook configurado com sucesso!`);
           results.push({
             id: inst.id,
             name: inst.name,
@@ -5557,7 +5595,7 @@ router.post('/reconfigure-webhooks', async (req, res) => {
             webhookUrl: webhookUrl
           });
         } else {
-          console.log(`   ❌ Erro: ${result.error}`);
+          console.log(`   âŒ Erro: ${result.error}`);
           results.push({
             id: inst.id,
             name: inst.name,
@@ -5566,7 +5604,7 @@ router.post('/reconfigure-webhooks', async (req, res) => {
           });
         }
       } catch (error) {
-        console.error(`   ❌ Exceção: ${error.message}`);
+        console.error(`   âŒ ExceÃ§Ã£o: ${error.message}`);
         results.push({
           id: inst.id,
           name: inst.name,
@@ -5579,8 +5617,8 @@ router.post('/reconfigure-webhooks', async (req, res) => {
     const successCount = results.filter(r => r.success).length;
     const failCount = results.filter(r => !r.success).length;
 
-    console.log(`\n📊 Resumo: ${successCount} sucesso, ${failCount} falhas`);
-    console.log('===== FIM DA RECONFIGURAÇÃO =====\n');
+    console.log(`\nðŸ“Š Resumo: ${successCount} sucesso, ${failCount} falhas`);
+    console.log('===== FIM DA RECONFIGURAÃ‡ÃƒO =====\n');
 
     res.json({
       success: true,
@@ -5590,7 +5628,7 @@ router.post('/reconfigure-webhooks', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro ao reconfigurar webhooks:', error);
+    console.error('âŒ Erro ao reconfigurar webhooks:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -5600,24 +5638,24 @@ router.post('/reconfigure-webhooks', async (req, res) => {
 
 /**
  * POST /api/uaz/instances/:id/reconfigure-webhook
- * Reconfigura webhook de uma instância específica
+ * Reconfigura webhook de uma instÃ¢ncia especÃ­fica
  */
 router.post('/instances/:id/reconfigure-webhook', async (req, res) => {
   try {
     const { id } = req.params;
     
-    console.log(`\n🔧 Reconfigurando webhook da instância ${id}...`);
+    console.log(`\nðŸ”§ Reconfigurando webhook da instÃ¢ncia ${id}...`);
     
-    // 🔒 SEGURANÇA: Verificar tenant
+    // ðŸ”’ SEGURANÃ‡A: Verificar tenant
     const tenantId = req.tenant?.id;
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        error: 'Tenant não identificado'
+        error: 'Tenant nÃ£o identificado'
       });
     }
 
-    // Buscar instância
+    // Buscar instÃ¢ncia
     const instanceResult = await tenantQuery(req, `
       SELECT 
         ui.*,
@@ -5633,7 +5671,7 @@ router.post('/instances/:id/reconfigure-webhook', async (req, res) => {
     if (instanceResult.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: 'Instância não encontrada'
+        error: 'InstÃ¢ncia nÃ£o encontrada'
       });
     }
 
@@ -5642,7 +5680,7 @@ router.post('/instances/:id/reconfigure-webhook', async (req, res) => {
     if (!inst.instance_token) {
       return res.status(400).json({
         success: false,
-        error: 'Instância sem token'
+        error: 'InstÃ¢ncia sem token'
       });
     }
 
@@ -5651,7 +5689,7 @@ router.post('/instances/:id/reconfigure-webhook', async (req, res) => {
       (process.env.WEBHOOK_BASE_URL ? `${process.env.WEBHOOK_BASE_URL}/api/qr-webhook/uaz-event` : null) ||
       'https://api.sistemasnettsistemas.com.br/api/qr-webhook/uaz-event';
 
-    // 🔑 Buscar credenciais do tenant
+    // ðŸ”‘ Buscar credenciais do tenant
     const credentials = await getTenantUazapCredentials(tenantId);
     const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
@@ -5670,7 +5708,7 @@ router.post('/instances/:id/reconfigure-webhook', async (req, res) => {
     );
 
     if (result.success) {
-      console.log(`✅ Webhook configurado para ${inst.name}`);
+      console.log(`âœ… Webhook configurado para ${inst.name}`);
       res.json({
         success: true,
         message: `Webhook configurado com sucesso para ${inst.name}`,
@@ -5678,7 +5716,7 @@ router.post('/instances/:id/reconfigure-webhook', async (req, res) => {
         data: result.data
       });
     } else {
-      console.log(`❌ Erro ao configurar webhook: ${result.error}`);
+      console.log(`âŒ Erro ao configurar webhook: ${result.error}`);
       res.status(500).json({
         success: false,
         error: result.error
@@ -5686,7 +5724,7 @@ router.post('/instances/:id/reconfigure-webhook', async (req, res) => {
     }
 
   } catch (error) {
-    console.error('❌ Erro ao reconfigurar webhook:', error);
+    console.error('âŒ Erro ao reconfigurar webhook:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -5695,3 +5733,4 @@ router.post('/instances/:id/reconfigure-webhook', async (req, res) => {
 });
 
 module.exports = router;
+
