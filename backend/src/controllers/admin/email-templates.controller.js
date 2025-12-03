@@ -230,8 +230,8 @@ const previewTemplate = async (req, res) => {
     // Variáveis globais disponíveis em todos os templates
     const now = new Date();
     const globalVars = {
-      data_atual: now.toLocaleDateString('pt-BR'),
-      hora_atual: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      data_atual: now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+      hora_atual: now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
     };
 
     // Dados de exemplo para cada tipo de evento
@@ -423,8 +423,8 @@ const sendTestEmail = async (req, res) => {
     // Variáveis globais disponíveis em todos os templates (para teste)
     const now = new Date();
     const globalVars = {
-      data_atual: now.toLocaleDateString('pt-BR'),
-      hora_atual: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      data_atual: now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+      hora_atual: now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
     };
 
     // Dados de exemplo para teste
