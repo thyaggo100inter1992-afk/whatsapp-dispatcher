@@ -78,6 +78,27 @@ export default function EmailTemplates() {
     setShowPreview(false);
   };
 
+  // Verificar se uma variável está sendo usada no template
+  const checkVariableUsage = (variable: string, content: string, subject: string): {
+    used: boolean;
+    inSubject: boolean;
+    inContent: boolean;
+    count: number;
+  } => {
+    const varPattern = new RegExp(`\\{\\{${variable}\\}\\}`, 'g');
+    const inSubject = varPattern.test(subject);
+    const contentMatches = content.match(varPattern);
+    const inContent = contentMatches !== null;
+    const count = (contentMatches?.length || 0) + (inSubject ? 1 : 0);
+    
+    return {
+      used: inSubject || inContent,
+      inSubject,
+      inContent,
+      count
+    };
+  };
+
   const saveTemplate = async () => {
     if (!selectedTemplate) return;
 
@@ -267,11 +288,54 @@ export default function EmailTemplates() {
                 {/* Informações e Ações */}
                 <div className="bg-gray-800 rounded-xl shadow-lg p-6">
                   <div className="flex items-start justify-between mb-4">
-                    <div>
+                    <div className="flex-1">
                       <h2 className="text-2xl font-bold text-white flex items-center gap-2">
                         {eventIcons[selectedTemplate.event_type]} {selectedTemplate.name}
                       </h2>
                       <p className="text-gray-400 mt-1">{selectedTemplate.description}</p>
+                      
+                      {/* Status Geral das Variáveis */}
+                      <div className="mt-3 flex items-center gap-4">
+                        {(() => {
+                          const totalVars = selectedTemplate.variables.length;
+                          const usedVars = selectedTemplate.variables.filter(v => 
+                            checkVariableUsage(v, editedHtml, editedSubject).used
+                          ).length;
+                          const percentage = totalVars > 0 ? Math.round((usedVars / totalVars) * 100) : 0;
+                          const allConfigured = usedVars === totalVars;
+                          
+                          return (
+                            <>
+                              <div className={`flex items-center gap-2 px-3 py-1 rounded-lg ${
+                                allConfigured 
+                                  ? 'bg-green-900/30 border border-green-600' 
+                                  : 'bg-yellow-900/30 border border-yellow-600'
+                              }`}>
+                                <span className="text-lg">
+                                  {allConfigured ? '✅' : '⚠️'}
+                                </span>
+                                <span className="text-sm font-semibold text-white">
+                                  {usedVars} / {totalVars} variáveis configuradas
+                                </span>
+                              </div>
+                              
+                              <div className="flex-1 max-w-xs">
+                                <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                                  <div 
+                                    className={`h-full transition-all ${
+                                      percentage === 100 ? 'bg-green-500' : 'bg-yellow-500'
+                                    }`}
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs text-gray-400 mt-1 block">
+                                  {percentage}% completo
+                                </span>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -290,28 +354,72 @@ export default function EmailTemplates() {
                     </div>
                   </div>
 
-                  {/* Variáveis Disponíveis */}
+                  {/* Variáveis Disponíveis com Status */}
                   <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-4 mb-4">
-                    <h3 className="text-sm font-bold text-blue-300 mb-2 flex items-center gap-2">
-                      💡 Variáveis Disponíveis:
+                    <h3 className="text-sm font-bold text-blue-300 mb-3 flex items-center gap-2">
+                      💡 Variáveis Disponíveis e Status de Uso:
                     </h3>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedTemplate.variables.map((v) => (
-                        <code
-                          key={v}
-                          className="text-xs bg-blue-800 text-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-blue-700"
-                          onClick={() => {
-                            navigator.clipboard.writeText(`{{${v}}}`);
-                            alert(`Copiado: {{${v}}}`);
-                          }}
-                        >
-                          {`{{${v}}}`}
-                        </code>
-                      ))}
+                    
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {selectedTemplate.variables.map((v) => {
+                        const usage = checkVariableUsage(v, editedHtml, editedSubject);
+                        return (
+                          <div
+                            key={v}
+                            className={`flex items-center justify-between p-2 rounded-lg ${
+                              usage.used 
+                                ? 'bg-green-900/30 border border-green-600' 
+                                : 'bg-yellow-900/30 border border-yellow-600'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 flex-1">
+                              <span className="text-lg">
+                                {usage.used ? '✅' : '⚠️'}
+                              </span>
+                              <code
+                                className="text-xs font-mono bg-gray-800 text-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-gray-700"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(`{{${v}}}`);
+                                  alert(`✅ Copiado: {{${v}}}`);
+                                }}
+                                title="Clique para copiar"
+                              >
+                                {`{{${v}}}`}
+                              </code>
+                              <span className="text-xs text-gray-400">
+                                {usage.used ? (
+                                  <>
+                                    Usado {usage.count}x
+                                    {usage.inSubject && ' (assunto)'}
+                                    {usage.inContent && ' (conteúdo)'}
+                                  </>
+                                ) : (
+                                  'Não utilizado'
+                                )}
+                              </span>
+                            </div>
+                            {!usage.used && (
+                              <span className="text-xs text-yellow-400 font-semibold">
+                                Não configurado
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                    <p className="text-xs text-gray-400 mt-2">
-                      Clique para copiar uma variável
-                    </p>
+                    
+                    <div className="mt-3 pt-3 border-t border-blue-700">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-400">
+                          💡 Clique em uma variável para copiar
+                        </span>
+                        <span className="text-blue-300">
+                          {selectedTemplate.variables.filter(v => 
+                            checkVariableUsage(v, editedHtml, editedSubject).used
+                          ).length} / {selectedTemplate.variables.length} configuradas
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Assunto */}
