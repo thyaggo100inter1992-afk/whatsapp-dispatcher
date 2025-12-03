@@ -39,15 +39,30 @@ export class QrWebhookController {
       // Buscar instance_id pelo nome da instância OU pelo token
       let instanceId: number | null = null;
       if (instanceName || instanceToken) {
-        const instanceResult = await query(
-          'SELECT id FROM uaz_instances WHERE name = $1 OR instance_token = $2 LIMIT 1',
-          [instanceName || '', instanceToken || '']
-        );
+        // Tentar primeiro por token exato (mais confiável)
+        let instanceResult;
+        if (instanceToken) {
+          instanceResult = await query(
+            'SELECT id, name FROM uaz_instances WHERE instance_token = $1 LIMIT 1',
+            [instanceToken]
+          );
+          console.log(`🔍 Busca por token: ${instanceToken} -> ${instanceResult.rows.length} resultado(s)`);
+        }
+        
+        // Se não encontrou por token, tentar por nome
+        if (!instanceResult || instanceResult.rows.length === 0) {
+          instanceResult = await query(
+            'SELECT id, name FROM uaz_instances WHERE name = $1 LIMIT 1',
+            [instanceName || '']
+          );
+          console.log(`🔍 Busca por nome: "${instanceName}" -> ${instanceResult.rows.length} resultado(s)`);
+        }
+        
         if (instanceResult.rows.length > 0) {
           instanceId = instanceResult.rows[0].id;
-          console.log(`✅ Instância encontrada: ID ${instanceId}`);
+          console.log(`✅ Instância encontrada: ID ${instanceId} (${instanceResult.rows[0].name})`);
         } else {
-          console.log(`⚠️ Instância não encontrada - Nome: ${instanceName}, Token: ${instanceToken}`);
+          console.log(`⚠️ Instância não encontrada - Nome: "${instanceName}", Token: ${instanceToken}`);
         }
       }
 
