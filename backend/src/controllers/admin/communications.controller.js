@@ -502,7 +502,7 @@ const getNotificationById = async (req, res) => {
     const reads = await query(
       `SELECT 
         r.tenant_id, t.nome as tenant_name, t.email,
-        r.viewed_at, r.clicked, r.clicked_at, r.closed_at
+        r.viewed_at, r.clicked_at
        FROM admin_notification_reads r
        JOIN tenants t ON r.tenant_id = t.id
        WHERE r.notification_id = $1
@@ -510,10 +510,45 @@ const getNotificationById = async (req, res) => {
       [id]
     );
 
+    // Calcular estatísticas
+    const stats = {
+      total_views: reads.rows.length,
+      total_clicks: reads.rows.filter(r => r.clicked_at).length,
+      view_rate: 0,
+      click_rate: 0
+    };
+
+    // Calcular total de destinatários elegíveis
+    const notif = notification.rows[0];
+    let totalEligible = 0;
+
+    if (notif.recipient_type === 'all') {
+      const countResult = await query('SELECT COUNT(*) as count FROM tenants WHERE status != $1', ['deleted']);
+      totalEligible = parseInt(countResult.rows[0].count);
+    } else if (notif.recipient_type === 'active') {
+      const countResult = await query('SELECT COUNT(*) as count FROM tenants WHERE status = $1', ['active']);
+      totalEligible = parseInt(countResult.rows[0].count);
+    } else if (notif.recipient_type === 'blocked') {
+      const countResult = await query('SELECT COUNT(*) as count FROM tenants WHERE blocked_at IS NOT NULL');
+      totalEligible = parseInt(countResult.rows[0].count);
+    } else if (notif.recipient_type === 'trial') {
+      const countResult = await query('SELECT COUNT(*) as count FROM tenants WHERE status = $1', ['trial']);
+      totalEligible = parseInt(countResult.rows[0].count);
+    } else if (notif.recipient_type === 'specific' && notif.recipient_list && notif.recipient_list.tenant_ids) {
+      totalEligible = notif.recipient_list.tenant_ids.length;
+    }
+
+    stats.view_rate = totalEligible > 0 ? ((stats.total_views / totalEligible) * 100).toFixed(1) : 0;
+    stats.click_rate = stats.total_views > 0 ? ((stats.total_clicks / stats.total_views) * 100).toFixed(1) : 0;
+
     res.json({
       success: true,
       notification: notification.rows[0],
-      reads: reads.rows
+      reads: reads.rows,
+      stats: {
+        ...stats,
+        total_eligible: totalEligible
+      }
     });
   } catch (error) {
     console.error('❌ Erro ao buscar notificação:', error);

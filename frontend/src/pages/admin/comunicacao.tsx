@@ -77,6 +77,8 @@ export default function Comunicacao() {
     recipient_type: 'all',
     recipient_list: {}
   });
+  const [selectedNotification, setSelectedNotification] = useState<any>(null);
+  const [showNotificationDetails, setShowNotificationDetails] = useState(false);
   
   useEffect(() => {
     loadCampaigns();
@@ -199,6 +201,19 @@ export default function Comunicacao() {
       loadNotifications();
     } catch (error: any) {
       notification.error('Erro ao deletar notificação');
+    }
+  };
+
+  const handleViewNotificationDetails = async (id: number) => {
+    try {
+      setLoading(true);
+      const response = await api.get(`/admin/communications/notifications/${id}`);
+      setSelectedNotification(response.data);
+      setShowNotificationDetails(true);
+    } catch (error: any) {
+      notification.error('Erro ao carregar detalhes da notificação');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -784,6 +799,12 @@ export default function Comunicacao() {
 
                       <div className="flex flex-col gap-2">
                         <button
+                          onClick={() => handleViewNotificationDetails(notif.id)}
+                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all flex items-center gap-2"
+                        >
+                          <FaEye /> Ver Detalhes
+                        </button>
+                        <button
                           onClick={() => handleToggleNotification(notif.id)}
                           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all flex items-center gap-2"
                         >
@@ -914,6 +935,109 @@ export default function Comunicacao() {
               <div className="mt-6 flex justify-end">
                 <button
                   onClick={() => setShowCampaignDetails(false)}
+                  className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold transition-all"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Detalhes da Notificação */}
+        {showNotificationDetails && selectedNotification && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-gradient-to-br from-blue-900 via-blue-800 to-purple-900 rounded-3xl p-8 max-w-6xl w-full max-h-[90vh] overflow-y-auto border-4 border-white/30">
+              {/* Header */}
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-3xl font-black text-white mb-2">{selectedNotification.notification.title}</h2>
+                  <p className="text-white/80 text-lg">{getNotificationTypeBadge(selectedNotification.notification.type)}</p>
+                </div>
+                <button
+                  onClick={() => setShowNotificationDetails(false)}
+                  className="text-white/60 hover:text-white text-3xl"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Estatísticas */}
+              <div className="grid grid-cols-4 gap-4 mb-6">
+                <div className="bg-white/10 rounded-xl p-4">
+                  <p className="text-white/60 text-sm mb-1">Total Elegível</p>
+                  <p className="text-white font-bold text-2xl">{selectedNotification.stats.total_eligible}</p>
+                </div>
+                <div className="bg-green-500/20 rounded-xl p-4">
+                  <p className="text-green-300 text-sm mb-1">Visualizações</p>
+                  <p className="text-green-400 font-bold text-2xl">{selectedNotification.stats.total_views}</p>
+                  <p className="text-green-300 text-xs mt-1">{selectedNotification.stats.view_rate}% taxa</p>
+                </div>
+                <div className="bg-blue-500/20 rounded-xl p-4">
+                  <p className="text-blue-300 text-sm mb-1">Cliques</p>
+                  <p className="text-blue-400 font-bold text-2xl">{selectedNotification.stats.total_clicks}</p>
+                  <p className="text-blue-300 text-xs mt-1">{selectedNotification.stats.click_rate}% taxa</p>
+                </div>
+                <div className="bg-purple-500/20 rounded-xl p-4">
+                  <p className="text-purple-300 text-sm mb-1">Status</p>
+                  <div className="mt-1">
+                    {selectedNotification.notification.is_active ? (
+                      <span className="text-green-400 font-bold">✓ Ativa</span>
+                    ) : (
+                      <span className="text-gray-400 font-bold">✗ Inativa</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Mensagem */}
+              <div className="bg-white/10 rounded-xl p-4 mb-6">
+                <h3 className="text-white font-bold mb-3">📝 Mensagem:</h3>
+                <div 
+                  className="text-white/90"
+                  dangerouslySetInnerHTML={{ __html: selectedNotification.notification.message }}
+                />
+              </div>
+
+              {/* Lista de Quem Visualizou */}
+              <div className="bg-white/10 rounded-xl p-4">
+                <h3 className="text-white font-bold mb-3">👁️ Quem Visualizou ({selectedNotification.reads.length}):</h3>
+                <div className="max-h-96 overflow-y-auto space-y-2">
+                  {selectedNotification.reads.length === 0 ? (
+                    <p className="text-white/60 text-center py-8">Nenhuma visualização ainda</p>
+                  ) : (
+                    selectedNotification.reads.map((read: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="bg-white/5 p-3 rounded-lg"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className="text-white font-bold">{read.tenant_name}</p>
+                            <p className="text-white/60 text-sm">{read.email}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-green-400 text-sm">👁️ Visualizou</p>
+                            <p className="text-white/60 text-xs">
+                              {new Date(read.viewed_at).toLocaleString('pt-BR')}
+                            </p>
+                            {read.clicked_at && (
+                              <p className="text-blue-400 text-xs mt-1">
+                                🔗 Clicou em {new Date(read.clicked_at).toLocaleString('pt-BR')}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Botão Fechar */}
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => setShowNotificationDetails(false)}
                   className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold transition-all"
                 >
                   Fechar

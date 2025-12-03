@@ -34,9 +34,9 @@ router.get('/active', async (req, res) => {
         AND (
           n.recipient_type = 'all'
           OR (n.recipient_type = 'active' AND (SELECT status FROM tenants WHERE id = $1) = 'active')
-          OR (n.recipient_type = 'blocked' AND (SELECT status FROM tenants WHERE id = $1) = 'blocked')
+          OR (n.recipient_type = 'blocked' AND (SELECT blocked_at FROM tenants WHERE id = $1) IS NOT NULL)
           OR (n.recipient_type = 'trial' AND (SELECT status FROM tenants WHERE id = $1) = 'trial')
-          OR (n.recipient_type = 'specific' AND n.specific_tenants @> $1::text::jsonb)
+          OR (n.recipient_type = 'specific' AND n.recipient_list->'tenant_ids' @> to_jsonb($1))
         )
       ORDER BY n.created_at DESC
     `, [tenantId]);
@@ -66,7 +66,7 @@ router.post('/:id/read', async (req, res) => {
 
     // Inserir registro de leitura (ou ignorar se já existe)
     await query(`
-      INSERT INTO admin_notification_reads (notification_id, tenant_id, read_at)
+      INSERT INTO admin_notification_reads (notification_id, tenant_id, viewed_at)
       VALUES ($1, $2, NOW())
       ON CONFLICT (notification_id, tenant_id) DO NOTHING
     `, [id, tenantId]);
