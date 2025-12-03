@@ -34,6 +34,10 @@ interface VerificationHistory {
 
 export default function VerificarNumerosUaz() {
   const router = useRouter();
+  
+  // URL da API (produção ou desenvolvimento)
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001';
+  
   const [instances, setInstances] = useState<UazInstance[]>([]);
   const [loading, setLoading] = useState(false);
   const [instanceId, setInstanceId] = useState('');
@@ -357,7 +361,7 @@ export default function VerificarNumerosUaz() {
                   
                   // Se a foto for uma URL relativa (já salva localmente), adicionar o base URL
                   if (photoUrl && photoUrl.startsWith('/uploads/')) {
-                    photoUrl = `http://localhost:3001${photoUrl}`;
+                    photoUrl = `${API_BASE_URL}${photoUrl}`;
                     console.log('🖼️ Usando foto local:', photoUrl);
                   }
                   
