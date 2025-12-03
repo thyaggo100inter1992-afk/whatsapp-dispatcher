@@ -239,7 +239,7 @@ const previewTemplate = async (req, res) => {
       data_atual: now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
       hora_atual: now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
       url_sistema: baseUrl,
-      url_registro: `${baseUrl}/register`,
+      url_registro: 'https://sistemasnettsistemas.com.br/registro',
       url_site: 'https://sistemasnettsistemas.com.br/site'
     };
 
@@ -436,7 +436,7 @@ const sendTestEmail = async (req, res) => {
       data_atual: now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
       hora_atual: now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
       url_sistema: baseUrl,
-      url_registro: `${baseUrl}/register`,
+      url_registro: 'https://sistemasnettsistemas.com.br/registro',
       url_site: 'https://sistemasnettsistemas.com.br/site'
     };
 
