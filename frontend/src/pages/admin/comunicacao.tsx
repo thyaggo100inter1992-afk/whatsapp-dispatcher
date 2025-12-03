@@ -99,7 +99,8 @@ export default function Comunicacao() {
   const loadAllTenants = async () => {
     try {
       const response = await api.get('/admin/tenants');
-      setAllTenants(response.data.tenants);
+      console.log('🔍 Resposta de /admin/tenants:', response.data);
+      setAllTenants(response.data.data || response.data.tenants || []);
     } catch (error) {
       console.error('Erro ao carregar tenants:', error);
     }
