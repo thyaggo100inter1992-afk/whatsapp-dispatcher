@@ -4935,7 +4935,29 @@ async function processVerificationJob(jobId, tenantId) {
     const instancesResult = await queryWithTenantId(tenantId, `
       SELECT id, name, instance_token, is_connected, tenant_id FROM uaz_instances WHERE id = ANY($1)
     `, [instanceIds]);
-    const instances = instancesResult.rows;
+
+    const allInstances = instancesResult.rows || [];
+
+    // Usar apenas instâncias conectadas e com token válido
+    let instances = allInstances.filter(inst => inst.is_connected && !!inst.instance_token);
+
+    // Se o status "is_connected" estiver desatualizado, fazer fallback para qualquer instância com token
+    if (instances.length === 0 && allInstances.length > 0) {
+      console.warn(`⚠️ Job ${jobId}: nenhuma instância marcada como conectada; usando fallback com todas as instâncias com token.`);
+      instances = allInstances.filter(inst => !!inst.instance_token);
+    }
+
+    // Falha rápida se não houver instância válida (nem com fallback)
+    if (instances.length === 0) {
+      const msg = 'Nenhuma instância válida encontrada para este job. Conecte uma instância e tente novamente.';
+      console.error(`⚠️ Job ${jobId}: ${msg}`);
+      await queryWithTenantId(tenantId, `
+        UPDATE uaz_verification_jobs 
+        SET status = 'error', error_message = $1, updated_at = NOW(), completed_at = NOW() 
+        WHERE id = $2
+      `, [msg, jobId]);
+      return;
+    }
 
     // ✅ BUSCAR CREDENCIAIS DO TENANT (usando a primeira instância para obter o tenant)
     if (!tenantId) {
