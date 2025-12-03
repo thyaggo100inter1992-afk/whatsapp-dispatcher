@@ -1,0 +1,119 @@
+# 📧 CONFIGURAR EMAIL DA HOSTINGER - PASSO A PASSO
+
+## ✅ INFORMAÇÕES NECESSÁRIAS:
+
+Email: contato@nettsistemas.com (ou outro que você tenha)
+Senha: [A SENHA DO EMAIL]
+SMTP: smtp.hostinger.com
+Porta: 587
+
+---
+
+## 🚀 APLICAR NO SERVIDOR (COPIE E COLE):
+
+### PASSO 1: Conectar ao servidor
+ssh root@72.60.141.244
+
+### PASSO 2: Ir para a pasta do backend
+cd /root/whatsapp-dispatcher/backend
+
+### PASSO 3: Fazer backup do .env
+cp .env .env.backup-$(date +%Y%m%d-%H%M%S)
+
+### PASSO 4: Adicionar configurações de email
+cat >> .env << 'EOF'
+
+# ==========================================
+# EMAIL CONFIGURATION - HOSTINGER
+# ==========================================
+SMTP_HOST=smtp.hostinger.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=contato@nettsistemas.com
+SMTP_PASS=SUA_SENHA_AQUI
+EMAIL_FROM=contato@nettsistemas.com
+EOF
+
+### PASSO 5: Editar a senha (IMPORTANTE!)
+nano .env
+
+# Procure por SMTP_PASS=SUA_SENHA_AQUI
+# Substitua SUA_SENHA_AQUI pela senha real do email
+# Salve: Ctrl+O, Enter, Ctrl+X
+
+### PASSO 6: Reiniciar servidor
+pm2 restart whatsapp-backend
+
+### PASSO 7: Verificar se funcionou
+pm2 logs whatsapp-backend --lines 50 --nostream | grep -i "email"
+
+# Deve aparecer:
+# ✅ Email Service configurado: SMTP (smtp.hostinger.com)
+
+---
+
+## 🧪 TESTAR ENVIO DE EMAIL:
+
+### Criar script de teste:
+cat > test-email.js << 'EOF'
+const emailService = require('./dist/services/email.service').default;
+
+async function test() {
+  console.log('🧪 Testando envio de email da Hostinger...\n');
+  console.log('Provedor:', emailService.getProvider());
+  console.log('Configurado:', emailService.isReady());
+  
+  if (!emailService.isReady()) {
+    console.log('\n❌ Email service não configurado!');
+    process.exit(1);
+  }
+  
+  // ALTERE PARA SEU EMAIL DE TESTE:
+  const result = await emailService.sendEmail(
+    'seu-email-pessoal@gmail.com',
+    '🧪 Teste - Sistema Nett Sistemas',
+    '<h1>✅ Email da Hostinger Funcionando!</h1><p>O sistema está enviando emails corretamente.</p>'
+  );
+  
+  if (result) {
+    console.log('\n✅ Email enviado com sucesso!');
+  } else {
+    console.log('\n❌ Erro ao enviar email.');
+  }
+  
+  process.exit(0);
+}
+
+test();
+EOF
+
+### Executar teste:
+node test-email.js
+
+---
+
+## ⚠️ TROUBLESHOOTING:
+
+### Se der erro "Authentication failed":
+1. Verifique se a senha está correta
+2. Tente fazer login no webmail da Hostinger com a mesma senha
+3. Se não conseguir, resete a senha do email
+
+### Se der erro "Connection timeout":
+1. Verifique se a porta 587 está aberta no firewall
+2. Tente com SMTP_PORT=465 e SMTP_SECURE=true
+
+### Para ver logs detalhados:
+pm2 logs whatsapp-backend --lines 200
+
+---
+
+## 📧 EMAILS QUE SERÃO ENVIADOS:
+
+✅ 3 dias antes do vencimento
+✅ 2 dias antes do vencimento  
+✅ 1 dia antes do vencimento
+✅ No momento do bloqueio (plano vencido)
+
+Todos os emails vão sair de: contato@nettsistemas.com
+

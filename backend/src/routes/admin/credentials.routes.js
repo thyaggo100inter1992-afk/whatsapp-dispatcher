@@ -132,5 +132,27 @@ router.delete('/asaas/:id', credentialsController.deleteAsaasCredential);
  */
 router.patch('/asaas/:id/set-default', credentialsController.setAsaasCredentialAsDefault);
 
+// ========================================
+// ROTAS: EMAIL CONFIGURATION
+// ========================================
+
+/**
+ * GET /api/admin/credentials/email
+ * Busca configuração de email
+ */
+router.get('/email', credentialsController.getEmailConfig);
+
+/**
+ * POST /api/admin/credentials/email
+ * Salva/atualiza configuração de email
+ */
+router.post('/email', credentialsController.saveEmailConfig);
+
+/**
+ * POST /api/admin/credentials/email/test
+ * Envia email de teste
+ */
+router.post('/email/test', credentialsController.testEmail);
+
 module.exports = router;
 

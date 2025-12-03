@@ -803,6 +803,214 @@ const setAsaasCredentialAsDefault = async (req, res) => {
   }
 };
 
+// ========================================
+// EMAIL CONFIGURATION
+// ========================================
+
+/**
+ * GET /api/admin/credentials/email
+ * Busca configuração de email
+ */
+const getEmailConfig = async (req, res) => {
+  try {
+    console.log('📧 Buscando configuração de email...');
+
+    const fs = require('fs');
+    const path = require('path');
+    const envPath = path.join(__dirname, '../../../.env');
+
+    if (!fs.existsSync(envPath)) {
+      return res.json({
+        success: true,
+        data: null
+      });
+    }
+
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    const lines = envContent.split('\n');
+
+    const config = {
+      provider: 'none',
+      smtp_host: '',
+      smtp_port: 587,
+      smtp_secure: false,
+      smtp_user: '',
+      email_from: '',
+      is_configured: false,
+      last_test: null,
+      last_test_success: null
+    };
+
+    lines.forEach(line => {
+      if (line.startsWith('SMTP_HOST=')) {
+        config.smtp_host = line.split('=')[1].trim();
+        if (config.smtp_host.includes('hostinger')) config.provider = 'hostinger';
+        else if (config.smtp_host.includes('gmail')) config.provider = 'gmail';
+      }
+      if (line.startsWith('SMTP_PORT=')) config.smtp_port = parseInt(line.split('=')[1].trim());
+      if (line.startsWith('SMTP_SECURE=')) config.smtp_secure = line.split('=')[1].trim() === 'true';
+      if (line.startsWith('SMTP_USER=')) config.smtp_user = line.split('=')[1].trim();
+      if (line.startsWith('EMAIL_FROM=')) config.email_from = line.split('=')[1].trim();
+    });
+
+    config.is_configured = !!(config.smtp_host && config.smtp_user);
+
+    console.log('✅ Configuração de email carregada');
+
+    res.json({
+      success: true,
+      data: config
+    });
+  } catch (error) {
+    console.error('❌ Erro ao buscar configuração de email:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar configuração de email',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * POST /api/admin/credentials/email
+ * Salva/atualiza configuração de email
+ */
+const saveEmailConfig = async (req, res) => {
+  try {
+    const { provider, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, email_from } = req.body;
+
+    if (!smtp_user || !email_from) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuário SMTP e Email From são obrigatórios'
+      });
+    }
+
+    console.log('💾 Salvando configuração de email...');
+
+    const fs = require('fs');
+    const path = require('path');
+    const envPath = path.join(__dirname, '../../../.env');
+
+    let envContent = '';
+    if (fs.existsSync(envPath)) {
+      envContent = fs.readFileSync(envPath, 'utf8');
+    }
+
+    // Remover configurações antigas de email
+    const lines = envContent.split('\n').filter(line => 
+      !line.startsWith('SMTP_') && 
+      !line.startsWith('EMAIL_') &&
+      !line.startsWith('SENDGRID_') &&
+      !line.startsWith('AWS_SES_') &&
+      !line.startsWith('MAILGUN_')
+    );
+
+    // Adicionar novas configurações
+    lines.push('');
+    lines.push('# ==========================================');
+    lines.push(`# EMAIL CONFIGURATION - ${provider.toUpperCase()}`);
+    lines.push('# ==========================================');
+    lines.push(`SMTP_HOST=${smtp_host}`);
+    lines.push(`SMTP_PORT=${smtp_port}`);
+    lines.push(`SMTP_SECURE=${smtp_secure}`);
+    lines.push(`SMTP_USER=${smtp_user}`);
+    if (smtp_pass) {
+      lines.push(`SMTP_PASS=${smtp_pass}`);
+    }
+    lines.push(`EMAIL_FROM=${email_from}`);
+
+    fs.writeFileSync(envPath, lines.join('\n'));
+
+    // Atualizar variáveis de ambiente em tempo real
+    process.env.SMTP_HOST = smtp_host;
+    process.env.SMTP_PORT = smtp_port.toString();
+    process.env.SMTP_SECURE = smtp_secure.toString();
+    process.env.SMTP_USER = smtp_user;
+    if (smtp_pass) {
+      process.env.SMTP_PASS = smtp_pass;
+    }
+    process.env.EMAIL_FROM = email_from;
+
+    console.log('✅ Configuração de email salva com sucesso!');
+
+    res.json({
+      success: true,
+      message: 'Configuração de email salva com sucesso'
+    });
+  } catch (error) {
+    console.error('❌ Erro ao salvar configuração de email:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao salvar configuração de email',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * POST /api/admin/credentials/email/test
+ * Envia email de teste
+ */
+const testEmail = async (req, res) => {
+  try {
+    const { test_email } = req.body;
+
+    if (!test_email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email para teste é obrigatório'
+      });
+    }
+
+    console.log(`📧 Enviando email de teste para ${test_email}...`);
+
+    const emailService = require('../services/email.service').default;
+
+    if (!emailService.isReady()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Serviço de email não está configurado'
+      });
+    }
+
+    const subject = '🧪 Teste - Sistema Nett Sistemas';
+    const html = `
+      <h1 style="color: #4CAF50;">✅ Email Funcionando!</h1>
+      <p>Este é um email de teste do sistema Nett Sistemas.</p>
+      <p>Se você recebeu este email, significa que o serviço de email está configurado corretamente!</p>
+      <hr>
+      <p style="color: #666; font-size: 12px;">
+        Enviado em: ${new Date().toLocaleString('pt-BR')}<br>
+        Provedor: ${emailService.getProvider()}
+      </p>
+    `;
+
+    const result = await emailService.sendEmail(test_email, subject, html);
+
+    if (result) {
+      console.log('✅ Email de teste enviado com sucesso!');
+      res.json({
+        success: true,
+        message: `Email de teste enviado para ${test_email}`
+      });
+    } else {
+      console.error('❌ Falha ao enviar email de teste');
+      res.status(500).json({
+        success: false,
+        message: 'Falha ao enviar email de teste'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Erro ao enviar email de teste:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao enviar email de teste',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   // UAZAP
   getAllUazapCredentials,
@@ -826,6 +1034,11 @@ module.exports = {
   createAsaasCredential,
   updateAsaasCredential,
   deleteAsaasCredential,
-  setAsaasCredentialAsDefault
+  setAsaasCredentialAsDefault,
+
+  // Email
+  getEmailConfig,
+  saveEmailConfig,
+  testEmail
 };
 
