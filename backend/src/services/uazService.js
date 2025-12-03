@@ -76,9 +76,12 @@ class UazService {
    */
   async configureWebhook(instanceToken, proxyConfig = null, customWebhookUrl = null) {
     try {
-      // URL do webhook do nosso sistema
-      // PRIORIDADE: customWebhookUrl > process.env.WEBHOOK_URL > fallback
-      const webhookUrl = customWebhookUrl || process.env.WEBHOOK_URL || 'http://localhost:3001/api/qr-webhook/uaz-event';
+      // URL do webhook do nosso sistema para QR Connect
+      // PRIORIDADE: customWebhookUrl > process.env.QR_WEBHOOK_URL > process.env.WEBHOOK_BASE_URL + path > fallback
+      const webhookUrl = customWebhookUrl || 
+        process.env.QR_WEBHOOK_URL || 
+        (process.env.WEBHOOK_BASE_URL ? `${process.env.WEBHOOK_BASE_URL}/api/qr-webhook/uaz-event` : null) ||
+        'http://localhost:3001/api/qr-webhook/uaz-event';
       
       console.log('🔔 Configurando webhook COMPLETO (TODOS OS EVENTOS)...');
       console.log('   └─ URL:', webhookUrl);

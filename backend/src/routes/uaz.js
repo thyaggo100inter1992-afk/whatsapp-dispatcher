@@ -5389,4 +5389,234 @@ router.get('/proxy-image', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/uaz/reconfigure-webhooks
+ * Reconfigura webhooks de TODAS as instâncias ativas do tenant
+ * Útil quando a URL do webhook muda ou para corrigir configurações
+ */
+router.post('/reconfigure-webhooks', async (req, res) => {
+  try {
+    console.log('\n🔧 ===== RECONFIGURANDO WEBHOOKS DE TODAS AS INSTÂNCIAS =====');
+    
+    // 🔒 SEGURANÇA: Verificar tenant
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Tenant não identificado'
+      });
+    }
+
+    // Buscar todas as instâncias ativas do tenant
+    const instancesResult = await tenantQuery(req, `
+      SELECT 
+        ui.*,
+        p.host as proxy_host,
+        p.port as proxy_port,
+        p.username as proxy_username,
+        p.password as proxy_password
+      FROM uaz_instances ui
+      LEFT JOIN proxies p ON ui.proxy_id = p.id
+      WHERE ui.tenant_id = $1 AND ui.is_active = true
+    `, [tenantId]);
+
+    const instances = instancesResult.rows;
+    console.log(`📋 Encontradas ${instances.length} instâncias ativas`);
+
+    if (instances.length === 0) {
+      return res.json({
+        success: true,
+        message: 'Nenhuma instância ativa encontrada',
+        results: []
+      });
+    }
+
+    // URL do webhook QR Connect
+    const webhookUrl = process.env.QR_WEBHOOK_URL || 
+      (process.env.WEBHOOK_BASE_URL ? `${process.env.WEBHOOK_BASE_URL}/api/qr-webhook/uaz-event` : null) ||
+      'https://api.sistemasnettsistemas.com.br/api/qr-webhook/uaz-event';
+
+    console.log(`🔗 Webhook URL: ${webhookUrl}`);
+
+    // 🔑 Buscar credenciais do tenant
+    const credentials = await getTenantUazapCredentials(tenantId);
+    const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
+
+    const results = [];
+
+    for (const inst of instances) {
+      try {
+        console.log(`\n📡 Configurando webhook para: ${inst.name} (ID: ${inst.id})`);
+
+        if (!inst.instance_token) {
+          console.log('   ⚠️ Sem token, pulando...');
+          results.push({
+            id: inst.id,
+            name: inst.name,
+            success: false,
+            error: 'Instância sem token'
+          });
+          continue;
+        }
+
+        const proxyConfig = inst.proxy_host ? {
+          host: inst.proxy_host,
+          port: inst.proxy_port,
+          username: inst.proxy_username,
+          password: inst.proxy_password
+        } : null;
+
+        // Configurar webhook
+        const result = await tenantUazService.configureWebhook(
+          inst.instance_token, 
+          proxyConfig, 
+          webhookUrl
+        );
+
+        if (result.success) {
+          console.log(`   ✅ Webhook configurado com sucesso!`);
+          results.push({
+            id: inst.id,
+            name: inst.name,
+            success: true,
+            webhookUrl: webhookUrl
+          });
+        } else {
+          console.log(`   ❌ Erro: ${result.error}`);
+          results.push({
+            id: inst.id,
+            name: inst.name,
+            success: false,
+            error: result.error
+          });
+        }
+      } catch (error) {
+        console.error(`   ❌ Exceção: ${error.message}`);
+        results.push({
+          id: inst.id,
+          name: inst.name,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
+
+    console.log(`\n📊 Resumo: ${successCount} sucesso, ${failCount} falhas`);
+    console.log('===== FIM DA RECONFIGURAÇÃO =====\n');
+
+    res.json({
+      success: true,
+      message: `Webhooks reconfigurados: ${successCount} sucesso, ${failCount} falhas`,
+      webhookUrl: webhookUrl,
+      results: results
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao reconfigurar webhooks:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/uaz/instances/:id/reconfigure-webhook
+ * Reconfigura webhook de uma instância específica
+ */
+router.post('/instances/:id/reconfigure-webhook', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log(`\n🔧 Reconfigurando webhook da instância ${id}...`);
+    
+    // 🔒 SEGURANÇA: Verificar tenant
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Tenant não identificado'
+      });
+    }
+
+    // Buscar instância
+    const instanceResult = await tenantQuery(req, `
+      SELECT 
+        ui.*,
+        p.host as proxy_host,
+        p.port as proxy_port,
+        p.username as proxy_username,
+        p.password as proxy_password
+      FROM uaz_instances ui
+      LEFT JOIN proxies p ON ui.proxy_id = p.id
+      WHERE ui.id = $1 AND ui.tenant_id = $2
+    `, [id, tenantId]);
+
+    if (instanceResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Instância não encontrada'
+      });
+    }
+
+    const inst = instanceResult.rows[0];
+
+    if (!inst.instance_token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Instância sem token'
+      });
+    }
+
+    // URL do webhook QR Connect
+    const webhookUrl = process.env.QR_WEBHOOK_URL || 
+      (process.env.WEBHOOK_BASE_URL ? `${process.env.WEBHOOK_BASE_URL}/api/qr-webhook/uaz-event` : null) ||
+      'https://api.sistemasnettsistemas.com.br/api/qr-webhook/uaz-event';
+
+    // 🔑 Buscar credenciais do tenant
+    const credentials = await getTenantUazapCredentials(tenantId);
+    const tenantUazService = new UazService(credentials.serverUrl, credentials.adminToken);
+
+    const proxyConfig = inst.proxy_host ? {
+      host: inst.proxy_host,
+      port: inst.proxy_port,
+      username: inst.proxy_username,
+      password: inst.proxy_password
+    } : null;
+
+    // Configurar webhook
+    const result = await tenantUazService.configureWebhook(
+      inst.instance_token, 
+      proxyConfig, 
+      webhookUrl
+    );
+
+    if (result.success) {
+      console.log(`✅ Webhook configurado para ${inst.name}`);
+      res.json({
+        success: true,
+        message: `Webhook configurado com sucesso para ${inst.name}`,
+        webhookUrl: webhookUrl,
+        data: result.data
+      });
+    } else {
+      console.log(`❌ Erro ao configurar webhook: ${result.error}`);
+      res.status(500).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Erro ao reconfigurar webhook:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
