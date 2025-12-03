@@ -343,13 +343,40 @@ export default function EmailTemplates() {
                 {/* Preview */}
                 {showPreview && (
                   <div className="bg-gray-800 rounded-xl shadow-lg p-6">
-                    <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                      <FaEye /> Preview do Email
-                    </h3>
-                    <div className="bg-white rounded-lg p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                        <FaEye /> Preview do Email
+                      </h3>
+                      <button
+                        onClick={() => setShowPreview(false)}
+                        className="text-gray-400 hover:text-white transition-colors"
+                      >
+                        ✕ Fechar
+                      </button>
+                    </div>
+                    <div className="bg-white rounded-lg p-8 border-4 border-gray-700 shadow-2xl overflow-auto max-h-[600px]">
+                      <style dangerouslySetInnerHTML={{ __html: `
+                        .email-preview * {
+                          color: inherit !important;
+                        }
+                        .email-preview {
+                          color: #1f2937 !important;
+                          background-color: #ffffff !important;
+                        }
+                        .email-preview a {
+                          color: #2563eb !important;
+                          text-decoration: underline !important;
+                        }
+                        .email-preview h1, .email-preview h2, .email-preview h3 {
+                          color: #111827 !important;
+                        }
+                        .email-preview p {
+                          color: #374151 !important;
+                        }
+                      ` }} />
                       <div
                         dangerouslySetInnerHTML={{ __html: preview }}
-                        className="prose max-w-none"
+                        className="email-preview"
                       />
                     </div>
                   </div>
