@@ -195,7 +195,7 @@ const previewTemplate = async (req, res) => {
         email: 'joao@exemplo.com',
         plano: 'Premium',
         dias_teste: '3',
-        data_fim_teste: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        data_fim_teste: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       trial_start: {
@@ -203,7 +203,7 @@ const previewTemplate = async (req, res) => {
         email: 'maria@exemplo.com',
         dias_teste: '3',
         data_inicio: new Date().toLocaleDateString('pt-BR'),
-        data_fim_teste: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        data_fim_teste: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       expiry_3days: {
@@ -299,7 +299,7 @@ const sendTestEmail = async (req, res) => {
         email: 'joao@exemplo.com',
         plano: 'Premium',
         dias_teste: '3',
-        data_fim_teste: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        data_fim_teste: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       trial_start: {
@@ -307,7 +307,7 @@ const sendTestEmail = async (req, res) => {
         email: 'maria@exemplo.com',
         dias_teste: '3',
         data_inicio: new Date().toLocaleDateString('pt-BR'),
-        data_fim_teste: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        data_fim_teste: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         url_sistema: 'https://sistemasnettsistemas.com.br'
       },
       expiry_3days: {
