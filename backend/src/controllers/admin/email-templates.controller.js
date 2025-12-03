@@ -188,6 +188,24 @@ const previewTemplate = async (req, res) => {
       });
     }
 
+    // Buscar valores REAIS dos planos do banco de dados
+    let plansData = {};
+    try {
+      const plansResult = await pool.query('SELECT nome, valor_mensal FROM plans WHERE ativo = true ORDER BY id');
+      plansResult.rows.forEach(plan => {
+        const planKey = plan.nome.toLowerCase().replace(/[^a-z]/g, '');
+        plansData[`valor_${planKey}`] = parseFloat(plan.valor_mensal).toFixed(2).replace('.', ',');
+      });
+    } catch (err) {
+      console.error('⚠️ Erro ao buscar planos:', err.message);
+      // Valores padrão caso falhe
+      plansData = {
+        valor_basico: '49,90',
+        valor_profissional: '99,90',
+        valor_empresarial: '199,90'
+      };
+    }
+
     // Dados de exemplo para cada tipo de evento
     const exampleData = {
       welcome: {
@@ -251,9 +269,9 @@ const previewTemplate = async (req, res) => {
         email: 'lucas@exemplo.com',
         data_inicio_trial: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         data_fim_trial: new Date().toLocaleDateString('pt-BR'),
-        valor_basico: '49,90',
-        valor_profissional: '99,90',
-        valor_empresarial: '199,90',
+        valor_basico: plansData.valor_basico || '49,90',
+        valor_profissional: plansData.valor_profissional || '99,90',
+        valor_empresarial: plansData.valor_empresarial || '199,90',
         url_planos: 'https://sistemasnettsistemas.com.br/planos',
         dias_para_exclusao: '20'
       },
@@ -325,6 +343,23 @@ const sendTestEmail = async (req, res) => {
       });
     }
 
+    // Buscar valores REAIS dos planos do banco de dados
+    let plansData = {};
+    try {
+      const plansResult = await pool.query('SELECT nome, valor_mensal FROM plans WHERE ativo = true ORDER BY id');
+      plansResult.rows.forEach(plan => {
+        const planKey = plan.nome.toLowerCase().replace(/[^a-z]/g, '');
+        plansData[`valor_${planKey}`] = parseFloat(plan.valor_mensal).toFixed(2).replace('.', ',');
+      });
+    } catch (err) {
+      console.error('⚠️ Erro ao buscar planos:', err.message);
+      plansData = {
+        valor_basico: '49,90',
+        valor_profissional: '99,90',
+        valor_empresarial: '199,90'
+      };
+    }
+
     // Dados de exemplo para teste
     const exampleData = {
       welcome: {
@@ -388,9 +423,9 @@ const sendTestEmail = async (req, res) => {
         email: 'lucas@exemplo.com',
         data_inicio_trial: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
         data_fim_trial: new Date().toLocaleDateString('pt-BR'),
-        valor_basico: '49,90',
-        valor_profissional: '99,90',
-        valor_empresarial: '199,90',
+        valor_basico: plansData.valor_basico || '49,90',
+        valor_profissional: plansData.valor_profissional || '99,90',
+        valor_empresarial: plansData.valor_empresarial || '199,90',
         url_planos: 'https://sistemasnettsistemas.com.br/planos',
         dias_para_exclusao: '20'
       },
