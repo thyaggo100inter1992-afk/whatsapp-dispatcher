@@ -23,15 +23,21 @@ export default function AdminNotificationModal() {
 
   const loadNotifications = async () => {
     try {
+      console.log('🔔 [AdminNotificationModal] Buscando notificações...');
       const response = await api.get('/notifications/active');
+      console.log('🔔 [AdminNotificationModal] Resposta:', response.data);
       const unreadNotifications = response.data.notifications || [];
+      console.log('🔔 [AdminNotificationModal] Notificações não lidas:', unreadNotifications.length);
       
       if (unreadNotifications.length > 0) {
+        console.log('🔔 [AdminNotificationModal] Mostrando notificações:', unreadNotifications);
         setNotifications(unreadNotifications);
         setIsVisible(true);
+      } else {
+        console.log('🔔 [AdminNotificationModal] Nenhuma notificação para mostrar');
       }
     } catch (error) {
-      console.error('Erro ao carregar notificações:', error);
+      console.error('❌ [AdminNotificationModal] Erro ao carregar notificações:', error);
     }
   };
 

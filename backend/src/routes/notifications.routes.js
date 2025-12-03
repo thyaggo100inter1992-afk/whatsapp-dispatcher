@@ -10,7 +10,10 @@ router.get('/active', async (req, res) => {
   try {
     const tenantId = req.tenant?.id;
     
+    console.log('🔔 [Notifications] Buscando notificações para tenant:', tenantId);
+    
     if (!tenantId) {
+      console.log('❌ [Notifications] Tenant não identificado');
       return res.status(401).json({ success: false, message: 'Tenant não identificado' });
     }
 
@@ -100,6 +103,9 @@ router.get('/active', async (req, res) => {
         link_text
       };
     });
+
+    console.log(`🔔 [Notifications] Encontradas ${result.rows.length} notificações ativas`);
+    console.log(`🔔 [Notifications] Após processamento: ${processedNotifications.length} notificações`);
 
     res.json({
       success: true,
