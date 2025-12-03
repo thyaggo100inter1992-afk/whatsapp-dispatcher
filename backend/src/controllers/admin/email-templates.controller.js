@@ -7,8 +7,7 @@ const query = async (text, params) => {
   const result = await pool.query(text, params);
   return result;
 };
-const EmailService = require('../../services/email.service').default;
-const emailService = new EmailService();
+const emailService = require('../../services/email.service').default;
 
 /**
  * Lista todos os templates de email
@@ -286,7 +285,7 @@ const sendTestEmail = async (req, res) => {
       });
     }
 
-    if (!emailService.isConfigured()) {
+    if (!emailService.isConfigured) {
       return res.status(400).json({
         success: false,
         message: 'Serviço de email não está configurado'
