@@ -529,11 +529,71 @@ const sendTestEmail = async (req, res) => {
   }
 };
 
+/**
+ * Restaura um template para o modelo padrão original
+ */
+const restoreTemplate = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Buscar o template atual
+    const currentTemplate = await query('SELECT event_type FROM email_templates WHERE id = $1', [id]);
+    
+    if (currentTemplate.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Template não encontrado'
+      });
+    }
+
+    const eventType = currentTemplate.rows[0].event_type;
+
+    // Carregar templates padrão
+    const DEFAULT_TEMPLATES = require('../../migrations/default_email_templates');
+
+    if (!DEFAULT_TEMPLATES[eventType]) {
+      return res.status(400).json({
+        success: false,
+        message: 'Template padrão não encontrado para este tipo de evento'
+      });
+    }
+
+    const defaultTemplate = DEFAULT_TEMPLATES[eventType];
+
+    // Restaurar o template
+    const result = await query(
+      `UPDATE email_templates 
+       SET subject = $1, 
+           html_content = $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3
+       RETURNING *`,
+      [defaultTemplate.subject, defaultTemplate.html_content, id]
+    );
+
+    console.log(`✅ Template "${eventType}" restaurado ao padrão`);
+
+    res.json({
+      success: true,
+      message: 'Template restaurado ao padrão com sucesso!',
+      template: result.rows[0]
+    });
+  } catch (error) {
+    console.error('❌ Erro ao restaurar template:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao restaurar template',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllTemplates,
   getTemplateById,
   updateTemplate,
   toggleTemplate,
+  restoreTemplate,
   previewTemplate,
   sendTestEmail
 };

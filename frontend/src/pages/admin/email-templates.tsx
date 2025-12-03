@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { FaEnvelope, FaEye, FaPaperPlane, FaSave, FaToggleOn, FaToggleOff, FaExclamationTriangle, FaCog, FaArrowLeft } from 'react-icons/fa';
+import { FaEnvelope, FaEye, FaPaperPlane, FaSave, FaToggleOn, FaToggleOff, FaExclamationTriangle, FaCog, FaArrowLeft, FaUndo } from 'react-icons/fa';
 import api from '@/services/api';
 
 interface EmailTemplate {
@@ -178,6 +178,43 @@ export default function EmailTemplates() {
     } catch (error) {
       console.error('❌ Erro ao alterar status:', error);
       alert('Erro ao alterar status do template');
+    }
+  };
+
+  const restoreTemplate = async () => {
+    if (!selectedTemplate) return;
+
+    const confirmed = confirm(
+      `⚠️ Tem certeza que deseja restaurar o template "${selectedTemplate.name}" ao modelo padrão?\n\n` +
+      `Todas as alterações feitas serão perdidas!`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setSaving(true);
+      
+      const response = await api.post(
+        `/admin/email-templates/${selectedTemplate.id}/restore`
+      );
+
+      if (response.data.success) {
+        alert('✅ Template restaurado ao padrão com sucesso!');
+        
+        // Atualizar o template selecionado com os dados restaurados
+        const restored = response.data.template;
+        setSelectedTemplate(restored);
+        setEditedSubject(restored.subject);
+        setEditedHtml(restored.html_content);
+        
+        // Recarregar lista de templates
+        loadTemplates();
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao restaurar template:', error);
+      alert(error.response?.data?.message || 'Erro ao restaurar template');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -379,6 +416,14 @@ export default function EmailTemplates() {
                       </div>
                     </div>
                     <div className="flex gap-2">
+                      <button
+                        onClick={restoreTemplate}
+                        disabled={saving}
+                        className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                        title="Restaurar template ao modelo padrão"
+                      >
+                        <FaUndo /> Restaurar Padrão
+                      </button>
                       <button
                         onClick={generatePreview}
                         className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"

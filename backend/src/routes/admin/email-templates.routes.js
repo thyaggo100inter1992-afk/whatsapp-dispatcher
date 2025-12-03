@@ -32,6 +32,12 @@ router.put('/:id', emailTemplatesController.updateTemplate);
 router.patch('/:id/toggle', emailTemplatesController.toggleTemplate);
 
 /**
+ * POST /api/admin/email-templates/:id/restore
+ * Restaura um template para o modelo padrão original
+ */
+router.post('/:id/restore', emailTemplatesController.restoreTemplate);
+
+/**
  * POST /api/admin/email-templates/preview
  * Gera preview de um template com variáveis de exemplo
  */
