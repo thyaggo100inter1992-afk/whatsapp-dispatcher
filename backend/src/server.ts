@@ -27,8 +27,15 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://sistemasnettsistemas.com.br',
+      'http://sistemasnettsistemas.com.br',
+      process.env.FRONTEND_URL || 'http://localhost:3000'
+    ],
     methods: ['GET', 'POST'],
+    credentials: true,
   },
 });
 
