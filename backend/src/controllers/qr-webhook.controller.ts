@@ -74,7 +74,7 @@ export class QrWebhookController {
           console.log(`✅ Instância encontrada: ID ${instanceId} (${instanceResult.rows[0].name}) - Tenant: ${tenantId}`);
           
           // Configurar tenant_id na sessão para as próximas queries respeitarem RLS
-          req.tenant = { id: tenantId };
+          (req as any).tenant = { id: tenantId };
         } else {
           console.log(`⚠️ Instância não encontrada - Nome: "${instanceName}", Token: ${instanceToken}`);
         }
