@@ -37,13 +37,23 @@ export class QrWebhookController {
       console.log(`📋 Evento: ${eventType}`);
 
       // Buscar instance_id pelo nome da instância OU pelo token
+      // IMPORTANTE: Usar query direta do pool para BYPASSAR RLS (webhooks são públicos)
+      const { Pool } = require('pg');
+      const pool = new Pool({
+        host: process.env.DB_HOST,
+        port: parseInt(process.env.DB_PORT || '5432'),
+        database: process.env.DB_NAME,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD
+      });
+      
       let instanceId: number | null = null;
       if (instanceName || instanceToken) {
         // Tentar primeiro por token exato (mais confiável)
         let instanceResult;
         if (instanceToken) {
-          instanceResult = await query(
-            'SELECT id, name FROM uaz_instances WHERE instance_token = $1 LIMIT 1',
+          instanceResult = await pool.query(
+            'SELECT id, name, tenant_id FROM uaz_instances WHERE instance_token = $1 LIMIT 1',
             [instanceToken]
           );
           console.log(`🔍 Busca por token: ${instanceToken} -> ${instanceResult.rows.length} resultado(s)`);
@@ -51,8 +61,8 @@ export class QrWebhookController {
         
         // Se não encontrou por token, tentar por nome
         if (!instanceResult || instanceResult.rows.length === 0) {
-          instanceResult = await query(
-            'SELECT id, name FROM uaz_instances WHERE name = $1 LIMIT 1',
+          instanceResult = await pool.query(
+            'SELECT id, name, tenant_id FROM uaz_instances WHERE name = $1 LIMIT 1',
             [instanceName || '']
           );
           console.log(`🔍 Busca por nome: "${instanceName}" -> ${instanceResult.rows.length} resultado(s)`);
@@ -60,7 +70,11 @@ export class QrWebhookController {
         
         if (instanceResult.rows.length > 0) {
           instanceId = instanceResult.rows[0].id;
-          console.log(`✅ Instância encontrada: ID ${instanceId} (${instanceResult.rows[0].name})`);
+          const tenantId = instanceResult.rows[0].tenant_id;
+          console.log(`✅ Instância encontrada: ID ${instanceId} (${instanceResult.rows[0].name}) - Tenant: ${tenantId}`);
+          
+          // Configurar tenant_id na sessão para as próximas queries respeitarem RLS
+          req.tenant = { id: tenantId };
         } else {
           console.log(`⚠️ Instância não encontrada - Nome: "${instanceName}", Token: ${instanceToken}`);
         }
