@@ -37,15 +37,8 @@ export class QrWebhookController {
       console.log(`📋 Evento: ${eventType}`);
 
       // Buscar instance_id pelo nome da instância OU pelo token
-      // IMPORTANTE: Usar query direta do pool para BYPASSAR RLS (webhooks são públicos)
-      const { Pool } = require('pg');
-      const pool = new Pool({
-        host: process.env.DB_HOST,
-        port: parseInt(process.env.DB_PORT || '5432'),
-        database: process.env.DB_NAME,
-        user: process.env.DB_USER,
-        password: process.env.DB_PASSWORD
-      });
+      // IMPORTANTE: Usar pool direto para BYPASSAR RLS (webhooks são públicos)
+      const { pool } = require('../database/connection');
       
       let instanceId: number | null = null;
       if (instanceName || instanceToken) {
