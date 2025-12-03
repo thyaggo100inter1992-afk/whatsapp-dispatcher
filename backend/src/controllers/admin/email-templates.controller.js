@@ -371,19 +371,19 @@ const previewTemplate = async (req, res) => {
  */
 const sendTestEmail = async (req, res) => {
   try {
-    const { to, subject, html_content, event_type } = req.body;
+    const { to, subject, html_content, event_type, email_account_id } = req.body;
+
+    console.log('📧 [TEST-EMAIL] Recebido pedido de teste:', {
+      to,
+      subject,
+      event_type,
+      email_account_id
+    });
 
     if (!to || !subject || !html_content) {
       return res.status(400).json({
         success: false,
         message: 'Destinatário, assunto e conteúdo são obrigatórios'
-      });
-    }
-
-    if (!emailService.isConfigured) {
-      return res.status(400).json({
-        success: false,
-        message: 'Serviço de email não está configurado'
       });
     }
 
@@ -544,14 +544,25 @@ const sendTestEmail = async (req, res) => {
       finalHtml = finalHtml.replace(regex, value);
     });
 
-    const sent = await emailService.sendEmail(to, `[TESTE] ${subject}`, finalHtml);
+    console.log('📧 [TEST-EMAIL] Enviando com account_id:', email_account_id || 'PADRÃO');
+    
+    // Usar emailAccountService para suportar múltiplas contas
+    const emailAccountService = require('../../services/email-account.service').default;
+    const sent = await emailAccountService.sendEmail(
+      to,
+      `[TESTE] ${subject}`,
+      finalHtml,
+      email_account_id
+    );
 
     if (sent) {
+      console.log('✅ [TEST-EMAIL] Email de teste enviado com sucesso');
       res.json({
         success: true,
         message: 'Email de teste enviado com sucesso!'
       });
     } else {
+      console.log('❌ [TEST-EMAIL] Falha ao enviar email de teste');
       res.status(500).json({
         success: false,
         message: 'Falha ao enviar email de teste'

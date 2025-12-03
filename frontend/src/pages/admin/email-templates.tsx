@@ -276,6 +276,8 @@ export default function EmailTemplates() {
       return;
     }
 
+    console.log('📧 [FRONTEND] Enviando email de teste com account_id:', selectedAccountId);
+
     try {
       const response = await api.post(
         '/admin/email-templates/test',
@@ -283,7 +285,8 @@ export default function EmailTemplates() {
           to: testEmail,
           subject: editedSubject,
           html_content: editedHtml,
-          event_type: selectedTemplate.event_type
+          event_type: selectedTemplate.event_type,
+          email_account_id: selectedAccountId  // IMPORTANTE: Enviar o ID da conta selecionada
         }
       );
 
