@@ -3582,31 +3582,106 @@ router.get('/verification-history', async (req, res) => {
  */
 router.get('/messages', async (req, res) => {
   try {
-    const { instance_id, limit = 50 } = req.query;
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ success: false, message: 'Tenant não identificado' });
+    }
 
-    let query = `
+    const { instance_id, limit = 50, offset = 0 } = req.query;
+
+    // Mensagens de campanhas (qr_campaign_messages)
+    let campaignQuery = `
       SELECT 
-        um.*,
+        qcm.id,
+        qcm.instance_id,
         ui.name as instance_name,
-        ui.session_name
-      FROM uaz_messages um
-      JOIN uaz_instances ui ON um.instance_id = ui.id
+        ui.session_name,
+        qcm.campaign_id,
+        qc.name as campaign_name,
+        qcm.phone_number,
+        qcm.template_name as message_content,
+        'campaign' as message_type,
+        qcm.status,
+        qcm.whatsapp_message_id as message_id,
+        qcm.error_message,
+        qcm.sent_at,
+        qcm.delivered_at,
+        qcm.read_at,
+        qcm.created_at,
+        qcm.created_at as updated_at
+      FROM qr_campaign_messages qcm
+      INNER JOIN qr_campaigns qc ON qcm.campaign_id = qc.id
+      LEFT JOIN uaz_instances ui ON qcm.instance_id = ui.id
+      WHERE qc.tenant_id = $1
     `;
-    
-    const params = [];
+
+    // Mensagens únicas (uaz_messages)
+    let uniqueQuery = `
+      SELECT 
+        um.id,
+        um.instance_id,
+        ui.name as instance_name,
+        ui.session_name,
+        NULL::int as campaign_id,
+        NULL::text as campaign_name,
+        um.phone_number,
+        um.message_content,
+        um.message_type,
+        um.status,
+        um.message_id,
+        um.error_message,
+        um.sent_at,
+        um.delivered_at,
+        um.read_at,
+        um.created_at,
+        um.updated_at
+      FROM uaz_messages um
+      INNER JOIN uaz_instances ui ON um.instance_id = ui.id
+      WHERE ui.tenant_id = $2
+    `;
+
+    const params = [tenantId, tenantId];
+
+    // Filtro por instância (aplica nos dois blocos)
     if (instance_id) {
-      query += ' WHERE um.instance_id = $1';
+      campaignQuery += ` AND qcm.instance_id = $3`;
+      uniqueQuery += ` AND um.instance_id = $3`;
       params.push(instance_id);
     }
 
-    query += ' ORDER BY um.created_at DESC LIMIT $' + (params.length + 1);
-    params.push(limit);
+    const limitIndex = params.length + 1;
+    const offsetIndex = params.length + 2;
 
-    const result = await pool.query(query, params);
+    const combinedQuery = `
+      SELECT * FROM (
+        ${campaignQuery}
+        UNION ALL
+        ${uniqueQuery}
+      ) AS messages
+      ORDER BY created_at DESC
+      LIMIT $${limitIndex} OFFSET $${offsetIndex}
+    `;
+
+    params.push(limit);
+    params.push(offset);
+
+    const result = await tenantQuery(req, combinedQuery, params);
+
+    // Contagem total (sem paginação)
+    const countQuery = `
+      SELECT COUNT(*) FROM (
+        ${campaignQuery}
+        UNION ALL
+        ${uniqueQuery}
+      ) AS total_messages
+    `;
+    const countResult = await tenantQuery(req, countQuery, params.slice(0, params.length - 2));
+    const total = parseInt(countResult.rows[0]?.count || '0', 10);
 
     res.json({
       success: true,
-      data: result.rows
+      data: result.rows,
+      total
     });
   } catch (error) {
     res.status(500).json({
