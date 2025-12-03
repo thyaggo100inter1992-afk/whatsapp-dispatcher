@@ -55,7 +55,7 @@ export default function Comunicacao() {
     subject: '',
     content: '',
     recipient_type: 'all',
-    recipient_list: { tenant_ids: [], emails: [] },
+    recipient_list: { tenant_ids: [] as number[], emails: [] as string[] },
     email_accounts: [] as number[],
     delay_seconds: 5
   });
@@ -206,8 +206,8 @@ export default function Comunicacao() {
       subject: '',
       content: '',
       recipient_type: 'all',
-      recipient_list: { tenant_ids: [], emails: [] },
-      email_accounts: [],
+      recipient_list: { tenant_ids: [] as number[], emails: [] as string[] },
+      email_accounts: [] as number[],
       delay_seconds: 5
     });
     setPreviewEmails([]);
