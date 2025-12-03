@@ -163,11 +163,13 @@ export class QrWebhookController {
           console.log(`      📊 Status para atualizar: ${status}`);
           
           // Buscar mensagem no banco (qr_campaign_messages)
+          // A UAZAPI envia apenas a parte final do ID (ex: 3EB036AB542D136AF1A206)
+          // Mas salvamos com prefixo (ex: 556298669726:3EB036AB542D136AF1A206)
           const messageResult = await query(
           `SELECT id, campaign_id, status as current_status, instance_id
            FROM qr_campaign_messages 
-           WHERE whatsapp_message_id = $1`,
-          [messageId]
+           WHERE whatsapp_message_id = $1 OR whatsapp_message_id LIKE $2`,
+          [messageId, `%:${messageId}`]
         );
 
         if (messageResult.rows.length === 0) {
