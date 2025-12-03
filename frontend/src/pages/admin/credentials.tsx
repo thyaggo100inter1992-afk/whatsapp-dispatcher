@@ -67,7 +67,6 @@ export default function AdminCredentials() {
   const [uazapCredentials, setUazapCredentials] = useState<UazapCredential[]>([]);
   const [novaVidaCredentials, setNovaVidaCredentials] = useState<NovaVidaCredential[]>([]);
   const [asaasCredentials, setAsaasCredentials] = useState<AsaasCredential[]>([]);
-  const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -101,16 +100,6 @@ export default function AdminCredentials() {
     metadata: {}
   });
 
-  const [emailForm, setEmailForm] = useState({
-    provider: 'hostinger' as 'hostinger' | 'gmail',
-    smtp_host: 'smtp.hostinger.com',
-    smtp_port: 587,
-    smtp_secure: false,
-    smtp_user: '',
-    smtp_pass: '',
-    email_from: '',
-    test_email: ''
-  });
 
   // Função para copiar texto
   const copyToClipboard = (text: string, label: string) => {
@@ -185,20 +174,6 @@ export default function AdminCredentials() {
       setUazapCredentials(uazapRes.data.data);
       setNovaVidaCredentials(novaVidaRes.data.data);
       setAsaasCredentials(asaasRes.data.data);
-      
-      // Preencher form se já existe configuração
-      if (emailRes.data.data) {
-        setEmailForm({
-          provider: emailRes.data.data.provider || 'hostinger',
-          smtp_host: emailRes.data.data.smtp_host || '',
-          smtp_port: emailRes.data.data.smtp_port || 587,
-          smtp_secure: emailRes.data.data.smtp_secure || false,
-          smtp_user: emailRes.data.data.smtp_user || '',
-          smtp_pass: '',
-          email_from: emailRes.data.data.email_from || '',
-          test_email: ''
-        });
-      }
     } catch (error: any) {
       console.error('Erro ao carregar credenciais:', error);
       notification.error('Erro ao carregar credenciais', error.response?.data?.message || error.message);
@@ -471,59 +446,6 @@ export default function AdminCredentials() {
   };
 
   // === EMAIL FUNCTIONS ===
-  const handleSaveEmail = async () => {
-    if (!emailForm.smtp_user || !emailForm.email_from) {
-      notification.warning('Campos obrigatórios', 'Preencha o usuário e email de envio!');
-      return;
-    }
-
-    try {
-      await api.post('/admin/credentials/email', emailForm);
-      notification.success('Configuração salva!', 'As configurações de email foram salvas com sucesso.');
-      loadCredentials();
-    } catch (error: any) {
-      notification.error('Erro ao salvar configuração', error.response?.data?.message || error.message);
-    }
-  };
-
-  const handleTestEmail = async () => {
-    if (!emailForm.test_email) {
-      notification.warning('Email necessário', 'Digite um email para teste!');
-      return;
-    }
-
-    try {
-      setTestingEmail(true);
-      await api.post('/admin/credentials/email/test', {
-        test_email: emailForm.test_email
-      });
-      notification.success('Email enviado!', `Email de teste enviado para ${emailForm.test_email}`);
-    } catch (error: any) {
-      notification.error('Erro ao enviar email', error.response?.data?.message || error.message);
-    } finally {
-      setTestingEmail(false);
-    }
-  };
-
-  const handleProviderChange = (provider: 'hostinger' | 'gmail') => {
-    if (provider === 'hostinger') {
-      setEmailForm({
-        ...emailForm,
-        provider: 'hostinger',
-        smtp_host: 'smtp.hostinger.com',
-        smtp_port: 587,
-        smtp_secure: false
-      });
-    } else if (provider === 'gmail') {
-      setEmailForm({
-        ...emailForm,
-        provider: 'gmail',
-        smtp_host: 'smtp.gmail.com',
-        smtp_port: 587,
-        smtp_secure: false
-      });
-    }
-  };
 
   if (loading) {
     return (
