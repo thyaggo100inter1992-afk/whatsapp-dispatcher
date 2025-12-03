@@ -16,6 +16,46 @@ interface EmailTemplate {
   updated_at: string;
 }
 
+// Todas as variáveis disponíveis no sistema
+const ALL_AVAILABLE_VARIABLES: Record<string, { name: string; description: string; category: string }> = {
+  // Dados do Usuário/Tenant
+  nome: { name: 'nome', description: 'Nome do usuário/tenant', category: 'Usuário' },
+  email: { name: 'email', description: 'Email do usuário', category: 'Usuário' },
+  
+  // Planos e Valores
+  plano: { name: 'plano', description: 'Nome do plano contratado', category: 'Planos' },
+  valor: { name: 'valor', description: 'Valor do plano/pagamento', category: 'Planos' },
+  valor_basico: { name: 'valor_basico', description: 'Valor do plano Básico', category: 'Planos' },
+  valor_profissional: { name: 'valor_profissional', description: 'Valor do plano Profissional', category: 'Planos' },
+  valor_empresarial: { name: 'valor_empresarial', description: 'Valor do plano Empresarial', category: 'Planos' },
+  valor_megatop: { name: 'valor_megatop', description: 'Valor do plano Mega Top', category: 'Planos' },
+  
+  // Datas e Prazos
+  data_inicio: { name: 'data_inicio', description: 'Data de início', category: 'Datas' },
+  data_inicio_trial: { name: 'data_inicio_trial', description: 'Data de início do trial', category: 'Datas' },
+  data_fim_teste: { name: 'data_fim_teste', description: 'Data de fim do teste', category: 'Datas' },
+  data_fim_trial: { name: 'data_fim_trial', description: 'Data de fim do trial', category: 'Datas' },
+  data_vencimento: { name: 'data_vencimento', description: 'Data de vencimento do pagamento', category: 'Datas' },
+  data_exclusao: { name: 'data_exclusao', description: 'Data de exclusão da conta', category: 'Datas' },
+  
+  // Períodos e Contadores
+  dias_teste: { name: 'dias_teste', description: 'Quantidade de dias de teste', category: 'Períodos' },
+  dias_carencia: { name: 'dias_carencia', description: 'Dias de carência após bloqueio', category: 'Períodos' },
+  dias_restantes: { name: 'dias_restantes', description: 'Dias restantes até exclusão', category: 'Períodos' },
+  dias_para_exclusao: { name: 'dias_para_exclusao', description: 'Dias até a exclusão definitiva', category: 'Períodos' },
+  
+  // URLs do Sistema
+  url_sistema: { name: 'url_sistema', description: 'URL do sistema', category: 'URLs' },
+  url_planos: { name: 'url_planos', description: 'URL da página de planos', category: 'URLs' },
+  url_renovacao: { name: 'url_renovacao', description: 'URL para renovação', category: 'URLs' },
+  
+  // Pagamento PIX
+  payment_id: { name: 'payment_id', description: 'ID do pagamento', category: 'Pagamento' },
+  qr_code_url: { name: 'qr_code_url', description: 'URL da imagem do QR Code PIX', category: 'Pagamento' },
+  pix_code: { name: 'pix_code', description: 'Código PIX copia e cola', category: 'Pagamento' },
+  horas_expiracao: { name: 'horas_expiracao', description: 'Horas até expiração do PIX', category: 'Pagamento' }
+};
+
 export default function EmailTemplates() {
   const router = useRouter();
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
@@ -27,6 +67,7 @@ export default function EmailTemplates() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showAllVariables, setShowAllVariables] = useState(false);
 
   // Ícones para cada tipo de evento
   const eventIcons: Record<string, string> = {
@@ -356,68 +397,165 @@ export default function EmailTemplates() {
 
                   {/* Variáveis Disponíveis com Status */}
                   <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-4 mb-4">
-                    <h3 className="text-sm font-bold text-blue-300 mb-3 flex items-center gap-2">
-                      💡 Variáveis Disponíveis e Status de Uso:
-                    </h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-bold text-blue-300 flex items-center gap-2">
+                        💡 Variáveis Disponíveis e Status de Uso:
+                      </h3>
+                      <button
+                        onClick={() => setShowAllVariables(!showAllVariables)}
+                        className="text-xs px-3 py-1 bg-blue-700 hover:bg-blue-600 text-white rounded-lg transition-colors"
+                      >
+                        {showAllVariables ? '📋 Ver Recomendadas' : '🌐 Ver Todas'}
+                      </button>
+                    </div>
                     
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {selectedTemplate.variables.map((v) => {
-                        const usage = checkVariableUsage(v, editedHtml, editedSubject);
-                        return (
-                          <div
-                            key={v}
-                            className={`flex items-center justify-between p-2 rounded-lg ${
-                              usage.used 
-                                ? 'bg-green-900/30 border border-green-600' 
-                                : 'bg-yellow-900/30 border border-yellow-600'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 flex-1">
-                              <span className="text-lg">
-                                {usage.used ? '✅' : '⚠️'}
-                              </span>
-                              <code
-                                className="text-xs font-mono bg-gray-800 text-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-gray-700"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(`{{${v}}}`);
-                                  alert(`✅ Copiado: {{${v}}}`);
-                                }}
-                                title="Clique para copiar"
-                              >
-                                {`{{${v}}}`}
-                              </code>
-                              <span className="text-xs text-gray-400">
-                                {usage.used ? (
-                                  <>
-                                    Usado {usage.count}x
-                                    {usage.inSubject && ' (assunto)'}
-                                    {usage.inContent && ' (conteúdo)'}
-                                  </>
-                                ) : (
-                                  'Não utilizado'
-                                )}
-                              </span>
+                    <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
+                      {showAllVariables ? (
+                        // Mostrar TODAS as variáveis do sistema, agrupadas por categoria
+                        <>
+                          {Object.entries(
+                            Object.values(ALL_AVAILABLE_VARIABLES).reduce((acc, variable) => {
+                              if (!acc[variable.category]) {
+                                acc[variable.category] = [];
+                              }
+                              acc[variable.category].push(variable);
+                              return acc;
+                            }, {} as Record<string, typeof ALL_AVAILABLE_VARIABLES[string][]>)
+                          ).map(([category, variables]) => (
+                            <div key={category} className="mb-4">
+                              <h4 className="text-xs font-bold text-purple-300 mb-2 px-2 py-1 bg-purple-900/30 rounded">
+                                📂 {category}
+                              </h4>
+                              <div className="space-y-1">
+                                {variables.map((variable) => {
+                                  const usage = checkVariableUsage(variable.name, editedHtml, editedSubject);
+                                  const isRecommended = selectedTemplate.variables.includes(variable.name);
+                                  return (
+                                    <div
+                                      key={variable.name}
+                                      className={`flex items-center justify-between p-2 rounded-lg ${
+                                        usage.used 
+                                          ? 'bg-green-900/30 border border-green-600' 
+                                          : isRecommended
+                                          ? 'bg-yellow-900/30 border border-yellow-600'
+                                          : 'bg-gray-800/50 border border-gray-700'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2 flex-1">
+                                        <span className="text-base">
+                                          {usage.used ? '✅' : isRecommended ? '⚠️' : '💡'}
+                                        </span>
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2">
+                                            <code
+                                              className="text-xs font-mono bg-gray-800 text-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-gray-700"
+                                              onClick={() => {
+                                                navigator.clipboard.writeText(`{{${variable.name}}}`);
+                                                alert(`✅ Copiado: {{${variable.name}}}`);
+                                              }}
+                                              title="Clique para copiar"
+                                            >
+                                              {`{{${variable.name}}}`}
+                                            </code>
+                                            {isRecommended && (
+                                              <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">
+                                                Recomendada
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="text-xs text-gray-400 mt-1">
+                                            {variable.description}
+                                          </p>
+                                        </div>
+                                        <span className="text-xs text-gray-400 ml-2">
+                                          {usage.used ? (
+                                            <span className="text-green-400">
+                                              {usage.count}x usado
+                                            </span>
+                                          ) : (
+                                            <span className="text-gray-500">
+                                              Não usado
+                                            </span>
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                            {!usage.used && (
-                              <span className="text-xs text-yellow-400 font-semibold">
-                                Não configurado
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
+                          ))}
+                        </>
+                      ) : (
+                        // Mostrar apenas as variáveis recomendadas para este template
+                        selectedTemplate.variables.map((v) => {
+                          const usage = checkVariableUsage(v, editedHtml, editedSubject);
+                          const varInfo = ALL_AVAILABLE_VARIABLES[v];
+                          return (
+                            <div
+                              key={v}
+                              className={`flex items-center justify-between p-2 rounded-lg ${
+                                usage.used 
+                                  ? 'bg-green-900/30 border border-green-600' 
+                                  : 'bg-yellow-900/30 border border-yellow-600'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 flex-1">
+                                <span className="text-lg">
+                                  {usage.used ? '✅' : '⚠️'}
+                                </span>
+                                <div className="flex-1">
+                                  <code
+                                    className="text-xs font-mono bg-gray-800 text-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-gray-700"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(`{{${v}}}`);
+                                      alert(`✅ Copiado: {{${v}}}`);
+                                    }}
+                                    title="Clique para copiar"
+                                  >
+                                    {`{{${v}}}`}
+                                  </code>
+                                  {varInfo && (
+                                    <p className="text-xs text-gray-400 mt-1">
+                                      {varInfo.description}
+                                    </p>
+                                  )}
+                                </div>
+                                <span className="text-xs text-gray-400">
+                                  {usage.used ? (
+                                    <>
+                                      Usado {usage.count}x
+                                      {usage.inSubject && ' (assunto)'}
+                                      {usage.inContent && ' (conteúdo)'}
+                                    </>
+                                  ) : (
+                                    'Não utilizado'
+                                  )}
+                                </span>
+                              </div>
+                              {!usage.used && (
+                                <span className="text-xs text-yellow-400 font-semibold">
+                                  Não configurado
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                     
                     <div className="mt-3 pt-3 border-t border-blue-700">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-gray-400">
-                          💡 Clique em uma variável para copiar
+                          💡 Clique em uma variável para copiar • {showAllVariables ? `${Object.keys(ALL_AVAILABLE_VARIABLES).length} variáveis disponíveis` : 'Variáveis recomendadas para este template'}
                         </span>
-                        <span className="text-blue-300">
-                          {selectedTemplate.variables.filter(v => 
-                            checkVariableUsage(v, editedHtml, editedSubject).used
-                          ).length} / {selectedTemplate.variables.length} configuradas
-                        </span>
+                        {!showAllVariables && (
+                          <span className="text-blue-300">
+                            {selectedTemplate.variables.filter(v => 
+                              checkVariableUsage(v, editedHtml, editedSubject).used
+                            ).length} / {selectedTemplate.variables.length} configuradas
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
