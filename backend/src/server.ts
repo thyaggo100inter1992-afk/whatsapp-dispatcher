@@ -32,6 +32,8 @@ const io = new Server(httpServer, {
       'http://localhost:3001',
       'https://sistemasnettsistemas.com.br',
       'http://sistemasnettsistemas.com.br',
+      'https://api.sistemasnettsistemas.com.br',
+      'http://api.sistemasnettsistemas.com.br',
       process.env.FRONTEND_URL || 'http://localhost:3000'
     ],
     methods: ['GET', 'POST'],
@@ -46,6 +48,8 @@ app.use(cors({
     'http://localhost:3001',
     'https://sistemasnettsistemas.com.br',
     'http://sistemasnettsistemas.com.br',
+    'https://api.sistemasnettsistemas.com.br',
+    'http://api.sistemasnettsistemas.com.br',
     process.env.FRONTEND_URL || 'http://localhost:3000'
   ],
   credentials: true,
