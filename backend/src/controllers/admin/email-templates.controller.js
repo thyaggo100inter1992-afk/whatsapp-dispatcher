@@ -240,7 +240,7 @@ const previewTemplate = async (req, res) => {
       hora_atual: now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
       url_sistema: baseUrl,
       url_registro: `${baseUrl}/register`,
-      url_site: baseUrl
+      url_site: 'https://sistemasnettsistemas.com.br/site'
     };
 
     // Dados de exemplo para cada tipo de evento
@@ -437,7 +437,7 @@ const sendTestEmail = async (req, res) => {
       hora_atual: now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
       url_sistema: baseUrl,
       url_registro: `${baseUrl}/register`,
-      url_site: baseUrl
+      url_site: 'https://sistemasnettsistemas.com.br/site'
     };
 
     // Dados de exemplo para teste
