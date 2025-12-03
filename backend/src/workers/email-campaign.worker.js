@@ -270,7 +270,7 @@ class EmailCampaignWorker {
         const sent = await emailAccountService.sendEmail(
           recipient.email,
           campaign.subject,
-          campaign.html_content,
+          campaign.content,
           accountId
         );
 
