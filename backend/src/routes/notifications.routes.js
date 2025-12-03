@@ -48,7 +48,7 @@ router.get('/active', async (req, res) => {
     const tenantData = tenantResult.rows[0];
 
     // Buscar planos
-    const plansResult = await query('SELECT * FROM plans WHERE is_active = TRUE');
+    const plansResult = await query('SELECT * FROM plans');
     const plans = {};
     plansResult.rows.forEach(plan => {
       const planKey = plan.name.toLowerCase()
