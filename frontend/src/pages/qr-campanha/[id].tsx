@@ -785,7 +785,7 @@ export default function QrCampanhaDetalhes() {
             />
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-md border-2 border-white/10 rounded-xl p-5 text-center hover:border-white/20 transition-all">
               <div className="text-4xl font-black text-white mb-2">{campaign.total_contacts}</div>
               <div className="text-sm font-bold text-white/70">👥 Total</div>
@@ -819,11 +819,6 @@ export default function QrCampanhaDetalhes() {
             <div className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 backdrop-blur-md border-2 border-orange-500/20 rounded-xl p-5 text-center hover:border-orange-500/40 transition-all">
               <div className="text-4xl font-black text-orange-400 mb-2">{campaign.no_whatsapp_count || 0}</div>
               <div className="text-sm font-bold text-orange-300">📵 Sem WhatsApp</div>
-            </div>
-            
-            <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 backdrop-blur-md border-2 border-cyan-500/20 rounded-xl p-5 text-center hover:border-cyan-500/40 transition-all">
-              <div className="text-4xl font-black text-cyan-400 mb-2">{campaign.button_clicks_count || 0}</div>
-              <div className="text-sm font-bold text-cyan-300">👆 Cliques</div>
             </div>
           </div>
         </div>
@@ -1346,3 +1341,5 @@ export default function QrCampanhaDetalhes() {
     </div>
   );
 }
+
+
