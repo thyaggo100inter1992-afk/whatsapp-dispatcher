@@ -1189,7 +1189,6 @@ export default function AdminCredentials() {
         )}
 
         {/* EMAIL Content - REMOVIDO - Agora em /admin/email-accounts */}
-        </div>
       </div>
     </AdminLayout>
     </>
