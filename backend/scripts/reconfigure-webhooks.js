@@ -69,14 +69,21 @@ async function reconfigureWebhooks() {
   console.log('🔗 Webhook URL:', WEBHOOK_URL);
   
   try {
-    // Buscar todas as instâncias ativas com token
+    // DEBUG: Ver todas as instâncias
+    const allInstances = await pool.query('SELECT id, name, is_active, instance_token IS NOT NULL as has_token FROM uaz_instances');
+    console.log('📋 TODAS as instâncias no banco:', allInstances.rows.length);
+    allInstances.rows.forEach(i => {
+      console.log(`   [${i.id}] ${i.name} - ativo: ${i.is_active}, token: ${i.has_token}`);
+    });
+    
+    // Buscar todas as instâncias com token (independente de is_active)
     const result = await pool.query(`
-      SELECT ui.id, ui.name, ui.instance_token, ui.phone_number, ui.tenant_id,
+      SELECT ui.id, ui.name, ui.instance_token, ui.phone_number, ui.tenant_id, ui.is_active,
              p.host as proxy_host, p.port as proxy_port, 
              p.username as proxy_username, p.password as proxy_password
       FROM uaz_instances ui
       LEFT JOIN proxies p ON ui.proxy_id = p.id
-      WHERE ui.is_active = true AND ui.instance_token IS NOT NULL
+      WHERE ui.instance_token IS NOT NULL
     `);
     
     console.log('📋 Instâncias encontradas:', result.rows.length);
