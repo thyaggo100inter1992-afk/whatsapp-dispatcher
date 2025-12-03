@@ -865,28 +865,44 @@ export default function Comunicacao() {
                   {selectedCampaign.recipients.map((recipient: any, idx: number) => (
                     <div
                       key={idx}
-                      className={`flex justify-between items-center p-3 rounded-lg ${
+                      className={`p-3 rounded-lg ${
                         recipient.status === 'sent'
                           ? 'bg-green-500/20 border border-green-500/30'
                           : 'bg-red-500/20 border border-red-500/30'
                       }`}
                     >
-                      <div className="flex-1">
-                        <p className="text-white font-mono">{recipient.email}</p>
-                        {recipient.error_message && (
-                          <p className="text-red-300 text-sm mt-1">❌ {recipient.error_message}</p>
-                        )}
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex-1">
+                          <p className="text-white font-mono font-bold">📧 {recipient.email}</p>
+                          {recipient.error_message && (
+                            <p className="text-red-300 text-sm mt-1">❌ {recipient.error_message}</p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          {recipient.status === 'sent' ? (
+                            <span className="text-green-400 font-bold">✓ Enviado</span>
+                          ) : (
+                            <span className="text-red-400 font-bold">✗ Falhou</span>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-right">
-                        {recipient.status === 'sent' ? (
-                          <span className="text-green-400 font-bold">✓ Enviado</span>
-                        ) : (
-                          <span className="text-red-400 font-bold">✗ Falhou</span>
+                      
+                      {/* Informações de Envio */}
+                      <div className="flex gap-4 text-sm">
+                        {recipient.email_account_name && (
+                          <div className="bg-purple-500/30 px-3 py-1 rounded">
+                            <span className="text-purple-200">📮 Enviado por:</span>
+                            <span className="text-white font-bold ml-2">{recipient.email_account_name}</span>
+                            <span className="text-white/70 ml-1">({recipient.email_account_from})</span>
+                          </div>
                         )}
                         {recipient.sent_at && (
-                          <p className="text-white/60 text-xs mt-1">
-                            {new Date(recipient.sent_at).toLocaleString('pt-BR')}
-                          </p>
+                          <div className="bg-white/10 px-3 py-1 rounded">
+                            <span className="text-white/60">🕐</span>
+                            <span className="text-white ml-2">
+                              {new Date(recipient.sent_at).toLocaleString('pt-BR')}
+                            </span>
+                          </div>
                         )}
                       </div>
                     </div>

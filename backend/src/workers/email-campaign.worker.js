@@ -277,9 +277,9 @@ class EmailCampaignWorker {
         if (sent) {
           await query(
             `UPDATE admin_email_campaign_recipients 
-             SET status = 'sent', sent_at = NOW() 
-             WHERE campaign_id = $1 AND email = $2`,
-            [campaign.id, recipient.email]
+             SET status = 'sent', sent_at = NOW(), email_account_id = $1 
+             WHERE campaign_id = $2 AND email = $3`,
+            [accountId, campaign.id, recipient.email]
           );
           sentCount++;
           console.log(`   ✅ Enviado com sucesso!`);

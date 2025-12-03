@@ -74,12 +74,20 @@ const getCampaignById = async (req, res) => {
 
     const campaignData = campaign.rows[0];
 
-    // Buscar destinatários
+    // Buscar destinatários com informações da conta de email usada
     const recipients = await query(
-      `SELECT email, status, sent_at, error_message, email_account_id
-       FROM admin_email_campaign_recipients 
-       WHERE campaign_id = $1
-       ORDER BY id`,
+      `SELECT 
+        r.email, 
+        r.status, 
+        r.sent_at, 
+        r.error_message, 
+        r.email_account_id,
+        e.name as email_account_name,
+        e.email_from as email_account_from
+       FROM admin_email_campaign_recipients r
+       LEFT JOIN email_accounts e ON r.email_account_id = e.id
+       WHERE r.campaign_id = $1
+       ORDER BY r.id`,
       [id]
     );
 
