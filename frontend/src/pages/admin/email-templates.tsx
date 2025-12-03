@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaEnvelope, FaEye, FaPaperPlane, FaSave, FaToggleOn, FaToggleOff, FaExclamationTriangle } from 'react-icons/fa';
+import { FaEnvelope, FaEye, FaPaperPlane, FaSave, FaToggleOn, FaToggleOff, FaExclamationTriangle, FaCog, FaList } from 'react-icons/fa';
 import axios from 'axios';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -18,6 +18,7 @@ interface EmailTemplate {
 }
 
 export default function EmailTemplates() {
+  const [activeTab, setActiveTab] = useState<'templates' | 'config'>('templates');
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
   const [editedSubject, setEditedSubject] = useState('');
@@ -27,6 +28,18 @@ export default function EmailTemplates() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  
+  // Configurações de email
+  const [emailConfig, setEmailConfig] = useState({
+    provider: 'hostinger' as 'hostinger' | 'gmail',
+    smtp_host: 'smtp.hostinger.com',
+    smtp_port: 587,
+    smtp_secure: false,
+    smtp_user: '',
+    smtp_pass: '',
+    email_from: '',
+    test_email: ''
+  });
 
   // Ícones para cada tipo de evento
   const eventIcons: Record<string, string> = {
@@ -39,9 +52,10 @@ export default function EmailTemplates() {
     deletion_warning: '🗑️'
   };
 
-  // Carregar templates
+  // Carregar templates e configurações
   useEffect(() => {
     loadTemplates();
+    loadEmailConfig();
   }, []);
 
   const loadTemplates = async () => {
@@ -188,6 +202,75 @@ export default function EmailTemplates() {
     }
   };
 
+  // Carregar configurações de email
+  const loadEmailConfig = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/api/admin/credentials/email`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.data.success && response.data.config) {
+        setEmailConfig({
+          ...emailConfig,
+          ...response.data.config
+        });
+      }
+    } catch (error) {
+      console.error('❌ Erro ao carregar configurações:', error);
+    }
+  };
+
+  // Salvar configurações de email
+  const saveEmailConfig = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        `${API_URL}/api/admin/credentials/email`,
+        emailConfig,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+
+      if (response.data.success) {
+        alert('✅ Configurações salvas com sucesso!');
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao salvar configurações:', error);
+      alert(error.response?.data?.message || 'Erro ao salvar configurações');
+    }
+  };
+
+  // Enviar email de teste (configurações)
+  const sendConfigTestEmail = async () => {
+    if (!emailConfig.test_email) {
+      alert('❌ Digite um email para teste');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        `${API_URL}/api/admin/credentials/email/test`,
+        {
+          to: emailConfig.test_email,
+          ...emailConfig
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+
+      if (response.data.success) {
+        alert('✅ Email de teste enviado com sucesso!');
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao enviar email de teste:', error);
+      alert(error.response?.data?.message || 'Erro ao enviar email de teste');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black p-8 flex items-center justify-center">
@@ -202,17 +285,42 @@ export default function EmailTemplates() {
         
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl shadow-2xl p-8 mb-8">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 mb-6">
             <FaEnvelope className="text-5xl text-white" />
             <div>
-              <h1 className="text-4xl font-bold text-white">Templates de Email</h1>
+              <h1 className="text-4xl font-bold text-white">Sistema de Email</h1>
               <p className="text-blue-100 mt-2">
-                Configure emails personalizados para cada evento do sistema
+                Configure emails personalizados e credenciais SMTP
               </p>
             </div>
           </div>
+
+          {/* Tabs */}
+          <div className="flex gap-4">
+            <button
+              onClick={() => setActiveTab('templates')}
+              className={`flex items-center gap-2 px-6 py-3 rounded-lg font-bold transition-all ${
+                activeTab === 'templates'
+                  ? 'bg-white text-blue-600 shadow-lg'
+                  : 'bg-white/20 text-white hover:bg-white/30'
+              }`}
+            >
+              <FaList /> Templates
+            </button>
+            <button
+              onClick={() => setActiveTab('config')}
+              className={`flex items-center gap-2 px-6 py-3 rounded-lg font-bold transition-all ${
+                activeTab === 'config'
+                  ? 'bg-white text-blue-600 shadow-lg'
+                  : 'bg-white/20 text-white hover:bg-white/30'
+              }`}
+            >
+              <FaCog /> Configurações SMTP
+            </button>
+          </div>
         </div>
 
+        {activeTab === 'templates' && (
         <div className="grid grid-cols-12 gap-6">
           
           {/* Lista de Templates (Sidebar) */}
@@ -417,6 +525,160 @@ export default function EmailTemplates() {
             )}
           </div>
         </div>
+        )}
+
+        {activeTab === 'config' && (
+          <div className="max-w-4xl mx-auto space-y-6">
+            {/* Configurações SMTP */}
+            <div className="bg-gray-800 rounded-xl shadow-lg p-6">
+              <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                <FaCog /> Configurações de Email (SMTP)
+              </h2>
+
+              {/* Provedor */}
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-300 mb-2">
+                  Provedor:
+                </label>
+                <select
+                  value={emailConfig.provider}
+                  onChange={(e) => {
+                    const provider = e.target.value as 'hostinger' | 'gmail';
+                    setEmailConfig({
+                      ...emailConfig,
+                      provider,
+                      smtp_host: provider === 'hostinger' ? 'smtp.hostinger.com' : 'smtp.gmail.com',
+                      smtp_port: provider === 'hostinger' ? 587 : 587,
+                      smtp_secure: provider === 'gmail'
+                    });
+                  }}
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="hostinger">Hostinger</option>
+                  <option value="gmail">Gmail</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                {/* Host */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-300 mb-2">
+                    Servidor SMTP:
+                  </label>
+                  <input
+                    type="text"
+                    value={emailConfig.smtp_host}
+                    onChange={(e) => setEmailConfig({ ...emailConfig, smtp_host: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    placeholder="smtp.exemplo.com"
+                  />
+                </div>
+
+                {/* Porta */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-300 mb-2">
+                    Porta:
+                  </label>
+                  <input
+                    type="number"
+                    value={emailConfig.smtp_port}
+                    onChange={(e) => setEmailConfig({ ...emailConfig, smtp_port: parseInt(e.target.value) })}
+                    className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    placeholder="587"
+                  />
+                </div>
+              </div>
+
+              {/* Usuário */}
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-300 mb-2">
+                  Email / Usuário SMTP:
+                </label>
+                <input
+                  type="email"
+                  value={emailConfig.smtp_user}
+                  onChange={(e) => setEmailConfig({ ...emailConfig, smtp_user: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  placeholder="seu-email@exemplo.com"
+                />
+              </div>
+
+              {/* Senha */}
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-300 mb-2">
+                  Senha SMTP:
+                </label>
+                <input
+                  type="password"
+                  value={emailConfig.smtp_pass}
+                  onChange={(e) => setEmailConfig({ ...emailConfig, smtp_pass: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              {/* Email From */}
+              <div className="mb-6">
+                <label className="block text-sm font-bold text-gray-300 mb-2">
+                  Email Remetente (From):
+                </label>
+                <input
+                  type="email"
+                  value={emailConfig.email_from}
+                  onChange={(e) => setEmailConfig({ ...emailConfig, email_from: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  placeholder="noreply@exemplo.com"
+                />
+              </div>
+
+              {/* Botão Salvar */}
+              <button
+                onClick={saveEmailConfig}
+                className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold text-lg"
+              >
+                <FaSave /> Salvar Configurações
+              </button>
+            </div>
+
+            {/* Testar Email */}
+            <div className="bg-gray-800 rounded-xl shadow-lg p-6">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <FaPaperPlane /> Testar Envio de Email
+              </h3>
+              <p className="text-gray-400 mb-4 text-sm">
+                Envie um email de teste para verificar se as configurações estão corretas
+              </p>
+              <div className="flex gap-4">
+                <input
+                  type="email"
+                  value={emailConfig.test_email}
+                  onChange={(e) => setEmailConfig({ ...emailConfig, test_email: e.target.value })}
+                  className="flex-1 px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  placeholder="email@exemplo.com"
+                />
+                <button
+                  onClick={sendConfigTestEmail}
+                  className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  <FaPaperPlane /> Enviar Teste
+                </button>
+              </div>
+            </div>
+
+            {/* Aviso */}
+            <div className="bg-yellow-900/30 border border-yellow-600 rounded-xl p-6">
+              <h3 className="text-lg font-bold text-yellow-300 mb-2 flex items-center gap-2">
+                <FaExclamationTriangle /> Importante
+              </h3>
+              <ul className="text-yellow-200 space-y-1 text-sm">
+                <li>• <strong>Salve as configurações</strong> antes de enviar um email de teste</li>
+                <li>• Para <strong>Gmail</strong>, você precisa gerar uma "Senha de App" nas configurações de segurança</li>
+                <li>• Para <strong>Hostinger</strong>, use o email e senha da sua conta de email</li>
+                <li>• Após salvar, o sistema reiniciará automaticamente para aplicar as mudanças</li>
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
