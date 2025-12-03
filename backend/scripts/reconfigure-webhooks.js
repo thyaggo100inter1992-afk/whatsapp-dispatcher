@@ -17,6 +17,53 @@ const pool = new Pool({
 
 const WEBHOOK_URL = 'https://api.sistemasnettsistemas.com.br/api/qr-webhook/uaz-event';
 
+async function getCredentials(tenantId) {
+  try {
+    // Buscar credencial do tenant
+    const result = await pool.query(`
+      SELECT 
+        uc.server_url,
+        uc.admin_token
+      FROM tenants t
+      LEFT JOIN uazap_credentials uc ON t.uazap_credential_id = uc.id
+      WHERE t.id = $1 AND uc.is_active = true
+    `, [tenantId]);
+
+    if (result.rows.length > 0 && result.rows[0].server_url) {
+      return {
+        serverUrl: result.rows[0].server_url,
+        adminToken: result.rows[0].admin_token
+      };
+    }
+
+    // Buscar credencial padrão
+    const defaultResult = await pool.query(`
+      SELECT server_url, admin_token
+      FROM uazap_credentials
+      WHERE is_default = true AND is_active = true
+      LIMIT 1
+    `);
+
+    if (defaultResult.rows.length > 0) {
+      return {
+        serverUrl: defaultResult.rows[0].server_url,
+        adminToken: defaultResult.rows[0].admin_token
+      };
+    }
+
+    // Fallback
+    return {
+      serverUrl: process.env.UAZ_SERVER_URL || 'https://nettsistemas.uazapi.com',
+      adminToken: process.env.UAZ_ADMIN_TOKEN || ''
+    };
+  } catch (error) {
+    return {
+      serverUrl: process.env.UAZ_SERVER_URL || 'https://nettsistemas.uazapi.com',
+      adminToken: process.env.UAZ_ADMIN_TOKEN || ''
+    };
+  }
+}
+
 async function reconfigureWebhooks() {
   console.log('\n🔧 ===== RECONFIGURANDO WEBHOOKS DE TODAS AS INSTÂNCIAS =====\n');
   console.log('🔗 Webhook URL:', WEBHOOK_URL);
@@ -25,12 +72,9 @@ async function reconfigureWebhooks() {
     // Buscar todas as instâncias ativas com token
     const result = await pool.query(`
       SELECT ui.id, ui.name, ui.instance_token, ui.phone_number, ui.tenant_id,
-             tc.uazapi_server_url, tc.uazapi_admin_token,
              p.host as proxy_host, p.port as proxy_port, 
              p.username as proxy_username, p.password as proxy_password
       FROM uaz_instances ui
-      JOIN tenants t ON ui.tenant_id = t.id
-      LEFT JOIN tenant_credentials tc ON t.id = tc.tenant_id
       LEFT JOIN proxies p ON ui.proxy_id = p.id
       WHERE ui.is_active = true AND ui.instance_token IS NOT NULL
     `);
@@ -44,7 +88,11 @@ async function reconfigureWebhooks() {
       console.log('\n📡 [' + inst.id + '] ' + inst.name + ' (' + (inst.phone_number || 'sem número') + ')');
       
       try {
-        const serverUrl = inst.uazapi_server_url || 'https://nettsistemas.uazapi.com';
+        // Buscar credenciais do tenant
+        const credentials = await getCredentials(inst.tenant_id);
+        const serverUrl = credentials.serverUrl;
+        
+        console.log('   🔑 Server:', serverUrl);
         
         const response = await axios.post(
           serverUrl + '/webhook',
@@ -101,4 +149,3 @@ async function reconfigureWebhooks() {
 }
 
 reconfigureWebhooks();
-
