@@ -183,15 +183,49 @@ router.get('/tenant-:tenantId', (req, res) => {
   }
 });
 
-// Receber eventos do webhook por tenant (POST)
+// Importar QR Webhook Controller para eventos UAZAPI
+let QrWebhookController;
+try {
+  QrWebhookController = require('../controllers/qr-webhook.controller').QrWebhookController;
+} catch (e) {
+  try {
+    QrWebhookController = require('../../dist/controllers/qr-webhook.controller').QrWebhookController;
+  } catch (e2) {
+    console.warn('⚠️ QrWebhookController não encontrado');
+  }
+}
+const qrWebhookController = QrWebhookController ? new QrWebhookController() : null;
+
+// Receber eventos do webhook por tenant (POST) - DETECTA AUTOMATICAMENTE SE É UAZAPI OU API OFICIAL
 router.post('/tenant-:tenantId', (req, res) => {
   const { tenantId } = req.params;
   console.log(`\n🔔 ===== WEBHOOK RECEBIDO PARA TENANT ${tenantId} =====`);
+  console.log('📦 Body:', JSON.stringify(req.body, null, 2));
   
   // Adicionar tenantId ao request para o controller usar
   req.tenantIdFromWebhook = parseInt(tenantId);
   
-  // Processar webhook
+  // 🔍 DETECTAR SE É EVENTO UAZAPI OU API OFICIAL
+  const body = req.body;
+  const isUazapiEvent = body.type || body.event || body.instance || body.instanceId || 
+                        body.messages_update || body.presence || body.connection;
+  const isApiOficial = body.object === 'whatsapp_business_account' || body.entry;
+  
+  if (isUazapiEvent && !isApiOficial) {
+    // 📱 É EVENTO UAZAPI (QR CONNECT)
+    console.log(`🔗 [UAZAPI] Detectado evento UAZAPI para Tenant ${tenantId}`);
+    
+    if (qrWebhookController) {
+      // Redirecionar para o QR Webhook Controller
+      return qrWebhookController.receiveUazEvent(req, res);
+    } else {
+      console.warn(`⚠️ QrWebhookController não disponível, evento UAZAPI ignorado`);
+      return res.status(200).json({ success: true, message: 'Evento UAZAPI recebido (controller não disponível)' });
+    }
+  }
+  
+  // 📱 É EVENTO API OFICIAL
+  console.log(`📱 [API OFICIAL] Detectado evento API Oficial para Tenant ${tenantId}`);
   webhookController.receive(req, res);
 });
 
