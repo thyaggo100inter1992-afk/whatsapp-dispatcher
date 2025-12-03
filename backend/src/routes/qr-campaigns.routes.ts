@@ -105,21 +105,39 @@ router.get('/:id/buttons-stats', qrCampaignController.getButtonsStats.bind(qrCam
 
 /**
  * GET /api/qr-campaigns/:id/accounts-status
- * Obter status das instâncias da campanha
+ * Obter status das instâncias da campanha (legacy)
  */
 router.get('/:id/accounts-status', qrCampaignController.getAccountsStatus.bind(qrCampaignController));
 
 /**
+ * GET /api/qr-campaigns/:id/instances-status
+ * Obter status das instâncias da campanha (novo)
+ */
+router.get('/:id/instances-status', qrCampaignController.getAccountsStatus.bind(qrCampaignController));
+
+/**
  * POST /api/qr-campaigns/:id/remove-account
- * Remover instância da campanha
+ * Remover instância da campanha (legacy)
  */
 router.post('/:id/remove-account', qrCampaignController.removeAccount.bind(qrCampaignController));
 
 /**
+ * POST /api/qr-campaigns/:id/remove-instance
+ * Remover instância da campanha (novo)
+ */
+router.post('/:id/remove-instance', qrCampaignController.removeAccount.bind(qrCampaignController));
+
+/**
  * POST /api/qr-campaigns/:id/add-account
- * Re-adicionar instância à campanha
+ * Re-adicionar instância à campanha (legacy)
  */
 router.post('/:id/add-account', qrCampaignController.addAccount.bind(qrCampaignController));
+
+/**
+ * POST /api/qr-campaigns/:id/add-instance
+ * Re-adicionar instância à campanha (novo)
+ */
+router.post('/:id/add-instance', qrCampaignController.addAccount.bind(qrCampaignController));
 
 /**
  * POST /api/qr-campaigns/:id/update-auto-remove-config
