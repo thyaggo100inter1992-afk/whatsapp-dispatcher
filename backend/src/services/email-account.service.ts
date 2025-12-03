@@ -64,7 +64,7 @@ class EmailAccountService {
    * Cria um transporter para uma conta específica
    */
   createTransporter(account: EmailAccount) {
-    return nodemailer.createTransporter({
+    return nodemailer.createTransport({
       host: account.smtp_host,
       port: account.smtp_port,
       secure: account.smtp_secure,
