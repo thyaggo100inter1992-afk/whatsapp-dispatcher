@@ -1019,6 +1019,8 @@ router.get('/whatsapp-accounts/available', async (req, res) => {
   try {
     const tenantId = req.tenant?.id;
 
+    console.log(`🔍 [Gestão] Buscando contas disponíveis para tenant ${tenantId}`);
+
     if (!tenantId) {
       return res.status(400).json({
         success: false,
@@ -1034,6 +1036,8 @@ router.get('/whatsapp-accounts/available', async (req, res) => {
       ORDER BY name
     `, [tenantId]);
 
+    console.log(`📱 [Gestão] Contas API encontradas: ${apiAccounts.rows.length}`);
+
     // Buscar todas as instâncias UAZ do tenant (se a tabela existir)
     let uazInstances = { rows: [] };
     try {
@@ -1043,15 +1047,20 @@ router.get('/whatsapp-accounts/available', async (req, res) => {
         WHERE tenant_id = $1
         ORDER BY name
       `, [tenantId]);
+      console.log(`🔗 [Gestão] Instâncias QR encontradas: ${uazInstances.rows.length}`);
     } catch (error) {
-      console.log('⚠️ Tabela uaz_instances não encontrada ou sem dados');
+      console.log('⚠️ Tabela uaz_instances não encontrada ou sem dados:', error.message);
     }
 
-    res.json({
+    const response = {
       success: true,
       apiAccounts: apiAccounts.rows,
       uazInstances: uazInstances.rows
-    });
+    };
+
+    console.log(`✅ [Gestão] Retornando: ${apiAccounts.rows.length} API + ${uazInstances.rows.length} QR`);
+
+    res.json(response);
   } catch (error) {
     console.error('❌ Erro ao buscar contas disponíveis:', error);
     res.status(500).json({

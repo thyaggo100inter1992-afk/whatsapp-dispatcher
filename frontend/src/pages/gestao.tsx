@@ -1069,7 +1069,12 @@ export default function Gestao() {
     setLoadingAccounts(true);
     try {
       // Buscar todas as contas disponíveis
+      console.log('🔍 Buscando contas disponíveis...');
       const availableResponse = await api.get('/gestao/whatsapp-accounts/available');
+      console.log('📦 Resposta do servidor:', availableResponse.data);
+      console.log(`📱 Contas API: ${availableResponse.data.apiAccounts?.length || 0}`);
+      console.log(`🔗 Instâncias QR: ${availableResponse.data.uazInstances?.length || 0}`);
+      
       setAvailableApiAccounts(availableResponse.data.apiAccounts || []);
       setAvailableUazInstances(availableResponse.data.uazInstances || []);
 
@@ -1077,6 +1082,9 @@ export default function Gestao() {
       const userAccountsResponse = await api.get(`/gestao/users/${userId}/whatsapp-accounts`);
       const userApiIds = new Set<number>(userAccountsResponse.data.apiAccounts?.map((acc: any) => acc.id) || []);
       const userUazIds = new Set<number>(userAccountsResponse.data.uazInstances?.map((inst: any) => inst.id) || []);
+      
+      console.log(`✅ Contas API selecionadas: ${userApiIds.size}`);
+      console.log(`✅ Instâncias QR selecionadas: ${userUazIds.size}`);
       
       setSelectedApiAccounts(userApiIds);
       setSelectedUazInstances(userUazIds);
