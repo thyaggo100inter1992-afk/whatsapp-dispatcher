@@ -14,6 +14,7 @@ const qrWebhookRoutes = require('./qr-webhook.routes').default;
 const baseDadosRoutes = require('./baseDados').default;
 const profileRoutes = require('./users/profile.routes');
 const featuresRoutes = require('./features.routes');
+const notificationsRoutes = require('./notifications.routes');
 const uazRoutes = require('./uaz');
 const novaVidaRoutes = require('./novaVida');
 const listaRestricaoRoutes = require('./listaRestricao');
@@ -132,6 +133,9 @@ console.log('✅ Rota /users/profile registrada (requer autenticação + tenant 
 // ============================================
 router.use('/features', authenticate, setTenantContext, featuresRoutes);
 console.log('✅ Rota /features registrada (requer autenticação + tenant context)');
+
+router.use('/notifications', authenticate, setTenantContext, notificationsRoutes);
+console.log('✅ Rota /notifications registrada (requer autenticação + tenant context)');
 
 // ============================================
 // ROTAS PRINCIPAIS (API OFICIAL - COM AUTENTICAÇÃO)

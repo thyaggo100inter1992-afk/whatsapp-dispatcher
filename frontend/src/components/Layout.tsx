@@ -7,6 +7,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { buildFileUrl } from '@/utils/urlHelpers';
 import SystemLogo from './SystemLogo';
 import TrialExpiringBanner from './TrialExpiringBanner';
+import AdminNotificationModal from './AdminNotificationModal';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -213,6 +214,9 @@ export default function Layout({ children }: LayoutProps) {
           </p>
         </div>
       </footer>
+
+      {/* Modal de Notificações do Admin */}
+      <AdminNotificationModal />
       </div>
     </>
   );
