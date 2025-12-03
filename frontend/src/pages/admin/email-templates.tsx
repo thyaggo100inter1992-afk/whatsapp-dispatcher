@@ -32,11 +32,14 @@ export default function EmailTemplates() {
   const eventIcons: Record<string, string> = {
     welcome: '🎉',
     trial_start: '🚀',
+    trial_expired: '🔒',
     expiry_3days: '⚠️',
     expiry_2days: '⚠️',
     expiry_1day: '🚨',
     blocked: '🔒',
-    deletion_warning: '🗑️'
+    deletion_warning: '🗑️',
+    pix_generated: '💰',
+    payment_confirmed: '✅'
   };
 
   // Carregar templates
