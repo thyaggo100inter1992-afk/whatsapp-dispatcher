@@ -28,7 +28,8 @@ export class QrWebhookController {
       // Extrair informações do payload
       const instanceName = payload.instance || payload.instanceName;
       const instanceToken = payload.token || payload.instance_token;
-      const eventType = payload.event || payload.type || payload.EventType;
+      // IMPORTANTE: EventType é o campo correto da UAZAPI, payload.event é o objeto!
+      const eventType = payload.EventType || payload.type || (typeof payload.event === 'string' ? payload.event : null);
       const eventData = payload.data || payload.event || payload;
 
       console.log(`📡 Instância: ${instanceName}`);
