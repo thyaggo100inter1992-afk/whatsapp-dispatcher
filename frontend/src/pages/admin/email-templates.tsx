@@ -58,7 +58,9 @@ const ALL_AVAILABLE_VARIABLES: Record<string, { name: string; description: strin
   dias_para_exclusao: { name: 'dias_para_exclusao', description: 'Dias até a exclusão definitiva', category: 'Períodos' },
   
   // URLs do Sistema
-  url_sistema: { name: 'url_sistema', description: 'URL do sistema', category: 'URLs' },
+  url_sistema: { name: 'url_sistema', description: 'URL do sistema/painel', category: 'URLs' },
+  url_registro: { name: 'url_registro', description: 'URL da página de registro/cadastro', category: 'URLs' },
+  url_site: { name: 'url_site', description: 'URL do site principal', category: 'URLs' },
   url_planos: { name: 'url_planos', description: 'URL da página de planos', category: 'URLs' },
   url_renovacao: { name: 'url_renovacao', description: 'URL para renovação', category: 'URLs' },
   

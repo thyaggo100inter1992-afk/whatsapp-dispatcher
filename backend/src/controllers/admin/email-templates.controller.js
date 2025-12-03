@@ -234,9 +234,13 @@ const previewTemplate = async (req, res) => {
 
     // Variáveis globais disponíveis em todos os templates
     const now = new Date();
+    const baseUrl = process.env.FRONTEND_URL || 'https://sistemasnettsistemas.com.br';
     const globalVars = {
       data_atual: now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
-      hora_atual: now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
+      hora_atual: now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
+      url_sistema: baseUrl,
+      url_registro: `${baseUrl}/register`,
+      url_site: baseUrl
     };
 
     // Dados de exemplo para cada tipo de evento
@@ -427,9 +431,13 @@ const sendTestEmail = async (req, res) => {
 
     // Variáveis globais disponíveis em todos os templates (para teste)
     const now = new Date();
+    const baseUrl = process.env.FRONTEND_URL || 'https://sistemasnettsistemas.com.br';
     const globalVars = {
       data_atual: now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
-      hora_atual: now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
+      hora_atual: now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
+      url_sistema: baseUrl,
+      url_registro: `${baseUrl}/register`,
+      url_site: baseUrl
     };
 
     // Dados de exemplo para teste
