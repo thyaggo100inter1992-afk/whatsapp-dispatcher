@@ -284,12 +284,14 @@ export class QrWebhookController {
                WHERE id = $1`,
               [campaignId]
             );
-          } else {
-            // Pulou delivered, ir direto para read
+          } else if (currentStatus !== 'read') {
+            // Se estava como 'sent' (ou pending), contamos tanto delivered quanto read
             await this.runTenantQuery(
               tenantId,
               `UPDATE qr_campaigns 
-               SET read_count = read_count + 1, updated_at = NOW()
+               SET delivered_count = delivered_count + 1,
+                   read_count = read_count + 1, 
+                   updated_at = NOW()
                WHERE id = $1`,
               [campaignId]
             );
