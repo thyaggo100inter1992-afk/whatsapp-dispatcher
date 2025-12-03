@@ -3,7 +3,16 @@
  * Usado para restaurar templates ao estado original
  */
 
-const DEFAULT_TEMPLATES = {
+interface EmailTemplate {
+  subject: string;
+  html_content: string;
+}
+
+interface DefaultTemplates {
+  [key: string]: EmailTemplate;
+}
+
+export const DEFAULT_TEMPLATES: DefaultTemplates = {
   welcome: {
     subject: '🎉 Bem-vindo ao Nett Sistemas!',
     html_content: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -275,6 +284,4 @@ const DEFAULT_TEMPLATES = {
 </div>`
   }
 };
-
-module.exports = DEFAULT_TEMPLATES;
 
