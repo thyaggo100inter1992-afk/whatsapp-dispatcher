@@ -1044,6 +1044,7 @@ export default function Gestao() {
       envio_imediato: false,
       catalogo: false,
       desativar_contas_whatsapp: false,
+      configuracoes: false,
     };
     
     // Merge das permissões do usuário com as padrão
