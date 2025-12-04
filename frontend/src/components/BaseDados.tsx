@@ -635,19 +635,26 @@ export default function BaseDados() {
             preview: false
           });
           
-          let photoUrl = response.data.contact?.image || 
-                          response.data.contact?.profilePicUrl || 
+          console.log(`📊 Resposta completa da API:`, response.data);
+          
+          let photoUrl = response.data.contact?.profilePicUrl || 
+                          response.data.contact?.image || 
                           response.data.profilePicUrl ||
                           response.data.contact?.imageUrl;
 
-          // Se a foto for uma URL relativa (já salva localmente), adicionar o base URL do backend
+          // Se a foto for uma URL relativa (já salva localmente), construir URL completa
           if (photoUrl && photoUrl.startsWith('/uploads/')) {
-            const API_BASE = 'http://localhost:3001';
-            photoUrl = `${API_BASE}${photoUrl}`;
-            console.log('🖼️ Usando foto local do backend:', photoUrl);
+            // Pegar a URL base do backend (sem o /api)
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
+            const backendUrl = apiUrl.replace('/api', '');
+            photoUrl = `${backendUrl}${photoUrl}`;
+            console.log('🖼️ URL completa da foto:', photoUrl);
           }
           
           const hasWhatsApp = response.data.contact?.hasWhatsApp ?? false;
+          
+          console.log(`📸 Foto extraída: ${photoUrl || 'Sem foto'}`);
+          console.log(`📱 Tem WhatsApp: ${hasWhatsApp}`);
           
           if (hasWhatsApp) {
             comWhatsApp++;
