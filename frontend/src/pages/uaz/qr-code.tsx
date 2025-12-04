@@ -337,12 +337,12 @@ export default function QrCodeUaz() {
         <div className="text-center">
           <p className="text-2xl text-white/70">Instância não encontrada</p>
           {canAccessConfiguracoes && (
-            <button
-              onClick={() => router.push('/configuracoes-uaz')}
-              className="mt-6 px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold"
-            >
-              Voltar para Configurações
-            </button>
+          <button
+            onClick={() => router.push('/configuracoes-uaz')}
+            className="mt-6 px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold"
+          >
+            Voltar para Configurações
+          </button>
           )}
         </div>
       </div>

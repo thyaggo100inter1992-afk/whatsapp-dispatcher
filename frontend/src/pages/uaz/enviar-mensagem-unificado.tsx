@@ -2774,12 +2774,12 @@ export default function EnviarMensagemUnificado() {
               Você precisa conectar uma instância antes de enviar mensagens.
             </p>
             {canAccessConfiguracoes && (
-              <button
-                onClick={() => router.push('/configuracoes-uaz')}
-                className="px-8 py-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl transition-all"
-              >
-                Ir para Configurações
-              </button>
+            <button
+              onClick={() => router.push('/configuracoes-uaz')}
+              className="px-8 py-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl transition-all"
+            >
+              Ir para Configurações
+            </button>
             )}
           </div>
         ) : (

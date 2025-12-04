@@ -155,7 +155,15 @@ export default function LayoutUaz({ children }: LayoutUazProps) {
                 >
                   {user?.avatar ? (
                     <img 
-                      src={buildFileUrl(user.avatar.startsWith('/uploads') ? user.avatar : `/uploads/avatars/${user.avatar}`) || undefined}
+                      src={
+                        user.avatar.startsWith('http')
+                          ? user.avatar
+                          : buildFileUrl(
+                              user.avatar.startsWith('/uploads')
+                                ? user.avatar
+                                : `/uploads/avatars/${user.avatar}`
+                            ) || undefined
+                      }
                       alt={user.nome}
                       className="w-10 h-10 rounded-full object-cover border-2 border-blue-400"
                     />

@@ -630,12 +630,12 @@ export default function EnviarMensagemUaz() {
               
               <div className="flex gap-4 justify-center">
                 {canAccessConfiguracoes && (
-                  <button
-                    onClick={() => router.push('/configuracoes-uaz')}
-                    className="px-8 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-lg font-bold rounded-xl shadow-lg"
-                  >
-                    🔧 Ir para Configurações
-                  </button>
+                <button
+                  onClick={() => router.push('/configuracoes-uaz')}
+                  className="px-8 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-lg font-bold rounded-xl shadow-lg"
+                >
+                  🔧 Ir para Configurações
+                </button>
                 )}
                 <button
                   onClick={() => router.push('/dashboard-uaz')}

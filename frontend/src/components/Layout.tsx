@@ -87,12 +87,15 @@ export default function Layout({ children }: LayoutProps) {
     { name: 'Configurações', href: '/configuracoes', icon: FaCog },
   ];
 
-  const avatarPath = user?.avatar
-    ? user.avatar.startsWith('/uploads')
+  const avatarUrl = user?.avatar
+    ? user.avatar.startsWith('http')
       ? user.avatar
-      : `/uploads/avatars/${user.avatar}`
+      : buildFileUrl(
+          user.avatar.startsWith('/uploads')
+            ? user.avatar
+            : `/uploads/avatars/${user.avatar}`
+        )
     : null;
-  const avatarUrl = avatarPath ? buildFileUrl(avatarPath) : null;
 
   return (
     <>

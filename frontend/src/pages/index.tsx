@@ -75,10 +75,10 @@ export default function ChooseIntegration() {
                 user.avatar.startsWith('http')
                   ? user.avatar
                   : buildFileUrl(
-                      user.avatar.startsWith('/uploads')
-                        ? user.avatar
-                        : `/uploads/avatars/${user.avatar}`
-                    ) || undefined
+                  user.avatar.startsWith('/uploads')
+                    ? user.avatar
+                    : `/uploads/avatars/${user.avatar}`
+                ) || undefined
               }
               alt={user.nome}
               className="w-10 h-10 rounded-full object-cover border-2 border-emerald-400"
@@ -330,14 +330,14 @@ export default function ChooseIntegration() {
                     </div>
                   </div>
                   {!hasFeature('consulta_dados') && (
-                    <div className="pt-4">
-                      <button
-                        onClick={() => router.push('/gestao?tab=financeiro')}
-                        className="px-6 py-3 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 font-bold rounded-xl transition-all border border-orange-500/50"
-                      >
-                        Fazer Upgrade
-                      </button>
-                    </div>
+                  <div className="pt-4">
+                    <button
+                      onClick={() => router.push('/gestao?tab=financeiro')}
+                      className="px-6 py-3 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 font-bold rounded-xl transition-all border border-orange-500/50"
+                    >
+                      Fazer Upgrade
+                    </button>
+                  </div>
                   )}
                 </div>
               </div>
@@ -415,14 +415,14 @@ export default function ChooseIntegration() {
                     </div>
                   </div>
                   {!hasFeature('verificar_numeros') && (
-                    <div className="pt-4">
-                      <button
-                        onClick={() => router.push('/gestao?tab=financeiro')}
-                        className="px-6 py-3 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold rounded-xl transition-all border border-purple-500/50"
-                      >
-                        Fazer Upgrade
-                      </button>
-                    </div>
+                  <div className="pt-4">
+                    <button
+                      onClick={() => router.push('/gestao?tab=financeiro')}
+                      className="px-6 py-3 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold rounded-xl transition-all border border-purple-500/50"
+                    >
+                      Fazer Upgrade
+                    </button>
+                  </div>
                   )}
                 </div>
               </div>
@@ -501,14 +501,14 @@ export default function ChooseIntegration() {
                     </div>
                   </div>
                   {!hasFeature('gerenciar_proxies') && (
-                    <div className="pt-4">
-                      <button
-                        onClick={() => router.push('/gestao?tab=financeiro')}
-                        className="px-6 py-3 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold rounded-xl transition-all border border-cyan-500/50"
-                      >
-                        Fazer Upgrade
-                      </button>
-                    </div>
+                  <div className="pt-4">
+                    <button
+                      onClick={() => router.push('/gestao?tab=financeiro')}
+                      className="px-6 py-3 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold rounded-xl transition-all border border-cyan-500/50"
+                    >
+                      Fazer Upgrade
+                    </button>
+                  </div>
                   )}
                 </div>
               </div>
