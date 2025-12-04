@@ -346,18 +346,36 @@ router.post('/consultar', checkNovaVidaLimit, async (req, res) => {
       console.log(`📱 Verificando WhatsApp dos telefones (coluna: ${whatsappColumn})...`);
       
       try {
-        // Buscar TODAS as instâncias ativas para rotação
-        const instanceResult = await pool.query(
-          `SELECT id, instance_token, name FROM uaz_instances WHERE is_connected = true ORDER BY id`
-        );
+        // 🔑 BUSCAR CREDENCIAIS DO TENANT
+        const credentials = await getTenantUazapCredentials(req.tenant?.id);
+        const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
         
-        if (instanceResult.rows.length > 0) {
-          const instances = instanceResult.rows;
+        // 🔍 BUSCAR INSTÂNCIAS CONECTADAS DO BANCO LOCAL (igual à Consulta Única)
+        // Usando os mesmos critérios: is_active = true AND status = 'connected'
+        const tenantId = req.tenant?.id;
+        const instanceResult = await pool.query(
+          `SELECT id, instance_token, name FROM uaz_instances 
+           WHERE tenant_id = $1 AND is_active = true AND status = 'connected' 
+           ORDER BY id`,
+          [tenantId]
+        );
+        let instances = instanceResult.rows;
+        console.log(`📊 ${instances.length} instância(s) conectada(s) no banco local (tenant: ${tenantId})`);
+        
+        // Se não encontrou no banco local, tentar também com is_connected = true (fallback)
+        if (instances.length === 0) {
+          const fallbackResult = await pool.query(
+            `SELECT id, instance_token, name FROM uaz_instances 
+             WHERE tenant_id = $1 AND is_connected = true 
+             ORDER BY id`,
+            [tenantId]
+          );
+          instances = fallbackResult.rows;
+          console.log(`📊 Fallback: ${instances.length} instância(s) com is_connected=true`);
+        }
+        
+        if (instances.length > 0) {
           console.log(`🔄 ${instances.length} instância(s) ativa(s) para rotação`);
-          
-          // 🔑 BUSCAR CREDENCIAIS DO TENANT
-          const credentials = await getTenantUazapCredentials(req.tenant?.id);
-          const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
           
           // Extrair telefones do resultado
           const telefones = resultado.dados.TELEFONES || [];
