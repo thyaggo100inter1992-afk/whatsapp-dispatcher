@@ -64,7 +64,7 @@ export default function CriarCampanhaQR() {
 
   const loadInstances = async () => {
     try {
-      const response = await api.get('/uaz/instances');
+      const response = await api.get(`/uaz/instances?_t=${Date.now()}`);
       // Filtrar apenas conectadas E ativas (não pausadas)
       const activeInstances = response.data.data.filter((i: UazInstance) => 
         i.is_connected && i.is_active
