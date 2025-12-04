@@ -25,6 +25,18 @@ const {
 // Importar helper de credenciais
 const { getTenantUazapCredentials, getDefaultUazapCredentials } = require('../helpers/uaz-credentials.helper');
 const { getInstanceWithCredentials } = require('../helpers/instance-credentials.helper');
+// 🔍 MIDDLEWARE DE LOG PARA DEBUG
+router.use((req, res, next) => {
+  console.log(`\n🚀 ============================================`);
+  console.log(`🚀 REQUISIÇÃO UAZ: ${req.method} ${req.path}`);
+  console.log(`🚀 User ID: ${req.user?.id}`);
+  console.log(`🚀 User Role: ${req.user?.role}`);
+  console.log(`🚀 Tenant ID: ${req.tenant?.id}`);
+  console.log(`🚀 ============================================\n`);
+  next();
+});
+
+
 
 /**
  * ðŸ“ž Normaliza nÃºmero de telefone para comparaÃ§Ã£o
