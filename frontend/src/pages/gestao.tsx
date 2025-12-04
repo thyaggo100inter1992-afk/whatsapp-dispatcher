@@ -1002,6 +1002,7 @@ export default function Gestao() {
         envio_imediato: false,
         catalogo: false,
         desativar_contas_whatsapp: false,
+        configuracoes: false,
       }
     });
     setShowCreateModal(true);
