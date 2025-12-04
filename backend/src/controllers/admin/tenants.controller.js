@@ -461,15 +461,15 @@ const getTenantStats = async (req, res) => {
       `;
       let novaVidaParams = [id];
       
-      // Aplicar filtro de data se fornecido
+      // Aplicar filtro de data se fornecido (incluindo o dia inteiro da data final)
       if (dataInicio && dataFim) {
-        novaVidaQuery += ` AND created_at BETWEEN $2 AND $3`;
+        novaVidaQuery += ` AND created_at >= $2 AND created_at < ($3::date + interval '1 day')`;
         novaVidaParams.push(dataInicio, dataFim);
       } else if (dataInicio) {
         novaVidaQuery += ` AND created_at >= $2`;
         novaVidaParams.push(dataInicio);
       } else if (dataFim) {
-        novaVidaQuery += ` AND created_at <= $2`;
+        novaVidaQuery += ` AND created_at < ($2::date + interval '1 day')`;
         novaVidaParams.push(dataFim);
       }
       
