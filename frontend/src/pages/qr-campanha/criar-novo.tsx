@@ -64,8 +64,7 @@ export default function CriarCampanhaQR() {
 
   const loadInstances = async () => {
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-      const response = await axios.get(`${API_URL}/uaz/instances`);
+      const response = await api.get('/uaz/instances');
       // Filtrar apenas conectadas E ativas (não pausadas)
       const activeInstances = response.data.data.filter((i: UazInstance) => 
         i.is_connected && i.is_active

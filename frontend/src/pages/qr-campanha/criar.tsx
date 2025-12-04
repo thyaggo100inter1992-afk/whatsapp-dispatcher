@@ -97,7 +97,7 @@ export default function CriarCampanhaQR() {
 
   const loadInstances = async () => {
     try {
-      const response = await axios.get(`${API_URL}/uaz/instances`);
+      const response = await api.get('/uaz/instances');
       console.log('📱 Resposta da API de instâncias:', response.data);
       console.log('📱 Total de instâncias:', response.data.data?.length);
       
@@ -130,7 +130,7 @@ export default function CriarCampanhaQR() {
 
   const loadTemplates = async () => {
     try {
-      const response = await axios.get(`${API_URL}/qr-templates`);
+      const response = await api.get('/qr-templates');
       setTemplates(response.data.data);
       
       // 🔤 Detectar variáveis dos templates selecionados
