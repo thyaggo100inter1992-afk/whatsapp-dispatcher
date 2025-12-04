@@ -1,5 +1,6 @@
 const { query } = require('../../database/connection');
-const { cloudinaryService } = require('../../services/cloudinary.service');
+const path = require('path');
+const fs = require('fs').promises;
 
 /**
  * Controller para Gerenciamento de Arquivos Públicos (Super Admin)
@@ -29,52 +30,51 @@ const uploadFile = async (req, res) => {
 
     console.log(`📤 Upload de arquivo: ${file.name}`);
 
-    // Determinar o tipo de recurso baseado no mimetype
-    let resourceType = 'auto';
-    if (file.mimetype.startsWith('image/')) {
-      resourceType = 'image';
-    } else if (file.mimetype.startsWith('video/')) {
-      resourceType = 'video';
-    } else if (file.mimetype === 'application/pdf') {
-      resourceType = 'image'; // Cloudinary aceita PDF como image
-    } else {
-      resourceType = 'raw'; // Para outros tipos
-    }
+    // Criar diretório se não existir
+    const uploadDir = path.join(__dirname, '../../uploads/public-files');
+    await fs.mkdir(uploadDir, { recursive: true });
 
-    // Upload para Cloudinary
-    const uploadResult = await cloudinaryService.uploadFile(file.tempFilePath, {
-      folder: 'public-files',
-      resource_type: resourceType
-    });
+    // Gerar nome único
+    const timestamp = Date.now();
+    const uniqueFilename = `${timestamp}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const filePath = path.join(uploadDir, uniqueFilename);
+
+    // Mover arquivo
+    await file.mv(filePath);
+
+    // URL pública
+    const fileUrl = `/uploads/public-files/${uniqueFilename}`;
+
+    console.log(`✅ Arquivo salvo: ${filePath}`);
 
     // Salvar informações no banco de dados
     const result = await query(`
       INSERT INTO public_files (
-        original_name,
-        cloudinary_id,
-        cloudinary_url,
-        secure_url,
-        file_type,
-        file_size,
+        filename,
+        original_filename,
+        file_path,
+        file_url,
         mime_type,
+        file_size,
         description,
         uploaded_by,
+        tenant_id,
         created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
       RETURNING *
     `, [
+      uniqueFilename,
       file.name,
-      uploadResult.public_id,
-      uploadResult.url,
-      uploadResult.secure_url,
-      resourceType,
-      file.size,
+      filePath,
+      fileUrl,
       file.mimetype,
+      file.size,
       description || null,
-      req.user.id
+      req.user?.id || null,
+      req.user?.tenant_id || null
     ]);
 
-    console.log(`✅ Arquivo enviado: ${result.rows[0].original_name}`);
+    console.log(`✅ Arquivo enviado: ${result.rows[0].original_filename}`);
 
     res.json({
       success: true,
@@ -147,20 +147,18 @@ const deleteFile = async (req, res) => {
 
     const file = fileResult.rows[0];
 
-    // Deletar do Cloudinary
+    // Deletar arquivo físico
     try {
-      await cloudinaryService.deleteFile(file.cloudinary_id, {
-        resource_type: file.file_type
-      });
-      console.log(`✅ Arquivo deletado do Cloudinary: ${file.cloudinary_id}`);
-    } catch (cloudinaryError) {
-      console.warn(`⚠️ Erro ao deletar do Cloudinary (continuando): ${cloudinaryError.message}`);
+      await fs.unlink(file.file_path);
+      console.log(`✅ Arquivo físico deletado: ${file.file_path}`);
+    } catch (fsError) {
+      console.warn(`⚠️ Erro ao deletar arquivo físico (continuando): ${fsError.message}`);
     }
 
     // Deletar do banco de dados
     await query('DELETE FROM public_files WHERE id = $1', [id]);
 
-    console.log(`✅ Arquivo deletado do banco: ${file.original_name}`);
+    console.log(`✅ Arquivo deletado do banco: ${file.original_filename}`);
 
     res.json({
       success: true,
@@ -199,7 +197,7 @@ const updateFile = async (req, res) => {
       });
     }
 
-    console.log(`✅ Arquivo atualizado: ${result.rows[0].original_name}`);
+    console.log(`✅ Arquivo atualizado: ${result.rows[0].original_filename}`);
 
     res.json({
       success: true,
