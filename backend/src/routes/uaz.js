@@ -5235,8 +5235,8 @@ router.post('/import-instances', async (req, res) => {
 
     for (const inst of instances) {
       try {
-        const instanceName = inst.name || inst.owner || `instancia_${Date.now()}`;
-        const sessionName = inst.name || inst.id || `session_${Date.now()}`;
+        let instanceName = inst.name || inst.owner || `instancia_${Date.now()}`;
+        let sessionName = inst.name || inst.id || `session_${Date.now()}`;
         
         console.log(`\nðŸ"¥ Importando: ${inst.name || inst.token}`);
         console.log(`   â""â"€ Token: ${inst.token?.substring(0, 20)}...`);
@@ -5256,11 +5256,26 @@ router.post('/import-instances', async (req, res) => {
         }
         namesUsed.add(instanceName);
 
-        // Verificar se já existe uma instância com esse token no tenant
+        // ðŸŽ¯ Verificar se já existe uma instância com esse token OU nome no tenant
         const existingCheck = await tenantQuery(req, `
-          SELECT id, name FROM uaz_instances 
-          WHERE instance_token = $1 AND tenant_id = $2
-        `, [inst.token, tenantId]);
+          SELECT id, name, instance_token FROM uaz_instances 
+          WHERE (instance_token = $1 OR name = $2) AND tenant_id = $3
+        `, [inst.token, instanceName, tenantId]);
+        
+        // Também verificar GLOBALMENTE (sem RLS) se o nome já existe em outro tenant
+        const { queryNoTenant } = require('../database/tenant-query');
+        const globalNameCheck = await queryNoTenant(`
+          SELECT id, name, tenant_id FROM uaz_instances 
+          WHERE name = $1
+        `, [instanceName]);
+        
+        if (globalNameCheck.rows.length > 0 && globalNameCheck.rows[0].tenant_id !== tenantId) {
+          console.log(`   âš ï¸  Nome "${instanceName}" jÃ¡ existe em outro tenant (ID: ${globalNameCheck.rows[0].tenant_id})`);
+          // Adicionar sufixo para tornar único
+          const uniqueName = `${instanceName} (Tenant ${tenantId})`;
+          console.log(`   ðŸ"„ Renomeando para: ${uniqueName}`);
+          instanceName = uniqueName;
+        }
 
         let result;
         if (existingCheck.rows.length > 0) {
