@@ -160,6 +160,81 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// 🔍 DEBUG ENDPOINT - ANTES DOS MIDDLEWARES (TEMPORÁRIO)
+app.get('/api/uaz/debug/all-instances', async (req, res) => {
+  try {
+    const { pool } = require('./database/connection');
+    
+    console.log('\n🔍 ========================================');
+    console.log('🔍 DEBUG: BUSCANDO TODAS INSTÂNCIAS UAZ');
+    console.log('🔍 ========================================\n');
+
+    const allInstances = await pool.query(`
+      SELECT id, name, session_name, instance_token, tenant_id, phone_number, 
+             is_active, is_connected, status, created_at
+      FROM uaz_instances 
+      ORDER BY tenant_id NULLS FIRST, id
+    `);
+
+    console.log(`📊 Total encontrado: ${allInstances.rows.length}`);
+
+    const byTenant: any = {};
+    const orphans: any[] = [];
+
+    allInstances.rows.forEach((inst: any) => {
+      if (inst.tenant_id === null) {
+        orphans.push(inst);
+      } else {
+        if (!byTenant[inst.tenant_id]) {
+          byTenant[inst.tenant_id] = [];
+        }
+        byTenant[inst.tenant_id].push(inst);
+      }
+    });
+
+    const nettcredInstances = allInstances.rows.filter((inst: any) => 
+      inst.name && (inst.name.includes('8104-5992') || inst.name.includes('NETTCRED'))
+    );
+
+    let html = '<html><head><meta charset="utf-8"><style>body{font-family:monospace;padding:20px;background:#1e1e1e;color:#fff;}pre{background:#2d2d2d;padding:15px;border-radius:5px;overflow-x:auto;}.success{color:#4ec9b0;}.error{color:#f48771;}.warning{color:#dcdcaa;}</style></head><body>';
+    html += '<h1>🔍 DEBUG: TODAS INSTÂNCIAS UAZ</h1>';
+    html += `<p class="success">📊 Total: ${allInstances.rows.length} instância(s)</p>`;
+    
+    if (orphans.length > 0) {
+      html += `<h2 class="warning">⚠️  Instâncias Órfãs (sem tenant): ${orphans.length}</h2><pre>`;
+      orphans.forEach((inst: any) => {
+        html += `ID: ${inst.id} | Nome: ${inst.name} | Tel: ${inst.phone_number || 'N/A'} | Status: ${inst.status}\n`;
+      });
+      html += '</pre>';
+    }
+    
+    Object.keys(byTenant).sort().forEach((tid: string) => {
+      html += `<h2>📦 Tenant ${tid}: ${byTenant[tid].length} instância(s)</h2><pre>`;
+      byTenant[tid].forEach((inst: any) => {
+        html += `ID: ${inst.id} | Nome: ${inst.name} | Tel: ${inst.phone_number || 'N/A'} | Status: ${inst.status} | Ativa: ${inst.is_active}\n`;
+      });
+      html += '</pre>';
+    });
+    
+    if (nettcredInstances.length > 0) {
+      html += `<h2 class="success">✅ INSTÂNCIAS NETTCRED: ${nettcredInstances.length}</h2><pre>`;
+      nettcredInstances.forEach((inst: any) => {
+        html += `ID: ${inst.id} | Nome: ${inst.name} | Tenant: ${inst.tenant_id} | Tel: ${inst.phone_number}\n`;
+      });
+      html += '</pre>';
+    } else {
+      html += '<h2 class="error">❌ NENHUMA instância NETTCRED encontrada</h2>';
+    }
+    
+    html += '</body></html>';
+    res.send(html);
+
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar instâncias:', error);
+    res.status(500).send(`<html><body style="font-family:monospace;padding:20px;background:#1e1e1e;color:#f48771;"><h1>❌ Erro</h1><pre>${error.message}\n\n${error.stack}</pre></body></html>`);
+  }
+});
+
 // 🔒 MIDDLEWARE DE PROTEÇÃO GLOBAL - TENANT ISOLATION
 const { ensureTenant, detectDangerousQueries } = require('./middleware/tenant-protection.middleware');
 
