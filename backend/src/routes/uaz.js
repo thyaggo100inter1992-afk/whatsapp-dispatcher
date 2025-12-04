@@ -3675,7 +3675,7 @@ router.get('/messages', async (req, res) => {
         qcm.created_at,
         qcm.created_at as updated_at,
         COALESCE(qc.user_id, qcm.user_id) as user_id,
-        COALESCE(tu.name, 'Sistema') as user_name
+        COALESCE(tu.nome, 'Sistema') as user_name
       FROM qr_campaign_messages qcm
       INNER JOIN qr_campaigns qc ON qcm.campaign_id = qc.id
       LEFT JOIN uaz_instances ui ON qcm.instance_id = ui.id
@@ -3704,7 +3704,7 @@ router.get('/messages', async (req, res) => {
         um.created_at,
         um.updated_at,
         um.user_id,
-        COALESCE(tu.name, 'Sistema') as user_name
+        COALESCE(tu.nome, 'Sistema') as user_name
       FROM uaz_messages um
       INNER JOIN uaz_instances ui ON um.instance_id = ui.id
       LEFT JOIN tenant_users tu ON um.user_id = tu.id
