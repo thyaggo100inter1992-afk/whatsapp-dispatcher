@@ -644,10 +644,9 @@ export default function BaseDados() {
 
           // Se a foto for uma URL relativa (já salva localmente), construir URL completa
           if (photoUrl && photoUrl.startsWith('/uploads/')) {
-            // Pegar a URL base do backend (sem o /api)
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
-            const backendUrl = apiUrl.replace('/api', '');
-            photoUrl = `${backendUrl}${photoUrl}`;
+            // Usar a origem do site atual (que é o mesmo servidor que serve as imagens)
+            const origin = typeof window !== 'undefined' ? window.location.origin : '';
+            photoUrl = `${origin}${photoUrl}`;
             console.log('🖼️ URL completa da foto:', photoUrl);
           }
           
