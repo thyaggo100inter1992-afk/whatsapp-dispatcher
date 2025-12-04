@@ -1456,7 +1456,7 @@ export default function ConsultarDados() {
 
           // Se a foto for uma URL relativa (já salva localmente), adicionar o base URL do backend
           if (photoUrl && photoUrl.startsWith('/uploads/')) {
-            const API_BASE = 'http://localhost:3001';
+            const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'https://api.sistemasnettsistemas.com.br';
             photoUrl = `${API_BASE}${photoUrl}`;
             console.log('🖼️ Usando foto local do backend:', photoUrl);
           }
