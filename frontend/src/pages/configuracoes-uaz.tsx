@@ -532,7 +532,8 @@ export default function ConfiguracoesUaz() {
     }
   };
 
-  const handleImportInstances = async () => {
+  // Importar instância encontrada por telefone
+  const handleImportFoundInstance = async () => {
     if (!foundInstance) {
       warning('⚠️ Nenhuma instância encontrada para importar');
       return;
@@ -540,6 +541,7 @@ export default function ConfiguracoesUaz() {
 
     setImporting(true);
     try {
+      console.log('📤 Enviando para importação:', [foundInstance]);
       const response = await api.post('/uaz/import-instances', {
         instances: [foundInstance]
       });
@@ -550,6 +552,41 @@ export default function ConfiguracoesUaz() {
         setShowPhoneInputModal(false);
         setPhoneNumberInput('');
         setFoundInstance(null);
+        await loadInstances();
+      } else {
+        error('❌ Erro: ' + response.data.error);
+      }
+    } catch (err: any) {
+      error('❌ Erro ao importar: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // Importar instâncias selecionadas do modal
+  const handleImportSelectedInstances = async () => {
+    if (selectedInstances.size === 0) {
+      warning('⚠️ Selecione pelo menos uma instância para importar');
+      return;
+    }
+
+    setImporting(true);
+    try {
+      // Pegar os dados completos das instâncias selecionadas
+      const instancesToImport = availableInstances.filter(inst => 
+        selectedInstances.has(inst.token)
+      );
+      
+      console.log('📤 Enviando para importação:', instancesToImport);
+      const response = await api.post('/uaz/import-instances', {
+        instances: instancesToImport
+      });
+
+      if (response.data.success) {
+        success(`✅ ${instancesToImport.length} instância(s) importada(s) com sucesso!`);
+        
+        setShowImportModal(false);
+        setSelectedInstances(new Set());
         await loadInstances();
       } else {
         error('❌ Erro: ' + response.data.error);
@@ -1683,7 +1720,7 @@ export default function ConfiguracoesUaz() {
 
                   {/* Botão de Importar */}
                   <button
-                    onClick={handleImportInstances}
+                    onClick={handleImportFoundInstance}
                     disabled={importing}
                     className="w-full px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-lg font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg"
                   >
@@ -1831,7 +1868,7 @@ export default function ConfiguracoesUaz() {
                   Cancelar
                 </button>
                 <button
-                  onClick={handleImportInstances}
+                  onClick={handleImportSelectedInstances}
                   disabled={selectedInstances.size === 0 || importing}
                   className="flex-1 px-6 py-4 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white text-lg font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
