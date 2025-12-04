@@ -30,8 +30,8 @@ export class MessageModel {
     const result = await queryWithTenantId(
       message.tenant_id,
       `INSERT INTO messages 
-       (campaign_id, campaign_template_id, contact_id, whatsapp_account_id, phone_number, template_name, status, media_url, tenant_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (campaign_id, campaign_template_id, contact_id, whatsapp_account_id, phone_number, template_name, status, media_url, tenant_id, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [
         message.campaign_id,
@@ -43,6 +43,7 @@ export class MessageModel {
         message.status || 'pending',
         message.media_url,
         message.tenant_id,
+        message.user_id || null,
       ]
     );
     return result.rows[0];

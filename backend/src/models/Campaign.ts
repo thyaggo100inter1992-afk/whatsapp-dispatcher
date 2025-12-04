@@ -26,13 +26,14 @@ export class CampaignModel {
   static async create(campaign: Campaign) {
     const result = await query(
       `INSERT INTO campaigns 
-       (name, status, tenant_id, scheduled_at, schedule_config, pause_config, total_contacts)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (name, status, tenant_id, user_id, scheduled_at, schedule_config, pause_config, total_contacts)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
         campaign.name,
         campaign.status || 'pending',
         campaign.tenant_id,
+        campaign.user_id || null,
         campaign.scheduled_at,
         JSON.stringify(campaign.schedule_config || {}),
         JSON.stringify(campaign.pause_config || {}),

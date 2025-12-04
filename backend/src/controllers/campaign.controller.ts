@@ -51,6 +51,7 @@ export class CampaignController {
         name,
         status: scheduled_at ? 'scheduled' : 'pending',
         tenant_id: tenantId,
+        user_id: (req as any).user?.id || null,
         scheduled_at: scheduledDate,
         total_contacts: contacts.length,
         schedule_config,

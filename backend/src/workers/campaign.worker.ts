@@ -739,8 +739,8 @@ class CampaignWorker {
           // Marcar como pulado/failed
           await query(
             `INSERT INTO messages 
-             (campaign_id, campaign_template_id, contact_id, whatsapp_account_id, phone_number, template_name, status, error_message, tenant_id)
-             VALUES ($1, $2, $3, $4, $5, $6, 'failed', $7, $8)`,
+             (campaign_id, campaign_template_id, contact_id, whatsapp_account_id, phone_number, template_name, status, error_message, tenant_id, user_id)
+             VALUES ($1, $2, $3, $4, $5, $6, 'failed', $7, $8, $9)`,
             [
               campaign.id,
               template.id,
@@ -749,7 +749,8 @@ class CampaignWorker {
               contact.phone_number,
               template.template_name,
               `Bloqueado - Lista de Restrição: ${isRestricted.listNames}`,
-              campaign.tenant_id
+              campaign.tenant_id,
+              campaign.user_id || null
             ]
           );
           
@@ -878,9 +879,9 @@ class CampaignWorker {
         // Registrar erro no banco
         await query(
           `INSERT INTO messages 
-           (campaign_id, contact_id, whatsapp_account_id, phone_number, template_name, status, error_message, sent_at, tenant_id)
-           VALUES ($1, $2, $3, $4, $5, 'failed', $6, NOW(), $7)`,
-          [campaign.id, contact.id, template.whatsapp_account_id, contact.phone_number, template.template_name, error.message, campaign.tenant_id]
+           (campaign_id, contact_id, whatsapp_account_id, phone_number, template_name, status, error_message, sent_at, tenant_id, user_id)
+           VALUES ($1, $2, $3, $4, $5, 'failed', $6, NOW(), $7, $8)`,
+          [campaign.id, contact.id, template.whatsapp_account_id, contact.phone_number, template.template_name, error.message, campaign.tenant_id, campaign.user_id || null]
         );
 
         await query(
@@ -1127,8 +1128,8 @@ class CampaignWorker {
       campaign.tenant_id,
       `INSERT INTO messages 
        (campaign_id, campaign_template_id, contact_id, whatsapp_account_id, whatsapp_message_id, 
-        phone_number, template_name, status, sent_at, media_url, proxy_used, proxy_host, proxy_type, tenant_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'sent', NOW(), $8, $9, $10, $11, $12)`,
+        phone_number, template_name, status, sent_at, media_url, proxy_used, proxy_host, proxy_type, tenant_id, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'sent', NOW(), $8, $9, $10, $11, $12, $13)`,
       [
         campaign.id,
         template.id,
@@ -1141,7 +1142,8 @@ class CampaignWorker {
         result.proxyUsed || false,
         result.proxyHost || null,
         result.proxyType || null,
-        campaign.tenant_id // ✅ ADICIONAR TENANT_ID DA CAMPANHA
+        campaign.tenant_id, // ✅ ADICIONAR TENANT_ID DA CAMPANHA
+        campaign.user_id || null // ✅ ADICIONAR USER_ID DA CAMPANHA
       ]
     );
   }
