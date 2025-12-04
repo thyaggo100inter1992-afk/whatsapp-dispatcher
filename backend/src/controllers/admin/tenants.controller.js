@@ -1906,8 +1906,8 @@ const getTenantConnections = async (req, res) => {
         name,
         phone_number,
         phone_number_id,
-        COALESCE(display_name, name) as whatsapp_display_name,
-        profile_picture_url as whatsapp_profile_picture,
+        name as whatsapp_display_name,
+        NULL as whatsapp_profile_picture,
         is_active,
         created_at,
         tenant_id
