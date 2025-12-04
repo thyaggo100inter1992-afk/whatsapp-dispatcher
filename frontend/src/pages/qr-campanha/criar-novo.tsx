@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { FaRocket, FaClock, FaUpload } from 'react-icons/fa';
-import { qrCampaignsAPI } from '@/services/api';
+import api, { qrCampaignsAPI } from '@/services/api';
 import ToastContainer from '@/components/ToastContainer';
 import { useToast } from '@/hooks/useToast';
 import * as XLSX from 'xlsx';
-import axios from 'axios';
 
 interface QrTemplate {
   id: number;
@@ -64,7 +63,13 @@ export default function CriarCampanhaQR() {
 
   const loadInstances = async () => {
     try {
-      const response = await api.get(`/uaz/instances?_t=${Date.now()}`);
+      const url = `/uaz/instances?_t=${Date.now()}`;
+      console.log('🔵 CHAMANDO API:', url);
+      console.log('🔵 Config da API:', api.defaults.baseURL);
+      const response = await api.get(url);
+      console.log('📱 Resposta da API de instâncias:', response.data);
+      console.log('📱 URL da requisição:', response.config.url);
+      console.log('📱 Total de instâncias:', response.data.data?.length);
       // Filtrar apenas conectadas E ativas (não pausadas)
       const activeInstances = response.data.data.filter((i: UazInstance) => 
         i.is_connected && i.is_active
