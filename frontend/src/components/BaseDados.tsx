@@ -573,15 +573,18 @@ export default function BaseDados() {
         instances = instancesResponse.data.instances;
       }
       
-      const activeInstance = instances.find((inst: any) => 
+      // 🔄 ROTATIVIDADE: Filtrar todas as instâncias conectadas
+      const activeInstances = instances.filter((inst: any) => 
         inst.is_active && inst.status === 'connected'
       );
       
-      if (!activeInstance) {
+      if (activeInstances.length === 0) {
         showNotification('❌ Nenhuma instância ativa e conectada encontrada', 'error');
         setVerificandoWhatsApp(false);
         return;
       }
+      
+      console.log(`✅ ${activeInstances.length} instância(s) conectada(s) para rotação:`, activeInstances.map((i: any) => i.name).join(', '));
       
       // Pegar todos os telefones do cliente
       const telefones = (clienteSelecionado.TELEFONES || clienteSelecionado.telefones || []);
@@ -595,11 +598,12 @@ export default function BaseDados() {
       console.log(`🔍 Consultando ${telefones.length} telefone(s)...`);
       
       // Notificação inicial automática
-      showNotification(`🔍 Verificando ${telefones.length} número${telefones.length > 1 ? 's' : ''}...`, 'info');
+      showNotification(`🔍 Verificando ${telefones.length} número${telefones.length > 1 ? 's' : ''} usando ${activeInstances.length} instância(s)...`, 'info');
       
       let fotosEncontradas = 0;
       let comWhatsApp = 0;
       let semWhatsApp = 0;
+      let instanceIndex = 0; // 🔄 Índice para rotação
       
       // Iterar pelos telefones
       for (let i = 0; i < telefones.length; i++) {
@@ -611,6 +615,10 @@ export default function BaseDados() {
         
         if (!ddd || !telefone) continue;
         
+        // 🔄 ROTATIVIDADE: Selecionar próxima instância (round-robin)
+        const selectedInstance = activeInstances[instanceIndex % activeInstances.length];
+        instanceIndex++;
+        
         // Marcar como loading
         setLoadingPhones(prev => {
           const newSet = new Set(prev);
@@ -619,10 +627,10 @@ export default function BaseDados() {
         });
         
         try {
-          console.log(`📞 Consultando ${i + 1}/${telefones.length}: ${numeroFormatado}`);
+          console.log(`📞 [${selectedInstance.name}] Consultando ${i + 1}/${telefones.length}: ${numeroFormatado}`);
           
           const response = await api.post('/uaz/contact/details', {
-            instance_id: activeInstance.id,
+            instance_id: selectedInstance.id,
             phone_number: numeroLimpo,
             preview: false
           });
