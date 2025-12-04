@@ -3652,7 +3652,7 @@ router.get('/messages', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Tenant nÃ£o identificado' });
     }
 
-    const { instance_id, limit = 50, offset = 0 } = req.query;
+    const { instance_id, limit = 50, offset = 0, date_start, date_end, user_id } = req.query;
 
     // Mensagens de campanhas (qr_campaign_messages)
     let campaignQuery = `
@@ -3712,12 +3712,38 @@ router.get('/messages', async (req, res) => {
     `;
 
     const params = [tenantId, tenantId];
+    let paramIndex = 3;
 
-    // Filtro por instÃ¢ncia (aplica nos dois blocos)
+    // Filtro por instÃ¢ncia
     if (instance_id) {
-      campaignQuery += ` AND qcm.instance_id = $3`;
-      uniqueQuery += ` AND um.instance_id = $3`;
+      campaignQuery += ` AND qcm.instance_id = $${paramIndex}`;
+      uniqueQuery += ` AND um.instance_id = $${paramIndex}`;
       params.push(instance_id);
+      paramIndex++;
+    }
+
+    // Filtro por data de início
+    if (date_start) {
+      campaignQuery += ` AND qcm.created_at >= $${paramIndex}::date`;
+      uniqueQuery += ` AND um.created_at >= $${paramIndex}::date`;
+      params.push(date_start);
+      paramIndex++;
+    }
+
+    // Filtro por data de fim (inclui o dia inteiro)
+    if (date_end) {
+      campaignQuery += ` AND qcm.created_at < ($${paramIndex}::date + INTERVAL '1 day')`;
+      uniqueQuery += ` AND um.created_at < ($${paramIndex}::date + INTERVAL '1 day')`;
+      params.push(date_end);
+      paramIndex++;
+    }
+
+    // Filtro por usuário
+    if (user_id) {
+      campaignQuery += ` AND (qc.user_id = $${paramIndex} OR qcm.user_id = $${paramIndex})`;
+      uniqueQuery += ` AND um.user_id = $${paramIndex}`;
+      params.push(user_id);
+      paramIndex++;
     }
 
     const limitIndex = params.length + 1;
@@ -3753,6 +3779,34 @@ router.get('/messages', async (req, res) => {
       success: true,
       data: result.rows,
       total
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/tenant/users
+ * Lista todos os usuários do tenant
+ */
+router.get('/tenant/users', async (req, res) => {
+  try {
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ success: false, message: 'Tenant não identificado' });
+    }
+
+    const result = await tenantQuery(req,
+      `SELECT id, nome, email FROM tenant_users WHERE tenant_id = $1 ORDER BY nome ASC`,
+      [tenantId]
+    );
+
+    res.json({
+      success: true,
+      data: result.rows
     });
   } catch (error) {
     res.status(500).json({

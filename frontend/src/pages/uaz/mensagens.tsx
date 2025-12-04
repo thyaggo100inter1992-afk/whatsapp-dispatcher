@@ -37,6 +37,10 @@ export default function MensagensUazPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [instanceFilter, setInstanceFilter] = useState('all');
+  const [userFilter, setUserFilter] = useState('all');
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
+  const [users, setUsers] = useState<Array<{ id: number; nome: string }>>([]);
   const [page, setPage] = useState(1);
   const [totalMessages, setTotalMessages] = useState(0);
   const limit = 50;
@@ -45,13 +49,32 @@ export default function MensagensUazPage() {
     loadMessages();
   }, [page]);
 
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      const response = await api.get('/tenant/users');
+      if (response.data.success) {
+        setUsers(response.data.data || []);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar usuários:', err);
+    }
+  };
+
   const loadMessages = async () => {
     setLoading(true);
     try {
       const offset = (page - 1) * limit;
-      const response = await api.get(
-        `/uaz/messages?limit=${limit}&offset=${offset}`
-      );
+      let url = `/uaz/messages?limit=${limit}&offset=${offset}`;
+      
+      if (dateStart) url += `&date_start=${dateStart}`;
+      if (dateEnd) url += `&date_end=${dateEnd}`;
+      if (userFilter !== 'all') url += `&user_id=${userFilter}`;
+      
+      const response = await api.get(url);
       
       if (response.data.success) {
         setMessages(response.data.data || []);
@@ -65,6 +88,11 @@ export default function MensagensUazPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleApplyFilters = () => {
+    setPage(1); // Reset para primeira página
+    loadMessages();
   };
 
   const formatDate = (dateString?: string) => {
@@ -199,9 +227,9 @@ export default function MensagensUazPage() {
               <h2 className="text-2xl font-bold text-white">Filtros de Busca</h2>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
               {/* Busca */}
-              <div className="md:col-span-2 bg-white/5 border-2 border-white/10 rounded-xl p-4">
+              <div className="lg:col-span-3 bg-white/5 border-2 border-white/10 rounded-xl p-4">
                 <label className="block text-white font-bold text-base mb-3 flex items-center gap-2">
                   <FaSearch className="text-lg" />
                   Buscar
@@ -253,6 +281,61 @@ export default function MensagensUazPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Filtro de Usuário */}
+              <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4">
+                <label className="block text-white font-bold text-base mb-3 flex items-center gap-2">
+                  👤 Usuário
+                </label>
+                <select
+                  value={userFilter}
+                  onChange={(e) => setUserFilter(e.target.value)}
+                  className="w-full px-6 py-4 bg-dark-700 text-white text-base rounded-xl border-2 border-cyan-500/30 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/30 transition-all cursor-pointer"
+                >
+                  <option value="all" className="bg-dark-700">👥 Todos</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id} className="bg-dark-700">
+                      👤 {user.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filtro Data Início */}
+              <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4">
+                <label className="block text-white font-bold text-base mb-3 flex items-center gap-2">
+                  📅 Data Início
+                </label>
+                <input
+                  type="date"
+                  value={dateStart}
+                  onChange={(e) => setDateStart(e.target.value)}
+                  className="w-full px-6 py-4 bg-dark-700 text-white text-base rounded-xl border-2 border-cyan-500/30 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/30 transition-all"
+                />
+              </div>
+
+              {/* Filtro Data Fim */}
+              <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4">
+                <label className="block text-white font-bold text-base mb-3 flex items-center gap-2">
+                  📅 Data Fim
+                </label>
+                <input
+                  type="date"
+                  value={dateEnd}
+                  onChange={(e) => setDateEnd(e.target.value)}
+                  className="w-full px-6 py-4 bg-dark-700 text-white text-base rounded-xl border-2 border-cyan-500/30 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/30 transition-all"
+                />
+              </div>
+
+              {/* Botão Aplicar Filtros */}
+              <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4 flex items-end">
+                <button
+                  onClick={handleApplyFilters}
+                  className="w-full px-6 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-bold text-base rounded-xl transition-all shadow-lg"
+                >
+                  🔍 Aplicar Filtros
+                </button>
               </div>
             </div>
           </div>
