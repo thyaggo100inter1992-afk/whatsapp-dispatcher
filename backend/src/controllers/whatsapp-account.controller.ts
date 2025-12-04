@@ -310,13 +310,9 @@ export class WhatsAppAccountController {
         return res.status(401).json({ success: false, error: 'Usuário não identificado' });
       }
       
-      // Verificar se o usuário é o dono do tenant (master)
-      const userResult = await tenantQuery(req, `
-        SELECT is_tenant_owner FROM users WHERE id = $1 AND tenant_id = $2
-      `, [userId, tenantId]);
-      
-      const isTenantOwner = userResult.rows[0]?.is_tenant_owner || false;
-      console.log(`   É dono do tenant? ${isTenantOwner}`);
+      // Verificar se o usuário é o dono do tenant (master) pelo role
+      const isTenantOwner = req.user?.role === 'admin' || req.user?.role === 'super_admin';
+      console.log(`   É dono do tenant? ${isTenantOwner} (role: ${req.user?.role})`);
       
       let accounts = [];
       
