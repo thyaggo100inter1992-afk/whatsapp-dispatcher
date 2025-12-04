@@ -604,11 +604,13 @@ export default function ConsultarDados() {
           row['CEL1'] = `55${cel1.DDD}${cel1.TELEFONE}`;
           row['FLGWHATSCEL1'] = ''; // Flag da API Nova Vida (se houver)
           row['CONSULTADO_SISTEMA_CEL1'] = cel1.WHATSAPP_VERIFIED ? (cel1.HAS_WHATSAPP ? 'Com WhatsApp' : 'Sem WhatsApp') : '';
+          row['INSTANCIA_CEL1'] = cel1.VERIFIED_BY || ''; // Instância que verificou
           row['PROCONCEL1'] = cel1.PROCON || '';
         } else {
           row['CEL1'] = '';
           row['FLGWHATSCEL1'] = '';
           row['CONSULTADO_SISTEMA_CEL1'] = '';
+          row['INSTANCIA_CEL1'] = '';
           row['PROCONCEL1'] = '';
         }
         
@@ -618,11 +620,13 @@ export default function ConsultarDados() {
           row['CEL2'] = `55${cel2.DDD}${cel2.TELEFONE}`;
           row['FLGWHATSCEL2'] = ''; // Flag da API Nova Vida (se houver)
           row['CONSULTADO_SISTEMA_CEL2'] = cel2.WHATSAPP_VERIFIED ? (cel2.HAS_WHATSAPP ? 'Com WhatsApp' : 'Sem WhatsApp') : '';
+          row['INSTANCIA_CEL2'] = cel2.VERIFIED_BY || ''; // Instância que verificou
           row['PROCONCEL2'] = cel2.PROCON || '';
         } else {
           row['CEL2'] = '';
           row['FLGWHATSCEL2'] = '';
           row['CONSULTADO_SISTEMA_CEL2'] = '';
+          row['INSTANCIA_CEL2'] = '';
           row['PROCONCEL2'] = '';
         }
         
@@ -670,11 +674,13 @@ export default function ConsultarDados() {
           row['CEL1'] = `55${cel1.DDD}${cel1.TELEFONE}`;
           row['FLGWHATSCEL1'] = ''; // Flag da API Nova Vida
           row['CONSULTADO_SISTEMA_CEL1'] = cel1.WHATSAPP_VERIFIED ? (cel1.HAS_WHATSAPP ? 'Com WhatsApp' : 'Sem WhatsApp') : '';
+          row['INSTANCIA_CEL1'] = cel1.VERIFIED_BY || ''; // Instância que verificou
           row['PROCONCEL1'] = '';
         } else {
           row['CEL1'] = '';
           row['FLGWHATSCEL1'] = '';
           row['CONSULTADO_SISTEMA_CEL1'] = '';
+          row['INSTANCIA_CEL1'] = '';
           row['PROCONCEL1'] = '';
         }
         
@@ -683,11 +689,13 @@ export default function ConsultarDados() {
           row['CEL2'] = `55${cel2.DDD}${cel2.TELEFONE}`;
           row['FLGWHATSCEL2'] = ''; // Flag da API Nova Vida
           row['CONSULTADO_SISTEMA_CEL2'] = cel2.WHATSAPP_VERIFIED ? (cel2.HAS_WHATSAPP ? 'Com WhatsApp' : 'Sem WhatsApp') : '';
+          row['INSTANCIA_CEL2'] = cel2.VERIFIED_BY || ''; // Instância que verificou
           row['PROCONCEL2'] = '';
         } else {
           row['CEL2'] = '';
           row['FLGWHATSCEL2'] = '';
           row['CONSULTADO_SISTEMA_CEL2'] = '';
+          row['INSTANCIA_CEL2'] = '';
           row['PROCONCEL2'] = '';
         }
         
