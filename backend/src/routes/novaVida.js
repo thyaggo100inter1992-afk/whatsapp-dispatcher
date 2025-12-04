@@ -758,7 +758,10 @@ router.post('/jobs', checkNovaVidaLimit, async (req, res) => {
     const jobId = result.rows[0].id;
 
     // Iniciar processamento em background
-    processJob(jobId);
+    console.log(`🚀 Chamando processJob para Job #${jobId}...`);
+    processJob(jobId).catch(error => {
+      console.error(`❌ Erro fatal ao processar job ${jobId}:`, error);
+    });
 
     res.json({
       success: true,
@@ -904,8 +907,11 @@ router.post('/jobs/:id/cancel', async (req, res) => {
 // ============================================
 
 async function processJob(jobId) {
+  console.log(`\n========================================`);
+  console.log(`🚀 PROCESSANDO JOB #${jobId}`);
+  console.log(`========================================`);
   try {
-    console.log(`🚀 Iniciando processamento do job ${jobId}`);
+    console.log(`🔍 Buscando dados do job ${jobId}...`);
 
     // Buscar dados do job
     const jobResult = await pool.query(
@@ -962,8 +968,14 @@ async function processJob(jobId) {
       const resultado = await novaVidaService.consultarDocumento(documento);
 
       // 📱 VERIFICAR WHATSAPP DOS TELEFONES (se ativado)
+      console.log(`\n📱 VERIFICAÇÃO DE WHATSAPP - Configurações:`);
+      console.log(`   - resultado.success: ${resultado.success}`);
+      console.log(`   - job.verify_whatsapp: ${job.verify_whatsapp}`);
+      console.log(`   - resultado.dados?.TELEFONES existe: ${!!resultado.dados?.TELEFONES}`);
+      console.log(`   - Total de telefones: ${resultado.dados?.TELEFONES?.length || 0}`);
+      
       if (resultado.success && job.verify_whatsapp && resultado.dados?.TELEFONES) {
-        console.log(`📱 Verificando WhatsApp dos telefones retornados...`);
+        console.log(`\n✅ INICIANDO VERIFICAÇÃO DE WHATSAPP!`);
         
         try {
           const telefones = resultado.dados.TELEFONES || [];
