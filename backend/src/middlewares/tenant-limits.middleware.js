@@ -301,7 +301,9 @@ async function checkMessageLimit(req, res, next) {
 }
 
 /**
- * Middleware para verificar limite de consultas Nova Vida (diário E mensal)
+ * Middleware para verificar limite de consultas Nova Vida (APENAS MENSAL + AVULSAS)
+ * NOTA: Limite diário foi REMOVIDO conforme solicitação
+ * Quando acabar as consultas do plano mensal, consome das consultas avulsas
  */
 async function checkNovaVidaLimit(req, res, next) {
   try {
@@ -321,18 +323,12 @@ async function checkNovaVidaLimit(req, res, next) {
       });
     }
 
-    // Buscar limites (diário e mensal), contagens atuais E saldo de consultas avulsas
+    // Buscar limite MENSAL, contagem atual E saldo de consultas avulsas
+    // NOTA: Limite diário foi removido - não é mais verificado
     const result = await query(`
       SELECT 
-        COALESCE(t.limite_nova_vida_dia_customizado, p.limite_consultas_dia, -1) as limite_dia,
         COALESCE(t.limite_novavida_mes_customizado, p.limite_consultas_mes, -1) as limite_mes,
         COALESCE(t.consultas_avulsas_saldo, 0) as consultas_avulsas_saldo,
-        (
-          SELECT COUNT(*) FROM novavida_consultas
-          WHERE tenant_id = t.id
-          AND created_at::date = CURRENT_DATE
-          AND is_consulta_avulsa = FALSE
-        ) as consultas_hoje,
         (
           SELECT COUNT(*) FROM novavida_consultas
           WHERE tenant_id = t.id
@@ -351,47 +347,9 @@ async function checkNovaVidaLimit(req, res, next) {
       });
     }
 
-    const { limite_dia, limite_mes, consultas_hoje, consultas_mes, consultas_avulsas_saldo } = result.rows[0];
+    const { limite_mes, consultas_mes, consultas_avulsas_saldo } = result.rows[0];
 
-    // 1. Verificar limite DIÁRIO primeiro (se configurado)
-    if (parseInt(limite_dia) > 0) {
-      if (parseInt(consultas_hoje) >= parseInt(limite_dia)) {
-        // Limite diário atingido! Verificar se há consultas avulsas disponíveis
-        const consultasAvulsas = parseInt(consultas_avulsas_saldo) || 0;
-        
-        if (consultasAvulsas > 0) {
-          // ✅ Tem consultas avulsas! Desconta 1 e permite
-          console.log(`💰 Limite DIÁRIO atingido, usando CONSULTA AVULSA - Tenant ${tenantId} - Saldo: ${consultasAvulsas}`);
-          
-          await query(`
-            UPDATE tenants 
-            SET consultas_avulsas_saldo = consultas_avulsas_saldo - 1,
-                consultas_avulsas_usadas = consultas_avulsas_usadas + 1
-            WHERE id = $1
-          `, [tenantId]);
-          
-          // Marcar que usou consulta avulsa (para logging e para salvar no banco)
-          req.usouConsultaAvulsa = true;
-          req.consultasAvulsasRestantes = consultasAvulsas - 1;
-          req.isConsultaAvulsa = true; // Flag para identificar que é consulta avulsa
-          
-          return next();
-        } else {
-          // ❌ Não tem consultas avulsas!
-          console.log(`🚫 Limite DIÁRIO de consultas Nova Vida atingido e SEM consultas avulsas - Tenant ${tenantId}: ${consultas_hoje}/${limite_dia}`);
-          return res.status(403).json({
-            success: false,
-            message: `❌ Limite de consultas DIÁRIAS atingido! Máximo: ${limite_dia}, Hoje: ${consultas_hoje}. Sem consultas avulsas disponíveis.`,
-            limite: parseInt(limite_dia),
-            atual: parseInt(consultas_hoje),
-            tipo: 'diario',
-            consultas_avulsas: 0
-          });
-        }
-      }
-    }
-
-    // 2. Verificar limite MENSAL (se configurado)
+    // Verificar APENAS limite MENSAL (se configurado e maior que 0)
     if (parseInt(limite_mes) > 0) {
       if (parseInt(consultas_mes) >= parseInt(limite_mes)) {
         // Limite mensal atingido! Verificar se há consultas avulsas disponíveis
@@ -429,7 +387,7 @@ async function checkNovaVidaLimit(req, res, next) {
       }
     }
 
-    console.log(`✅ Limites Nova Vida OK - Tenant ${tenantId} - Hoje: ${consultas_hoje}/${limite_dia}, Mês: ${consultas_mes}/${limite_mes}, Avulsas: ${consultas_avulsas_saldo}`);
+    console.log(`✅ Limites Nova Vida OK - Tenant ${tenantId} - Mês: ${consultas_mes}/${limite_mes}, Avulsas: ${consultas_avulsas_saldo}`);
     next();
   } catch (error) {
     console.error('❌ Erro ao verificar limite Nova Vida:', error);

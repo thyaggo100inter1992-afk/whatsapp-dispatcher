@@ -420,19 +420,13 @@ const getLimiteHandler = async (req, res) => {
       });
     }
 
-    // Buscar limite e contagem
+    // Buscar APENAS limite MENSAL e consultas avulsas
+    // NOTA: Limite diário foi REMOVIDO - só vale limite mensal + avulsas
     const result = await pool.query(`
       SELECT 
-        COALESCE(t.limite_nova_vida_dia_customizado, p.limite_consultas_dia, -1) as limite_dia,
         COALESCE(t.limite_novavida_mes_customizado, p.limite_consultas_mes, -1) as limite_mes,
         COALESCE(t.consultas_avulsas_saldo, 0) as consultas_avulsas_saldo,
         COALESCE(t.consultas_avulsas_usadas, 0) as consultas_avulsas_usadas,
-        (
-          SELECT COUNT(*) FROM novavida_consultas
-          WHERE tenant_id = t.id
-          AND created_at::date = CURRENT_DATE
-          AND is_consulta_avulsa = FALSE
-        ) as consultas_hoje,
         (
           SELECT COUNT(*) FROM novavida_consultas
           WHERE tenant_id = t.id
@@ -451,18 +445,21 @@ const getLimiteHandler = async (req, res) => {
       });
     }
 
-    const { limite_dia, consultas_hoje, limite_mes, consultas_mes, consultas_avulsas_saldo, consultas_avulsas_usadas } = result.rows[0];
+    const { limite_mes, consultas_mes, consultas_avulsas_saldo, consultas_avulsas_usadas } = result.rows[0];
 
     res.json({
       success: true,
-      limite_dia: parseInt(limite_dia),
-      consultas_hoje: parseInt(consultas_hoje),
+      // Limite diário REMOVIDO - sempre retorna -1 (ilimitado) para compatibilidade
+      limite_dia: -1,
+      consultas_hoje: 0,
+      limite_dia_atingido: false,
+      // Limite MENSAL é o único que vale agora
       limite_mes: parseInt(limite_mes),
       consultas_mes: parseInt(consultas_mes),
+      limite_mes_atingido: parseInt(limite_mes) > 0 && parseInt(consultas_mes) >= parseInt(limite_mes),
+      // Consultas avulsas (usadas quando acabar o mensal)
       consultas_avulsas_saldo: parseInt(consultas_avulsas_saldo),
-      consultas_avulsas_usadas: parseInt(consultas_avulsas_usadas),
-      limite_dia_atingido: parseInt(limite_dia) > 0 && parseInt(consultas_hoje) >= parseInt(limite_dia),
-      limite_mes_atingido: parseInt(limite_mes) > 0 && parseInt(consultas_mes) >= parseInt(limite_mes)
+      consultas_avulsas_usadas: parseInt(consultas_avulsas_usadas)
     });
   } catch (error) {
     console.error('❌ Erro ao buscar limite:', error);

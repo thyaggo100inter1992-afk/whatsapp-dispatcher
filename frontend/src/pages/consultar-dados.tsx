@@ -1003,17 +1003,16 @@ export default function ConsultarDados() {
       return;
     }
     
-    // VERIFICAR CRÉDITOS DISPONÍVEIS ANTES DE INICIAR
+    // VERIFICAR CRÉDITOS DISPONÍVEIS ANTES DE INICIAR (Limite MENSAL + Avulsas)
     if (limiteInfo) {
-      const consultasDisponiveis = 
-        (limiteInfo.limite_dia === -1 ? 999999 : (limiteInfo.limite_dia - limiteInfo.consultas_hoje)) +
-        (limiteInfo.consultas_avulsas_saldo || 0);
+      const consultasDoPlano = limiteInfo.limite_mes === -1 ? 999999 : Math.max(0, limiteInfo.limite_mes - limiteInfo.consultas_mes);
+      const consultasDisponiveis = consultasDoPlano + (limiteInfo.consultas_avulsas_saldo || 0);
       
       if (consultasDisponiveis === 0) {
         showNotification(
           `❌ Sem créditos disponíveis!\n\n` +
-          `📊 Limite diário: ${limiteInfo.limite_dia === -1 ? 'Ilimitado' : limiteInfo.limite_dia}\n` +
-          `✅ Usadas hoje: ${limiteInfo.consultas_hoje}\n` +
+          `📊 Limite mensal: ${limiteInfo.limite_mes === -1 ? 'Ilimitado' : limiteInfo.limite_mes}\n` +
+          `✅ Usadas este mês: ${limiteInfo.consultas_mes}\n` +
           `💰 Consultas avulsas: ${limiteInfo.consultas_avulsas_saldo || 0}\n\n` +
           `⚠️ Vá até "Comprar Consultas" para adquirir mais créditos.`,
           'error'
@@ -1758,32 +1757,7 @@ export default function ConsultarDados() {
 
           {/* Contadores no canto direito */}
           <div className="flex gap-4">
-            {/* Contador Diário */}
-            {limiteInfo && (
-              <div className={`backdrop-blur-sm border-2 rounded-2xl px-8 py-4 min-w-[160px] ${
-                limiteInfo.limite_dia > 0 && limiteInfo.limite_dia_atingido 
-                  ? 'bg-red-500/20 border-red-400/40' 
-                  : limiteInfo.limite_dia > 0 && limiteInfo.consultas_hoje / limiteInfo.limite_dia > 0.8
-                    ? 'bg-yellow-500/20 border-yellow-400/40'
-                    : 'bg-emerald-500/20 border-emerald-400/40'
-              }`}>
-                <p className="text-white/60 text-sm font-semibold mb-2">📅 Consultas Hoje</p>
-                <p className="text-3xl font-black text-white">
-                  {limiteInfo.consultas_hoje}
-                  {limiteInfo.limite_dia > 0 && (
-                    <span className="text-white/50">/{limiteInfo.limite_dia}</span>
-                  )}
-                  {limiteInfo.limite_dia <= 0 && (
-                    <span className="text-emerald-400 text-sm ml-2">∞</span>
-                  )}
-                </p>
-                <p className="text-white/40 text-xs mt-2">
-                  {limiteInfo.limite_dia > 0 ? 'do plano hoje' : 'ilimitado'}
-                </p>
-              </div>
-            )}
-
-            {/* Contador Mensal */}
+            {/* Contador Mensal (ÚNICO LIMITE ATIVO) */}
             {limiteInfo && (
               <div className={`backdrop-blur-sm border-2 rounded-2xl px-8 py-4 min-w-[160px] ${
                 limiteInfo.limite_mes > 0 && limiteInfo.limite_mes_atingido 
@@ -2722,11 +2696,10 @@ export default function ConsultarDados() {
                       </div>
                     )}
 
-                    {/* Verificação de Créditos Disponíveis */}
+                    {/* Verificação de Créditos Disponíveis (Limite MENSAL + Avulsas) */}
                     {limiteInfo && (() => {
-                      const consultasDisponiveis = 
-                        (limiteInfo.limite_dia === -1 ? 999999 : (limiteInfo.limite_dia - limiteInfo.consultas_hoje)) +
-                        (limiteInfo.consultas_avulsas_saldo || 0);
+                      const consultasDoPlano = limiteInfo.limite_mes === -1 ? 999999 : Math.max(0, limiteInfo.limite_mes - limiteInfo.consultas_mes);
+                      const consultasDisponiveis = consultasDoPlano + (limiteInfo.consultas_avulsas_saldo || 0);
                       const cpfsParaHigienizar = verificationResults?.notFound?.length || 0;
                       const creditoSuficiente = consultasDisponiveis >= cpfsParaHigienizar;
                       
@@ -2740,7 +2713,7 @@ export default function ConsultarDados() {
                           }`}>
                             <div className="flex items-center justify-center gap-4 text-lg">
                               <span className="text-white">
-                                💳 <strong>Créditos disponíveis:</strong> {limiteInfo.limite_dia === -1 ? '∞ Ilimitado' : consultasDisponiveis}
+                                💳 <strong>Créditos disponíveis:</strong> {limiteInfo.limite_mes === -1 ? '∞ Ilimitado' : consultasDisponiveis}
                               </span>
                               <span className="text-white/50">|</span>
                               <span className="text-white">
