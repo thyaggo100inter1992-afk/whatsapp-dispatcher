@@ -610,6 +610,9 @@ router.get('/historico/:id', async (req, res) => {
 // ============================================
 
 router.post('/jobs', checkNovaVidaLimit, async (req, res) => {
+  console.log(`\n🔥 ========================================`);
+  console.log(`🔥 POST /novavida/jobs CHAMADO!`);
+  console.log(`🔥 ========================================`);
   try {
     const { 
       documentos, 
@@ -617,6 +620,13 @@ router.post('/jobs', checkNovaVidaLimit, async (req, res) => {
       verifyWhatsapp = true,      // Nova opção
       whatsappDelay = 3            // Nova opção (3 segundos por padrão)
     } = req.body;
+    
+    console.log(`📦 Body recebido:`, {
+      documentos: documentos?.length,
+      delaySeconds,
+      verifyWhatsapp,
+      whatsappDelay
+    });
     
     // Identificar o usuário a partir do token de autenticação
     const userIdentifier = req.user?.id ? String(req.user.id) : req.user?.email || req.user?.nome || 'system';
