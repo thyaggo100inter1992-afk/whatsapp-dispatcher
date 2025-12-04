@@ -1899,7 +1899,7 @@ const getTenantConnections = async (req, res) => {
 
     console.log(`🔍 Listando conexões do tenant ID: ${id}`);
 
-    // Buscar conexões API (por enquanto listando todas, pois tenant_id pode não estar preenchido)
+    // Buscar conexões API (filtrar por tenant_id)
     const apiConnections = await query(`
       SELECT 
         id,
@@ -1912,11 +1912,11 @@ const getTenantConnections = async (req, res) => {
         created_at,
         tenant_id
       FROM whatsapp_accounts
+      WHERE tenant_id = $1
       ORDER BY created_at DESC
-    `);
+    `, [id]);
 
-    // Buscar conexões QR (uaz_instances não tem tenant_id por padrão)
-    // Por enquanto, listamos todas
+    // Buscar conexões QR (filtrar por tenant_id)
     const qrConnections = await query(`
       SELECT 
         id,
@@ -1926,10 +1926,12 @@ const getTenantConnections = async (req, res) => {
         is_connected,
         profile_name as whatsapp_display_name,
         profile_pic_url as whatsapp_profile_picture,
-        created_at
+        created_at,
+        tenant_id
       FROM uaz_instances
+      WHERE tenant_id = $1
       ORDER BY created_at DESC
-    `);
+    `, [id]);
 
     // Formatar resultado
     const connections = [
