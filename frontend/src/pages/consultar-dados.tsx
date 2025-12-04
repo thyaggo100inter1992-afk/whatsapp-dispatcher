@@ -77,6 +77,7 @@ export default function ConsultarDados() {
   } | null>(null);
   const [verifyingCpfs, setVerifyingCpfs] = useState(false);
   const [hygienizing, setHygienizing] = useState(false);
+  const [reverifyingWhatsapp, setReverifyingWhatsapp] = useState(false);
   const [hygienizationProgress, setHygienizationProgress] = useState({
     total: 0,
     current: 0,
@@ -1134,6 +1135,47 @@ export default function ConsultarDados() {
     } catch (error) {
       // Se não conseguir converter, retorna apenas a parte da data (YYYY-MM-DD)
       return dataISO.split('T')[0];
+    }
+  };
+
+  // Re-verificar WhatsApp dos CPFs cadastrados
+  const handleReverifyWhatsapp = async () => {
+    if (!verificationResults?.found || verificationResults.found.length === 0) {
+      showNotification('❌ Nenhum CPF cadastrado para re-verificar', 'error');
+      return;
+    }
+    
+    setReverifyingWhatsapp(true);
+    
+    try {
+      const documentos = verificationResults.found.map(reg => reg.documento);
+      
+      showNotification(`🔄 Re-verificando WhatsApp de ${documentos.length} CPF(s)...`, 'success');
+      
+      const response = await api.post('/novavida/reverificar-whatsapp', {
+        documentos,
+        whatsappColumn: whatsappColumnChoice
+      });
+      
+      if (response.data.success) {
+        showNotification(
+          `✅ ${response.data.message}\n\n📱 Agora clique em "Verificar CPFs na Base" novamente para ver os resultados atualizados.`,
+          'success'
+        );
+        
+        // Recarregar a verificação para mostrar dados atualizados
+        await handleVerifyCpfs();
+      } else {
+        showNotification(`❌ Erro: ${response.data.error}`, 'error');
+      }
+    } catch (error: any) {
+      console.error('Erro ao re-verificar WhatsApp:', error);
+      showNotification(
+        `❌ Erro ao re-verificar WhatsApp: ${error.response?.data?.error || error.message}`,
+        'error'
+      );
+    } finally {
+      setReverifyingWhatsapp(false);
     }
   };
 
@@ -2809,17 +2851,40 @@ export default function ConsultarDados() {
                   </div>
                 )}
 
-                {/* Botões de Download */}
+                {/* Botões de Download e Re-verificação */}
                 {!hygienizing && (
-                  <div className="flex gap-4 justify-center">
+                  <div className="flex flex-wrap gap-4 justify-center">
                     {verificationResults.found.length > 0 && (
-                      <button
-                        onClick={handleDownloadFoundOnly}
-                        className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-8 py-4 rounded-xl font-bold text-xl transition-all shadow-lg shadow-blue-500/30"
-                      >
-                        <FaDownload className="inline-block mr-3 text-2xl" />
-                        Baixar Somente Cadastrados ({verificationResults.found.length})
-                      </button>
+                      <>
+                        <button
+                          onClick={handleReverifyWhatsapp}
+                          disabled={reverifyingWhatsapp}
+                          className={`${
+                            reverifyingWhatsapp 
+                              ? 'bg-gray-600 cursor-not-allowed' 
+                              : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800'
+                          } text-white px-8 py-4 rounded-xl font-bold text-xl transition-all shadow-lg shadow-green-500/30`}
+                        >
+                          {reverifyingWhatsapp ? (
+                            <>
+                              <FaSpinner className="inline-block mr-3 text-2xl animate-spin" />
+                              Re-verificando...
+                            </>
+                          ) : (
+                            <>
+                              <FaWhatsapp className="inline-block mr-3 text-2xl" />
+                              Re-verificar WhatsApp ({verificationResults.found.length})
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={handleDownloadFoundOnly}
+                          className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-8 py-4 rounded-xl font-bold text-xl transition-all shadow-lg shadow-blue-500/30"
+                        >
+                          <FaDownload className="inline-block mr-3 text-2xl" />
+                          Baixar Somente Cadastrados ({verificationResults.found.length})
+                        </button>
+                      </>
                     )}
 
                     {allHygienizedData.length > 0 && (

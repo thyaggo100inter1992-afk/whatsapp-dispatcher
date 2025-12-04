@@ -1179,5 +1179,153 @@ router.post('/verificar-lista', async (req, res) => {
   }
 });
 
+// ============================================
+// RE-VERIFICAR WHATSAPP DE CPFs CADASTRADOS
+// ============================================
+router.post('/reverificar-whatsapp', async (req, res) => {
+  try {
+    const { documentos, whatsappColumn = 'first' } = req.body;
+    const tenantId = req.tenant?.id;
+    
+    if (!tenantId) {
+      return res.status(401).json({ error: 'Tenant não identificado' });
+    }
+    
+    if (!documentos || !Array.isArray(documentos) || documentos.length === 0) {
+      return res.status(400).json({ error: 'Lista de documentos é obrigatória' });
+    }
+    
+    console.log('\n📱 ═══════════════════════════════════════════════════════');
+    console.log('📱 RE-VERIFICAÇÃO DE WHATSAPP');
+    console.log('📱 ═══════════════════════════════════════════════════════');
+    console.log(`📊 Total de documentos: ${documentos.length}`);
+    console.log(`📱 Coluna a verificar: ${whatsappColumn}`);
+    
+    // Buscar instâncias conectadas
+    const instanceResult = await pool.query(
+      `SELECT id, instance_token, name FROM uaz_instances 
+       WHERE tenant_id = $1 AND is_active = true AND status = 'connected' 
+       ORDER BY id`,
+      [tenantId]
+    );
+    
+    if (instanceResult.rows.length === 0) {
+      // Fallback
+      const fallbackResult = await pool.query(
+        `SELECT id, instance_token, name FROM uaz_instances 
+         WHERE tenant_id = $1 AND is_connected = true 
+         ORDER BY id`,
+        [tenantId]
+      );
+      if (fallbackResult.rows.length === 0) {
+        return res.status(400).json({ 
+          error: 'Nenhuma instância QR Connect ativa. Conecte uma instância primeiro.' 
+        });
+      }
+      instanceResult.rows = fallbackResult.rows;
+    }
+    
+    const instances = instanceResult.rows;
+    console.log(`✅ ${instances.length} instância(s) conectada(s) disponível(eis)`);
+    
+    // Buscar credenciais e criar serviço
+    const credentials = await getTenantUazapCredentials(tenantId);
+    const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
+    
+    // Buscar dados dos documentos no banco
+    const placeholders = documentos.map((_, i) => `$${i + 1}`).join(',');
+    const docsResult = await pool.query(
+      `SELECT id, documento, telefones FROM base_dados_completa 
+       WHERE documento IN (${placeholders}) AND tenant_id = $${documentos.length + 1}`,
+      [...documentos, tenantId]
+    );
+    
+    console.log(`📊 ${docsResult.rows.length} documento(s) encontrado(s) no banco`);
+    
+    let verificados = 0;
+    let erros = 0;
+    let instanceIndex = 0;
+    
+    for (const doc of docsResult.rows) {
+      const telefones = doc.telefones || [];
+      
+      if (telefones.length === 0) {
+        console.log(`⚠️ ${doc.documento}: Sem telefones`);
+        continue;
+      }
+      
+      // Determinar quais telefones verificar
+      let telefonesToVerify = [];
+      if (whatsappColumn === 'first' && telefones[0]) {
+        telefonesToVerify = [{ tel: telefones[0], idx: 0 }];
+      } else if (whatsappColumn === 'second' && telefones[1]) {
+        telefonesToVerify = [{ tel: telefones[1], idx: 1 }];
+      } else if (whatsappColumn === 'third' && telefones[2]) {
+        telefonesToVerify = [{ tel: telefones[2], idx: 2 }];
+      } else if (whatsappColumn === 'all') {
+        telefonesToVerify = telefones.map((tel, idx) => ({ tel, idx }));
+      }
+      
+      let algumVerificado = false;
+      
+      for (const { tel, idx } of telefonesToVerify) {
+        if (tel.ddd && tel.telefone) {
+          const numeroCompleto = `55${tel.ddd}${tel.telefone}`;
+          const instance = instances[instanceIndex % instances.length];
+          instanceIndex++;
+          
+          try {
+            console.log(`🔍 [${instance.name}] ${doc.documento} - ${numeroCompleto}`);
+            const checkResult = await uazService.checkNumber(instance.instance_token, numeroCompleto);
+            
+            // Atualizar o telefone no array
+            telefones[idx].has_whatsapp = checkResult?.data?.isInWhatsapp || false;
+            telefones[idx].whatsapp_verified = true;
+            telefones[idx].verified_by = instance.name;
+            
+            console.log(`   ${telefones[idx].has_whatsapp ? '✅ TEM' : '❌ NÃO TEM'} WhatsApp`);
+            algumVerificado = true;
+            
+            // Delay entre verificações (500ms)
+            await new Promise(r => setTimeout(r, 500));
+          } catch (err) {
+            console.error(`   ⚠️ Erro: ${err.message}`);
+            telefones[idx].has_whatsapp = false;
+            telefones[idx].whatsapp_verified = false;
+          }
+        }
+      }
+      
+      if (algumVerificado) {
+        // Atualizar no banco
+        const temWhatsApp = telefones.some(t => t.has_whatsapp);
+        await pool.query(
+          `UPDATE base_dados_completa 
+           SET telefones = $1, whatsapp_verificado = $2, data_verificacao_whatsapp = NOW()
+           WHERE id = $3 AND tenant_id = $4`,
+          [JSON.stringify(telefones), temWhatsApp, doc.id, tenantId]
+        );
+        verificados++;
+      }
+    }
+    
+    console.log('\n📊 RESULTADO:');
+    console.log(`✅ Verificados: ${verificados}`);
+    console.log(`❌ Erros: ${erros}`);
+    console.log('═══════════════════════════════════════════════════════\n');
+    
+    res.json({
+      success: true,
+      verificados,
+      erros,
+      message: `WhatsApp re-verificado para ${verificados} documento(s)`
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro ao re-verificar WhatsApp:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
 
