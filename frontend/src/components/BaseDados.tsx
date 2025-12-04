@@ -642,8 +642,8 @@ export default function BaseDados() {
                           response.data.profilePicUrl ||
                           response.data.contact?.imageUrl;
 
-          // Se a foto for uma URL relativa (já salva localmente), construir URL completa
-          if (photoUrl && photoUrl.startsWith('/uploads/')) {
+          // Se a foto for uma URL relativa, construir URL completa
+          if (photoUrl && (photoUrl.startsWith('/uploads/') || photoUrl.startsWith('/api/'))) {
             // Usar a origem do site atual (que é o mesmo servidor que serve as imagens)
             const origin = typeof window !== 'undefined' ? window.location.origin : '';
             photoUrl = `${origin}${photoUrl}`;
