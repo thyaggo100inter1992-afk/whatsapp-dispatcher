@@ -11,7 +11,13 @@ const { cloudinaryService } = require('../../services/cloudinary.service');
  */
 const uploadFile = async (req, res) => {
   try {
+    console.log('📤 [UPLOAD] Iniciando upload...');
+    console.log('   Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('   req.files:', req.files);
+    console.log('   req.body:', req.body);
+    
     if (!req.files || !req.files.file) {
+      console.log('❌ [UPLOAD] Nenhum arquivo detectado!');
       return res.status(400).json({
         success: false,
         message: 'Nenhum arquivo foi enviado'
@@ -19,7 +25,7 @@ const uploadFile = async (req, res) => {
     }
 
     const file = req.files.file;
-    const { description } = req.body;
+    const { description = '' } = req.body || {}; // ✅ Fallback para req.body undefined
 
     console.log(`📤 Upload de arquivo: ${file.name}`);
 
