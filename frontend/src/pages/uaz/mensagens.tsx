@@ -55,7 +55,7 @@ export default function MensagensUazPage() {
 
   const loadUsers = async () => {
     try {
-      const response = await api.get('/tenant/users');
+      const response = await api.get('/uaz/tenant/users');
       if (response.data.success) {
         setUsers(response.data.data || []);
       }
