@@ -1003,6 +1003,25 @@ export default function ConsultarDados() {
       return;
     }
     
+    // VERIFICAR CRÉDITOS DISPONÍVEIS ANTES DE INICIAR
+    if (limiteInfo) {
+      const consultasDisponiveis = 
+        (limiteInfo.limite_dia === -1 ? 999999 : (limiteInfo.limite_dia - limiteInfo.consultas_hoje)) +
+        (limiteInfo.consultas_avulsas_saldo || 0);
+      
+      if (consultasDisponiveis === 0) {
+        showNotification(
+          `❌ Sem créditos disponíveis!\n\n` +
+          `📊 Limite diário: ${limiteInfo.limite_dia === -1 ? 'Ilimitado' : limiteInfo.limite_dia}\n` +
+          `✅ Usadas hoje: ${limiteInfo.consultas_hoje}\n` +
+          `💰 Consultas avulsas: ${limiteInfo.consultas_avulsas_saldo || 0}\n\n` +
+          `⚠️ Vá até "Comprar Consultas" para adquirir mais créditos.`,
+          'error'
+        );
+        return;
+      }
+    }
+    
     setHygienizing(true);
     const cpfsToHygienize = verificationResults.notFound;
     
@@ -2703,15 +2722,74 @@ export default function ConsultarDados() {
                       </div>
                     )}
 
-                    <div className="flex gap-4 justify-center">
-                      <button
-                        onClick={handleHygienize}
-                        className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white px-8 py-4 rounded-xl font-bold text-xl transition-all shadow-lg shadow-green-500/30"
-                      >
-                        <FaCheckCircle className="inline-block mr-3 text-2xl" />
-                        Higienizar {verificationResults.notFound.length} CPFs via API
-                      </button>
-                    </div>
+                    {/* Verificação de Créditos Disponíveis */}
+                    {limiteInfo && (() => {
+                      const consultasDisponiveis = 
+                        (limiteInfo.limite_dia === -1 ? 999999 : (limiteInfo.limite_dia - limiteInfo.consultas_hoje)) +
+                        (limiteInfo.consultas_avulsas_saldo || 0);
+                      const cpfsParaHigienizar = verificationResults?.notFound?.length || 0;
+                      const creditoSuficiente = consultasDisponiveis >= cpfsParaHigienizar;
+                      
+                      return (
+                        <div className="space-y-4">
+                          {/* Aviso de Crédito */}
+                          <div className={`p-4 rounded-xl border-2 ${
+                            creditoSuficiente 
+                              ? 'bg-green-500/10 border-green-500/50' 
+                              : 'bg-red-500/10 border-red-500/50'
+                          }`}>
+                            <div className="flex items-center justify-center gap-4 text-lg">
+                              <span className="text-white">
+                                💳 <strong>Créditos disponíveis:</strong> {limiteInfo.limite_dia === -1 ? '∞ Ilimitado' : consultasDisponiveis}
+                              </span>
+                              <span className="text-white/50">|</span>
+                              <span className="text-white">
+                                📋 <strong>CPFs para consultar:</strong> {cpfsParaHigienizar}
+                              </span>
+                            </div>
+                            
+                            {!creditoSuficiente && (
+                              <div className="mt-3 text-center">
+                                <p className="text-red-300 font-bold">
+                                  ⚠️ Créditos insuficientes! Você só conseguirá consultar {consultasDisponiveis} de {cpfsParaHigienizar} CPFs.
+                                </p>
+                                <p className="text-white/60 text-sm mt-1">
+                                  Vá até a aba "Comprar Consultas" para adquirir mais créditos.
+                                </p>
+                              </div>
+                            )}
+                            
+                            {limiteInfo.consultas_avulsas_saldo > 0 && (
+                              <p className="text-yellow-300 text-center mt-2 text-sm">
+                                💰 Incluindo {limiteInfo.consultas_avulsas_saldo} consulta(s) avulsa(s)
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex gap-4 justify-center">
+                            <button
+                              onClick={handleHygienize}
+                              disabled={consultasDisponiveis === 0}
+                              className={`px-8 py-4 rounded-xl font-bold text-xl transition-all shadow-lg ${
+                                consultasDisponiveis === 0
+                                  ? 'bg-gray-600 cursor-not-allowed text-gray-400'
+                                  : creditoSuficiente
+                                    ? 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-green-500/30'
+                                    : 'bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white shadow-orange-500/30'
+                              }`}
+                            >
+                              <FaCheckCircle className="inline-block mr-3 text-2xl" />
+                              {consultasDisponiveis === 0 
+                                ? '❌ Sem Créditos Disponíveis'
+                                : creditoSuficiente
+                                  ? `Higienizar ${cpfsParaHigienizar} CPFs via API`
+                                  : `Higienizar ${Math.min(consultasDisponiveis, cpfsParaHigienizar)} de ${cpfsParaHigienizar} CPFs`
+                              }
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
