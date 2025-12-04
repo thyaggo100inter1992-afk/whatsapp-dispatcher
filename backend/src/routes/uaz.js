@@ -5792,5 +5792,84 @@ router.post('/instances/:id/reconfigure-webhook', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/uaz/debug/all-instances
+ * [TEMPORÁRIO] Busca TODAS as instâncias UAZ no sistema para debug
+ */
+router.get('/debug/all-instances', async (req, res) => {
+  try {
+    console.log('\n🔍 ========================================');
+    console.log('🔍 DEBUG: BUSCANDO TODAS INSTÂNCIAS UAZ');
+    console.log('🔍 ========================================\n');
+
+    // Buscar TODAS as instâncias (sem filtro de tenant)
+    const allInstances = await query(`
+      SELECT 
+        id,
+        name,
+        session_name,
+        instance_token,
+        tenant_id,
+        phone_number,
+        is_active,
+        is_connected,
+        status,
+        created_at
+      FROM uaz_instances 
+      ORDER BY tenant_id NULLS FIRST, id
+    `);
+
+    console.log(`📊 Total encontrado: ${allInstances.rows.length}`);
+
+    // Agrupar por tenant
+    const byTenant = {};
+    const orphans = [];
+
+    allInstances.rows.forEach(inst => {
+      if (inst.tenant_id === null) {
+        orphans.push(inst);
+      } else {
+        if (!byTenant[inst.tenant_id]) {
+          byTenant[inst.tenant_id] = [];
+        }
+        byTenant[inst.tenant_id].push(inst);
+      }
+    });
+
+    console.log(`   Órfãs (sem tenant): ${orphans.length}`);
+    Object.keys(byTenant).forEach(tid => {
+      console.log(`   Tenant ${tid}: ${byTenant[tid].length}`);
+    });
+
+    // Procurar instância específica
+    const nettcredInstances = allInstances.rows.filter(inst => 
+      inst.name && (inst.name.includes('8104-5992') || inst.name.includes('NETTCRED'))
+    );
+
+    if (nettcredInstances.length > 0) {
+      console.log(`\n✅ Encontradas ${nettcredInstances.length} instâncias NETTCRED:\n`);
+      nettcredInstances.forEach(inst => {
+        console.log(`   ID: ${inst.id} | Nome: ${inst.name} | Tenant: ${inst.tenant_id}`);
+      });
+    }
+
+    res.json({
+      success: true,
+      total: allInstances.rows.length,
+      instances: allInstances.rows,
+      byTenant,
+      orphans,
+      nettcredInstances
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao buscar instâncias:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
 
