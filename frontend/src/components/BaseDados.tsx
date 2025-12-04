@@ -646,11 +646,11 @@ export default function BaseDados() {
 
           console.log(`📸 [${numeroFormatado}] photoUrl ANTES da transformação:`, photoUrl);
 
-          // Se a foto for uma URL relativa, construir URL completa
+          // Se a foto for uma URL relativa, construir URL completa do BACKEND
           if (photoUrl && (photoUrl.startsWith('/uploads/') || photoUrl.startsWith('/api/'))) {
-            // Usar a origem do site atual (que é o mesmo servidor que serve as imagens)
-            const origin = typeof window !== 'undefined' ? window.location.origin : '';
-            photoUrl = `${origin}${photoUrl}`;
+            // Usar a URL do backend (onde as fotos estão salvas)
+            const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, '') || 'https://api.sistemasnettsistemas.com.br';
+            photoUrl = `${API_BASE}${photoUrl}`;
             console.log(`🖼️ [${numeroFormatado}] URL completa da foto:`, photoUrl);
           }
           
