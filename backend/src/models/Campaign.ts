@@ -5,6 +5,7 @@ export interface Campaign {
   name: string;
   status: 'pending' | 'scheduled' | 'running' | 'paused' | 'completed' | 'cancelled' | 'failed';
   tenant_id?: number;
+  user_id?: number;
   scheduled_at?: Date;
   started_at?: Date;
   completed_at?: Date;

@@ -18,6 +18,7 @@ export interface Message {
   error_message?: string;
   media_url?: string;
   tenant_id?: number;
+  user_id?: number;
   created_at?: Date;
   updated_at?: Date;
 }
