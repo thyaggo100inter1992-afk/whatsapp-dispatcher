@@ -34,6 +34,7 @@ interface TenantUser {
     envio_imediato?: boolean;
     catalogo?: boolean;
     desativar_contas_whatsapp?: boolean;
+    configuracoes?: boolean;
   };
   created_at: string;
   ultimo_login?: string;
@@ -57,6 +58,7 @@ const PERMISSION_LABELS: { [key: string]: string } = {
   envio_imediato: 'Envio Imediato',
   catalogo: 'Catálogo',
   desativar_contas_whatsapp: 'Desativar Contas WhatsApp',
+  configuracoes: '⚙️ Configurações (QR/API)',
 };
 
 /**
@@ -814,6 +816,7 @@ export default function Gestao() {
       envio_imediato: false,
       catalogo: false,
       desativar_contas_whatsapp: false,
+      configuracoes: false,
     }
   });
 

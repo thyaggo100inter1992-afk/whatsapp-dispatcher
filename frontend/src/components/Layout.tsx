@@ -23,7 +23,12 @@ export default function Layout({ children }: LayoutProps) {
     canAccessRestrictionList,
     canAccessWebhooks,
     canAccessNovaVida,
+    canAccessConfiguracoes,
+    permissions,
   } = usePermissions();
+  
+  // Admin sempre pode acessar configurações
+  const showConfiguracoes = user?.role === 'admin' || user?.role === 'super_admin' || permissions?.all || canAccessConfiguracoes;
 
   // Definir título e subtítulo com base na rota
   const getTituloSubtitulo = () => {
@@ -138,8 +143,8 @@ export default function Layout({ children }: LayoutProps) {
                 <span>Início</span>
               </button>
               
-              {/* Botões de Configurações - Esconder em Funções Extras */}
-              {!isPaginaCompartilhada && navigation.map((item) => {
+              {/* Botões de Configurações - Esconder em Funções Extras e verificar permissão */}
+              {!isPaginaCompartilhada && showConfiguracoes && navigation.map((item) => {
                 const Icon = item.icon;
                 const isActive = router.pathname === item.href || 
                                  (item.href !== '/dashboard-oficial' && router.pathname.startsWith(item.href));

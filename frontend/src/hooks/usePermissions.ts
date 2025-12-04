@@ -14,6 +14,7 @@ interface Permissions {
     gerenciar_proxies?: boolean;
     lista_restricao?: boolean;
     webhooks?: boolean;
+    configuracoes?: boolean;
     [key: string]: boolean | undefined;
   };
 }
@@ -60,6 +61,7 @@ export function usePermissions() {
   const canManageProxies = hasPermission('gerenciar_proxies');
   const canAccessRestrictionList = hasPermission('lista_restricao');
   const canAccessWebhooks = hasPermission('webhooks');
+  const canAccessConfiguracoes = hasPermission('configuracoes');
 
   return {
     permissions,
@@ -76,6 +78,7 @@ export function usePermissions() {
     canManageProxies,
     canAccessRestrictionList,
     canAccessWebhooks,
+    canAccessConfiguracoes,
   };
 }
 

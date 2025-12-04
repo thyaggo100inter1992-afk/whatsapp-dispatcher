@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { FaQrcode, FaCog, FaHome, FaGlobe, FaWhatsapp, FaSignOutAlt, FaUser } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import SystemLogo from './SystemLogo';
 import { buildFileUrl } from '@/utils/urlHelpers';
 
@@ -13,6 +14,10 @@ interface LayoutUazProps {
 export default function LayoutUaz({ children }: LayoutUazProps) {
   const router = useRouter();
   const { user, signOut } = useAuth();
+  const { canAccessConfiguracoes, permissions } = usePermissions();
+  
+  // Admin sempre pode acessar configurações
+  const showConfiguracoes = user?.role === 'admin' || user?.role === 'super_admin' || permissions?.all || canAccessConfiguracoes;
 
   // Definir título e subtítulo com base na rota
   const getTituloSubtitulo = () => {
@@ -116,8 +121,8 @@ export default function LayoutUaz({ children }: LayoutUazProps) {
                 <span>Início</span>
               </button>
               
-              {/* Botões de Configurações - Esconder em Funções Extras */}
-              {!isPaginaCompartilhada && navigation.map((item) => {
+              {/* Botões de Configurações - Esconder em Funções Extras e verificar permissão */}
+              {!isPaginaCompartilhada && showConfiguracoes && navigation.map((item) => {
                 const Icon = item.icon;
                 const isActive = router.pathname === item.href || 
                                  (item.href !== '/dashboard-uaz' && router.pathname.startsWith(item.href));
