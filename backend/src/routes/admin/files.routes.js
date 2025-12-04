@@ -9,7 +9,12 @@ const filesController = require('../../controllers/admin/files.controller');
  */
 
 // POST /api/admin/files/upload - Upload de arquivo
-router.post('/upload', filesController.uploadFile);
+router.post('/upload', (req, res, next) => {
+  console.log('🔥 ROTA /admin/files/upload CHAMADA!');
+  console.log('   Method:', req.method);
+  console.log('   Content-Type:', req.headers['content-type']);
+  next();
+}, filesController.uploadFile);
 
 // GET /api/admin/files - Listar todos os arquivos
 router.get('/', filesController.getAllFiles);
