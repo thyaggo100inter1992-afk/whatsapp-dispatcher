@@ -32,7 +32,7 @@ class PaymentController {
           ordem,
           duracao_trial_dias
         FROM plans
-        WHERE ativo = true
+        WHERE ativo = true AND visivel = true
         ORDER BY ordem ASC, preco_mensal ASC
       `);
 
