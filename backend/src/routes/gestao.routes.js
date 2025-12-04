@@ -110,6 +110,8 @@ router.get('/users', async (req, res) => {
         id, 
         nome, 
         email, 
+        telefone,
+        documento,
         role, 
         permissoes, 
         ativo, 
@@ -233,9 +235,10 @@ router.put('/users/:userId', async (req, res) => {
     const tenantId = req.tenant?.id;
     const userRole = req.user?.role;
     const { userId } = req.params;
-    const { nome, email, role, permissoes, ativo, senha } = req.body;
+    const { nome, email, role, permissoes, ativo, senha, telefone, documento } = req.body;
 
     console.log(`✏️ Atualizando usuário ID: ${userId} do tenant ID: ${tenantId}`);
+    console.log(`📞 Dados recebidos - telefone: ${telefone}, documento: ${documento}`);
 
     if (!tenantId) {
       return res.status(400).json({
@@ -279,6 +282,18 @@ router.put('/users/:userId', async (req, res) => {
       paramCount++;
     }
 
+    if (telefone !== undefined) {
+      updateFields.push(`telefone = $${paramCount}`);
+      updateValues.push(telefone);
+      paramCount++;
+    }
+
+    if (documento !== undefined) {
+      updateFields.push(`documento = $${paramCount}`);
+      updateValues.push(documento);
+      paramCount++;
+    }
+
     if (role) {
       updateFields.push(`role = $${paramCount}`);
       updateValues.push(role);
@@ -310,7 +325,7 @@ router.put('/users/:userId', async (req, res) => {
       UPDATE tenant_users 
       SET ${updateFields.join(', ')}
       WHERE id = $${paramCount}
-      RETURNING id, nome, email, role, permissoes, ativo, created_at, updated_at
+      RETURNING id, nome, email, role, permissoes, ativo, telefone, documento, avatar, created_at, updated_at
     `, [...updateValues, userId]);
 
     const updatedUser = result.rows[0];
