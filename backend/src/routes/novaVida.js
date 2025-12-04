@@ -972,22 +972,42 @@ async function processJob(jobId) {
           // 🔑 BUSCAR CREDENCIAIS DO TENANT (CORRIGIDO: usar job.tenant_id)
           const credentials = await getTenantUazapCredentials(job.tenant_id);
           const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
+          
+          // 🔄 BUSCAR INSTÂNCIAS ATIVAS DO TENANT (UMA VEZ SÓ, fora do loop)
+          const instanceResult = await pool.query(
+            `SELECT id, instance_token, name FROM uaz_instances 
+             WHERE tenant_id = $1 AND is_active = true AND status = 'connected' 
+             ORDER BY id`,
+            [job.tenant_id]
+          );
+          
+          let instances = instanceResult.rows;
+          
+          // Fallback: tentar com is_connected = true
+          if (instances.length === 0) {
+            const fallbackResult = await pool.query(
+              `SELECT id, instance_token, name FROM uaz_instances 
+               WHERE tenant_id = $1 AND is_connected = true 
+               ORDER BY id`,
+              [job.tenant_id]
+            );
+            instances = fallbackResult.rows;
+          }
+          
+          if (instances.length === 0) {
+            console.log('⚠️ Nenhuma instância QR Connect ativa no momento. Pulando verificação WhatsApp.');
+          } else {
+            console.log(`🔄 ${instances.length} instância(s) ativa(s) para rotação (tenant: ${job.tenant_id})`);
+          }
+          
           let instanceIndex = 0;
           
           for (let telIdx = 0; telIdx < telefones.length; telIdx++) {
             const telefone = telefones[telIdx];
             
-            // 🔄 BUSCAR INSTÂNCIAS ATIVAS (rotação dinâmica)
-            const instanceResult = await pool.query(
-              `SELECT id, instance_token, name FROM uaz_instances WHERE is_connected = true ORDER BY id`
-            );
-            
-            if (instanceResult.rows.length === 0) {
-              console.log('⚠️ Nenhuma instância QR Connect ativa no momento. Pulando verificação WhatsApp.');
+            if (instances.length === 0) {
               break; // Para de verificar se não há instâncias ativas
             }
-            
-            const instances = instanceResult.rows;
             
             // Selecionar próxima instância (round-robin)
             const selectedInstance = instances[instanceIndex % instances.length];

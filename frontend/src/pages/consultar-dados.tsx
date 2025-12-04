@@ -1465,6 +1465,11 @@ export default function ConsultarDados() {
       console.log(`📊 Total de instâncias encontradas: ${instances.length}`);
       console.log('📋 Lista de instâncias:', instances);
       
+      // Filtrar apenas instâncias conectadas
+      const activeInstances = instances.filter((inst: any) => 
+        inst.is_active && inst.status === 'connected'
+      );
+      
       // Listar todas as instâncias com seus status
       instances.forEach((inst: any, index: number) => {
         console.log(`  ${index + 1}. Nome: ${inst.name || inst.session_name || 'Sem nome'}`);
@@ -1473,12 +1478,8 @@ export default function ConsultarDados() {
         console.log(`     - status: ${inst.status}`);
         console.log(`     - Conectado? ${inst.is_active && inst.status === 'connected' ? '✅ SIM' : '❌ NÃO'}`);
       });
-      
-      const activeInstance = instances.find((inst: any) => 
-        inst.is_active && inst.status === 'connected'
-      );
 
-      if (!activeInstance) {
+      if (activeInstances.length === 0) {
         console.error('❌ NENHUMA instância ativa E conectada encontrada');
         console.error('📋 Verifique em Configurações QR Connect se há uma instância com:');
         console.error('   - is_active = true (ativa)');
@@ -1487,27 +1488,32 @@ export default function ConsultarDados() {
         return;
       }
 
-      console.log('✅ Instância ativa encontrada:', activeInstance.name);
-      showNotification(`🔄 Consultando ${telefones.length} telefone(s)...`, 'success');
+      console.log(`✅ ${activeInstances.length} instância(s) conectada(s) para rotação:`, activeInstances.map((i: any) => i.name).join(', '));
+      showNotification(`🔄 Consultando ${telefones.length} telefone(s) usando ${activeInstances.length} instância(s)...`, 'success');
 
       let fotosEncontradas = 0;
       let fotosNaoEncontradas = 0;
+      let instanceIndex = 0; // 🔄 Índice para rotação
 
       // Consultar cada telefone (com delay para evitar bloqueio)
       for (let i = 0; i < telefones.length; i++) {
         const tel = telefones[i];
         const numeroLimpo = `55${tel.DDD}${tel.TELEFONE}`;
         const numeroFormatado = `(${tel.DDD}) ${tel.TELEFONE}`;
+        
+        // 🔄 ROTATIVIDADE: Selecionar próxima instância (round-robin)
+        const selectedInstance = activeInstances[instanceIndex % activeInstances.length];
+        instanceIndex++;
 
         try {
           // Marca como carregando
           setLoadingPhones(prev => new Set(prev).add(numeroLimpo));
 
-          console.log(`📞 Consultando ${i + 1}/${telefones.length}: ${numeroFormatado}`);
+          console.log(`📞 [${selectedInstance.name}] Consultando ${i + 1}/${telefones.length}: ${numeroFormatado}`);
 
           // Consultar detalhes do contato
           const response = await api.post('/uaz/contact/details', {
-            instance_id: activeInstance.id,
+            instance_id: selectedInstance.id,
             phone_number: numeroLimpo,
             preview: false
           });
