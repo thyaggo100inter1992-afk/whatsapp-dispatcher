@@ -5795,6 +5795,7 @@ router.post('/instances/:id/reconfigure-webhook', async (req, res) => {
 /**
  * GET /api/uaz/debug/all-instances
  * [TEMPORÁRIO] Busca TODAS as instâncias UAZ no sistema para debug
+ * [SEM AUTENTICAÇÃO - APENAS PARA DEBUG]
  */
 router.get('/debug/all-instances', async (req, res) => {
   try {
@@ -5802,8 +5803,8 @@ router.get('/debug/all-instances', async (req, res) => {
     console.log('🔍 DEBUG: BUSCANDO TODAS INSTÂNCIAS UAZ');
     console.log('🔍 ========================================\n');
 
-    // Buscar TODAS as instâncias (sem filtro de tenant)
-    const allInstances = await query(`
+    // Buscar TODAS as instâncias (sem filtro de tenant) usando pool diretamente
+    const allInstances = await pool.query(`
       SELECT 
         id,
         name,
@@ -5853,21 +5854,55 @@ router.get('/debug/all-instances', async (req, res) => {
       });
     }
 
-    res.json({
+    // Retornar HTML formatado para facilitar leitura
+    let html = '<html><head><meta charset="utf-8"><style>body{font-family:monospace;padding:20px;background:#1e1e1e;color:#fff;}pre{background:#2d2d2d;padding:15px;border-radius:5px;overflow-x:auto;}.success{color:#4ec9b0;}.error{color:#f48771;}.warning{color:#dcdcaa;}</style></head><body>';
+    html += '<h1>🔍 DEBUG: TODAS INSTÂNCIAS UAZ</h1>';
+    html += `<p class="success">📊 Total: ${allInstances.rows.length} instância(s)</p>`;
+    
+    if (orphans.length > 0) {
+      html += `<h2 class="warning">⚠️  Instâncias Órfãs (sem tenant): ${orphans.length}</h2><pre>`;
+      orphans.forEach(inst => {
+        html += `ID: ${inst.id} | Nome: ${inst.name} | Tel: ${inst.phone_number || 'N/A'} | Status: ${inst.status}\n`;
+      });
+      html += '</pre>';
+    }
+    
+    Object.keys(byTenant).sort().forEach(tid => {
+      html += `<h2>📦 Tenant ${tid}: ${byTenant[tid].length} instância(s)</h2><pre>`;
+      byTenant[tid].forEach(inst => {
+        html += `ID: ${inst.id} | Nome: ${inst.name} | Tel: ${inst.phone_number || 'N/A'} | Status: ${inst.status} | Ativa: ${inst.is_active}\n`;
+      });
+      html += '</pre>';
+    });
+    
+    if (nettcredInstances.length > 0) {
+      html += `<h2 class="success">✅ INSTÂNCIAS NETTCRED: ${nettcredInstances.length}</h2><pre>`;
+      nettcredInstances.forEach(inst => {
+        html += `ID: ${inst.id} | Nome: ${inst.name} | Tenant: ${inst.tenant_id} | Tel: ${inst.phone_number}\n`;
+      });
+      html += '</pre>';
+    } else {
+      html += '<h2 class="error">❌ NENHUMA instância NETTCRED encontrada</h2>';
+    }
+    
+    html += '<hr><h3>📋 Dados JSON Completos:</h3><pre>' + JSON.stringify({
       success: true,
       total: allInstances.rows.length,
-      instances: allInstances.rows,
-      byTenant,
-      orphans,
-      nettcredInstances
-    });
+      byTenantCount: Object.keys(byTenant).reduce((acc, tid) => {
+        acc[tid] = byTenant[tid].length;
+        return acc;
+      }, {}),
+      orphansCount: orphans.length,
+      nettcredCount: nettcredInstances.length,
+      instances: allInstances.rows
+    }, null, 2) + '</pre>';
+    html += '</body></html>';
+
+    res.send(html);
 
   } catch (error) {
     console.error('❌ Erro ao buscar instâncias:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).send(`<html><body style="font-family:monospace;padding:20px;background:#1e1e1e;color:#f48771;"><h1>❌ Erro</h1><pre>${error.message}\n\n${error.stack}</pre></body></html>`);
   }
 });
 
