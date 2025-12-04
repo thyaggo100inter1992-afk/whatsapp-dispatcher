@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../database/connection');
+const { tenantQuery } = require('../database/tenant-query');
 const NovaVidaService = require('../services/novaVidaService');
 const UazService = require('../services/uazService');
 const { checkNovaVidaLimit } = require('../middlewares/tenant-limits.middleware');
@@ -1201,8 +1202,8 @@ router.post('/reverificar-whatsapp', async (req, res) => {
     console.log(`📊 Total de documentos: ${documentos.length}`);
     console.log(`📱 Coluna a verificar: ${whatsappColumn}`);
     
-    // Buscar instâncias conectadas
-    const instanceResult = await pool.query(
+    // Buscar instâncias conectadas (usando tenantQuery para respeitar RLS)
+    const instanceResult = await tenantQuery(req,
       `SELECT id, instance_token, name FROM uaz_instances 
        WHERE tenant_id = $1 AND is_active = true AND status = 'connected' 
        ORDER BY id`,
@@ -1211,7 +1212,7 @@ router.post('/reverificar-whatsapp', async (req, res) => {
     
     if (instanceResult.rows.length === 0) {
       // Fallback
-      const fallbackResult = await pool.query(
+      const fallbackResult = await tenantQuery(req,
         `SELECT id, instance_token, name FROM uaz_instances 
          WHERE tenant_id = $1 AND is_connected = true 
          ORDER BY id`,
@@ -1232,9 +1233,9 @@ router.post('/reverificar-whatsapp', async (req, res) => {
     const credentials = await getTenantUazapCredentials(tenantId);
     const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
     
-    // Buscar dados dos documentos no banco
+    // Buscar dados dos documentos no banco (usando tenantQuery)
     const placeholders = documentos.map((_, i) => `$${i + 1}`).join(',');
-    const docsResult = await pool.query(
+    const docsResult = await tenantQuery(req,
       `SELECT id, documento, telefones FROM base_dados_completa 
        WHERE documento IN (${placeholders}) AND tenant_id = $${documentos.length + 1}`,
       [...documentos, tenantId]
@@ -1297,9 +1298,9 @@ router.post('/reverificar-whatsapp', async (req, res) => {
       }
       
       if (algumVerificado) {
-        // Atualizar no banco
+        // Atualizar no banco (usando tenantQuery)
         const temWhatsApp = telefones.some(t => t.has_whatsapp);
-        await pool.query(
+        await tenantQuery(req,
           `UPDATE base_dados_completa 
            SET telefones = $1, whatsapp_verificado = $2, data_verificacao_whatsapp = NOW()
            WHERE id = $3 AND tenant_id = $4`,
