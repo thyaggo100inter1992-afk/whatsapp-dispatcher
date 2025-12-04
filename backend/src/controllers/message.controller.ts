@@ -139,6 +139,7 @@ export class MessageController {
         status: 'pending',
         media_url,
         tenant_id: tenantId,
+        user_id: (req as any).user?.id || null,
       });
       console.log('✅ Mensagem criada:', message.id);
 
