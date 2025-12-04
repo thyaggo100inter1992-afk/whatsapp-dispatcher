@@ -25,6 +25,8 @@ interface Message {
   proxy_host?: string;
   proxy_type?: string;
   created_at: string;
+  user_id?: number;
+  user_name?: string;
 }
 
 export default function MensagensPage() {
@@ -35,6 +37,10 @@ export default function MensagensPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [proxyFilter, setProxyFilter] = useState('all');
+  const [userFilter, setUserFilter] = useState('all');
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
+  const [users, setUsers] = useState<Array<{ id: number; nome: string }>>([]);
   const [page, setPage] = useState(1);
   const [totalMessages, setTotalMessages] = useState(0);
   const limit = 50;
@@ -43,11 +49,32 @@ export default function MensagensPage() {
     loadMessages();
   }, [page]);
 
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      const response = await api.get('/uaz/tenant/users');
+      if (response.data.success) {
+        setUsers(response.data.data || []);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar usuários:', err);
+    }
+  };
+
   const loadMessages = async () => {
     setLoading(true);
     try {
       const offset = (page - 1) * limit;
-      const response = await api.get(`/messages?limit=${limit}&offset=${offset}`);
+      let url = `/messages?limit=${limit}&offset=${offset}`;
+      
+      if (dateStart) url += `&date_start=${dateStart}`;
+      if (dateEnd) url += `&date_end=${dateEnd}`;
+      if (userFilter !== 'all') url += `&user_id=${userFilter}`;
+      
+      const response = await api.get(url);
       
       if (response.data.success) {
         setMessages(response.data.data || []);
@@ -61,6 +88,11 @@ export default function MensagensPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleApplyFilters = () => {
+    setPage(1); // Reset para primeira página
+    loadMessages();
   };
 
   const formatDate = (dateString?: string) => {
@@ -174,9 +206,9 @@ export default function MensagensPage() {
               <h2 className="text-2xl font-bold text-white">Filtros de Busca</h2>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
               {/* Busca */}
-              <div className="md:col-span-2 bg-white/5 border-2 border-white/10 rounded-xl p-4">
+              <div className="lg:col-span-3 bg-white/5 border-2 border-white/10 rounded-xl p-4">
                 <label className="block text-white font-bold text-base mb-3 flex items-center gap-2">
                   <FaSearch className="text-lg" />
                   Buscar
@@ -225,6 +257,61 @@ export default function MensagensPage() {
                   <option value="proxy" className="bg-dark-700">🔒 Com Proxy</option>
                   <option value="direct" className="bg-dark-700">🔓 Direto</option>
                 </select>
+              </div>
+
+              {/* Filtro de Usuário */}
+              <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4">
+                <label className="block text-white font-bold text-base mb-3 flex items-center gap-2">
+                  👤 Usuário
+                </label>
+                <select
+                  value={userFilter}
+                  onChange={(e) => setUserFilter(e.target.value)}
+                  className="w-full px-6 py-4 bg-dark-700 text-white text-base rounded-xl border-2 border-green-500/30 focus:border-green-500 focus:ring-4 focus:ring-green-500/30 transition-all cursor-pointer"
+                >
+                  <option value="all" className="bg-dark-700">👥 Todos</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id} className="bg-dark-700">
+                      👤 {user.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filtro Data Início */}
+              <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4">
+                <label className="block text-white font-bold text-base mb-3 flex items-center gap-2">
+                  📅 Data Início
+                </label>
+                <input
+                  type="date"
+                  value={dateStart}
+                  onChange={(e) => setDateStart(e.target.value)}
+                  className="w-full px-6 py-4 bg-dark-700 text-white text-base rounded-xl border-2 border-green-500/30 focus:border-green-500 focus:ring-4 focus:ring-green-500/30 transition-all"
+                />
+              </div>
+
+              {/* Filtro Data Fim */}
+              <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4">
+                <label className="block text-white font-bold text-base mb-3 flex items-center gap-2">
+                  📅 Data Fim
+                </label>
+                <input
+                  type="date"
+                  value={dateEnd}
+                  onChange={(e) => setDateEnd(e.target.value)}
+                  className="w-full px-6 py-4 bg-dark-700 text-white text-base rounded-xl border-2 border-green-500/30 focus:border-green-500 focus:ring-4 focus:ring-green-500/30 transition-all"
+                />
+              </div>
+
+              {/* Botão Aplicar Filtros */}
+              <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4 flex items-end">
+                <button
+                  onClick={handleApplyFilters}
+                  className="w-full px-6 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold text-base rounded-xl transition-all shadow-lg"
+                >
+                  🔍 Aplicar Filtros
+                </button>
               </div>
             </div>
           </div>
@@ -284,6 +371,7 @@ export default function MensagensPage() {
                       <th className="text-left p-5 text-base font-black text-white">📄 Template</th>
                       <th className="text-left p-5 text-base font-black text-white">💼 Conta</th>
                       <th className="text-left p-5 text-base font-black text-white">📊 Campanha</th>
+                      <th className="text-left p-5 text-base font-black text-white">👤 Usuário</th>
                       <th className="text-center p-5 text-base font-black text-white">🌐 Proxy</th>
                       <th className="text-left p-5 text-base font-black text-white">📈 Status</th>
                       <th className="text-left p-5 text-base font-black text-white">⏰ Enviada</th>
@@ -292,7 +380,7 @@ export default function MensagensPage() {
                   <tbody>
                     {filteredMessages.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="text-center p-20">
+                        <td colSpan={8} className="text-center p-20">
                           <div className="bg-white/5 border-2 border-dashed border-white/20 rounded-xl p-16">
                             <div className="bg-white/10 p-8 rounded-full inline-block mb-6">
                               <span className="text-8xl">📭</span>
@@ -314,6 +402,11 @@ export default function MensagensPage() {
                           </td>
                           <td className="p-5 text-white/70 text-sm">
                             {message.campaign_name || (message.campaign_id ? `#${message.campaign_id}` : '⚡ Envio Rápido')}
+                          </td>
+                          <td className="p-5">
+                            <span className="text-purple-300 font-semibold bg-purple-500/10 px-3 py-1 rounded-lg">
+                              👤 {message.user_name || 'Sistema'}
+                            </span>
                           </td>
                           <td className="p-5 text-center">
                             {message.proxy_used ? (

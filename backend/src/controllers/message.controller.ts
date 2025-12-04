@@ -330,6 +330,9 @@ export class MessageController {
       const limit = parseInt(req.query.limit as string) || 100;
       const offset = parseInt(req.query.offset as string) || 0;
       const campaign_id = req.query.campaign_id ? parseInt(req.query.campaign_id as string) : null;
+      const date_start = req.query.date_start as string;
+      const date_end = req.query.date_end as string;
+      const user_id = req.query.user_id ? parseInt(req.query.user_id as string) : null;
 
       if (campaign_id) {
         // Buscar mensagens de uma campanha específica
@@ -337,22 +340,72 @@ export class MessageController {
         return res.json({ success: true, data: messages });
       } else {
         // Buscar TODAS as mensagens com informações completas
-        const query_text = `
+        let query_text = `
           SELECT 
             m.*,
             w.name as account_name,
-            c.name as campaign_name
+            c.name as campaign_name,
+            m.user_id,
+            COALESCE(tu.nome, 'Sistema') as user_name
           FROM messages m
           LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id
           LEFT JOIN campaigns c ON m.campaign_id = c.id
-          ORDER BY m.created_at DESC
-          LIMIT $1 OFFSET $2
+          LEFT JOIN tenant_users tu ON m.user_id = tu.id
+          WHERE 1=1
         `;
-        const query_params = [limit, offset];
+        
+        let query_params: any[] = [];
+        let paramIndex = 1;
 
-        // Buscar total de mensagens
+        // Filtro por data de início
+        if (date_start) {
+          query_text += ` AND m.created_at >= $${paramIndex}::date`;
+          query_params.push(date_start);
+          paramIndex++;
+        }
+
+        // Filtro por data de fim (inclui o dia inteiro)
+        if (date_end) {
+          query_text += ` AND m.created_at < ($${paramIndex}::date + INTERVAL '1 day')`;
+          query_params.push(date_end);
+          paramIndex++;
+        }
+
+        // Filtro por usuário
+        if (user_id) {
+          query_text += ` AND m.user_id = $${paramIndex}`;
+          query_params.push(user_id);
+          paramIndex++;
+        }
+
+        query_text += ` ORDER BY m.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        query_params.push(limit, offset);
+
+        // Buscar total de mensagens com os mesmos filtros
+        let countQuery = `SELECT COUNT(*) as total FROM messages m WHERE 1=1`;
+        let countParams: any[] = [];
+        let countIndex = 1;
+
+        if (date_start) {
+          countQuery += ` AND m.created_at >= $${countIndex}::date`;
+          countParams.push(date_start);
+          countIndex++;
+        }
+
+        if (date_end) {
+          countQuery += ` AND m.created_at < ($${countIndex}::date + INTERVAL '1 day')`;
+          countParams.push(date_end);
+          countIndex++;
+        }
+
+        if (user_id) {
+          countQuery += ` AND m.user_id = $${countIndex}`;
+          countParams.push(user_id);
+          countIndex++;
+        }
+
         const countResult = await import('../database/connection').then(({ query }) =>
-          query('SELECT COUNT(*) as total FROM messages')
+          query(countQuery, countParams)
         );
         const total = parseInt(countResult.rows[0]?.total || '0');
 
