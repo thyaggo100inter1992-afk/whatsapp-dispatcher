@@ -953,6 +953,41 @@ async function processJob(jobId) {
     const startIndex = job.progress_current || 0;
     let results = job.results || [];
 
+    // 🔄 BUSCAR INSTÂNCIAS UMA VEZ SÓ (antes do loop de documentos)
+    let instances = [];
+    let globalInstanceIndex = 0; // Índice global para rotação entre TODOS os telefones
+    let uazService = null;
+    
+    if (job.verify_whatsapp) {
+      try {
+        const credentials = await getTenantUazapCredentials(job.tenant_id);
+        uazService = new UazService(credentials.serverUrl, credentials.adminToken);
+        
+        const instanceResult = await pool.query(
+          `SELECT id, instance_token, name FROM uaz_instances 
+           WHERE tenant_id = $1 AND is_active = true AND status = 'connected' 
+           ORDER BY id`,
+          [job.tenant_id]
+        );
+        instances = instanceResult.rows;
+        
+        // Fallback: tentar com is_connected = true
+        if (instances.length === 0) {
+          const fallbackResult = await pool.query(
+            `SELECT id, instance_token, name FROM uaz_instances 
+             WHERE tenant_id = $1 AND is_connected = true 
+             ORDER BY id`,
+            [job.tenant_id]
+          );
+          instances = fallbackResult.rows;
+        }
+        
+        console.log(`🔄 ${instances.length} instância(s) ativa(s) para rotação GLOBAL (tenant: ${job.tenant_id})`);
+      } catch (error) {
+        console.error(`❌ Erro ao buscar instâncias para verificação WhatsApp:`, error.message);
+      }
+    }
+
     // Processar documentos a partir do índice atual
     for (let i = startIndex; i < documentos.length; i++) {
       // Verificar se foi pausado ou cancelado
@@ -978,72 +1013,28 @@ async function processJob(jobId) {
       const resultado = await novaVidaService.consultarDocumento(documento);
 
       // 📱 VERIFICAR WHATSAPP DOS TELEFONES (se ativado)
-      console.log(`\n📱 VERIFICAÇÃO DE WHATSAPP - Configurações:`);
-      console.log(`   - resultado.success: ${resultado.success}`);
-      console.log(`   - job.verify_whatsapp: ${job.verify_whatsapp}`);
-      console.log(`   - resultado.dados?.TELEFONES existe: ${!!resultado.dados?.TELEFONES}`);
-      console.log(`   - Total de telefones: ${resultado.dados?.TELEFONES?.length || 0}`);
-      
-      if (resultado.success && job.verify_whatsapp && resultado.dados?.TELEFONES) {
-        console.log(`\n✅ INICIANDO VERIFICAÇÃO DE WHATSAPP!`);
+      if (resultado.success && job.verify_whatsapp && resultado.dados?.TELEFONES && instances.length > 0 && uazService) {
+        console.log(`\n✅ VERIFICANDO WHATSAPP - Documento ${documento}`);
         
         try {
           const telefones = resultado.dados.TELEFONES || [];
           const whatsappDelay = job.whatsapp_delay || 3;
           
-          // 🔑 BUSCAR CREDENCIAIS DO TENANT (CORRIGIDO: usar job.tenant_id)
-          const credentials = await getTenantUazapCredentials(job.tenant_id);
-          const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
-          
-          // 🔄 BUSCAR INSTÂNCIAS ATIVAS DO TENANT (UMA VEZ SÓ, fora do loop)
-          const instanceResult = await pool.query(
-            `SELECT id, instance_token, name FROM uaz_instances 
-             WHERE tenant_id = $1 AND is_active = true AND status = 'connected' 
-             ORDER BY id`,
-            [job.tenant_id]
-          );
-          
-          let instances = instanceResult.rows;
-          
-          // Fallback: tentar com is_connected = true
-          if (instances.length === 0) {
-            const fallbackResult = await pool.query(
-              `SELECT id, instance_token, name FROM uaz_instances 
-               WHERE tenant_id = $1 AND is_connected = true 
-               ORDER BY id`,
-              [job.tenant_id]
-            );
-            instances = fallbackResult.rows;
-          }
-          
-          if (instances.length === 0) {
-            console.log('⚠️ Nenhuma instância QR Connect ativa no momento. Pulando verificação WhatsApp.');
-          } else {
-            console.log(`🔄 ${instances.length} instância(s) ativa(s) para rotação (tenant: ${job.tenant_id})`);
-          }
-          
-          let instanceIndex = 0;
-          
           for (let telIdx = 0; telIdx < telefones.length; telIdx++) {
             const telefone = telefones[telIdx];
             
-            if (instances.length === 0) {
-              break; // Para de verificar se não há instâncias ativas
-            }
-            
-            // Selecionar próxima instância (round-robin)
-            const selectedInstance = instances[instanceIndex % instances.length];
-            instanceIndex++;
+            // 🔄 Selecionar próxima instância (round-robin GLOBAL)
+            const selectedInstance = instances[globalInstanceIndex % instances.length];
+            globalInstanceIndex++;
             
             // Construir número completo
             const ddd = telefone.DDD || '';
             const numero = telefone.TELEFONE || '';
             const numeroCompleto = `55${ddd}${numero}`;
             
-            console.log(`🔍 [${selectedInstance.name}] Verificando: ${numeroCompleto}`);
+            console.log(`🔍 [${selectedInstance.name}] Verificando: ${numeroCompleto} (índice global: ${globalInstanceIndex})`);
             
             try {
-              // ✅ ORDEM CORRETA: checkNumber(token, numero)
               const whatsappCheck = await uazService.checkNumber(selectedInstance.instance_token, numeroCompleto);
               
               telefone.WHATSAPP_VERIFIED = true;
@@ -1066,8 +1057,9 @@ async function processJob(jobId) {
           console.log(`✅ Verificação de WhatsApp concluída para documento ${documento}!`);
         } catch (error) {
           console.error(`❌ Erro ao verificar WhatsApp para documento ${documento}:`, error.message);
-          // Não bloqueia o processamento do job
         }
+      } else if (resultado.success && job.verify_whatsapp && instances.length === 0) {
+        console.log(`⚠️ Sem instâncias ativas - pulando verificação WhatsApp para ${documento}`);
       }
 
       // Salvar no histórico se sucesso COM tenant_id
