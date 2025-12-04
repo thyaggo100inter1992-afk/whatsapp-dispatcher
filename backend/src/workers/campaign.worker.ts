@@ -57,6 +57,7 @@ interface Campaign {
   name: string;
   status: string;
   tenant_id: number;
+  user_id?: number;
   schedule_config: WorkerConfig;
   pause_config: PauseConfig;
   sent_count: number;
