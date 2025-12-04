@@ -132,7 +132,7 @@ export default function ListasRestricao() {
       params.append('list_type', activeTab);
       if (searchTerm) params.append('search', searchTerm);
       if (selectedAccount) params.append('whatsapp_account_id', selectedAccount);
-      params.append('limit', '100');
+      params.append('limit', '999999');
 
       const response = await api.get(`/restriction-lists?${params}`);
       const entries = response.data.data || [];
