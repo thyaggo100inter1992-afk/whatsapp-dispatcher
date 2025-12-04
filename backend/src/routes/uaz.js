@@ -354,32 +354,79 @@ router.get('/health', async (req, res) => {
  *  - refresh=true: Atualiza status de todas as instÃ¢ncias antes de retornar
  */
 router.get('/instances', async (req, res) => {
-  try {
+    try {
     const { refresh } = req.query;
     
-    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id (usando tenantQuery para respeitar RLS)
+    // 🔒 SEGURANÇA: Filtrar por tenant_id e permissões do usuário
     const tenantId = req.tenant?.id;
+    const userId = req.user?.id;
+    
+    console.log('🔍 [/instances] Buscando instâncias QR...');
+    console.log(`   Tenant ID: ${tenantId}`);
+    console.log(`   User ID: ${userId}`);
+    
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        message: 'Tenant nÃ£o identificado'
+        message: 'Tenant não identificado'
       });
     }
     
-    const result = await tenantQuery(req, `
-      SELECT 
-        ui.*,
-        p.name as proxy_name,
-        p.host as proxy_host,
-        p.port as proxy_port,
-        p.username as proxy_username,
-        p.password as proxy_password,
-        p.type as proxy_type
-      FROM uaz_instances ui
-      LEFT JOIN proxies p ON ui.proxy_id = p.id
-      WHERE ui.tenant_id = $1
-      ORDER BY ui.created_at DESC
-    `, [tenantId]);
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Usuário não identificado'
+      });
+    }
+    
+    // Verificar se o usuário é o dono do tenant (master)
+    const userResult = await tenantQuery(req, `
+      SELECT is_tenant_owner FROM users WHERE id = $1 AND tenant_id = $2
+    `, [userId, tenantId]);
+    
+    const isTenantOwner = userResult.rows[0]?.is_tenant_owner || false;
+    console.log(`   É dono do tenant? ${isTenantOwner}`);
+    
+    let result;
+    
+    if (isTenantOwner) {
+      // Dono do tenant vê TODAS as instâncias
+      console.log('   ✅ Usuário master - retornando TODAS as instâncias');
+      result = await tenantQuery(req, `
+        SELECT 
+          ui.*,
+          p.name as proxy_name,
+          p.host as proxy_host,
+          p.port as proxy_port,
+          p.username as proxy_username,
+          p.password as proxy_password,
+          p.type as proxy_type
+        FROM uaz_instances ui
+        LEFT JOIN proxies p ON ui.proxy_id = p.id
+        WHERE ui.tenant_id = $1
+        ORDER BY ui.created_at DESC
+      `, [tenantId]);
+    } else {
+      // Usuário comum vê apenas suas instâncias autorizadas
+      console.log('   🔒 Usuário comum - filtrando por permissões');
+      result = await tenantQuery(req, `
+        SELECT 
+          ui.*,
+          p.name as proxy_name,
+          p.host as proxy_host,
+          p.port as proxy_port,
+          p.username as proxy_username,
+          p.password as proxy_password,
+          p.type as proxy_type
+        FROM uaz_instances ui
+        INNER JOIN user_uaz_instances uui ON ui.id = uui.uaz_instance_id
+        LEFT JOIN proxies p ON ui.proxy_id = p.id
+        WHERE uui.user_id = $1 AND uui.tenant_id = $2
+        ORDER BY ui.created_at DESC
+      `, [userId, tenantId]);
+    }
+    
+    console.log(`   ✅ Total de instâncias retornadas: ${result.rows.length}`);
 
     // Se refresh=true, atualiza o status de cada instÃ¢ncia
     if (refresh === 'true') {
