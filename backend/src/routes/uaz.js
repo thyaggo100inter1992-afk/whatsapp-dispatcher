@@ -5223,20 +5223,38 @@ router.post('/import-instances', async (req, res) => {
       });
     }
 
-    console.log('\nðŸ“¥ ========================================');
-    console.log('ðŸ“¥ IMPORTANDO INSTÃ‚NCIAS DA UAZ API');
-    console.log('ðŸ“¥ ========================================\n');
-    console.log(`ðŸ“Š Total de instÃ¢ncias a importar: ${instances.length}`);
+    console.log('\nðŸ"¥ ========================================');
+    console.log('ðŸ"¥ IMPORTANDO INSTÃ‚NCIAS DA UAZ API');
+    console.log('ðŸ"¥ ========================================\n');
+    console.log(`ðŸ"Š Total de instÃ¢ncias a importar: ${instances.length}`);
+    console.log(`ðŸ"¦ Dados recebidos da UAZAPI:`, JSON.stringify(instances, null, 2));
 
     const imported = [];
     const errors = [];
+    const namesUsed = new Set(); // ðŸŽ¯ Rastrear nomes jÃ¡ usados nesta importaÃ§Ã£o
 
     for (const inst of instances) {
       try {
-        console.log(`\nðŸ“¥ Importando: ${inst.name || inst.token}`);
-        console.log(`   â””â”€ Token: ${inst.token?.substring(0, 20)}...`);
-        console.log(`   â””â”€ Status: ${inst.status}`);
-        console.log(`   â””â”€ Owner: ${inst.owner || 'nÃ£o informado'}`);
+        const instanceName = inst.name || inst.owner || `instancia_${Date.now()}`;
+        const sessionName = inst.name || inst.id || `session_${Date.now()}`;
+        
+        console.log(`\nðŸ"¥ Importando: ${inst.name || inst.token}`);
+        console.log(`   â""â"€ Token: ${inst.token?.substring(0, 20)}...`);
+        console.log(`   â""â"€ Status: ${inst.status}`);
+        console.log(`   â""â"€ Owner: ${inst.owner || 'nÃ£o informado'}`);
+        console.log(`   â""â"€ Nome que serÃ¡ usado: ${instanceName}`);
+        console.log(`   â""â"€ Session que serÃ¡ usado: ${sessionName}`);
+
+        // ðŸŽ¯ Verificar se esse nome jÃ¡ foi usado nesta importaÃ§Ã£o
+        if (namesUsed.has(instanceName)) {
+          console.log(`   âš ï¸  NOME DUPLICADO nesta importaÃ§Ã£o! Pulando...`);
+          errors.push({
+            instance: inst.name || inst.token,
+            error: `Nome duplicado na lista de importaÃ§Ã£o: ${instanceName}`
+          });
+          continue;
+        }
+        namesUsed.add(instanceName);
 
         // Verificar se já existe uma instância com esse token no tenant
         const existingCheck = await tenantQuery(req, `
@@ -5262,8 +5280,8 @@ router.post('/import-instances', async (req, res) => {
             WHERE instance_token = $9 AND tenant_id = $10
             RETURNING *
           `, [
-            inst.name || inst.owner || `instancia_${Date.now()}`,
-            inst.name || inst.id || `session_${Date.now()}`,
+            instanceName,
+            sessionName,
             inst.owner || null,
             inst.profileName || null,
             inst.profilePicUrl || null,
@@ -5291,8 +5309,8 @@ router.post('/import-instances', async (req, res) => {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *
           `, [
-            inst.name || inst.owner || `instancia_${Date.now()}`,
-            inst.name || inst.id || `session_${Date.now()}`,
+            instanceName,
+            sessionName,
             inst.token,
             inst.owner || null,
             inst.profileName || null,
