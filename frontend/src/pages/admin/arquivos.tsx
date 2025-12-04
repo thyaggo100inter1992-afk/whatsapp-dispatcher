@@ -13,11 +13,10 @@ import { ToastContainer, useToast } from '@/components/Toast';
 
 interface PublicFile {
   id: number;
-  original_name: string;
-  cloudinary_id: string;
-  cloudinary_url: string;
-  secure_url: string;
-  file_type: string;
+  filename: string;
+  original_filename: string;
+  file_path: string;
+  file_url: string;
   file_size: number;
   mime_type: string;
   description: string | null;
@@ -167,7 +166,7 @@ export default function AdminArquivos() {
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
-  const getFileIcon = (mimeType: string, fileType: string) => {
+  const getFileIcon = (mimeType: string) => {
     if (mimeType.startsWith('image/')) {
       return <FaImage className="text-blue-400" size={24} />;
     } else if (mimeType.startsWith('video/')) {
@@ -178,19 +177,26 @@ export default function AdminArquivos() {
     return <FaFile className="text-gray-400" size={24} />;
   };
 
+  const getFileUrl = (file: PublicFile) => {
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, '') || 'https://api.sistemasnettsistemas.com.br';
+    return `${API_BASE}${file.file_url}`;
+  };
+
   const getFilePreview = (file: PublicFile) => {
+    const fileUrl = getFileUrl(file);
+    
     if (file.mime_type.startsWith('image/')) {
       return (
         <img
-          src={file.secure_url}
-          alt={file.original_name}
+          src={fileUrl}
+          alt={file.original_filename}
           className="w-full h-48 object-cover rounded-t-lg"
         />
       );
     } else if (file.mime_type.startsWith('video/')) {
       return (
         <video
-          src={file.secure_url}
+          src={fileUrl}
           className="w-full h-48 object-cover rounded-t-lg"
           controls={false}
         />
@@ -279,14 +285,14 @@ export default function AdminArquivos() {
                   <div className="relative">
                     {getFilePreview(file)}
                     <div className="absolute top-2 right-2 bg-black/70 px-2 py-1 rounded-lg flex items-center gap-2">
-                      {getFileIcon(file.mime_type, file.file_type)}
+                      {getFileIcon(file.mime_type)}
                     </div>
                   </div>
 
                   {/* Info */}
                   <div className="p-4">
-                    <h3 className="text-white font-bold truncate mb-2" title={file.original_name}>
-                      {file.original_name}
+                    <h3 className="text-white font-bold truncate mb-2" title={file.original_filename}>
+                      {file.original_filename}
                     </h3>
 
                     {editingId === file.id ? (
@@ -331,7 +337,7 @@ export default function AdminArquivos() {
                     {/* Actions */}
                     <div className="grid grid-cols-3 gap-2">
                       <button
-                        onClick={() => handleCopyLink(file.secure_url, file.id)}
+                        onClick={() => handleCopyLink(getFileUrl(file), file.id)}
                         className={`px-3 py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1 ${
                           copiedId === file.id
                             ? 'bg-green-500 text-white'
@@ -349,7 +355,7 @@ export default function AdminArquivos() {
                         <FaEdit />
                       </button>
                       <button
-                        onClick={() => handleDelete(file.id, file.original_name)}
+                        onClick={() => handleDelete(file.id, file.original_filename)}
                         className="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold text-xs transition-all flex items-center justify-center"
                         title="Deletar"
                       >
@@ -361,7 +367,7 @@ export default function AdminArquivos() {
                     <div className="mt-3 p-2 bg-gray-800 rounded-lg">
                       <input
                         type="text"
-                        value={file.secure_url}
+                        value={getFileUrl(file)}
                         readOnly
                         className="w-full bg-transparent text-gray-400 text-xs outline-none select-all"
                         onClick={(e) => e.currentTarget.select()}
