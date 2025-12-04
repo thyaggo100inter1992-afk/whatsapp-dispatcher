@@ -447,18 +447,33 @@ const getTenantStats = async (req, res) => {
     const mensagensQr = mensagensQrResult.rows[0];
 
     // ==============================================================
-    // 3. CONSULTAS NOVA VIDA (se a tabela existir)
+    // 3. CONSULTAS NOVA VIDA (com filtro de data)
     // ==============================================================
     let consultasNovaVida = { total: 0, este_mes: 0, hoje: 0 };
     try {
-      const novaVidaResult = await query(`
+      let novaVidaQuery = `
         SELECT 
           COUNT(*) as total,
           SUM(CASE WHEN created_at >= DATE_TRUNC('month', NOW()) THEN 1 ELSE 0 END) as este_mes,
           SUM(CASE WHEN created_at::date = CURRENT_DATE THEN 1 ELSE 0 END) as hoje
         FROM novavida_consultas
         WHERE tenant_id = $1
-      `, [id]);
+      `;
+      let novaVidaParams = [id];
+      
+      // Aplicar filtro de data se fornecido
+      if (dataInicio && dataFim) {
+        novaVidaQuery += ` AND created_at BETWEEN $2 AND $3`;
+        novaVidaParams.push(dataInicio, dataFim);
+      } else if (dataInicio) {
+        novaVidaQuery += ` AND created_at >= $2`;
+        novaVidaParams.push(dataInicio);
+      } else if (dataFim) {
+        novaVidaQuery += ` AND created_at <= $2`;
+        novaVidaParams.push(dataFim);
+      }
+      
+      const novaVidaResult = await query(novaVidaQuery, novaVidaParams);
       consultasNovaVida = novaVidaResult.rows[0];
       console.log(`📊 Nova Vida - Total: ${consultasNovaVida.total}, Este mês: ${consultasNovaVida.este_mes}, Hoje: ${consultasNovaVida.hoje}`);
     } catch (err) {
