@@ -92,6 +92,12 @@ router.post('/verificar-lista', async (req, res) => {
   try {
     const { cpfs } = req.body;
     
+    // 🔒 SEGURANÇA: Obter tenant_id
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ error: 'Tenant não identificado' });
+    }
+    
     if (!cpfs || !Array.isArray(cpfs) || cpfs.length === 0) {
       return res.status(400).json({ error: 'Lista de CPFs é obrigatória' });
     }
@@ -99,18 +105,20 @@ router.post('/verificar-lista', async (req, res) => {
     // Limpar CPFs
     const cpfsLimpos = cpfs.map(cpf => String(cpf).replace(/\D/g, ''));
     
+    // Criar placeholders: $1, $2, ... para os CPFs, e o último para tenant_id
     const placeholders = cpfsLimpos.map((_, i) => `$${i + 1}`).join(',');
+    const tenantParam = cpfsLimpos.length + 1;
     
     const result = await pool.query(
       `SELECT cpf FROM lista_restricao 
-       WHERE cpf IN (${placeholders}) AND ativo = true`,
-      cpfsLimpos
+       WHERE cpf IN (${placeholders}) AND ativo = true AND tenant_id = $${tenantParam}`,
+      [...cpfsLimpos, tenantId]
     );
     
     const bloqueados = result.rows.map(row => row.cpf);
     const permitidos = cpfsLimpos.filter(cpf => !bloqueados.includes(cpf));
     
-    console.log(`🔍 Verificação de lista: ${bloqueados.length} bloqueados, ${permitidos.length} permitidos`);
+    console.log(`🔍 Verificação de lista: ${bloqueados.length} bloqueados, ${permitidos.length} permitidos (tenant ${tenantId})`);
     
     res.json({
       bloqueados,
@@ -131,6 +139,12 @@ router.post('/', async (req, res) => {
   try {
     const { cpf } = req.body;
     
+    // 🔒 SEGURANÇA: Obter tenant_id
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ error: 'Tenant não identificado' });
+    }
+    
     if (!cpf) {
       return res.status(400).json({ error: 'CPF é obrigatório' });
     }
@@ -143,20 +157,20 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'CPF/CNPJ inválido' });
     }
     
-    // Verificar se já existe ATIVO
+    // Verificar se já existe ATIVO para ESTE TENANT
     const existeAtivo = await pool.query(
-      'SELECT id FROM lista_restricao WHERE cpf = $1 AND ativo = true',
-      [cpfLimpo]
+      'SELECT id FROM lista_restricao WHERE cpf = $1 AND ativo = true AND tenant_id = $2',
+      [cpfLimpo, tenantId]
     );
     
     if (existeAtivo.rows.length > 0) {
       return res.status(400).json({ error: 'CPF já está na lista de restrição' });
     }
     
-    // Verificar se existe INATIVO (para reativar)
+    // Verificar se existe INATIVO para ESTE TENANT (para reativar)
     const existeInativo = await pool.query(
-      'SELECT id FROM lista_restricao WHERE cpf = $1 AND ativo = false',
-      [cpfLimpo]
+      'SELECT id FROM lista_restricao WHERE cpf = $1 AND ativo = false AND tenant_id = $2',
+      [cpfLimpo, tenantId]
     );
     
     let result;
@@ -166,20 +180,20 @@ router.post('/', async (req, res) => {
       result = await pool.query(
         `UPDATE lista_restricao 
          SET ativo = true, data_adicao = NOW() 
-         WHERE cpf = $1 
+         WHERE cpf = $1 AND tenant_id = $2
          RETURNING id, cpf, data_adicao`,
-        [cpfLimpo]
+        [cpfLimpo, tenantId]
       );
-      console.log(`♻️ CPF ${cpfLimpo} reativado na lista de restrição`);
+      console.log(`♻️ CPF ${cpfLimpo} reativado na lista de restrição (tenant ${tenantId})`);
     } else {
-      // INSERIR novo CPF
+      // INSERIR novo CPF COM tenant_id
       result = await pool.query(
-        `INSERT INTO lista_restricao (cpf) 
-         VALUES ($1) 
+        `INSERT INTO lista_restricao (cpf, tenant_id) 
+         VALUES ($1, $2) 
          RETURNING id, cpf, data_adicao`,
-        [cpfLimpo]
+        [cpfLimpo, tenantId]
       );
-      console.log(`✅ CPF ${cpfLimpo} adicionado à lista de restrição`);
+      console.log(`✅ CPF ${cpfLimpo} adicionado à lista de restrição (tenant ${tenantId})`);
     }
     
     res.json({
@@ -199,11 +213,17 @@ router.post('/adicionar-lista', async (req, res) => {
   try {
     const { cpfs } = req.body;
     
+    // 🔒 SEGURANÇA: Obter tenant_id
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ error: 'Tenant não identificado' });
+    }
+    
     if (!cpfs || !Array.isArray(cpfs) || cpfs.length === 0) {
       return res.status(400).json({ error: 'Lista de CPFs é obrigatória' });
     }
     
-    console.log(`📥 Recebidos ${cpfs.length} CPFs para adicionar`);
+    console.log(`📥 Recebidos ${cpfs.length} CPFs para adicionar (tenant ${tenantId})`);
     
     // Limpar e validar CPFs
     const cpfsLimpos = cpfs
@@ -218,7 +238,7 @@ router.post('/adicionar-lista', async (req, res) => {
     
     for (const cpf of cpfsLimpos) {
       try {
-        // Verificar se já existe (COM filtro de tenant)
+        // Verificar se já existe para ESTE TENANT
         const existe = await pool.query(
           'SELECT id FROM lista_restricao WHERE cpf = $1 AND ativo = true AND tenant_id = $2',
           [cpf, tenantId]
@@ -229,10 +249,10 @@ router.post('/adicionar-lista', async (req, res) => {
           continue;
         }
         
-        // Inserir
+        // Inserir COM tenant_id
         await pool.query(
-          'INSERT INTO lista_restricao (cpf) VALUES ($1)',
-          [cpf]
+          'INSERT INTO lista_restricao (cpf, tenant_id) VALUES ($1, $2)',
+          [cpf, tenantId]
         );
         
         adicionados++;
@@ -268,6 +288,12 @@ router.delete('/:cpf', async (req, res) => {
   try {
     const { cpf } = req.params;
     
+    // 🔒 SEGURANÇA: Obter tenant_id
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ error: 'Tenant não identificado' });
+    }
+    
     if (!cpf) {
       return res.status(400).json({ error: 'CPF é obrigatório' });
     }
@@ -278,16 +304,16 @@ router.delete('/:cpf', async (req, res) => {
     const result = await pool.query(
       `UPDATE lista_restricao 
        SET ativo = false 
-       WHERE cpf = $1 AND ativo = true 
+       WHERE cpf = $1 AND ativo = true AND tenant_id = $2
        RETURNING id`,
-      [cpfLimpo]
+      [cpfLimpo, tenantId]
     );
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'CPF não encontrado na lista de restrição' });
     }
     
-    console.log(`✅ CPF ${cpfLimpo} removido da lista de restrição`);
+    console.log(`✅ CPF ${cpfLimpo} removido da lista de restrição (tenant ${tenantId})`);
     
     res.json({
       message: 'CPF removido da lista de restrição',
@@ -304,16 +330,23 @@ router.delete('/:cpf', async (req, res) => {
 // ============================================
 router.delete('/', async (req, res) => {
   try {
-    console.log('🗑️  Limpando toda a lista de restrição...');
+    // 🔒 SEGURANÇA: Obter tenant_id
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ error: 'Tenant não identificado' });
+    }
+    
+    console.log(`🗑️  Limpando toda a lista de restrição do tenant ${tenantId}...`);
     
     const result = await pool.query(
       `UPDATE lista_restricao 
        SET ativo = false 
-       WHERE ativo = true 
-       RETURNING id`
+       WHERE ativo = true AND tenant_id = $1
+       RETURNING id`,
+      [tenantId]
     );
     
-    console.log(`✅ ${result.rows.length} CPFs removidos da lista`);
+    console.log(`✅ ${result.rows.length} CPFs removidos da lista (tenant ${tenantId})`);
     
     res.json({
       message: 'Lista de restrição limpa com sucesso',
