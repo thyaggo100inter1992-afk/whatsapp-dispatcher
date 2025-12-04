@@ -10,6 +10,7 @@ import AudioRecorder from '@/components/AudioRecorder';
 import MultiAudioRecorder from '@/components/MultiAudioRecorder';
 import MultiMediaUploader from '@/components/MultiMediaUploader';
 import { InstanceSelect } from '@/components/InstanceSelect';
+import { usePermissions } from '@/hooks/usePermissions';
 import styles from '@/styles/AudioRecorder.module.css';
 
 interface UazInstance {
@@ -25,6 +26,7 @@ interface UazInstance {
 
 export default function EnviarMensagemUaz() {
   const router = useRouter();
+  const { canAccessConfiguracoes } = usePermissions();
   const [instances, setInstances] = useState<UazInstance[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -627,12 +629,14 @@ export default function EnviarMensagemUaz() {
               </div>
               
               <div className="flex gap-4 justify-center">
-                <button
-                  onClick={() => router.push('/configuracoes-uaz')}
-                  className="px-8 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-lg font-bold rounded-xl shadow-lg"
-                >
-                  🔧 Ir para Configurações
-                </button>
+                {canAccessConfiguracoes && (
+                  <button
+                    onClick={() => router.push('/configuracoes-uaz')}
+                    className="px-8 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-lg font-bold rounded-xl shadow-lg"
+                  >
+                    🔧 Ir para Configurações
+                  </button>
+                )}
                 <button
                   onClick={() => router.push('/dashboard-uaz')}
                   className="px-8 py-4 bg-white/10 hover:bg-white/20 text-white text-lg font-bold rounded-xl border-2 border-white/20"

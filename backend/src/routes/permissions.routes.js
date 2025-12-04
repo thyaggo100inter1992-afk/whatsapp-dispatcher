@@ -365,7 +365,8 @@ router.get('/', async (req, res) => {
       webhooks: (permissoesUsuario.webhooks === true) && (funcionalidadesTenant.webhooks === true),
       relatorios: (permissoesUsuario.relatorios === true) && (funcionalidadesTenant.relatorios === true),
       auditoria: (permissoesUsuario.auditoria === true) && (funcionalidadesTenant.auditoria === true),
-      dashboard: true // Dashboard sempre liberado
+      dashboard: true, // Dashboard sempre liberado
+      configuracoes: (permissoesUsuario.configuracoes === true) // Configurações depende apenas da permissão do usuário
     };
     
     console.log('📤 Funcionalidades FINAIS (AND lógico) enviadas ao frontend:', funcionalidadesFinais);

@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { FaWhatsapp, FaQrcode, FaRocket, FaCheckCircle, FaShieldAlt, FaSearch, FaGlobe, FaDatabase, FaSignOutAlt, FaUser, FaBuilding, FaLock } from 'react-icons/fa';
+import { FaWhatsapp, FaQrcode, FaRocket, FaCheckCircle, FaShieldAlt, FaSearch, FaGlobe, FaDatabase, FaSignOutAlt, FaUser, FaBuilding, FaLock, FaBan } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useFeatures } from '../hooks/useFeatures';
+import { usePermissions } from '../hooks/usePermissions';
 import SystemLogo from '../components/SystemLogo';
 import { buildFileUrl } from '@/utils/urlHelpers';
 
@@ -10,6 +11,23 @@ export default function ChooseIntegration() {
   const router = useRouter();
   const { user, isAuthenticated, loading, signOut } = useAuth();
   const { hasFeature, isTrial, getBlockedMessage, loading: loadingFeatures } = useFeatures();
+  const { canAccessNovaVida, canVerifyNumbers, canManageProxies, loading: loadingPermissions } = usePermissions();
+  
+  // Verificar tanto o plano quanto as permissões do usuário
+  const canAccessConsultaDados = hasFeature('consulta_dados') && canAccessNovaVida;
+  const canAccessVerificarNumeros = hasFeature('verificar_numeros') && canVerifyNumbers;
+  const canAccessProxies = hasFeature('gerenciar_proxies') && canManageProxies;
+  
+  // Mensagens de bloqueio personalizadas
+  const getBlockedReason = (feature: string, hasFeatureFlag: boolean, hasPermission: boolean) => {
+    if (!hasFeatureFlag) {
+      return isTrial() ? '🆓 Disponível após período de teste' : '💰 Não incluído no seu plano';
+    }
+    if (!hasPermission) {
+      return '🚫 Não habilitado para seu usuário';
+    }
+    return '';
+  };
 
   // Redirecionar para login se não estiver autenticado
   useEffect(() => {
@@ -19,7 +37,7 @@ export default function ChooseIntegration() {
   }, [isAuthenticated, loading, router]);
 
   // Mostrar loading
-  if (loading || loadingFeatures) {
+  if (loading || loadingFeatures || loadingPermissions) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex items-center justify-center">
         <div className="text-center">
@@ -54,11 +72,13 @@ export default function ChooseIntegration() {
           {user?.avatar ? (
             <img 
               src={
-                buildFileUrl(
-                  user.avatar.startsWith('/uploads')
-                    ? user.avatar
-                    : `/uploads/avatars/${user.avatar}`
-                ) || undefined
+                user.avatar.startsWith('http')
+                  ? user.avatar
+                  : buildFileUrl(
+                      user.avatar.startsWith('/uploads')
+                        ? user.avatar
+                        : `/uploads/avatars/${user.avatar}`
+                    ) || undefined
               }
               alt={user.nome}
               className="w-10 h-10 rounded-full object-cover border-2 border-emerald-400"
@@ -237,8 +257,8 @@ export default function ChooseIntegration() {
 
           <div className="grid md:grid-cols-3 gap-6">
             
-            {/* CARD: CONSULTAR DADOS - DESABILITAR SE SEM PERMISSÃO */}
-            {hasFeature('consulta_dados') ? (
+            {/* CARD: CONSULTAR DADOS - DESABILITAR SE SEM PERMISSÃO DO PLANO OU DO USUÁRIO */}
+            {canAccessConsultaDados ? (
               <button
                 onClick={() => router.push('/consultar-dados')}
                 className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-orange-500/20 to-orange-600/10 hover:from-orange-500/30 hover:to-orange-600/20 border-2 border-orange-500/40 hover:border-orange-500/60 hover:scale-105 hover:shadow-xl shadow-lg shadow-orange-500/20 cursor-pointer"
@@ -293,7 +313,7 @@ export default function ChooseIntegration() {
                 </div>
               </button>
             ) : (
-              <div className="group relative overflow-hidden rounded-2xl p-8 border-2 border-gray-700/60 bg-gradient-to-br from-gray-800/40 to-gray-900/40 opacity-60 cursor-not-allowed">
+              <div className="group relative overflow-hidden rounded-2xl p-8 border-2 border-gray-700/60 bg-gradient-to-br from-gray-800/40 to-gray-900/40 grayscale opacity-60 cursor-not-allowed">
                 <div className="relative space-y-6">
                   <div className="flex items-center gap-6">
                     <div className="bg-gray-700/20 p-6 rounded-2xl">
@@ -302,27 +322,29 @@ export default function ChooseIntegration() {
                     <div className="flex-1">
                       <h3 className="text-3xl font-black text-gray-400 mb-2 flex items-center gap-3">
                         Consultar Dados
-                        <FaLock className="text-xl text-red-400" />
+                        {!hasFeature('consulta_dados') ? <FaLock className="text-xl text-red-400" /> : <FaBan className="text-xl text-red-400" />}
                       </h3>
                       <p className="text-gray-500 text-base">
-                        {isTrial() ? '🆓 Disponível após período de teste' : '💰 Não incluído no seu plano'}
+                        {getBlockedReason('consulta_dados', hasFeature('consulta_dados'), canAccessNovaVida)}
                       </p>
                     </div>
                   </div>
-                  <div className="pt-4">
-                    <button
-                      onClick={() => router.push('/gestao?tab=financeiro')}
-                      className="px-6 py-3 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 font-bold rounded-xl transition-all border border-orange-500/50"
-                    >
-                      Fazer Upgrade
-                    </button>
-                  </div>
+                  {!hasFeature('consulta_dados') && (
+                    <div className="pt-4">
+                      <button
+                        onClick={() => router.push('/gestao?tab=financeiro')}
+                        className="px-6 py-3 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 font-bold rounded-xl transition-all border border-orange-500/50"
+                      >
+                        Fazer Upgrade
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
             {/* CARD: VERIFICAR NÚMEROS */}
-            {hasFeature('verificar_numeros') ? (
+            {canAccessVerificarNumeros ? (
               <button
                 onClick={() => router.push('/uaz/verificar-numeros')}
                 className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-purple-500/20 to-purple-600/10 hover:from-purple-500/30 hover:to-purple-600/20 border-2 border-purple-500/40 hover:border-purple-500/60 hover:scale-105 hover:shadow-xl shadow-lg shadow-purple-500/20 cursor-pointer"
@@ -376,7 +398,7 @@ export default function ChooseIntegration() {
                 </div>
               </button>
             ) : (
-              <div className="group relative overflow-hidden rounded-2xl p-8 border-2 border-gray-700/60 bg-gradient-to-br from-gray-800/40 to-gray-900/40 opacity-60 cursor-not-allowed">
+              <div className="group relative overflow-hidden rounded-2xl p-8 border-2 border-gray-700/60 bg-gradient-to-br from-gray-800/40 to-gray-900/40 grayscale opacity-60 cursor-not-allowed">
                 <div className="relative space-y-6">
                   <div className="flex items-center gap-6">
                     <div className="bg-gray-700/20 p-6 rounded-2xl">
@@ -385,27 +407,29 @@ export default function ChooseIntegration() {
                     <div className="flex-1">
                       <h3 className="text-3xl font-black text-gray-400 mb-2 flex items-center gap-3">
                         Verificar Números
-                        <FaLock className="text-xl text-red-400" />
+                        {!hasFeature('verificar_numeros') ? <FaLock className="text-xl text-red-400" /> : <FaBan className="text-xl text-red-400" />}
                       </h3>
                       <p className="text-gray-500 text-base">
-                        {isTrial() ? '🆓 Disponível após período de teste' : '💰 Não incluído no seu plano'}
+                        {getBlockedReason('verificar_numeros', hasFeature('verificar_numeros'), canVerifyNumbers)}
                       </p>
                     </div>
                   </div>
-                  <div className="pt-4">
-                    <button
-                      onClick={() => router.push('/gestao?tab=financeiro')}
-                      className="px-6 py-3 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold rounded-xl transition-all border border-purple-500/50"
-                    >
-                      Fazer Upgrade
-                    </button>
-                  </div>
+                  {!hasFeature('verificar_numeros') && (
+                    <div className="pt-4">
+                      <button
+                        onClick={() => router.push('/gestao?tab=financeiro')}
+                        className="px-6 py-3 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold rounded-xl transition-all border border-purple-500/50"
+                      >
+                        Fazer Upgrade
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
             {/* CARD: GERENCIAR PROXIES */}
-            {hasFeature('gerenciar_proxies') ? (
+            {canAccessProxies ? (
               <button
                 onClick={() => router.push('/proxies')}
                 className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-cyan-500/20 to-cyan-600/10 hover:from-cyan-500/30 hover:to-cyan-600/20 border-2 border-cyan-500/40 hover:border-cyan-500/60 hover:scale-105 hover:shadow-xl shadow-lg shadow-cyan-500/20 cursor-pointer"
@@ -421,7 +445,6 @@ export default function ChooseIntegration() {
                   <div className="flex-1">
                     <h3 className="text-3xl font-black text-white mb-2">
                       Gerenciar Proxies
-                      {!hasFeature('gerenciar_proxies') && <span className="ml-3 text-red-400 text-sm">🔒 BLOQUEADO</span>}
                     </h3>
                     <p className="text-white/70 text-base">
                       Configure proxies para ambas integrações
@@ -461,7 +484,7 @@ export default function ChooseIntegration() {
                 </div>
               </button>
             ) : (
-              <div className="group relative overflow-hidden rounded-2xl p-8 border-2 border-gray-700/60 bg-gradient-to-br from-gray-800/40 to-gray-900/40 opacity-60 cursor-not-allowed">
+              <div className="group relative overflow-hidden rounded-2xl p-8 border-2 border-gray-700/60 bg-gradient-to-br from-gray-800/40 to-gray-900/40 grayscale opacity-60 cursor-not-allowed">
                 <div className="relative space-y-6">
                   <div className="flex items-center gap-6">
                     <div className="bg-gray-700/20 p-6 rounded-2xl">
@@ -470,21 +493,23 @@ export default function ChooseIntegration() {
                     <div className="flex-1">
                       <h3 className="text-3xl font-black text-gray-400 mb-2 flex items-center gap-3">
                         Gerenciar Proxies
-                        <FaLock className="text-xl text-red-400" />
+                        {!hasFeature('gerenciar_proxies') ? <FaLock className="text-xl text-red-400" /> : <FaBan className="text-xl text-red-400" />}
                       </h3>
                       <p className="text-gray-500 text-base">
-                        {isTrial() ? '🆓 Disponível após período de teste' : '💰 Não incluído no seu plano'}
+                        {getBlockedReason('gerenciar_proxies', hasFeature('gerenciar_proxies'), canManageProxies)}
                       </p>
                     </div>
                   </div>
-                  <div className="pt-4">
-                    <button
-                      onClick={() => router.push('/gestao?tab=financeiro')}
-                      className="px-6 py-3 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold rounded-xl transition-all border border-cyan-500/50"
-                    >
-                      Fazer Upgrade
-                    </button>
-                  </div>
+                  {!hasFeature('gerenciar_proxies') && (
+                    <div className="pt-4">
+                      <button
+                        onClick={() => router.push('/gestao?tab=financeiro')}
+                        className="px-6 py-3 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold rounded-xl transition-all border border-cyan-500/50"
+                      >
+                        Fazer Upgrade
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

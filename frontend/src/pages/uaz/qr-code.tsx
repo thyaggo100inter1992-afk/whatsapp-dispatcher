@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { FaArrowLeft, FaSync, FaCheckCircle, FaQrcode, FaWhatsapp } from 'react-icons/fa';
 import api from '@/services/api';
 import { useToast } from '@/hooks/useToast';
+import { usePermissions } from '@/hooks/usePermissions';
 import ToastContainer from '@/components/ToastContainer';
 
 interface UazInstance {
@@ -17,6 +18,7 @@ export default function QrCodeUaz() {
   const router = useRouter();
   const { instance } = router.query;
   const { toasts, addToast, removeToast, warning, error, success } = useToast();
+  const { canAccessConfiguracoes } = usePermissions();
   
   const [instanceData, setInstanceData] = useState<UazInstance | null>(null);
   const [qrCode, setQrCode] = useState<string>('');
@@ -334,12 +336,14 @@ export default function QrCodeUaz() {
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex items-center justify-center">
         <div className="text-center">
           <p className="text-2xl text-white/70">Instância não encontrada</p>
-          <button
-            onClick={() => router.push('/configuracoes-uaz')}
-            className="mt-6 px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold"
-          >
-            Voltar para Configurações
-          </button>
+          {canAccessConfiguracoes && (
+            <button
+              onClick={() => router.push('/configuracoes-uaz')}
+              className="mt-6 px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold"
+            >
+              Voltar para Configurações
+            </button>
+          )}
         </div>
       </div>
     );

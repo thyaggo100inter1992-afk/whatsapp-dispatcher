@@ -14,6 +14,7 @@ import MultiMediaUploader from '@/components/MultiMediaUploader';
 import EmojiPickerButton from '@/components/EmojiPickerButton';
 import { InstanceSelect } from '@/components/InstanceSelect';
 import { useNotifications } from '@/contexts/NotificationContext';
+import { usePermissions } from '@/hooks/usePermissions';
 import styles from '@/styles/AudioRecorder.module.css';
 
 // Configuração da URL base da API
@@ -87,6 +88,7 @@ interface SendingJob {
 export default function EnviarMensagemUnificado() {
   const router = useRouter();
   const notify = useNotifications();
+  const { canAccessConfiguracoes } = usePermissions();
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [instances, setInstances] = useState<UazInstance[]>([]);
@@ -2771,12 +2773,14 @@ export default function EnviarMensagemUnificado() {
             <p className="text-white/70 mb-6">
               Você precisa conectar uma instância antes de enviar mensagens.
             </p>
-            <button
-              onClick={() => router.push('/configuracoes-uaz')}
-              className="px-8 py-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl transition-all"
-            >
-              Ir para Configurações
-            </button>
+            {canAccessConfiguracoes && (
+              <button
+                onClick={() => router.push('/configuracoes-uaz')}
+                className="px-8 py-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl transition-all"
+              >
+                Ir para Configurações
+              </button>
+            )}
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-8">
