@@ -351,6 +351,18 @@ export default function ConsultarDados() {
         // Recarregar histórico e limite
         loadHistorico();
         loadLimite();
+        
+        // 📸 Buscar fotos de perfil automaticamente para telefones com WhatsApp
+        const telefones = response.data.dados?.TELEFONES || [];
+        const telefonesComWhatsApp = telefones.filter((t: any) => t.HAS_WHATSAPP === true);
+        
+        if (telefonesComWhatsApp.length > 0) {
+          console.log(`📸 Buscando fotos de perfil para ${telefonesComWhatsApp.length} telefone(s) com WhatsApp...`);
+          // Buscar fotos em background (não bloquear a UI)
+          setTimeout(() => {
+            consultarWhatsappProfile(telefonesComWhatsApp);
+          }, 500);
+        }
       } else {
         showNotification(`Erro: ${response.data.erro}`, 'error');
       }
