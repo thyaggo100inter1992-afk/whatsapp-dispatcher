@@ -5238,38 +5238,76 @@ router.post('/import-instances', async (req, res) => {
         console.log(`   â””â”€ Status: ${inst.status}`);
         console.log(`   â””â”€ Owner: ${inst.owner || 'nÃ£o informado'}`);
 
-        // Inserir no banco (usando tenantQuery para respeitar RLS)
-        const result = await tenantQuery(req, `
-          INSERT INTO uaz_instances (
-            name, 
-            session_name, 
-            instance_token, 
-            phone_number, 
-            profile_name, 
-            profile_pic_url, 
-            is_connected, 
-            status,
-            is_active,
-            tenant_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-          RETURNING *
-        `, [
-          inst.name || inst.owner || `instancia_${Date.now()}`,
-          inst.name || inst.id || `session_${Date.now()}`,
-          inst.token,
-          inst.owner || null,
-          inst.profileName || null,
-          inst.profilePicUrl || null,
-          inst.status === 'connected',
-          inst.status || 'disconnected',
-          true,
-          tenantId
-        ]);
+        // Verificar se já existe uma instância com esse token no tenant
+        const existingCheck = await tenantQuery(req, `
+          SELECT id, name FROM uaz_instances 
+          WHERE instance_token = $1 AND tenant_id = $2
+        `, [inst.token, tenantId]);
+
+        let result;
+        if (existingCheck.rows.length > 0) {
+          // Já existe - ATUALIZAR
+          console.log(`   âš ï¸  Instância já existe (ID: ${existingCheck.rows[0].id}) - Atualizando...`);
+          result = await tenantQuery(req, `
+            UPDATE uaz_instances SET
+              name = $1,
+              session_name = $2,
+              phone_number = $3,
+              profile_name = $4,
+              profile_pic_url = $5,
+              is_connected = $6,
+              status = $7,
+              is_active = $8,
+              updated_at = NOW()
+            WHERE instance_token = $9 AND tenant_id = $10
+            RETURNING *
+          `, [
+            inst.name || inst.owner || `instancia_${Date.now()}`,
+            inst.name || inst.id || `session_${Date.now()}`,
+            inst.owner || null,
+            inst.profileName || null,
+            inst.profilePicUrl || null,
+            inst.status === 'connected',
+            inst.status || 'disconnected',
+            true,
+            inst.token,
+            tenantId
+          ]);
+        } else {
+          // Não existe - CRIAR
+          console.log(`   âž• Nova instância - Criando...`);
+          result = await tenantQuery(req, `
+            INSERT INTO uaz_instances (
+              name, 
+              session_name, 
+              instance_token, 
+              phone_number, 
+              profile_name, 
+              profile_pic_url, 
+              is_connected, 
+              status,
+              is_active,
+              tenant_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING *
+          `, [
+            inst.name || inst.owner || `instancia_${Date.now()}`,
+            inst.name || inst.id || `session_${Date.now()}`,
+            inst.token,
+            inst.owner || null,
+            inst.profileName || null,
+            inst.profilePicUrl || null,
+            inst.status === 'connected',
+            inst.status || 'disconnected',
+            true,
+            tenantId
+          ]);
+        }
 
         const importedInstance = result.rows[0];
         imported.push(importedInstance);
 
-        console.log(`   âœ… Importada com sucesso (ID: ${importedInstance.id})`);
+        console.log(`   âœ… Sucesso (ID: ${importedInstance.id})`);
 
       } catch (error) {
         console.error(`   âŒ Erro ao importar ${inst.name}:`, error.message);
