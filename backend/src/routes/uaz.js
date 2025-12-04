@@ -5581,8 +5581,8 @@ router.post('/contact/details', async (req, res) => {
         console.error('âŒ Erro ao baixar foto:', downloadError.message);
         console.error('   Status:', downloadError.response?.status);
         console.error('   URL tentada:', result.profilePicUrl);
-        // Se falhar, retorna null (nÃ£o usa a URL original que nÃ£o funciona)
-        localProfilePicUrl = null;
+        // Se falhar, usar proxy
+        localProfilePicUrl = `/api/uaz/proxy-image?url=${encodeURIComponent(result.profilePicUrl)}`;
       }
     } else if (result.profilePicUrl) {
       // Se nÃ£o for URL do WhatsApp, usa direto
