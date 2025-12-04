@@ -5336,19 +5336,37 @@ router.post('/import-instances', async (req, res) => {
       }
     }
 
-    console.log('\nðŸ“Š ========================================');
-    console.log(`ðŸ“Š RESUMO DA IMPORTAÃ‡ÃƒO:`);
-    console.log(`   â”œâ”€ Total solicitado: ${instances.length}`);
-    console.log(`   â”œâ”€ Importadas com sucesso: ${imported.length}`);
-    console.log(`   â””â”€ Erros: ${errors.length}`);
-    console.log('ðŸ“Š ========================================\n');
+    console.log('\nðŸ"Š ========================================');
+    console.log(`ðŸ"Š RESUMO DA IMPORTAÃ‡ÃƒO:`);
+    console.log(`   â"œâ"€ Total solicitado: ${instances.length}`);
+    console.log(`   â"œâ"€ Importadas com sucesso: ${imported.length}`);
+    console.log(`   â""â"€ Erros: ${errors.length}`);
+    console.log('ðŸ"Š ========================================\n');
+
+    // ðŸŽ¯ Retornar success=false se nenhuma instÃ¢ncia foi importada
+    const hasSuccess = imported.length > 0;
+    const hasErrors = errors.length > 0;
+
+    if (!hasSuccess && hasErrors) {
+      // Todas falharam
+      return res.status(400).json({
+        success: false,
+        error: `Falha ao importar todas as instÃ¢ncias. Erros: ${errors.map(e => e.error).join(', ')}`,
+        imported: 0,
+        errors: errors.length,
+        errorDetails: errors
+      });
+    }
 
     res.json({
-      success: true,
+      success: hasSuccess,
       imported: imported.length,
       errors: errors.length,
       instances: imported,
-      errorDetails: errors
+      errorDetails: errors,
+      message: hasErrors 
+        ? `${imported.length} importada(s) com sucesso, ${errors.length} com erro(s)`
+        : `${imported.length} instÃ¢ncia(s) importada(s) com sucesso!`
     });
 
   } catch (error) {
