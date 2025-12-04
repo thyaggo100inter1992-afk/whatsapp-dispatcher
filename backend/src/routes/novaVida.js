@@ -54,6 +54,42 @@ function normalizarSexo(sexo) {
   return sexoUpper.substring(0, 20); // Limitar a 20 caracteres
 }
 
+// Função helper para normalizar datas (DD/MM/YYYY -> YYYY-MM-DD)
+function normalizarData(data) {
+  if (!data) return null;
+  
+  const dataStr = String(data).trim();
+  
+  // Se já está no formato ISO (YYYY-MM-DD), retorna como está
+  if (/^\d{4}-\d{2}-\d{2}/.test(dataStr)) {
+    return dataStr.split('T')[0]; // Remove timezone se tiver
+  }
+  
+  // Se está no formato brasileiro (DD/MM/YYYY)
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dataStr)) {
+    const [dia, mes, ano] = dataStr.split('/');
+    return `${ano}-${mes}-${dia}`;
+  }
+  
+  // Se está no formato DD-MM-YYYY
+  if (/^\d{2}-\d{2}-\d{4}$/.test(dataStr)) {
+    const [dia, mes, ano] = dataStr.split('-');
+    return `${ano}-${mes}-${dia}`;
+  }
+  
+  // Tentar converter como Date
+  try {
+    const dateObj = new Date(dataStr);
+    if (!isNaN(dateObj.getTime())) {
+      return dateObj.toISOString().split('T')[0];
+    }
+  } catch (e) {
+    console.log(`⚠️ Não foi possível converter data: ${dataStr}`);
+  }
+  
+  return null; // Se não conseguir converter, retorna null
+}
+
 // Função helper para salvar na base de dados completa
 // Função helper para fazer merge inteligente de arrays (adiciona apenas novos)
 function mergeArraysNovaVida(existentes, novos, campoChave) {
@@ -222,7 +258,7 @@ async function salvarNaBaseDados(tipo_origem, tipo_documento, documento, dados, 
         nome,
         cad.MAE || cad.NOME_MAE || null,
         normalizarSexo(cad.SEXO),
-        cad.NASC || null,
+        normalizarData(cad.NASC), // Converter data de nascimento para formato ISO
         cad.RENDA || null,
         cad.TITULO || null,
         cad.SCORE_CREDITO || null,
@@ -234,7 +270,7 @@ async function salvarNaBaseDados(tipo_origem, tipo_documento, documento, dados, 
         cad.CNAE || null,
         cad.SITUACAO || null,
         cad.CAPITAL_SOCIAL || null,
-        cad.DATA_ABERTURA || null,
+        normalizarData(cad.DATA_ABERTURA), // Converter data de abertura para formato ISO
         JSON.stringify(telefones),
         JSON.stringify(emails),
         JSON.stringify(enderecos),
