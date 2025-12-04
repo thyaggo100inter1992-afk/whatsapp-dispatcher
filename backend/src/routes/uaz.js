@@ -2759,15 +2759,16 @@ router.post('/instances/:id/send-text', checkMessageLimit, async (req, res) => {
     await pool.query(`
       INSERT INTO uaz_messages (
         instance_id, phone_number, message_type, 
-        message_content, status, message_id, sent_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        message_content, status, message_id, sent_at, user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)
     `, [
       id, 
       number, 
       'text', 
       processedText, 
       sendResult.success ? 'sent' : 'failed',
-      sendResult.data?.id || null
+      sendResult.data?.id || null,
+      req.user?.id || null
     ]);
 
     res.json(sendResult);
@@ -2942,9 +2943,9 @@ router.post('/instances/:id/send-image', checkMessageLimit, async (req, res) => 
     // Salva no histÃ³rico (com caption processado)
     await pool.query(`
       INSERT INTO uaz_messages (
-        instance_id, phone_number, message_type, message_content, media_url, status
-      ) VALUES ($1, $2, $3, $4, $5, $6)
-    `, [id, number, 'image', processedCaption, image, sendResult.success ? 'sent' : 'failed']);
+        instance_id, phone_number, message_type, message_content, media_url, status, user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [id, number, 'image', processedCaption, image, sendResult.success ? 'sent' : 'failed', req.user?.id || null]);
 
     res.json(sendResult);
   } catch (error) {
@@ -3098,9 +3099,9 @@ router.post('/instances/:id/send-video', checkMessageLimit, async (req, res) => 
     // Salva no histÃ³rico (com caption processado)
     await pool.query(`
       INSERT INTO uaz_messages (
-        instance_id, phone_number, message_type, message_content, media_url, status
-      ) VALUES ($1, $2, $3, $4, $5, $6)
-    `, [id, number, 'video', processedCaption, video, sendResult.success ? 'sent' : 'failed']);
+        instance_id, phone_number, message_type, message_content, media_url, status, user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [id, number, 'video', processedCaption, video, sendResult.success ? 'sent' : 'failed', req.user?.id || null]);
 
     res.json(sendResult);
   } catch (error) {
@@ -3255,9 +3256,9 @@ router.post('/instances/:id/send-document', checkMessageLimit, async (req, res) 
     // Salva no histÃ³rico (com caption processado)
     await pool.query(`
       INSERT INTO uaz_messages (
-        instance_id, phone_number, message_type, message_content, media_url, status
-      ) VALUES ($1, $2, $3, $4, $5, $6)
-    `, [id, number, 'document', processedCaption, document, sendResult.success ? 'sent' : 'failed']);
+        instance_id, phone_number, message_type, message_content, media_url, status, user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [id, number, 'document', processedCaption, document, sendResult.success ? 'sent' : 'failed', req.user?.id || null]);
 
     res.json(sendResult);
   } catch (error) {
@@ -3400,9 +3401,9 @@ router.post('/instances/:id/send-audio', checkMessageLimit, async (req, res) => 
     // Salva no histÃ³rico
     await pool.query(`
       INSERT INTO uaz_messages (
-        instance_id, phone_number, message_type, message_content, media_url, status
-      ) VALUES ($1, $2, $3, $4, $5, $6)
-    `, [id, number, 'audio', '', audio, sendResult.success ? 'sent' : 'failed']);
+        instance_id, phone_number, message_type, message_content, media_url, status, user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [id, number, 'audio', '', audio, sendResult.success ? 'sent' : 'failed', req.user?.id || null]);
 
     res.json(sendResult);
   } catch (error) {
@@ -3672,10 +3673,13 @@ router.get('/messages', async (req, res) => {
         qcm.delivered_at,
         qcm.read_at,
         qcm.created_at,
-        qcm.created_at as updated_at
+        qcm.created_at as updated_at,
+        COALESCE(qc.user_id, qcm.user_id) as user_id,
+        COALESCE(tu.name, 'Sistema') as user_name
       FROM qr_campaign_messages qcm
       INNER JOIN qr_campaigns qc ON qcm.campaign_id = qc.id
       LEFT JOIN uaz_instances ui ON qcm.instance_id = ui.id
+      LEFT JOIN tenant_users tu ON COALESCE(qc.user_id, qcm.user_id) = tu.id
       WHERE qc.tenant_id = $1
     `;
 
@@ -3698,9 +3702,12 @@ router.get('/messages', async (req, res) => {
         um.delivered_at,
         um.read_at,
         um.created_at,
-        um.updated_at
+        um.updated_at,
+        um.user_id,
+        COALESCE(tu.name, 'Sistema') as user_name
       FROM uaz_messages um
       INNER JOIN uaz_instances ui ON um.instance_id = ui.id
+      LEFT JOIN tenant_users tu ON um.user_id = tu.id
       WHERE ui.tenant_id = $2
     `;
 
@@ -4127,9 +4134,9 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
 
     // Registrar no banco
     await pool.query(
-      `INSERT INTO uaz_messages (instance_id, phone_number, message_type, message_content, status)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, number, `menu_${type}`, JSON.stringify(menuData), 'sent']
+      `INSERT INTO uaz_messages (instance_id, phone_number, message_type, message_content, status, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, number, `menu_${type}`, JSON.stringify(menuData), 'sent', req.user?.id || null]
     );
 
     res.json({
@@ -4331,9 +4338,9 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
 
     // Registrar mensagem no banco (com texto processado) - usando tenantQuery para RLS
     await tenantQuery(req,
-      `INSERT INTO uaz_messages (instance_id, phone_number, message_type, message_content, status)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, number, 'carousel', JSON.stringify({ text: processedText, cards: processedCards }), 'sent']
+      `INSERT INTO uaz_messages (instance_id, phone_number, message_type, message_content, status, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, number, 'carousel', JSON.stringify({ text: processedText, cards: processedCards }), 'sent', req.user?.id || null]
     );
 
     console.log('âœ… Mensagem registrada no banco');

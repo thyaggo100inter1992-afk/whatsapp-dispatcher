@@ -25,6 +25,8 @@ interface Message {
   updated_at: string;
   campaign_id?: number;
   campaign_name?: string;
+  user_id?: number;
+  user_name?: string;
 }
 
 export default function MensagensUazPage() {
@@ -310,6 +312,7 @@ export default function MensagensUazPage() {
                       <th className="text-left p-5 text-base font-black text-white">📄 Tipo</th>
                       <th className="text-left p-5 text-base font-black text-white">📱 Instância</th>
                       <th className="text-left p-5 text-base font-black text-white">📊 Campanha</th>
+                      <th className="text-left p-5 text-base font-black text-white">👤 Usuário</th>
                       <th className="text-left p-5 text-base font-black text-white">📈 Status</th>
                       <th className="text-left p-5 text-base font-black text-white">⏰ Enviada</th>
                     </tr>
@@ -317,7 +320,7 @@ export default function MensagensUazPage() {
                   <tbody>
                     {filteredMessages.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center p-20">
+                        <td colSpan={7} className="text-center p-20">
                           <div className="bg-white/5 border-2 border-dashed border-white/20 rounded-xl p-16">
                             <div className="bg-white/10 p-8 rounded-full inline-block mb-6">
                               <span className="text-8xl">📭</span>
@@ -339,6 +342,11 @@ export default function MensagensUazPage() {
                           </td>
                           <td className="p-5 text-white/70 text-sm">
                             {message.campaign_name || (message.campaign_id ? `#${message.campaign_id}` : '⚡ Envio Rápido')}
+                          </td>
+                          <td className="p-5">
+                            <span className="text-purple-300 font-semibold bg-purple-500/10 px-3 py-1 rounded-lg">
+                              👤 {message.user_name || 'Sistema'}
+                            </span>
                           </td>
                           <td className="p-5">{getStatusBadge(message.status)}</td>
                           <td className="p-5 text-sm text-white/70 font-mono">
