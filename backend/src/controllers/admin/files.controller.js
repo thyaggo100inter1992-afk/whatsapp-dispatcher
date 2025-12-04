@@ -28,11 +28,12 @@ const uploadFile = async (req, res) => {
     const file = req.files.file;
     const { description = '' } = req.body || {}; // ✅ Fallback para req.body undefined
 
-    console.log(`📤 Upload de arquivo: ${file.name}`);
+        console.log(`📤 Upload de arquivo: ${file.name}`);
 
-    // Criar diretório se não existir
-    const uploadDir = path.join(__dirname, '../../uploads/public-files');
-    await fs.mkdir(uploadDir, { recursive: true });
+        // Criar diretório se não existir (usar process.cwd() ao invés de __dirname)
+        const uploadDir = path.join(process.cwd(), 'uploads/public-files');
+        await fs.mkdir(uploadDir, { recursive: true });
+        console.log(`📁 Diretório de upload: ${uploadDir}`);
 
     // Gerar nome único
     const timestamp = Date.now();
