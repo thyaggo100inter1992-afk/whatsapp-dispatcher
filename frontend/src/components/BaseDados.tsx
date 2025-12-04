@@ -635,25 +635,29 @@ export default function BaseDados() {
             preview: false
           });
           
-          console.log(`📊 Resposta completa da API:`, response.data);
+          console.log(`📊 [${numeroFormatado}] Resposta completa da API:`, response.data);
+          console.log(`📊 [${numeroFormatado}] response.data.contact:`, response.data.contact);
+          console.log(`📊 [${numeroFormatado}] response.data.contact?.profilePicUrl:`, response.data.contact?.profilePicUrl);
           
           let photoUrl = response.data.contact?.profilePicUrl || 
                           response.data.contact?.image || 
                           response.data.profilePicUrl ||
                           response.data.contact?.imageUrl;
 
+          console.log(`📸 [${numeroFormatado}] photoUrl ANTES da transformação:`, photoUrl);
+
           // Se a foto for uma URL relativa, construir URL completa
           if (photoUrl && (photoUrl.startsWith('/uploads/') || photoUrl.startsWith('/api/'))) {
             // Usar a origem do site atual (que é o mesmo servidor que serve as imagens)
             const origin = typeof window !== 'undefined' ? window.location.origin : '';
             photoUrl = `${origin}${photoUrl}`;
-            console.log('🖼️ URL completa da foto:', photoUrl);
+            console.log(`🖼️ [${numeroFormatado}] URL completa da foto:`, photoUrl);
           }
           
           const hasWhatsApp = response.data.contact?.hasWhatsApp ?? false;
           
-          console.log(`📸 Foto extraída: ${photoUrl || 'Sem foto'}`);
-          console.log(`📱 Tem WhatsApp: ${hasWhatsApp}`);
+          console.log(`📸 [${numeroFormatado}] Foto FINAL extraída:`, photoUrl || 'Sem foto');
+          console.log(`📱 [${numeroFormatado}] Tem WhatsApp:`, hasWhatsApp);
           
           if (hasWhatsApp) {
             comWhatsApp++;
