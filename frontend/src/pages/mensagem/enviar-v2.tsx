@@ -567,7 +567,7 @@ export default function EnviarMensagemImediataV2() {
   return (
     <>
       <Head>
-        <title>Envio em Massa | Disparador NettSistemas</title>
+        <title>Envio Rápido | Disparador NettSistemas</title>
       </Head>
       
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
