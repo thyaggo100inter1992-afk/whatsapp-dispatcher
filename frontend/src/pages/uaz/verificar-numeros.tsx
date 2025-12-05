@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
-import { FaArrowLeft, FaCheckCircle, FaTimesCircle, FaSpinner, FaDownload, FaInfoCircle, FaSearchPlus } from 'react-icons/fa';
+import { FaArrowLeft, FaCheckCircle, FaTimesCircle, FaSpinner, FaDownload, FaInfoCircle, FaSearchPlus, FaCopy } from 'react-icons/fa';
 import api from '@/services/api';
 import SystemLogo from '@/components/SystemLogo';
 
@@ -1076,7 +1076,19 @@ export default function VerificarNumerosUaz() {
                         <div className="flex-1">
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex-1">
-                              <span className="text-white/90 font-mono text-lg block">{result.phone}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-white/90 font-mono text-lg">{result.phone}</span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(result.phone);
+                                    showNotification('📋 Número copiado!', 'success');
+                                  }}
+                                  className="p-2 bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 rounded-lg transition-all duration-200 border border-blue-500/30 hover:border-blue-400"
+                                  title="Copiar número"
+                                >
+                                  <FaCopy className="text-sm" />
+                                </button>
+                              </div>
                               {result.instanceName && (
                                 <div className="flex items-center gap-2 mt-1">
                                   <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-1 rounded-md font-bold border border-blue-500/40">
