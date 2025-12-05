@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { 
   FaPaperPlane, FaSearch, FaTimes, FaRocket, FaPhone, FaCheckCircle,
-  FaImage, FaVideo, FaMusic, FaFileAlt, FaBolt, FaExclamationTriangle, FaMobileAlt
+  FaImage, FaVideo, FaMusic, FaFileAlt, FaBolt, FaExclamationTriangle, FaMobileAlt, FaCopy
 } from 'react-icons/fa';
 import { whatsappAccountsAPI, messagesAPI } from '@/services/api';
 import MediaUpload from '@/components/MediaUpload';
@@ -30,7 +30,8 @@ export default function EnviarMensagemImediataV2() {
   const notify = useNotifications();
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<number>(0);
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('55');
+  const [showPrefix, setShowPrefix] = useState(true);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [filteredTemplates, setFilteredTemplates] = useState<Template[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
@@ -634,17 +635,68 @@ export default function EnviarMensagemImediataV2() {
                       <label className="block text-lg font-bold mb-3 text-white/90">
                         Número do Destinatário *
                       </label>
-                      <input
-                        type="text"
-                        required
-                        className="w-full px-6 py-4 text-lg bg-dark-700/80 backdrop-blur-md border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all duration-200"
-                        placeholder="Ex: 5562912345678"
-                        value={phoneNumber}
-                        onChange={(e) => setPhoneNumber(e.target.value)}
-                      />
+                      <div className="flex items-center gap-0">
+                        {showPrefix && (
+                          <div className="flex items-center bg-green-600/30 border-2 border-green-500/50 rounded-l-xl px-4 py-4">
+                            <span className="text-white text-lg font-bold font-mono">+55</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowPrefix(false);
+                                setPhoneNumber('');
+                              }}
+                              className="ml-2 text-red-400 hover:text-red-300 transition-colors"
+                              title="Remover prefixo +55"
+                            >
+                              <FaTimes className="text-sm" />
+                            </button>
+                          </div>
+                        )}
+                        <input
+                          type="text"
+                          required
+                          className={`flex-1 px-6 py-4 text-lg bg-dark-700/80 backdrop-blur-md border-2 border-white/20 ${
+                            showPrefix ? 'rounded-r-xl border-l-0' : 'rounded-xl'
+                          } text-white placeholder-white/40 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all duration-200 font-mono`}
+                          placeholder={showPrefix ? "62912345678" : "5562912345678"}
+                          value={showPrefix ? phoneNumber.replace(/^55/, '') : phoneNumber}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, ''); // Apenas números
+                            if (showPrefix) {
+                              setPhoneNumber('55' + value);
+                            } else {
+                              setPhoneNumber(value);
+                            }
+                          }}
+                          onPaste={(e) => {
+                            const pastedText = e.clipboardData.getData('text');
+                            const cleanedText = pastedText.replace(/\D/g, ''); // Remove tudo que não é dígito
+                            e.preventDefault(); // Previne a colagem padrão
+                            if (showPrefix) {
+                              setPhoneNumber('55' + cleanedText);
+                            } else {
+                              setPhoneNumber(cleanedText);
+                            }
+                          }}
+                        />
+                      </div>
+                      {!showPrefix && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowPrefix(true);
+                            if (!phoneNumber.startsWith('55')) {
+                              setPhoneNumber('55' + phoneNumber);
+                            }
+                          }}
+                          className="mt-2 text-sm text-green-400 hover:text-green-300 underline"
+                        >
+                          + Adicionar prefixo +55
+                        </button>
+                      )}
                       <p className="text-sm text-white/60 mt-3 flex items-center gap-2">
                         <span>💡</span>
-                        <span>Formato: Código do país + DDD + número</span>
+                        <span>Digite apenas DDD + número (sem espaços, traços ou parênteses)</span>
                       </p>
                     </div>
                   </div>
