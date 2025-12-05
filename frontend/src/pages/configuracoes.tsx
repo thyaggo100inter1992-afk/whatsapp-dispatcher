@@ -583,12 +583,18 @@ export default function Configuracoes() {
             <div className="inline-block animate-spin rounded-full h-20 w-20 border-b-4 border-primary-500 mb-4"></div>
           <p className="text-2xl text-white/70">Carregando configurações...</p>
         </div>
-      </div>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
+    <>
+      <Head>
+        <title>Configurações API Oficial | Disparador NettSistemas</title>
+      </Head>
+      
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
       <div className="max-w-7xl mx-auto space-y-8">
         
         {/* 🎨 CABEÇALHO PRINCIPAL */}
@@ -1260,7 +1266,7 @@ export default function Configuracoes() {
       
       {/* Modal de Confirmação Elegante */}
       <ConfirmDialog />
-      </div>
+    </div>
     </>
   );
 }
