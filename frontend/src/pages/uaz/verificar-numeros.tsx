@@ -54,6 +54,10 @@ export default function VerificarNumerosUaz() {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [activeTab, setActiveTab] = useState<'single' | 'bulk'>('single');
   const [singleNumber, setSingleNumber] = useState('55'); // Pré-preenchido com código do Brasil
+  
+  // 🔄 Modo de alternância de instâncias (rodízio automático)
+  const [rotateInstances, setRotateInstances] = useState(true); // ATIVADO por padrão
+  const rotateIndexRef = useRef(0); // Índice para rodízio
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -317,9 +321,35 @@ export default function VerificarNumerosUaz() {
   };
 
   const handleVerifySingle = async () => {
-    if (!instanceId) {
-      showNotification('Selecione uma instância', 'error');
-      return;
+    // 🔄 Determinar qual instância usar
+    let selectedInstanceId = instanceId;
+    let currentInstance: UazInstance | undefined;
+    
+    if (rotateInstances) {
+      // Modo rodízio: usar próxima instância conectada
+      const connectedInstances = instances.filter(inst => inst.is_connected);
+      
+      if (connectedInstances.length === 0) {
+        showNotification('Nenhuma instância conectada disponível', 'error');
+        return;
+      }
+      
+      // Pegar a próxima instância do rodízio
+      const nextIndex = rotateIndexRef.current % connectedInstances.length;
+      currentInstance = connectedInstances[nextIndex];
+      selectedInstanceId = String(currentInstance.id);
+      
+      // Incrementar índice para próxima consulta
+      rotateIndexRef.current = (rotateIndexRef.current + 1) % connectedInstances.length;
+      
+      console.log(`🔄 Rodízio: usando instância ${currentInstance.name} (${nextIndex + 1}/${connectedInstances.length})`);
+    } else {
+      // Modo manual: usar instância selecionada
+      if (!instanceId) {
+        showNotification('Selecione uma instância', 'error');
+        return;
+      }
+      currentInstance = instances.find(inst => inst.id === parseInt(instanceId));
     }
 
     if (!singleNumber.trim()) {
@@ -331,18 +361,17 @@ export default function VerificarNumerosUaz() {
     setResults([]);
 
     try {
-      const response = await api.post(`/uaz/instances/${instanceId}/check-numbers`, {
+      const response = await api.post(`/uaz/instances/${selectedInstanceId}/check-numbers`, {
         numbers: [singleNumber.trim()],
         delaySeconds: 0
       });
 
       if (response.data.success) {
         // Adicionar nome da instância ao resultado
-        const currentInstance = instances.find(inst => inst.id === parseInt(instanceId));
         const resultsWithInstance = response.data.data.map((r: VerificationResult) => ({
           ...r,
           instanceName: currentInstance?.name || 'Desconhecida',
-          instanceId: parseInt(instanceId)
+          instanceId: parseInt(selectedInstanceId)
         }));
         
         // 📸 Buscar foto de perfil para números com WhatsApp
@@ -352,7 +381,7 @@ export default function VerificarNumerosUaz() {
               try {
                 console.log('📸 Buscando foto para:', r.phone);
                 const photoResponse = await api.post('/uaz/contact/details', {
-                  instance_id: parseInt(instanceId),
+                  instance_id: parseInt(selectedInstanceId),
                   phone_number: r.phone,
                   preview: false // false = foto FULL HD de alta qualidade
                 });
@@ -768,20 +797,54 @@ export default function VerificarNumerosUaz() {
                     📱 Verificar Número Único
                   </h2>
 
+                  {/* 🔄 TOGGLE DE ALTERNÂNCIA DE INSTÂNCIAS */}
+                  <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 border-2 border-blue-500/30 rounded-xl p-4">
+                    <label className="flex items-center gap-4 cursor-pointer">
+                      <div className="relative">
+                        <input
+                          type="checkbox"
+                          checked={rotateInstances}
+                          onChange={(e) => setRotateInstances(e.target.checked)}
+                          className="sr-only"
+                        />
+                        <div className={`w-14 h-8 rounded-full transition-all duration-300 ${rotateInstances ? 'bg-green-500' : 'bg-gray-600'}`}>
+                          <div className={`w-6 h-6 bg-white rounded-full shadow-lg transform transition-all duration-300 mt-1 ${rotateInstances ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <span className="text-lg font-bold text-white flex items-center gap-2">
+                          🔄 Alternar instâncias automaticamente
+                          {rotateInstances && (
+                            <span className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded-full border border-green-500/40">
+                              ATIVO
+                            </span>
+                          )}
+                        </span>
+                        <p className="text-sm text-white/60 mt-1">
+                          {rotateInstances 
+                            ? `Usando rodízio entre ${instances.filter(i => i.is_connected).length} instância(s) conectada(s)`
+                            : 'Selecione manualmente a instância abaixo'
+                          }
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
                   {/* INSTÂNCIA */}
-                  <div>
+                  <div className={rotateInstances ? 'opacity-50 pointer-events-none' : ''}>
                     <label className="block text-lg font-bold mb-3 text-white">
-                      📱 Instância WhatsApp
+                      📱 Instância WhatsApp {rotateInstances && <span className="text-sm text-white/50">(desabilitado - modo rodízio ativo)</span>}
                     </label>
                     <select
-                      className="w-full px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white"
+                      className="w-full px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white disabled:opacity-50 disabled:cursor-not-allowed"
                       value={instanceId}
                       onChange={(e) => setInstanceId(e.target.value)}
+                      disabled={rotateInstances}
                     >
                       <option value="">Selecione uma instância</option>
                       {instances.map((inst) => (
                         <option key={inst.id} value={inst.id}>
-                          {inst.name}
+                          {inst.name} {inst.is_connected ? '🟢' : '🔴'}
                         </option>
                       ))}
                     </select>
