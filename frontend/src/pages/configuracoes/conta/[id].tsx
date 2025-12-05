@@ -164,7 +164,8 @@ const [singleDate, setSingleDate] = useState('');
       const response = await api.get(`/whatsapp-accounts/${id}/templates`);
       console.log('📦 Resposta templates:', response.data);
       if (response.data.success) {
-        const templatesList = response.data.data || [];
+        // A API retorna "templates" não "data"
+        const templatesList = response.data.templates || [];
         console.log('✅ Templates carregados:', templatesList.length);
         setTemplates(templatesList);
       } else {
