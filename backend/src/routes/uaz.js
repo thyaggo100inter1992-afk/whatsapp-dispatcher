@@ -586,58 +586,9 @@ router.get('/instances', async (req, res) => {
 });
 
 /**
- * GET /api/uaz/instances/:id
- * ObtÃ©m detalhes de uma instÃ¢ncia especÃ­fica
- */
-router.get('/instances/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id (usando tenantQuery para respeitar RLS)
-    const tenantId = req.tenant?.id;
-    if (!tenantId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Tenant nÃ£o identificado'
-      });
-    }
-    
-    const result = await tenantQuery(req, `
-      SELECT 
-        ui.*,
-        p.name as proxy_name,
-        p.host as proxy_host,
-        p.port as proxy_port,
-        p.username as proxy_username,
-        p.password as proxy_password,
-        p.type as proxy_type
-      FROM uaz_instances ui
-      LEFT JOIN proxies p ON ui.proxy_id = p.id
-      WHERE ui.id = $1 AND ui.tenant_id = $2
-    `, [id, tenantId]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'InstÃ¢ncia nÃ£o encontrada'
-      });
-    }
-
-    res.json({
-      success: true,
-      data: result.rows[0]
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
  * 🔼 POST /api/uaz/instances/:id/move-up
  * Move a instância para cima na ordem
+ * ⚠️ DEVE VIR ANTES DAS ROTAS GENÉRICAS COM :id
  */
 router.post('/instances/:id/move-up', async (req, res) => {
   try {
@@ -694,6 +645,7 @@ router.post('/instances/:id/move-up', async (req, res) => {
 /**
  * 🔽 POST /api/uaz/instances/:id/move-down
  * Move a instância para baixo na ordem
+ * ⚠️ DEVE VIR ANTES DAS ROTAS GENÉRICAS COM :id
  */
 router.post('/instances/:id/move-down', async (req, res) => {
   try {
@@ -744,6 +696,56 @@ router.post('/instances/:id/move-down', async (req, res) => {
   } catch (error) {
     console.error('❌ Erro ao mover instância para baixo:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/uaz/instances/:id
+ * ObtÃ©m detalhes de uma instÃ¢ncia especÃ­fica
+ */
+router.get('/instances/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // ðŸ”’ SEGURANÃ‡A: Filtrar por tenant_id (usando tenantQuery para respeitar RLS)
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Tenant nÃ£o identificado'
+      });
+    }
+    
+    const result = await tenantQuery(req, `
+      SELECT 
+        ui.*,
+        p.name as proxy_name,
+        p.host as proxy_host,
+        p.port as proxy_port,
+        p.username as proxy_username,
+        p.password as proxy_password,
+        p.type as proxy_type
+      FROM uaz_instances ui
+      LEFT JOIN proxies p ON ui.proxy_id = p.id
+      WHERE ui.id = $1 AND ui.tenant_id = $2
+    `, [id, tenantId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'InstÃ¢ncia nÃ£o encontrada'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.rows[0]
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 
