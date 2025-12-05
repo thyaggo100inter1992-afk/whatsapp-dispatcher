@@ -613,25 +613,36 @@ export class WhatsAppAccountController {
 
   async getTemplates(req: Request, res: Response) {
     try {
+      console.log('\n📋 ===== GET TEMPLATES =====');
+      console.log(`   ID da conta: ${req.params.id}`);
+      
       // @ts-ignore - tenant é injetado pelo middleware
       const tenantId = req.tenant?.id;
       if (!tenantId) {
+        console.error('❌ Tenant não identificado');
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
       }
       
+      console.log(`   Tenant ID: ${tenantId}`);
       const account = await WhatsAppAccountModel.findById(parseInt(req.params.id), tenantId);
       
       if (!account) {
+        console.error('❌ Conta não encontrada');
         return res.status(404).json({ success: false, error: 'Account not found' });
       }
 
+      console.log(`   Conta encontrada: ${account.name}`);
+      console.log(`   Business Account ID: ${account.business_account_id}`);
+
       if (!account.business_account_id) {
+        console.error('❌ Business Account ID não configurado');
         return res.status(400).json({ 
           success: false, 
           error: 'Business Account ID is required' 
         });
       }
 
+      console.log('🔄 Buscando templates na API do WhatsApp...');
       const result = await whatsappService.getTemplates(
         account.access_token,
         account.business_account_id,
@@ -640,8 +651,10 @@ export class WhatsAppAccountController {
         tenantId
       );
 
+      console.log(`✅ Templates obtidos: ${result.templates?.length || 0} templates`);
       res.json(result);
     } catch (error: any) {
+      console.error('❌ Erro ao buscar templates:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   }
