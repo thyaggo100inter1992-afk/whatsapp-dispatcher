@@ -193,8 +193,15 @@ export default function ListasRestricao() {
       await loadEntries(1);
       await loadStats();
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || error.message || 'Erro ao adicionar contato';
-      toastError(`❌ ${errorMessage}`);
+      // Backend pode retornar 'error' ou 'message'
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message || 'Erro ao adicionar contato';
+      
+      // Mensagem mais amigável para erro 409 (já existe)
+      if (error.response?.status === 409) {
+        toastError(`⚠️ Este número já está na lista de restrição!`);
+      } else {
+        toastError(`❌ ${errorMessage}`);
+      }
     }
   };
 
