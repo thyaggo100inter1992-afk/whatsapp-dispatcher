@@ -372,8 +372,10 @@ export default function Configuracoes() {
     }
     
     // Filtro de Status (Conectada/Desconectada)
+    // Considera "conectada" se a conta está ativa E tem quality_rating (conseguiu comunicar com API)
     if (filterStatus !== 'all') {
-      const isConnected = (account as any).account_status === 'CONECTADO';
+      const hasQualityRating = (account as any).quality_rating != null && (account as any).quality_rating !== undefined;
+      const isConnected = account.is_active && hasQualityRating;
       if (filterStatus === 'connected' && !isConnected) return false;
       if (filterStatus === 'disconnected' && isConnected) return false;
     }
@@ -1340,18 +1342,36 @@ export default function Configuracoes() {
                         </div>
                         
                         {/* Status da API */}
-                        <div className="bg-gradient-to-br from-green-500/20 to-emerald-600/10 border-2 border-green-500/40 rounded-xl p-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                              <div className="text-green-300 text-xs font-bold mb-2">🔌 STATUS API</div>
-                              <div className="text-white text-xl font-black flex items-center gap-2">
-                                <span className="w-3 h-3 bg-green-400 rounded-full animate-pulse shadow-lg shadow-green-400/50"></span>
-                                Conectada
+                        {(() => {
+                          const hasQualityRating = (account as any).quality_rating != null && (account as any).quality_rating !== undefined;
+                          const isConnected = account.is_active && hasQualityRating;
+                          return (
+                            <div className={`bg-gradient-to-br ${
+                              isConnected 
+                                ? 'from-green-500/20 to-emerald-600/10 border-green-500/40' 
+                                : 'from-red-500/20 to-orange-600/10 border-red-500/40'
+                            } border-2 rounded-xl p-4`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className={`${isConnected ? 'text-green-300' : 'text-red-300'} text-xs font-bold mb-2`}>
+                                    🔌 STATUS API
+                                  </div>
+                                  <div className="text-white text-xl font-black flex items-center gap-2">
+                                    <span className={`w-3 h-3 rounded-full ${
+                                      isConnected 
+                                        ? 'bg-green-400 animate-pulse shadow-lg shadow-green-400/50' 
+                                        : 'bg-red-400 shadow-lg shadow-red-400/50'
+                                    }`}></span>
+                                    {isConnected ? 'Conectada' : 'Desconectada'}
+                                  </div>
+                                </div>
+                                <div className={`${isConnected ? 'text-green-300' : 'text-red-300'} text-4xl`}>
+                                  {isConnected ? '✅' : '❌'}
+                                </div>
                               </div>
                             </div>
-                            <div className="text-green-300 text-4xl">✅</div>
-                          </div>
-                        </div>
+                          );
+                        })()}
                         
                         {/* Status do Webhook */}
                         <div className={`bg-gradient-to-br ${
