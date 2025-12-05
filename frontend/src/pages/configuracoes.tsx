@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { 
   FaCog, FaPlus, FaEdit, FaTrash, FaCheckCircle, FaTimesCircle, 
   FaSpinner, FaFileAlt, FaWhatsapp, FaCheck, FaTimes, FaBan, FaArrowLeft,
-  FaSquare, FaCheckSquare
+  FaSquare, FaCheckSquare, FaArrowUp, FaArrowDown
 } from 'react-icons/fa';
 import api, { whatsappAccountsAPI } from '@/services/api';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -308,6 +308,39 @@ export default function Configuracoes() {
       });
     } finally {
       setDeactivating(false);
+    }
+  };
+
+  // 🔼🔽 Funções de reordenação
+  const handleMoveUp = async (accountId: number) => {
+    try {
+      await api.post(`/whatsapp-accounts/${accountId}/move-up`);
+      await loadAccounts(); // Recarregar lista
+    } catch (error: any) {
+      console.error('❌ Erro ao mover conta para cima:', error);
+      await confirm({
+        title: '❌ Erro',
+        message: error.response?.data?.message || 'Erro ao reordenar conta',
+        type: 'error',
+        confirmText: 'OK',
+        showCancel: false
+      });
+    }
+  };
+
+  const handleMoveDown = async (accountId: number) => {
+    try {
+      await api.post(`/whatsapp-accounts/${accountId}/move-down`);
+      await loadAccounts(); // Recarregar lista
+    } catch (error: any) {
+      console.error('❌ Erro ao mover conta para baixo:', error);
+      await confirm({
+        title: '❌ Erro',
+        message: error.response?.data?.message || 'Erro ao reordenar conta',
+        type: 'error',
+        confirmText: 'OK',
+        showCancel: false
+      });
     }
   };
 
@@ -913,6 +946,24 @@ export default function Configuracoes() {
                           <FaSquare className="text-4xl text-gray-600 hover:text-gray-500 transition-colors" />
                         )}
                       </button>
+
+                      {/* 🔼🔽 Botões de Reordenação */}
+                      <div className="flex flex-col gap-2 mt-8">
+                        <button
+                          onClick={() => handleMoveUp(account.id)}
+                          className="p-3 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border-2 border-blue-500/40 hover:border-blue-500/60 rounded-lg transition-all duration-200 flex items-center justify-center shadow-lg"
+                          title="Mover para cima"
+                        >
+                          <FaArrowUp className="text-xl" />
+                        </button>
+                        <button
+                          onClick={() => handleMoveDown(account.id)}
+                          className="p-3 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border-2 border-blue-500/40 hover:border-blue-500/60 rounded-lg transition-all duration-200 flex items-center justify-center shadow-lg"
+                          title="Mover para baixo"
+                        >
+                          <FaArrowDown className="text-xl" />
+                        </button>
+                      </div>
 
                       {/* Foto de Perfil MUITO MAIOR E REDONDA */}
                       {(account as any).whatsapp_profile_picture ? (

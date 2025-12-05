@@ -338,7 +338,7 @@ export class WhatsAppAccountController {
             SELECT ui.*, 'qr_connect' as connection_type
             FROM uaz_instances ui
             WHERE ui.tenant_id = $1 AND ui.is_active = true
-            ORDER BY ui.created_at DESC
+            ORDER BY ui.display_order ASC, ui.created_at DESC
           `, [tenantId]);
           qrInstances = qrResult.rows;
           console.log(`   🔗 Instâncias QR: ${qrInstances.length}`);
@@ -357,7 +357,7 @@ export class WhatsAppAccountController {
             WHERE uwa.user_id = $1 
               AND uwa.tenant_id = $2 
               AND wa.is_active = true
-            ORDER BY wa.created_at DESC
+            ORDER BY wa.display_order ASC, wa.created_at DESC
           `, [userId, tenantId]);
           apiAccounts = apiAccountsResult.rows;
           console.log(`   📱 Contas API autorizadas: ${apiAccounts.length}`);
@@ -373,7 +373,7 @@ export class WhatsAppAccountController {
             WHERE uui.user_id = $1 
               AND uui.tenant_id = $2 
               AND ui.is_active = true
-            ORDER BY ui.created_at DESC
+            ORDER BY ui.display_order ASC, ui.created_at DESC
           `, [userId, tenantId]);
           qrInstances = qrInstancesResult.rows;
           console.log(`   🔗 Instâncias QR autorizadas: ${qrInstances.length}`);
@@ -790,6 +790,119 @@ export class WhatsAppAccountController {
       }
     } catch (error: any) {
       console.error('❌ Erro no uploadMedia:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  // 🔼🔽 Reordenação de contas
+  async moveUp(req: Request, res: Response) {
+    try {
+      const accountId = parseInt(req.params.id);
+      const tenantId = (req as any).tenant?.id;
+
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      // Buscar a conta atual
+      const currentResult = await tenantQuery(
+        req,
+        'SELECT id, display_order FROM whatsapp_accounts WHERE id = $1 AND tenant_id = $2',
+        [accountId, tenantId]
+      );
+
+      if (currentResult.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Conta não encontrada' });
+      }
+
+      const currentAccount = currentResult.rows[0];
+      const currentOrder = currentAccount.display_order || 0;
+
+      // Buscar a conta anterior (menor display_order que a atual)
+      const previousResult = await tenantQuery(
+        req,
+        'SELECT id, display_order FROM whatsapp_accounts WHERE tenant_id = $1 AND display_order < $2 ORDER BY display_order DESC LIMIT 1',
+        [tenantId, currentOrder]
+      );
+
+      if (previousResult.rows.length === 0) {
+        return res.json({ success: true, message: 'Conta já está em primeiro lugar' });
+      }
+
+      const previousAccount = previousResult.rows[0];
+
+      // Trocar as ordens
+      await tenantQuery(
+        req,
+        'UPDATE whatsapp_accounts SET display_order = $1 WHERE id = $2 AND tenant_id = $3',
+        [previousAccount.display_order, currentAccount.id, tenantId]
+      );
+
+      await tenantQuery(
+        req,
+        'UPDATE whatsapp_accounts SET display_order = $1 WHERE id = $2 AND tenant_id = $3',
+        [currentOrder, previousAccount.id, tenantId]
+      );
+
+      res.json({ success: true, message: 'Ordem atualizada com sucesso' });
+    } catch (error: any) {
+      console.error('❌ Erro ao mover conta para cima:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  async moveDown(req: Request, res: Response) {
+    try {
+      const accountId = parseInt(req.params.id);
+      const tenantId = (req as any).tenant?.id;
+
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      // Buscar a conta atual
+      const currentResult = await tenantQuery(
+        req,
+        'SELECT id, display_order FROM whatsapp_accounts WHERE id = $1 AND tenant_id = $2',
+        [accountId, tenantId]
+      );
+
+      if (currentResult.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Conta não encontrada' });
+      }
+
+      const currentAccount = currentResult.rows[0];
+      const currentOrder = currentAccount.display_order || 0;
+
+      // Buscar a próxima conta (maior display_order que a atual)
+      const nextResult = await tenantQuery(
+        req,
+        'SELECT id, display_order FROM whatsapp_accounts WHERE tenant_id = $1 AND display_order > $2 ORDER BY display_order ASC LIMIT 1',
+        [tenantId, currentOrder]
+      );
+
+      if (nextResult.rows.length === 0) {
+        return res.json({ success: true, message: 'Conta já está em último lugar' });
+      }
+
+      const nextAccount = nextResult.rows[0];
+
+      // Trocar as ordens
+      await tenantQuery(
+        req,
+        'UPDATE whatsapp_accounts SET display_order = $1 WHERE id = $2 AND tenant_id = $3',
+        [nextAccount.display_order, currentAccount.id, tenantId]
+      );
+
+      await tenantQuery(
+        req,
+        'UPDATE whatsapp_accounts SET display_order = $1 WHERE id = $2 AND tenant_id = $3',
+        [currentOrder, nextAccount.id, tenantId]
+      );
+
+      res.json({ success: true, message: 'Ordem atualizada com sucesso' });
+    } catch (error: any) {
+      console.error('❌ Erro ao mover conta para baixo:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   }

@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_accounts (
     business_account_id VARCHAR(255),
     webhook_verify_token VARCHAR(255),
     is_active BOOLEAN DEFAULT true,
+    display_order INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

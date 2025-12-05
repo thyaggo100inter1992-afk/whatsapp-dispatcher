@@ -171,6 +171,10 @@ router.post('/activate-multiple', (req, res) => controller.activateMultiple(req,
 // Ativar todas as contas
 router.post('/activate-all', (req, res) => controller.activateAll(req, res));
 
+// 🔼🔽 Reordenação de contas
+router.post('/:id/move-up', (req, res) => controller.moveUp(req, res));
+router.post('/:id/move-down', (req, res) => controller.moveDown(req, res));
+
 module.exports = router;
 
 

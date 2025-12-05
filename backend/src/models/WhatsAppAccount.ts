@@ -10,6 +10,7 @@ export interface WhatsAppAccount {
   app_id?: string;
   webhook_verify_token?: string;
   is_active: boolean;
+  display_order?: number;
   proxy_id?: number | null;
   created_at?: Date;
   updated_at?: Date;
@@ -17,10 +18,17 @@ export interface WhatsAppAccount {
 
 export class WhatsAppAccountModel {
   static async create(account: WhatsAppAccount, tenantId: number) {
+    // Buscar o maior display_order atual para este tenant
+    const maxOrderResult = await query(
+      'SELECT COALESCE(MAX(display_order), 0) as max_order FROM whatsapp_accounts WHERE tenant_id = $1',
+      [tenantId]
+    );
+    const nextOrder = (maxOrderResult.rows[0]?.max_order || 0) + 10;
+    
     const result = await query(
       `INSERT INTO whatsapp_accounts 
-       (name, phone_number, access_token, phone_number_id, business_account_id, app_id, webhook_verify_token, is_active, proxy_id, tenant_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (name, phone_number, access_token, phone_number_id, business_account_id, app_id, webhook_verify_token, is_active, display_order, proxy_id, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
       [
         account.name,
@@ -31,6 +39,7 @@ export class WhatsAppAccountModel {
         account.app_id,
         account.webhook_verify_token,
         account.is_active,
+        nextOrder,
         account.proxy_id || null,
         tenantId,
       ]
@@ -44,7 +53,7 @@ export class WhatsAppAccountModel {
       throw new Error('tenantId é obrigatório para findAll');
     }
     const result = await query(
-      'SELECT * FROM whatsapp_accounts WHERE tenant_id = $1 ORDER BY created_at DESC',
+      'SELECT * FROM whatsapp_accounts WHERE tenant_id = $1 ORDER BY display_order ASC, created_at DESC',
       [tenantId]
     );
     return result.rows;
@@ -56,7 +65,7 @@ export class WhatsAppAccountModel {
       throw new Error('tenantId é obrigatório para findActive');
     }
     const result = await query(
-      'SELECT * FROM whatsapp_accounts WHERE is_active = true AND tenant_id = $1 ORDER BY created_at DESC',
+      'SELECT * FROM whatsapp_accounts WHERE is_active = true AND tenant_id = $1 ORDER BY display_order ASC, created_at DESC',
       [tenantId]
     );
     return result.rows;
