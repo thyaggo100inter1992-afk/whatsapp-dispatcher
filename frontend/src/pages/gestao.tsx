@@ -227,8 +227,9 @@ function FinancialInfoPanel() {
         <div className="bg-dark-800/50 backdrop-blur-xl border-2 border-white/10 rounded-3xl p-8">
           <div className="flex items-center justify-center py-8">
             <FaSpinner className="animate-spin text-4xl text-emerald-400" />
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -1413,6 +1414,10 @@ export default function Gestao() {
 
   return (
     <>
+      <Head>
+        <title>Gestão de Equipe | Disparador NettSistemas</title>
+      </Head>
+      
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 relative overflow-hidden">
         {/* Background Effects */}
