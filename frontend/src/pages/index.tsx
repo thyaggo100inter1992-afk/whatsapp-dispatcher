@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { FaWhatsapp, FaQrcode, FaRocket, FaCheckCircle, FaShieldAlt, FaSearch, FaGlobe, FaDatabase, FaSignOutAlt, FaUser, FaBuilding, FaLock, FaBan } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useFeatures } from '../hooks/useFeatures';
@@ -54,9 +55,14 @@ export default function ChooseIntegration() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex items-center justify-center py-12 px-4">
-      {/* Botão de Perfil e Logout no Canto Superior Direito */}
-      <div className="fixed top-6 right-6 z-50 flex items-center gap-4">
+    <>
+      <Head>
+        <title>Início | Disparador NettSistemas</title>
+      </Head>
+      
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex items-center justify-center py-12 px-4">
+        {/* Botão de Perfil e Logout no Canto Superior Direito */}
+        <div className="fixed top-6 right-6 z-50 flex items-center gap-4">
         <button
           onClick={() => {
             // Admin e super_admin vão para gestão, usuário comum vai para perfil
@@ -532,6 +538,7 @@ export default function ChooseIntegration() {
           animation: fade-in 0.6s ease-out;
         }
       `}</style>
-    </div>
+      </div>
+    </>
   );
 }

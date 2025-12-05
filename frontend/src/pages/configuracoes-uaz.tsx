@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { 
   FaPlus, FaEdit, FaTrash, FaQrcode, FaCheckCircle, FaTimesCircle,
   FaSpinner, FaArrowLeft, FaSync, FaCog, FaWhatsapp, FaExclamationTriangle,
@@ -699,9 +700,18 @@ export default function ConfiguracoesUaz() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
-      {/* Toast Container */}
-      <ToastContainer toasts={toasts} onClose={removeToast} />
+    <>
+      <Head>
+        <title>Configurações QR Connect | Disparador NettSistemas</title>
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+      </Head>
+      
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
+        {/* Toast Container */}
+        <ToastContainer toasts={toasts} onClose={removeToast} />
       
       <div className="max-w-7xl mx-auto space-y-8">
         {/* CABEÇALHO */}
@@ -1927,7 +1937,8 @@ export default function ConfiguracoesUaz() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

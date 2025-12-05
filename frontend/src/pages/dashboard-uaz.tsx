@@ -1,5 +1,6 @@
 import React from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { 
   FaQrcode, FaPaperPlane, FaRocket, FaChartLine, 
   FaCheckCircle, FaThList, FaBullhorn, FaVideo, FaBan
@@ -10,9 +11,14 @@ export default function DashboardUaz() {
   const router = useRouter();
 
   return (
-    <ProtectedRoute requiredPermission="whatsapp_qr" fallbackPath="/">
-    {/* Conteúdo protegido */}
-    <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
+    <>
+      <Head>
+        <title>Dashboard QR Connect | Disparador NettSistemas</title>
+      </Head>
+      
+      <ProtectedRoute requiredPermission="whatsapp_qr" fallbackPath="/">
+      {/* Conteúdo protegido */}
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
       <div className="max-w-7xl mx-auto space-y-8">
         
         {/* HERO SECTION - CABEÇALHO PRINCIPAL */}
@@ -228,6 +234,7 @@ export default function DashboardUaz() {
       `}</style>
     </div>
     </ProtectedRoute>
+    </>
   );
 }
 
