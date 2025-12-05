@@ -441,12 +441,17 @@ export default function ListasRestricao() {
             <div className="inline-block animate-spin rounded-full h-20 w-20 border-b-4 border-primary-500 mb-4"></div>
           <p className="text-2xl text-white/70">Carregando listas...</p>
         </div>
-      </div>
+        </div>
+      </>
     );
   }
 
   return (
     <>
+      <Head>
+        <title>Listas de Restrição | Disparador NettSistemas</title>
+      </Head>
+      
       <ToastContainer toasts={toasts} onClose={removeToast} />
       
       {/* Modal de Confirmação Elegante */}
