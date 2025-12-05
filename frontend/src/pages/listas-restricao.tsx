@@ -62,6 +62,12 @@ export default function ListasRestricao() {
   });
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  
+  // 📄 Paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalEntries, setTotalEntries] = useState(0);
+  const ITEMS_PER_PAGE = 50; // Carregar apenas 50 por página
 
   // 🎨 Configurações visuais por lista
   const listConfig = {
@@ -96,9 +102,16 @@ export default function ListasRestricao() {
   }, []);
 
   useEffect(() => {
-    loadEntries();
+    setCurrentPage(1); // Resetar para página 1 quando mudar filtros
+    loadEntries(1);
     setSelectedIds([]);
   }, [activeTab, searchTerm, selectedAccount]);
+  
+  useEffect(() => {
+    if (currentPage > 1) {
+      loadEntries(currentPage);
+    }
+  }, [currentPage]);
 
   const loadAccounts = async () => {
     try {
@@ -125,21 +138,31 @@ export default function ListasRestricao() {
     }
   };
 
-  const loadEntries = async () => {
+  const loadEntries = async (page: number = 1) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       params.append('list_type', activeTab);
       if (searchTerm) params.append('search', searchTerm);
       if (selectedAccount) params.append('whatsapp_account_id', selectedAccount);
-      params.append('limit', '999999');
+      params.append('limit', String(ITEMS_PER_PAGE));
+      params.append('page', String(page)); // Backend usa 'page' não 'offset'
 
       const response = await api.get(`/restriction-lists?${params}`);
       const entries = response.data.data || [];
+      // Backend retorna pagination.total
+      const pagination = response.data.pagination || {};
+      const total = pagination.total || entries.length;
+      const pages = pagination.totalPages || Math.ceil(total / ITEMS_PER_PAGE);
+      
       setEntries(entries);
+      setTotalEntries(total);
+      setTotalPages(pages);
     } catch (error: any) {
       console.error('❌ Erro ao carregar contatos:', error);
       setEntries([]);
+      setTotalEntries(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
@@ -166,7 +189,8 @@ export default function ListasRestricao() {
       await api.post(`/restriction-lists`, payload);
       toastSuccess('✅ Contato adicionado com sucesso!');
       setNewContact({ name: '', phone: '', cpf: '' });
-      await loadEntries();
+      setCurrentPage(1);
+      await loadEntries(1);
       await loadStats();
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || error.message || 'Erro ao adicionar contato';
@@ -188,7 +212,7 @@ export default function ListasRestricao() {
     try {
       await api.delete(`/restriction-lists/${id}`);
       toastSuccess('✅ Contato excluído!');
-      loadEntries();
+      loadEntries(currentPage);
       loadStats();
     } catch (error: any) {
       toastError('❌ Erro ao excluir contato');
@@ -217,7 +241,8 @@ export default function ListasRestricao() {
       });
       toastSuccess(`✅ ${selectedIds.length} contato(s) excluído(s)!`);
       setSelectedIds([]);
-      loadEntries();
+      setCurrentPage(1);
+      loadEntries(1);
       loadStats();
     } catch (error: any) {
       toastError('❌ Erro ao excluir contatos');
@@ -256,9 +281,10 @@ export default function ListasRestricao() {
     try {
       setLoading(true);
       await api.delete(`/restriction-lists/delete-all/${activeTab}`);
-      toastSuccess(`✅ Todos os ${totalEntries} contato(s) foram excluídos!`);
+      toastSuccess(`✅ Todos os contato(s) foram excluídos!`);
       setSelectedIds([]);
-      await loadEntries();
+      setCurrentPage(1);
+      await loadEntries(1);
       await loadStats();
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 'Erro ao excluir todos os contatos';
@@ -376,7 +402,8 @@ export default function ListasRestricao() {
         toastError(`⚠️ ${response.data.results.errors.length} linha(s) com erro. Veja o console.`);
       }
 
-      loadEntries();
+      setCurrentPage(1);
+      loadEntries(1);
       loadStats();
     } catch (error: any) {
       console.error('❌ Erro ao importar:', error);
@@ -774,6 +801,80 @@ export default function ListasRestricao() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+            
+            {/* PAGINAÇÃO */}
+            {totalPages > 1 && (
+              <div className="p-6 border-t-2 border-white/10 flex items-center justify-between bg-dark-700/30">
+                <div className="text-white/70 text-lg">
+                  Mostrando <span className="font-bold text-white">{((currentPage - 1) * ITEMS_PER_PAGE) + 1}</span> - <span className="font-bold text-white">{Math.min(currentPage * ITEMS_PER_PAGE, totalEntries)}</span> de <span className="font-bold text-primary-400">{totalEntries}</span> contatos
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1 || loading}
+                    className="px-4 py-2 bg-dark-600 hover:bg-dark-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all border border-white/20"
+                    title="Primeira página"
+                  >
+                    ⏮️
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1 || loading}
+                    className="px-4 py-2 bg-dark-600 hover:bg-dark-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all border border-white/20"
+                    title="Página anterior"
+                  >
+                    ◀️
+                  </button>
+                  
+                  {/* Números das páginas */}
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          disabled={loading}
+                          className={`w-10 h-10 rounded-lg transition-all font-bold ${
+                            currentPage === pageNum 
+                              ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/50' 
+                              : 'bg-dark-600 hover:bg-dark-500 text-white/70 border border-white/20'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages || loading}
+                    className="px-4 py-2 bg-dark-600 hover:bg-dark-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all border border-white/20"
+                    title="Próxima página"
+                  >
+                    ▶️
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages || loading}
+                    className="px-4 py-2 bg-dark-600 hover:bg-dark-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all border border-white/20"
+                    title="Última página"
+                  >
+                    ⏭️
+                  </button>
+                </div>
               </div>
             )}
           </div>
