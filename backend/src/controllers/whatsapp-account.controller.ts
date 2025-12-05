@@ -84,8 +84,43 @@ export class WhatsAppAccountController {
         );
         whatsappDisplayName = accountInfoResponse.data.verified_name || account.name;
         qualityRating = accountInfoResponse.data.quality_rating || null;
-      } catch (err) {
-        console.log(`Erro ao buscar info da conta ${accountId}`);
+        
+        console.log(`✅ Quality Rating obtido com sucesso para conta ${accountId}: ${qualityRating}`);
+        
+        // Salvar quality_rating no banco para cache
+        if (qualityRating) {
+          try {
+            await tenantQuery(req,
+              'UPDATE whatsapp_accounts SET quality_rating = $1, updated_at = NOW() WHERE id = $2',
+              [qualityRating, accountId]
+            );
+            console.log(`💾 Quality Rating salvo em cache: ${qualityRating}`);
+          } catch (dbError) {
+            console.error('❌ Erro ao salvar quality_rating no banco:', dbError);
+          }
+        }
+      } catch (err: any) {
+        console.error(`❌ Erro ao buscar info da conta ${accountId}:`, {
+          message: err.message,
+          response: err.response?.data,
+          status: err.response?.status,
+          phone_number_id: account.phone_number_id,
+          account_name: account.name
+        });
+        
+        // Se falhar, tentar buscar do histórico no banco
+        try {
+          const cachedResult = await tenantQuery(req,
+            'SELECT quality_rating FROM whatsapp_accounts WHERE id = $1',
+            [accountId]
+          );
+          if (cachedResult.rows[0]?.quality_rating) {
+            qualityRating = cachedResult.rows[0].quality_rating;
+            console.log(`ℹ️ Usando quality_rating em cache: ${qualityRating}`);
+          }
+        } catch (cacheErr) {
+          console.error('Erro ao buscar quality_rating em cache:', cacheErr);
+        }
       }
 
       // Buscar foto de perfil
