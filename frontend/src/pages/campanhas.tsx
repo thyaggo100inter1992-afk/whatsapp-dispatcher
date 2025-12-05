@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { 
   FaChartBar, FaPlus, FaEye, FaClock, FaCheckCircle, FaTimesCircle, 
   FaPause, FaPlay, FaBan, FaEdit, FaUsers, FaTrash, FaTrashAlt, 
@@ -342,11 +343,16 @@ export default function Campanhas() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
-      <div className="max-w-7xl mx-auto space-y-8">
-        
-        {/* 🎨 CABEÇALHO PRINCIPAL */}
-        <div className="relative overflow-hidden bg-gradient-to-r from-primary-600/30 via-primary-500/20 to-primary-600/30 backdrop-blur-xl border-2 border-primary-500/40 rounded-3xl p-10 shadow-2xl shadow-primary-500/20">
+    <>
+      <Head>
+        <title>Campanhas | Disparador NettSistemas</title>
+      </Head>
+      
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
+        <div className="max-w-7xl mx-auto space-y-8">
+          
+          {/* 🎨 CABEÇALHO PRINCIPAL */}
+          <div className="relative overflow-hidden bg-gradient-to-r from-primary-600/30 via-primary-500/20 to-primary-600/30 backdrop-blur-xl border-2 border-primary-500/40 rounded-3xl p-10 shadow-2xl shadow-primary-500/20">
           <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
           <div className="relative">
             <div className="flex items-center justify-between flex-wrap gap-6">
@@ -791,6 +797,7 @@ export default function Campanhas() {
       
       {/* Modal de Confirmação Elegante */}
       <ConfirmDialog />
-    </div>
+      </div>
+    </>
   );
 }

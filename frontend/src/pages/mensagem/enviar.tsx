@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { FaPaperPlane, FaSearch, FaTimes, FaArrowLeft } from 'react-icons/fa';
 import { whatsappAccountsAPI, messagesAPI } from '@/services/api';
 import MediaUpload from '@/components/MediaUpload';
@@ -347,9 +348,14 @@ export default function EnviarMensagemImediata() {
   };
 
   return (
-    <div className="animate-fade-in max-w-5xl mx-auto">
-      <div className="card mb-6 bg-gradient-to-r from-blue-600/20 to-blue-700/20 border-blue-500/30">
-        <div className="flex items-center gap-4 mb-4">
+    <>
+      <Head>
+        <title>Enviar Mensagem Única | Disparador NettSistemas</title>
+      </Head>
+      
+      <div className="animate-fade-in max-w-5xl mx-auto">
+        <div className="card mb-6 bg-gradient-to-r from-blue-600/20 to-blue-700/20 border-blue-500/30">
+          <div className="flex items-center gap-4 mb-4">
           {/* Botão Voltar */}
           <button
             onClick={() => router.push('/dashboard-oficial')}
@@ -730,7 +736,8 @@ export default function EnviarMensagemImediata() {
       
       {/* Modal de Confirmação Elegante */}
       <ConfirmDialog />
-    </div>
+      </div>
+    </>
   );
 }
 

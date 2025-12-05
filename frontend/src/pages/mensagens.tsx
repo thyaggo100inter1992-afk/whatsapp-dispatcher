@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { FaEnvelope, FaCheckCircle, FaTimesCircle, FaClock, FaGlobe, FaFilter, FaSearch, FaArrowLeft } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/useToast';
@@ -159,6 +160,10 @@ export default function MensagensPage() {
 
   return (
     <>
+      <Head>
+        <title>Histórico de Mensagens | Disparador NettSistemas</title>
+      </Head>
+      
       <ToastContainer toasts={toasts} onClose={removeToast} />
       
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900">

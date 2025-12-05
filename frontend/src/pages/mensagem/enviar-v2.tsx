@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { 
   FaPaperPlane, FaSearch, FaTimes, FaRocket, FaPhone, FaCheckCircle,
   FaImage, FaVideo, FaMusic, FaFileAlt, FaBolt, FaExclamationTriangle, FaMobileAlt
@@ -565,6 +566,10 @@ export default function EnviarMensagemImediataV2() {
 
   return (
     <>
+      <Head>
+        <title>Envio em Massa | Disparador NettSistemas</title>
+      </Head>
+      
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
         <div className="max-w-7xl mx-auto space-y-8">
           

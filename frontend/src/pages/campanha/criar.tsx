@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { 
   FaCalendarAlt, FaPlus, FaTrash, FaClock, FaPause, FaRocket,
   FaSearch, FaTimes, FaUpload, FaCheckCircle, FaExclamationTriangle,
@@ -1238,8 +1239,13 @@ export default function CriarCampanha() {
   const totalSelected = getTotalSelectedTemplates();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <>
+      <Head>
+        <title>Criar Campanha | Disparador NettSistemas</title>
+      </Head>
+      
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
+        <div className="max-w-7xl mx-auto space-y-8">
         
         {/* 🎨 CABEÇALHO PRINCIPAL - MUITO MAIS VISUAL */}
         <div className="relative overflow-hidden bg-gradient-to-r from-primary-600/30 via-primary-500/20 to-primary-600/30 backdrop-blur-xl border-2 border-primary-500/40 rounded-3xl p-10 shadow-2xl shadow-primary-500/20">

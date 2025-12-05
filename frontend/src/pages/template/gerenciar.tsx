@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { 
   FaList, FaTrash, FaCopy, FaSync, FaSearch, FaCheckCircle, FaTimesCircle, 
   FaPlus, FaEye, FaEdit, FaClock, FaCheck, FaTimes, FaMobileAlt, FaArrowLeft

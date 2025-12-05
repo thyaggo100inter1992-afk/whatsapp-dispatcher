@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FaSearch, FaFlask, FaArrowLeft, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { useToast } from '@/hooks/useToast';
 import api, { whatsappAccountsAPI } from '@/services/api';
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { 
   FaPlus, FaTrash, FaCheckCircle, FaExclamationTriangle,
   FaTimesCircle, FaRocket, FaInfoCircle, FaArrowLeft, FaMobileAlt
@@ -1002,6 +1003,10 @@ export default function CriarTemplate() {
 
     return (
       <>
+        <Head>
+          <title>Criar Template | Disparador NettSistemas</title>
+        </Head>
+        
         <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
           <div className="max-w-5xl mx-auto space-y-8">
             
