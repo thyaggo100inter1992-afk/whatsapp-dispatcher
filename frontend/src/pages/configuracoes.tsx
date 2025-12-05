@@ -42,7 +42,10 @@ export default function Configuracoes() {
   const [proxies, setProxies] = useState<Proxy[]>([]);
   const [selectedAccounts, setSelectedAccounts] = useState<Set<number>>(new Set());
   const [deactivating, setDeactivating] = useState(false);
-  const [webhookStatuses, setWebhookStatuses] = useState<{[key: number]: boolean}>({});
+  const [webhookStatuses, setWebhookStatuses] = useState<{[key: number]: {
+    isActive: boolean;
+    lastEventAt?: string;
+  }}>({});
 
   const [formData, setFormData] = useState({
     name: '',
@@ -381,18 +384,21 @@ export default function Configuracoes() {
       setAccounts(accountsWithDetails);
       
       // Buscar status do webhook para cada conta
-      const webhookStatusMap: {[key: number]: boolean} = {};
+      const webhookStatusMap: {[key: number]: {isActive: boolean; lastEventAt?: string}} = {};
       await Promise.all(
         basicAccounts.map(async (account: any) => {
           try {
             const statusResponse = await api.get(`/webhook/status?account_id=${account.id}&period=24h`);
             if (statusResponse.data.success && statusResponse.data.data) {
-              webhookStatusMap[account.id] = statusResponse.data.data.isActive || false;
+              webhookStatusMap[account.id] = {
+                isActive: statusResponse.data.data.isActive || false,
+                lastEventAt: statusResponse.data.data.lastEventAt || undefined
+              };
             } else {
-              webhookStatusMap[account.id] = false;
+              webhookStatusMap[account.id] = { isActive: false };
             }
           } catch (error) {
-            webhookStatusMap[account.id] = false;
+            webhookStatusMap[account.id] = { isActive: false };
           }
         })
       );
@@ -1220,28 +1226,43 @@ export default function Configuracoes() {
                         
                         {/* Status do Webhook */}
                         <div className={`bg-gradient-to-br ${
-                          webhookStatuses[account.id] 
+                          webhookStatuses[account.id]?.isActive 
                             ? 'from-blue-500/20 to-cyan-600/10 border-blue-500/40' 
                             : 'from-red-500/20 to-orange-600/10 border-red-500/40'
                         } border-2 rounded-xl p-4`}>
                           <div className="flex items-center justify-between">
                             <div className="flex-1">
                               <div className={`${
-                                webhookStatuses[account.id] ? 'text-blue-300' : 'text-red-300'
+                                webhookStatuses[account.id]?.isActive ? 'text-blue-300' : 'text-red-300'
                               } text-xs font-bold mb-2`}>🔗 WEBHOOK</div>
                               <div className="text-white text-xl font-black flex items-center gap-2">
                                 <span className={`w-3 h-3 rounded-full ${
-                                  webhookStatuses[account.id] 
+                                  webhookStatuses[account.id]?.isActive 
                                     ? 'bg-blue-400 animate-pulse shadow-lg shadow-blue-400/50' 
                                     : 'bg-red-400'
                                 }`}></span>
-                                {webhookStatuses[account.id] ? 'Ativado' : 'Desativado'}
+                                {webhookStatuses[account.id]?.isActive ? 'Ativado' : 'Desativado'}
                               </div>
+                              {webhookStatuses[account.id]?.lastEventAt && (
+                                <div className="mt-2 text-xs text-white/60">
+                                  📅 Último evento:<br />
+                                  <span className="text-blue-300 font-semibold">
+                                    {new Date(webhookStatuses[account.id]?.lastEventAt || '').toLocaleString('pt-BR', {
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      second: '2-digit'
+                                    })}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                             <div className={`text-4xl ${
-                              webhookStatuses[account.id] ? 'text-blue-300' : 'text-red-300'
+                              webhookStatuses[account.id]?.isActive ? 'text-blue-300' : 'text-red-300'
                             }`}>
-                              {webhookStatuses[account.id] ? '🔔' : '🔕'}
+                              {webhookStatuses[account.id]?.isActive ? '🔔' : '🔕'}
                             </div>
                           </div>
                         </div>

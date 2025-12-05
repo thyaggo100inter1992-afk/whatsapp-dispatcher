@@ -1206,6 +1206,7 @@ export class WebhookController {
           lastSuccess: lastSuccessResult.rows[0] || null,
           lastFailure: lastFailureResult.rows[0] || null,
           lastError: lastFailureResult.rows[0]?.processing_error || null,
+          lastEventAt: latestResult.rows[0]?.received_at || null,
           statusMessage: isActive
             ? 'Webhook recebendo eventos normalmente'
             : 'Nenhum webhook bem-sucedido no período selecionado',
