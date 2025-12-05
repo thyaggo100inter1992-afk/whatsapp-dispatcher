@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaArrowLeft, FaCheckCircle, FaTimesCircle, FaSpinner, FaDownload, FaInfoCircle, FaSearchPlus, FaCopy } from 'react-icons/fa';
+import { FaArrowLeft, FaCheckCircle, FaTimesCircle, FaSpinner, FaDownload, FaInfoCircle, FaSearchPlus, FaCopy, FaTimes } from 'react-icons/fa';
 import api from '@/services/api';
 import SystemLogo from '@/components/SystemLogo';
 
@@ -55,6 +55,7 @@ export default function VerificarNumerosUaz() {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [activeTab, setActiveTab] = useState<'single' | 'bulk'>('single');
   const [singleNumber, setSingleNumber] = useState('55'); // Pré-preenchido com código do Brasil
+  const [showPrefix, setShowPrefix] = useState(true); // Controla se mostra o prefixo 55
   
   // 🔄 Modo de alternância de instâncias (rodízio automático)
   const [rotateInstances, setRotateInstances] = useState(true); // ATIVADO por padrão
@@ -859,15 +860,62 @@ export default function VerificarNumerosUaz() {
                     <label className="block text-lg font-bold mb-3 text-white">
                       📞 Número do WhatsApp
                     </label>
-                    <input
-                      type="text"
-                      className="w-full px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-green-500 focus:ring-4 focus:ring-green-500/30 transition-all font-mono"
-                      placeholder="5562912345678"
-                      value={singleNumber}
-                      onChange={(e) => setSingleNumber(e.target.value)}
-                    />
+                    <div className="relative">
+                      {/* Container com prefixo fixo */}
+                      <div className="flex items-center gap-0">
+                        {showPrefix && (
+                          <div className="flex items-center bg-green-600/30 border-2 border-green-500/50 rounded-l-xl px-4 py-4">
+                            <span className="text-white text-lg font-bold font-mono">+55</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowPrefix(false);
+                                setSingleNumber('');
+                              }}
+                              className="ml-2 text-red-400 hover:text-red-300 transition-colors"
+                              title="Remover prefixo +55"
+                            >
+                              <FaTimes className="text-sm" />
+                            </button>
+                          </div>
+                        )}
+                        <input
+                          type="text"
+                          className={`flex-1 px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 ${
+                            showPrefix ? 'rounded-r-xl border-l-0' : 'rounded-xl'
+                          } text-white focus:border-green-500 focus:ring-4 focus:ring-green-500/30 transition-all font-mono`}
+                          placeholder={showPrefix ? "62912345678" : "5562912345678"}
+                          value={showPrefix ? singleNumber.replace(/^55/, '') : singleNumber}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, ''); // Apenas números
+                            if (showPrefix) {
+                              setSingleNumber('55' + value);
+                            } else {
+                              setSingleNumber(value);
+                            }
+                          }}
+                        />
+                      </div>
+                      {!showPrefix && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowPrefix(true);
+                            if (!singleNumber.startsWith('55')) {
+                              setSingleNumber('55' + singleNumber);
+                            }
+                          }}
+                          className="mt-2 text-sm text-green-400 hover:text-green-300 underline"
+                        >
+                          + Adicionar prefixo +55
+                        </button>
+                      )}
+                    </div>
                     <p className="text-sm text-white/60 mt-2">
-                      Formato: código país + DDD + número (sem espaços)
+                      {showPrefix 
+                        ? 'Digite apenas: DDD + número (sem espaços)'
+                        : 'Formato: código país + DDD + número (sem espaços)'
+                      }
                     </p>
                   </div>
 
