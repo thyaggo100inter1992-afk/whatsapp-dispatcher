@@ -894,6 +894,19 @@ export default function VerificarNumerosUaz() {
                               setSingleNumber(value);
                             }
                           }}
+                          onPaste={(e) => {
+                            e.preventDefault();
+                            const pastedText = e.clipboardData.getData('text');
+                            // Remove TUDO exceto números: parênteses, espaços, traços, etc
+                            const cleanNumber = pastedText.replace(/\D/g, '');
+                            if (showPrefix) {
+                              // Remove o 55 se vier colado, pois o prefixo já está fixo
+                              const withoutPrefix = cleanNumber.startsWith('55') ? cleanNumber.substring(2) : cleanNumber;
+                              setSingleNumber('55' + withoutPrefix);
+                            } else {
+                              setSingleNumber(cleanNumber);
+                            }
+                          }}
                         />
                       </div>
                       {!showPrefix && (
@@ -1195,11 +1208,14 @@ export default function VerificarNumerosUaz() {
                                 <span className="text-white/90 font-mono text-lg">{result.phone}</span>
                                 <button
                                   onClick={() => {
-                                    navigator.clipboard.writeText(result.phone);
-                                    showNotification('📋 Número copiado!', 'success');
+                                    // Copia APENAS números (remove qualquer formatação) e garante que tem 55
+                                    const cleanNumber = result.phone.replace(/\D/g, '');
+                                    const numberToCopy = cleanNumber.startsWith('55') ? cleanNumber : '55' + cleanNumber;
+                                    navigator.clipboard.writeText(numberToCopy);
+                                    showNotification('📋 Número copiado: ' + numberToCopy, 'success');
                                   }}
                                   className="p-2 bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 rounded-lg transition-all duration-200 border border-blue-500/30 hover:border-blue-400"
-                                  title="Copiar número"
+                                  title="Copiar número completo (com 55)"
                                 >
                                   <FaCopy className="text-sm" />
                                 </button>
