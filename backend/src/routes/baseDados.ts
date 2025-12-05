@@ -609,6 +609,14 @@ function mergeArrays(existentes: any[], novos: any[], campoChave: string): any[]
 router.post('/importar', checkContactLimit, async (req: Request, res: Response) => {
   try {
     const { dados, verificar_whatsapp = false } = req.body;
+    const tenantId = (req as any).tenant?.id;
+
+    if (!tenantId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Tenant não identificado'
+      });
+    }
 
     if (!Array.isArray(dados) || dados.length === 0) {
       return res.status(400).json({
@@ -617,105 +625,171 @@ router.post('/importar', checkContactLimit, async (req: Request, res: Response) 
       });
     }
 
+    console.log(`📥 Iniciando importação de ${dados.length} registros para tenant ${tenantId}...`);
+    const startTime = Date.now();
+
     let importados = 0;
     let atualizados = 0;
     let erros: any[] = [];
 
-    for (const registro of dados) {
-      try {
-        const { 
-          tipo_documento, 
-          documento, 
-          nome,
-          telefones = [],
-          emails = [],
-          enderecos = [],
-          observacoes 
-        } = registro;
+    // 🚀 OTIMIZAÇÃO: Processar em lotes de 100 registros
+    const BATCH_SIZE = 100;
+    const totalBatches = Math.ceil(dados.length / BATCH_SIZE);
+    
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const batchStart = batchIndex * BATCH_SIZE;
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, dados.length);
+      const batch = dados.slice(batchStart, batchEnd);
+      
+      console.log(`📦 Processando lote ${batchIndex + 1}/${totalBatches} (${batch.length} registros)...`);
 
-        if (!documento || !nome) {
-          erros.push({ documento, erro: 'Documento e nome são obrigatórios' });
-          continue;
-        }
+      // 🚀 OTIMIZAÇÃO: Buscar todos os documentos existentes do lote de uma vez
+      const documentosLote = batch.map(r => r.documento).filter(Boolean);
+      const existentesResult = await pool.query(
+        `SELECT documento, telefones, emails, enderecos FROM base_dados_completa 
+         WHERE documento = ANY($1) AND tenant_id = $2`,
+        [documentosLote, tenantId]
+      );
+      
+      // Criar mapa de documentos existentes para acesso rápido
+      const existentesMap = new Map();
+      existentesResult.rows.forEach(row => {
+        existentesMap.set(row.documento, row);
+      });
 
-        // Verificar se o documento já existe NESTE TENANT
-        const tenantId = (req as any).tenant?.id;
-        const checkQuery = 'SELECT * FROM base_dados_completa WHERE documento = $1 AND tenant_id = $2';
-        const checkResult = await pool.query(checkQuery, [documento, tenantId]);
-        
-        if (checkResult.rows.length > 0) {
-          // JÁ EXISTE - Fazer merge inteligente
-          const existente = checkResult.rows[0];
-          
-          // MERGE: Adicionar apenas telefones novos
-          const telefonesMerged = mergeArrays(existente.telefones || [], telefones, 'telefone');
-          
-          // MERGE: Adicionar apenas emails novos
-          const emailsMerged = mergeArrays(existente.emails || [], emails, 'email');
-          
-          // MERGE: Adicionar apenas endereços novos
-          const enderecosMerged = mergeArrays(existente.enderecos || [], enderecos, 'logradouro');
-          
-          // UPDATE mantendo nome original e fazendo merge dos arrays
-          const updateQuery = `
-            UPDATE base_dados_completa 
-            SET 
-              telefones = $1,
-              emails = $2,
-              enderecos = $3,
-              observacoes = COALESCE(observacoes, '') || ' | ' || $4,
-              data_atualizacao = NOW()
-            WHERE documento = $5
-          `;
-          
-          await pool.query(updateQuery, [
-            JSON.stringify(telefonesMerged),
-            JSON.stringify(emailsMerged),
-            JSON.stringify(enderecosMerged),
-            observacoes || 'Atualizado via importação',
-            documento
-          ]);
-          
-          atualizados++;
-          
-        } else {
-          // NÃO EXISTE - Inserir novo
-          const insertQuery = `
-            INSERT INTO base_dados_completa (
-              tipo_origem, tipo_documento, documento, nome,
-              telefones, emails, enderecos, observacoes
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          `;
-          
-          await pool.query(insertQuery, [
-            'importacao',
-            tipo_documento || 'CPF',
-            documento,
+      // Arrays para operações em lote
+      const insertsValues: any[][] = [];
+      const updates: { documento: string; telefones: any[]; emails: any[]; enderecos: any[]; observacoes: string }[] = [];
+
+      for (const registro of batch) {
+        try {
+          const { 
+            tipo_documento, 
+            documento, 
             nome,
-            JSON.stringify(telefones),
-            JSON.stringify(emails),
-            JSON.stringify(enderecos),
-            observacoes || 'Importado via arquivo'
-          ]);
-          
-          importados++;
-        }
+            telefones = [],
+            emails = [],
+            enderecos = [],
+            observacoes 
+          } = registro;
 
-      } catch (error: any) {
-        erros.push({ documento: registro.documento, erro: error.message });
+          if (!documento || !nome) {
+            erros.push({ documento, erro: 'Documento e nome são obrigatórios' });
+            continue;
+          }
+
+          const existente = existentesMap.get(documento);
+          
+          if (existente) {
+            // JÁ EXISTE - Preparar merge inteligente
+            const telefonesMerged = mergeArrays(existente.telefones || [], telefones, 'telefone');
+            const emailsMerged = mergeArrays(existente.emails || [], emails, 'email');
+            const enderecosMerged = mergeArrays(existente.enderecos || [], enderecos, 'logradouro');
+            
+            updates.push({
+              documento,
+              telefones: telefonesMerged,
+              emails: emailsMerged,
+              enderecos: enderecosMerged,
+              observacoes: observacoes || 'Atualizado via importação'
+            });
+            atualizados++;
+          } else {
+            // NÃO EXISTE - Preparar insert
+            insertsValues.push([
+              'importacao',
+              tipo_documento || 'CPF',
+              documento,
+              nome,
+              JSON.stringify(telefones),
+              JSON.stringify(emails),
+              JSON.stringify(enderecos),
+              observacoes || 'Importado via arquivo',
+              tenantId
+            ]);
+            importados++;
+          }
+
+        } catch (error: any) {
+          erros.push({ documento: registro.documento, erro: error.message });
+        }
+      }
+
+      // 🚀 OTIMIZAÇÃO: Executar INSERTs em lote usando transação
+      if (insertsValues.length > 0) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          
+          for (const values of insertsValues) {
+            await client.query(`
+              INSERT INTO base_dados_completa (
+                tipo_origem, tipo_documento, documento, nome,
+                telefones, emails, enderecos, observacoes, tenant_id
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+              ON CONFLICT (documento, tenant_id) DO NOTHING
+            `, values);
+          }
+          
+          await client.query('COMMIT');
+        } catch (insertError) {
+          await client.query('ROLLBACK');
+          console.error('❌ Erro no lote de inserts:', insertError);
+        } finally {
+          client.release();
+        }
+      }
+
+      // 🚀 OTIMIZAÇÃO: Executar UPDATEs em lote
+      if (updates.length > 0) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          
+          for (const update of updates) {
+            await client.query(`
+              UPDATE base_dados_completa 
+              SET 
+                telefones = $1,
+                emails = $2,
+                enderecos = $3,
+                observacoes = COALESCE(observacoes, '') || ' | ' || $4,
+                data_atualizacao = NOW()
+              WHERE documento = $5 AND tenant_id = $6
+            `, [
+              JSON.stringify(update.telefones),
+              JSON.stringify(update.emails),
+              JSON.stringify(update.enderecos),
+              update.observacoes,
+              update.documento,
+              tenantId
+            ]);
+          }
+          
+          await client.query('COMMIT');
+        } catch (updateError) {
+          await client.query('ROLLBACK');
+          console.error('❌ Erro no lote de updates:', updateError);
+        } finally {
+          client.release();
+        }
       }
     }
 
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`✅ Importação concluída em ${duration}s: ${importados} novos, ${atualizados} atualizados, ${erros.length} erros`);
+
     res.json({
       success: true,
-      message: 'Importação concluída!',
+      message: `Importação concluída em ${duration}s!`,
       importados,
       atualizados,
+      tempo_segundos: parseFloat(duration),
       erros: erros.length > 0 ? erros : undefined
     });
 
   } catch (error: any) {
-    console.error('Erro ao importar registros:', error);
+    console.error('❌ Erro ao importar registros:', error);
     res.status(500).json({
       success: false,
       message: 'Erro ao importar registros',
