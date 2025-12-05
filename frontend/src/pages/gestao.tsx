@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { FaBuilding, FaCrown, FaUser, FaUsers, FaEdit, FaTrash, FaPlus, FaTimes, FaDollarSign, FaChartLine, FaUsersCog, FaCamera, FaSignOutAlt, FaSquare, FaCheckSquare, FaBan, FaSpinner, FaCheck, FaFileInvoice, FaExclamationTriangle, FaWhatsapp, FaCreditCard, FaSync, FaCheckCircle } from 'react-icons/fa';
 import { useAuth } from '@/contexts/AuthContext';
 import api from '@/services/api';
@@ -218,9 +219,14 @@ function FinancialInfoPanel() {
 
   if (loading) {
     return (
-      <div className="bg-dark-800/50 backdrop-blur-xl border-2 border-white/10 rounded-3xl p-8">
-        <div className="flex items-center justify-center py-8">
-          <FaSpinner className="animate-spin text-4xl text-emerald-400" />
+      <>
+        <Head>
+          <title>Gestão de Equipe | Disparador NettSistemas</title>
+        </Head>
+        
+        <div className="bg-dark-800/50 backdrop-blur-xl border-2 border-white/10 rounded-3xl p-8">
+          <div className="flex items-center justify-center py-8">
+            <FaSpinner className="animate-spin text-4xl text-emerald-400" />
         </div>
       </div>
     );

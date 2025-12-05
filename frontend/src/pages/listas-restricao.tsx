@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { useToast } from '../hooks/useToast';
 import { useConfirm } from '../hooks/useConfirm';
 import ToastContainer from '../components/ToastContainer';
@@ -430,9 +431,14 @@ export default function ListasRestricao() {
 
   if (loading && entries.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-20 w-20 border-b-4 border-primary-500 mb-4"></div>
+      <>
+        <Head>
+          <title>Listas de Restrição | Disparador NettSistemas</title>
+        </Head>
+        
+        <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex items-center justify-center">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-20 w-20 border-b-4 border-primary-500 mb-4"></div>
           <p className="text-2xl text-white/70">Carregando listas...</p>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { useToast } from '@/hooks/useToast';
 import ToastContainer from '@/components/ToastContainer';
 import { FaGlobe, FaPlus, FaEdit, FaTrash, FaFlask, FaCheckCircle, FaTimesCircle, FaClock, FaSave, FaTimes, FaArrowLeft } from 'react-icons/fa';
@@ -292,6 +293,10 @@ export default function ProxiesPage() {
 
   return (
     <>
+      <Head>
+        <title>Gerenciar Proxies | Disparador NettSistemas</title>
+      </Head>
+      
       <ToastContainer toasts={toasts} onClose={removeToast} />
       
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900">

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { FaUser, FaEnvelope, FaLock, FaCamera, FaSave, FaArrowLeft, FaHome, FaSignOutAlt, FaUserCircle, FaTrash, FaCheckCircle, FaExclamationTriangle, FaPhone, FaIdCard, FaBuilding } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
@@ -285,9 +286,14 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900">
-      {/* Header Único do Perfil */}
-      <header className="bg-gradient-to-r from-dark-900 to-dark-800 border-b border-white/10 sticky top-0 z-50">
+    <>
+      <Head>
+        <title>Meu Perfil | Disparador NettSistemas</title>
+      </Head>
+      
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900">
+        {/* Header Único do Perfil */}
+        <header className="bg-gradient-to-r from-dark-900 to-dark-800 border-b border-white/10 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-6">
           {/* Logo do Sistema */}
           <div className="mb-6 flex justify-center">
@@ -659,6 +665,7 @@ export default function ProfilePage() {
           </div>
         </div>
       </main>
-    </div>
+      </div>
+    </>
   );
 }
