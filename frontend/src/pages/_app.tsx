@@ -10,12 +10,44 @@ import { NotificationProvider } from '@/contexts/NotificationContext';
 import logger from '@/services/logger';
 import frontendLogger from '@/services/frontend-logger';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
+import api from '@/services/api';
+import { buildFileUrl, getApiBaseUrl } from '@/utils/urlHelpers';
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
   
   // ⏱️ SISTEMA DE LOGOUT AUTOMÁTICO POR INATIVIDADE (1 HORA)
   useInactivityLogout();
+  
+  // 🎨 CARREGAR FAVICON DINAMICAMENTE (mesma logo do sistema)
+  useEffect(() => {
+    const loadFavicon = async () => {
+      try {
+        const response = await api.get('/public/logo');
+        if (response.data?.logo) {
+          const assetsHost = getApiBaseUrl();
+          const logoUrl = buildFileUrl(response.data.logo) || `${assetsHost}${response.data.logo}`;
+          
+          // Atualizar o favicon
+          let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+          if (!link) {
+            link = document.createElement('link');
+            link.rel = 'icon';
+            document.head.appendChild(link);
+          }
+          link.href = logoUrl;
+          console.log('🎨 Favicon atualizado com logo do sistema:', logoUrl);
+        } else {
+          console.log('🎨 Usando favicon padrão (WhatsApp)');
+        }
+      } catch (error) {
+        console.error('❌ Erro ao carregar favicon:', error);
+        // Em caso de erro, mantém o favicon padrão
+      }
+    };
+
+    loadFavicon();
+  }, []);
   
   // Inicializar frontend logger (executar apenas uma vez)
   useEffect(() => {
