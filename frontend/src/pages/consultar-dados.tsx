@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { 
   FaSearch, FaArrowLeft, FaDownload, FaUpload, FaFileExcel, 
   FaFileCsv, FaUser, FaBuilding, FaPhone, FaEnvelope, 
@@ -1779,6 +1780,9 @@ export default function ConsultarDados() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 p-8">
+      <Head>
+        <title>Consultar Dados Nova Vida | Disparador NettSistemas</title>
+      </Head>
       {/* Notificação Toast */}
       {notification.show && (
         <div className={`fixed top-8 right-8 z-50 px-8 py-5 rounded-2xl shadow-2xl border-2 transform transition-all duration-300 ${

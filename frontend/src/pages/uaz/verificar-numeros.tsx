@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { FaArrowLeft, FaCheckCircle, FaTimesCircle, FaSpinner, FaDownload, FaInfoCircle, FaSearchPlus, FaCopy } from 'react-icons/fa';
 import api from '@/services/api';
 import SystemLogo from '@/components/SystemLogo';
@@ -609,6 +610,9 @@ export default function VerificarNumerosUaz() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
+      <Head>
+        <title>Verificar Números | Disparador NettSistemas</title>
+      </Head>
       
       <style jsx>{`
         @keyframes slideDown {
