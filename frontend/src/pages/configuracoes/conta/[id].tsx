@@ -160,13 +160,21 @@ const [singleDate, setSingleDate] = useState('');
   const loadTemplates = async () => {
     try {
       setLoadingTemplates(true);
+      console.log('🔍 Buscando templates para conta ID:', id);
       const response = await api.get(`/whatsapp-accounts/${id}/templates`);
+      console.log('📦 Resposta templates:', response.data);
       if (response.data.success) {
-        setTemplates(response.data.data || []);
+        const templatesList = response.data.data || [];
+        console.log('✅ Templates carregados:', templatesList.length);
+        setTemplates(templatesList);
+      } else {
+        console.error('❌ Erro na resposta:', response.data);
+        toast.error('Erro: ' + (response.data.error || 'Não foi possível carregar templates'));
       }
-    } catch (error) {
-      console.error('Erro ao carregar templates:', error);
-      toast.error('Erro ao carregar templates');
+    } catch (error: any) {
+      console.error('❌ Erro ao carregar templates:', error);
+      console.error('❌ Detalhes:', error.response?.data);
+      toast.error('Erro ao carregar templates: ' + (error.response?.data?.error || error.message));
     } finally {
       setLoadingTemplates(false);
     }
