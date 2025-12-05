@@ -53,7 +53,7 @@ export default function VerificarNumerosUaz() {
   const [delaySeconds, setDelaySeconds] = useState(2);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [activeTab, setActiveTab] = useState<'single' | 'bulk'>('single');
-  const [singleNumber, setSingleNumber] = useState('');
+  const [singleNumber, setSingleNumber] = useState('55'); // Pré-preenchido com código do Brasil
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
