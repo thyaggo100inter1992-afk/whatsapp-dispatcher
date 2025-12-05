@@ -1288,10 +1288,29 @@ export default function CriarTemplate() {
 
           {/* SELECIONAR CONTAS */}
           <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-white/10 rounded-2xl p-8 shadow-xl">
-            <h2 className="text-3xl font-black mb-6 text-white">
-              📱 Selecionar Contas * 
-              <span className="ml-4 text-primary-400">({selectedAccountIds.length} selecionadas)</span>
-            </h2>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+              <h2 className="text-3xl font-black text-white">
+                📱 Selecionar Contas * 
+                <span className="ml-4 text-primary-400">({selectedAccountIds.length} selecionadas)</span>
+              </h2>
+              
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAccountIds(accounts.map(acc => acc.id))}
+                  className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-all flex items-center gap-2"
+                >
+                  ✅ Selecionar Todas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAccountIds([])}
+                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all flex items-center gap-2"
+                >
+                  ❌ Desmarcar Todas
+                </button>
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {accounts.length === 0 && (
