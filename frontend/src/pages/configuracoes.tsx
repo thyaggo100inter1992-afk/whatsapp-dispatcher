@@ -4,7 +4,7 @@ import Head from 'next/head';
 import { 
   FaCog, FaPlus, FaEdit, FaTrash, FaCheckCircle, FaTimesCircle, 
   FaSpinner, FaFileAlt, FaWhatsapp, FaCheck, FaTimes, FaBan, FaArrowLeft,
-  FaSquare, FaCheckSquare, FaArrowUp, FaArrowDown
+  FaSquare, FaCheckSquare, FaArrowUp, FaArrowDown, FaSearch, FaFilter
 } from 'react-icons/fa';
 import api, { whatsappAccountsAPI } from '@/services/api';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -46,6 +46,12 @@ export default function Configuracoes() {
     isActive: boolean;
     lastEventAt?: string;
   }}>({});
+  
+  // 🔍 BUSCA E FILTROS
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterWebhook, setFilterWebhook] = useState<'all' | 'active' | 'inactive'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'connected' | 'disconnected'>('all');
+  const [filterQuality, setFilterQuality] = useState<'all' | 'GREEN' | 'YELLOW' | 'RED' | 'FLAGGED'>('all');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -347,6 +353,39 @@ export default function Configuracoes() {
       });
     }
   };
+
+  // 🔍 FILTRAR CONTAS
+  const filteredAccounts = accounts.filter((account) => {
+    // Busca por nome ou telefone
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      const matchName = account.name.toLowerCase().includes(search);
+      const matchPhone = account.phone_number.includes(searchTerm.replace(/\D/g, ''));
+      if (!matchName && !matchPhone) return false;
+    }
+    
+    // Filtro de Webhook
+    if (filterWebhook !== 'all') {
+      const isWebhookActive = webhookStatuses[account.id]?.isActive || false;
+      if (filterWebhook === 'active' && !isWebhookActive) return false;
+      if (filterWebhook === 'inactive' && isWebhookActive) return false;
+    }
+    
+    // Filtro de Status (Conectada/Desconectada)
+    if (filterStatus !== 'all') {
+      const isConnected = (account as any).account_status === 'CONECTADO';
+      if (filterStatus === 'connected' && !isConnected) return false;
+      if (filterStatus === 'disconnected' && isConnected) return false;
+    }
+    
+    // Filtro de Qualidade
+    if (filterQuality !== 'all') {
+      const quality = (account as any).quality_rating;
+      if (quality !== filterQuality) return false;
+    }
+    
+    return true;
+  });
 
   const loadProxies = async () => {
     try {
@@ -931,7 +970,97 @@ export default function Configuracoes() {
               </div>
             </div>
 
-            {accounts.map((account) => (
+            {/* 🔍 BUSCA E FILTROS */}
+            <div className="bg-dark-800/80 backdrop-blur-xl border-2 border-white/10 rounded-2xl p-6 shadow-xl mb-8">
+              <div className="flex items-center gap-3 mb-6">
+                <FaFilter className="text-3xl text-primary-400" />
+                <h3 className="text-2xl font-black text-white">Buscar e Filtrar Contas</h3>
+              </div>
+
+              <div className="space-y-4">
+                {/* Busca */}
+                <div className="relative">
+                  <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 text-xl" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por nome ou telefone..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-14 pr-6 py-4 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all text-lg"
+                  />
+                </div>
+
+                {/* Filtros */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Filtro Webhook */}
+                  <div>
+                    <label className="block text-white/80 text-sm font-bold mb-2">🔗 Webhook</label>
+                    <select
+                      value={filterWebhook}
+                      onChange={(e) => setFilterWebhook(e.target.value as any)}
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all"
+                    >
+                      <option value="all">Todos</option>
+                      <option value="active">✅ Ativado</option>
+                      <option value="inactive">❌ Desativado</option>
+                    </select>
+                  </div>
+
+                  {/* Filtro Status */}
+                  <div>
+                    <label className="block text-white/80 text-sm font-bold mb-2">📱 Status API</label>
+                    <select
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value as any)}
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all"
+                    >
+                      <option value="all">Todos</option>
+                      <option value="connected">✅ Conectada</option>
+                      <option value="disconnected">❌ Desconectada</option>
+                    </select>
+                  </div>
+
+                  {/* Filtro Qualidade */}
+                  <div>
+                    <label className="block text-white/80 text-sm font-bold mb-2">⭐ Qualidade</label>
+                    <select
+                      value={filterQuality}
+                      onChange={(e) => setFilterQuality(e.target.value as any)}
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all"
+                    >
+                      <option value="all">Todas</option>
+                      <option value="GREEN">🟢 Alta</option>
+                      <option value="YELLOW">🟡 Média</option>
+                      <option value="RED">🔴 Baixa</option>
+                      <option value="FLAGGED">🚫 Restrita</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Contador de Resultados */}
+                {(searchTerm || filterWebhook !== 'all' || filterStatus !== 'all' || filterQuality !== 'all') && (
+                  <div className="flex items-center justify-between p-4 bg-primary-500/10 border-2 border-primary-500/30 rounded-xl">
+                    <span className="text-white font-bold">
+                      📊 Mostrando {filteredAccounts.length} de {accounts.length} conta(s)
+                    </span>
+                    <button
+                      onClick={() => {
+                        setSearchTerm('');
+                        setFilterWebhook('all');
+                        setFilterStatus('all');
+                        setFilterQuality('all');
+                      }}
+                      className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg transition-all border border-red-500/40 font-bold text-sm"
+                    >
+                      <FaTimes className="inline mr-2" />
+                      Limpar Filtros
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {filteredAccounts.map((account) => (
               <div key={account.id} className="bg-dark-800/60 backdrop-blur-xl border-2 border-primary-500/30 rounded-2xl p-8 shadow-xl hover:border-primary-500/50 transition-all duration-300 relative">
                 {/* Tag de Status no Canto Direito Superior */}
                 <div className="absolute top-4 right-4 z-10">
