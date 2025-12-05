@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   FaArrowLeft, FaPhone, FaUser, FaLock, FaChartBar, FaBell,
   FaDollarSign, FaCog, FaSave, FaImage,
-  FaQrcode, FaHeartbeat, FaFacebook, FaCheckCircle, FaGlobe, FaShieldAlt, FaInfoCircle, FaTimesCircle
+  FaQrcode, FaHeartbeat, FaFacebook, FaCheckCircle, FaGlobe, FaShieldAlt, FaInfoCircle, FaTimesCircle, FaFileAlt, FaSearch
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { useToast } from '@/hooks/useToast';
@@ -35,7 +35,7 @@ interface BusinessProfile {
   profile_picture_url?: string;
 }
 
-type TabType = 'basico' | 'perfil' | 'seguranca' | 'webhooks' | 'financeiro' | 'avancado' | 'proxy';
+type TabType = 'basico' | 'perfil' | 'seguranca' | 'webhooks' | 'financeiro' | 'avancado' | 'proxy' | 'templates';
 
 export default function ConfigurarConta() {
   const router = useRouter();
@@ -99,6 +99,12 @@ const [singleDate, setSingleDate] = useState('');
   const [billingStartDate, setBillingStartDate] = useState('');
   const [billingEndDate, setBillingEndDate] = useState('');
 
+  // Estados para templates
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [templatesSearch, setTemplatesSearch] = useState('');
+  const [templatesFilter, setTemplatesFilter] = useState<'all' | 'APPROVED' | 'PENDING' | 'REJECTED'>('all');
+
 
   useEffect(() => {
     if (id) {
@@ -119,6 +125,12 @@ const [singleDate, setSingleDate] = useState('');
       loadFacebookBilling();
     }
   }, [id, activeTab, billingPeriod, billingStartDate, billingEndDate]);
+
+  useEffect(() => {
+    if (id && activeTab === 'templates') {
+      loadTemplates();
+    }
+  }, [id, activeTab]);
 
   const loadAccount = async () => {
     try {
@@ -142,6 +154,21 @@ const [singleDate, setSingleDate] = useState('');
       }
     } catch (error) {
       console.error('Erro ao carregar perfil:', error);
+    }
+  };
+
+  const loadTemplates = async () => {
+    try {
+      setLoadingTemplates(true);
+      const response = await api.get(`/whatsapp-accounts/${id}/templates`);
+      if (response.data.success) {
+        setTemplates(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar templates:', error);
+      toast.error('Erro ao carregar templates');
+    } finally {
+      setLoadingTemplates(false);
     }
   };
 
@@ -633,6 +660,7 @@ const [singleDate, setSingleDate] = useState('');
     { id: 'perfil' as TabType, label: 'Perfil', icon: <FaUser /> },
     { id: 'seguranca' as TabType, label: 'Segurança', icon: <FaLock /> },
     { id: 'webhooks' as TabType, label: 'Webhooks', icon: <FaBell /> },
+    { id: 'templates' as TabType, label: 'Templates', icon: <FaFileAlt /> },
     { id: 'financeiro' as TabType, label: 'Financeiro', icon: <FaDollarSign /> },
     { id: 'avancado' as TabType, label: 'Avançado', icon: <FaCog /> },
   ];
@@ -2950,6 +2978,158 @@ const [singleDate, setSingleDate] = useState('');
                       )}
                     </div>
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'templates' && (
+            <div className="space-y-8">
+              {/* Título da Seção */}
+              <div className="flex items-center justify-between pb-6 border-b-2 border-white/10 flex-wrap gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-4 rounded-xl shadow-lg">
+                    <FaFileAlt className="text-4xl text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-4xl font-black text-white">
+                      Templates da Conta
+                    </h2>
+                    <p className="text-lg text-white/60 mt-1">
+                      Visualize todos os templates desta conta WhatsApp
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Busca e Filtros */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="relative">
+                  <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 text-xl" />
+                  <input
+                    type="text"
+                    placeholder="Buscar template..."
+                    value={templatesSearch}
+                    onChange={(e) => setTemplatesSearch(e.target.value)}
+                    className="w-full pl-14 pr-6 py-4 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-purple-500 focus:ring-4 focus:ring-purple-500/30 transition-all"
+                  />
+                </div>
+                <select
+                  value={templatesFilter}
+                  onChange={(e) => setTemplatesFilter(e.target.value as any)}
+                  className="px-6 py-4 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-purple-500 focus:ring-4 focus:ring-purple-500/30 transition-all"
+                >
+                  <option value="all">Todos os Status</option>
+                  <option value="APPROVED">✅ Aprovados</option>
+                  <option value="PENDING">⏳ Pendentes</option>
+                  <option value="REJECTED">❌ Rejeitados</option>
+                </select>
+              </div>
+
+              {/* Loading */}
+              {loadingTemplates && (
+                <div className="flex justify-center items-center py-20">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-500 mx-auto mb-4"></div>
+                    <p className="text-white/60">Carregando templates...</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Templates List */}
+              {!loadingTemplates && templates.length > 0 && (
+                <div className="space-y-4">
+                  {templates
+                    .filter(template => {
+                      const matchSearch = template.name.toLowerCase().includes(templatesSearch.toLowerCase());
+                      const matchFilter = templatesFilter === 'all' || template.status === templatesFilter;
+                      return matchSearch && matchFilter;
+                    })
+                    .map((template, index) => (
+                      <div
+                        key={index}
+                        className="bg-dark-800/60 backdrop-blur-xl border-2 border-white/10 rounded-2xl p-6 shadow-xl hover:border-purple-500/50 transition-all"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="text-xl font-bold text-white">{template.name}</h3>
+                              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                                template.status === 'APPROVED' 
+                                  ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                                  : template.status === 'PENDING'
+                                  ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+                                  : 'bg-red-500/20 text-red-300 border border-red-500/40'
+                              }`}>
+                                {template.status === 'APPROVED' && '✅ Aprovado'}
+                                {template.status === 'PENDING' && '⏳ Pendente'}
+                                {template.status === 'REJECTED' && '❌ Rejeitado'}
+                              </span>
+                              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                                template.category === 'MARKETING'
+                                  ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                                  : template.category === 'UTILITY'
+                                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                                  : 'bg-gray-500/20 text-gray-300 border border-gray-500/40'
+                              }`}>
+                                {template.category}
+                              </span>
+                            </div>
+                            <p className="text-white/60 text-sm mb-3">
+                              <strong>Idioma:</strong> {template.language || 'pt_BR'}
+                            </p>
+                            {template.components && template.components.length > 0 && (
+                              <div className="space-y-2">
+                                {template.components.map((component: any, idx: number) => (
+                                  <div key={idx} className="bg-white/5 rounded-lg p-3">
+                                    <p className="text-xs text-white/40 mb-1 uppercase font-bold">
+                                      {component.type}
+                                    </p>
+                                    {component.text && (
+                                      <p className="text-white/80 text-sm whitespace-pre-wrap">
+                                        {component.text}
+                                      </p>
+                                    )}
+                                    {component.format && (
+                                      <p className="text-white/60 text-sm mt-1">
+                                        <strong>Formato:</strong> {component.format}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              {/* Empty State */}
+              {!loadingTemplates && templates.length === 0 && (
+                <div className="text-center py-20">
+                  <FaFileAlt className="text-6xl text-white/20 mx-auto mb-4" />
+                  <p className="text-xl text-white/60">Nenhum template encontrado</p>
+                  <p className="text-white/40 mt-2">
+                    Esta conta ainda não possui templates cadastrados.
+                  </p>
+                </div>
+              )}
+
+              {/* Filtered Empty State */}
+              {!loadingTemplates && templates.length > 0 && 
+                templates.filter(template => {
+                  const matchSearch = template.name.toLowerCase().includes(templatesSearch.toLowerCase());
+                  const matchFilter = templatesFilter === 'all' || template.status === templatesFilter;
+                  return matchSearch && matchFilter;
+                }).length === 0 && (
+                <div className="text-center py-20">
+                  <FaSearch className="text-6xl text-white/20 mx-auto mb-4" />
+                  <p className="text-xl text-white/60">Nenhum template encontrado</p>
+                  <p className="text-white/40 mt-2">
+                    Tente ajustar seus filtros de busca.
+                  </p>
                 </div>
               )}
             </div>
