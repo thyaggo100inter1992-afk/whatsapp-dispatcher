@@ -1,0 +1,25 @@
+🔧 RODAR MIGRATION MANUALMENTE NO SERVIDOR (SE NECESSÁRIO)
+================================================================
+
+Caso a migration não tenha sido aplicada automaticamente, execute:
+
+cd /root/whatsapp-dispatcher/backend
+PGPASSWORD='Tg130992*' psql -h localhost -U postgres -d whatsapp_api -f migrations/046_add_display_order_to_whatsapp_accounts.sql
+
+OU conecte via psql e execute:
+
+-- Adicionar campo display_order
+ALTER TABLE whatsapp_accounts 
+ADD COLUMN IF NOT EXISTS display_order INTEGER DEFAULT 0;
+
+-- Atualizar contas existentes
+UPDATE whatsapp_accounts 
+SET display_order = id * 10 
+WHERE display_order = 0;
+
+-- Criar índice
+CREATE INDEX IF NOT EXISTS idx_whatsapp_accounts_display_order 
+ON whatsapp_accounts(tenant_id, display_order);
+
+================================================================
+

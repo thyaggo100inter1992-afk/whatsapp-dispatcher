@@ -412,7 +412,7 @@ router.get('/instances', async (req, res) => {
         FROM uaz_instances ui
         LEFT JOIN proxies p ON ui.proxy_id = p.id
         WHERE ui.tenant_id = $1
-        ORDER BY ui.created_at DESC
+        ORDER BY ui.display_order ASC, ui.created_at DESC
       `, [tenantId]);
     } else {
       // Usuário comum vê apenas suas instâncias autorizadas
@@ -430,7 +430,7 @@ router.get('/instances', async (req, res) => {
         INNER JOIN user_uaz_instances uui ON ui.id = uui.uaz_instance_id
         LEFT JOIN proxies p ON ui.proxy_id = p.id
         WHERE uui.user_id = $1 AND uui.tenant_id = $2
-        ORDER BY ui.created_at DESC
+        ORDER BY ui.display_order ASC, ui.created_at DESC
       `, [userId, tenantId]);
     }
     
@@ -632,6 +632,118 @@ router.get('/instances/:id', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+/**
+ * 🔼 POST /api/uaz/instances/:id/move-up
+ * Move a instância para cima na ordem
+ */
+router.post('/instances/:id/move-up', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenantId = req.tenant?.id;
+
+    if (!tenantId) {
+      return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+    }
+
+    // Buscar a instância atual
+    const currentResult = await tenantQuery(req,
+      'SELECT id, display_order FROM uaz_instances WHERE id = $1 AND tenant_id = $2',
+      [id, tenantId]
+    );
+
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Instância não encontrada' });
+    }
+
+    const currentInstance = currentResult.rows[0];
+    const currentOrder = currentInstance.display_order || 0;
+
+    // Buscar a instância anterior (menor display_order que a atual)
+    const previousResult = await tenantQuery(req,
+      'SELECT id, display_order FROM uaz_instances WHERE tenant_id = $1 AND display_order < $2 ORDER BY display_order DESC LIMIT 1',
+      [tenantId, currentOrder]
+    );
+
+    if (previousResult.rows.length === 0) {
+      return res.json({ success: true, message: 'Instância já está em primeiro lugar' });
+    }
+
+    const previousInstance = previousResult.rows[0];
+
+    // Trocar as ordens
+    await tenantQuery(req,
+      'UPDATE uaz_instances SET display_order = $1 WHERE id = $2 AND tenant_id = $3',
+      [previousInstance.display_order, currentInstance.id, tenantId]
+    );
+
+    await tenantQuery(req,
+      'UPDATE uaz_instances SET display_order = $1 WHERE id = $2 AND tenant_id = $3',
+      [currentOrder, previousInstance.id, tenantId]
+    );
+
+    res.json({ success: true, message: 'Ordem atualizada com sucesso' });
+  } catch (error) {
+    console.error('❌ Erro ao mover instância para cima:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 🔽 POST /api/uaz/instances/:id/move-down
+ * Move a instância para baixo na ordem
+ */
+router.post('/instances/:id/move-down', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenantId = req.tenant?.id;
+
+    if (!tenantId) {
+      return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+    }
+
+    // Buscar a instância atual
+    const currentResult = await tenantQuery(req,
+      'SELECT id, display_order FROM uaz_instances WHERE id = $1 AND tenant_id = $2',
+      [id, tenantId]
+    );
+
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Instância não encontrada' });
+    }
+
+    const currentInstance = currentResult.rows[0];
+    const currentOrder = currentInstance.display_order || 0;
+
+    // Buscar a próxima instância (maior display_order que a atual)
+    const nextResult = await tenantQuery(req,
+      'SELECT id, display_order FROM uaz_instances WHERE tenant_id = $1 AND display_order > $2 ORDER BY display_order ASC LIMIT 1',
+      [tenantId, currentOrder]
+    );
+
+    if (nextResult.rows.length === 0) {
+      return res.json({ success: true, message: 'Instância já está em último lugar' });
+    }
+
+    const nextInstance = nextResult.rows[0];
+
+    // Trocar as ordens
+    await tenantQuery(req,
+      'UPDATE uaz_instances SET display_order = $1 WHERE id = $2 AND tenant_id = $3',
+      [nextInstance.display_order, currentInstance.id, tenantId]
+    );
+
+    await tenantQuery(req,
+      'UPDATE uaz_instances SET display_order = $1 WHERE id = $2 AND tenant_id = $3',
+      [currentOrder, nextInstance.id, tenantId]
+    );
+
+    res.json({ success: true, message: 'Ordem atualizada com sucesso' });
+  } catch (error) {
+    console.error('❌ Erro ao mover instância para baixo:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

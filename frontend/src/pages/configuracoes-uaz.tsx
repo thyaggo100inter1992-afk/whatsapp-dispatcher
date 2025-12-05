@@ -4,7 +4,8 @@ import {
   FaPlus, FaEdit, FaTrash, FaQrcode, FaCheckCircle, FaTimesCircle,
   FaSpinner, FaArrowLeft, FaSync, FaCog, FaWhatsapp, FaExclamationTriangle,
   FaTrashAlt, FaInfoCircle, FaTimes, FaUser, FaImage, FaPause, FaPlay,
-  FaSquare, FaCheckSquare, FaBan, FaCheck, FaSearch, FaKey, FaCalendar, FaPhone
+  FaSquare, FaCheckSquare, FaBan, FaCheck, FaSearch, FaKey, FaCalendar, FaPhone,
+  FaArrowUp, FaArrowDown
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { InstanceAvatar } from '@/components/InstanceAvatar';
@@ -246,6 +247,25 @@ export default function ConfiguracoesUaz() {
       }
     } catch (err: any) {
       error('❌ Erro: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  // 🔼🔽 Funções de reordenação
+  const handleMoveUp = async (instanceId: number) => {
+    try {
+      await api.post(`/uaz/instances/${instanceId}/move-up`);
+      await loadInstances(); // Recarregar lista
+    } catch (error: any) {
+      notify.error('Erro', error.response?.data?.message || 'Erro ao reordenar instância');
+    }
+  };
+
+  const handleMoveDown = async (instanceId: number) => {
+    try {
+      await api.post(`/uaz/instances/${instanceId}/move-down`);
+      await loadInstances(); // Recarregar lista
+    } catch (error: any) {
+      notify.error('Erro', error.response?.data?.message || 'Erro ao reordenar instância');
     }
   };
 
@@ -1064,6 +1084,24 @@ export default function ConfiguracoesUaz() {
                           <FaSquare className="text-4xl text-gray-600 hover:text-gray-500 transition-colors" />
                         )}
                       </button>
+
+                      {/* 🔼🔽 Botões de Reordenação */}
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={() => handleMoveUp(instance.id)}
+                          className="p-3 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border-2 border-blue-500/40 hover:border-blue-500/60 rounded-lg transition-all duration-200 flex items-center justify-center shadow-lg"
+                          title="Mover para cima"
+                        >
+                          <FaArrowUp className="text-xl" />
+                        </button>
+                        <button
+                          onClick={() => handleMoveDown(instance.id)}
+                          className="p-3 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border-2 border-blue-500/40 hover:border-blue-500/60 rounded-lg transition-all duration-200 flex items-center justify-center shadow-lg"
+                          title="Mover para baixo"
+                        >
+                          <FaArrowDown className="text-xl" />
+                        </button>
+                      </div>
 
                       {/* Foto do Perfil do WhatsApp - MAIOR */}
                       <div className="relative flex-shrink-0">
