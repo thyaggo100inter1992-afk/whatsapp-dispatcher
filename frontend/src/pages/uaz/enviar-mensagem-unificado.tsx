@@ -104,12 +104,13 @@ export default function EnviarMensagemUnificado() {
   
   const [formData, setFormData] = useState({
     instance_id: '',
-    number: '',
+    number: '55',
     text: '',
     footerText: '',
     listButton: 'Ver Opções',
     selectableCount: 1
   });
+  const [showPrefix, setShowPrefix] = useState(true);
 
   // Estados para mídia
   const [uploadedMedia, setUploadedMedia] = useState<any>(null);
@@ -2845,14 +2846,65 @@ export default function EnviarMensagemUnificado() {
                   <label className="block text-lg font-bold mb-3 text-white">
                     📞 Número de Destino
                   </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="5562999999999"
-                    className="w-full px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-blue-500 transition-all"
-                    value={formData.number}
-                    onChange={(e) => setFormData({ ...formData, number: e.target.value.replace(/\D/g, '') })}
-                  />
+                  <div className="flex items-center gap-0">
+                    {showPrefix && (
+                      <div className="flex items-center bg-green-600/30 border-2 border-green-500/50 rounded-l-xl px-4 py-4">
+                        <span className="text-white text-lg font-bold font-mono">+55</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowPrefix(false);
+                            setFormData({ ...formData, number: '' });
+                          }}
+                          className="ml-2 text-red-400 hover:text-red-300 transition-colors"
+                          title="Remover prefixo +55"
+                        >
+                          <FaTimes className="text-sm" />
+                        </button>
+                      </div>
+                    )}
+                    <input
+                      type="text"
+                      required
+                      placeholder={showPrefix ? "62999999999" : "5562999999999"}
+                      className={`flex-1 px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 ${
+                        showPrefix ? 'rounded-r-xl border-l-0' : 'rounded-xl'
+                      } text-white focus:border-blue-500 transition-all font-mono`}
+                      value={showPrefix ? formData.number.replace(/^55/, '') : formData.number}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '');
+                        if (showPrefix) {
+                          setFormData({ ...formData, number: '55' + value });
+                        } else {
+                          setFormData({ ...formData, number: value });
+                        }
+                      }}
+                      onPaste={(e) => {
+                        const pastedText = e.clipboardData.getData('text');
+                        const cleanedText = pastedText.replace(/\D/g, '');
+                        e.preventDefault();
+                        if (showPrefix) {
+                          setFormData({ ...formData, number: '55' + cleanedText });
+                        } else {
+                          setFormData({ ...formData, number: cleanedText });
+                        }
+                      }}
+                    />
+                  </div>
+                  {!showPrefix && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowPrefix(true);
+                        if (!formData.number.startsWith('55')) {
+                          setFormData({ ...formData, number: '55' + formData.number });
+                        }
+                      }}
+                      className="mt-2 text-sm text-green-400 hover:text-green-300 underline"
+                    >
+                      + Adicionar prefixo +55
+                    </button>
+                  )}
                   <p className="text-sm text-white/50 mt-2">
                     Use DDI + DDD + Número (Ex: 5562999999999)
                   </p>
