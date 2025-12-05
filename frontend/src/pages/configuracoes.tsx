@@ -41,6 +41,7 @@ export default function Configuracoes() {
   const [proxies, setProxies] = useState<Proxy[]>([]);
   const [selectedAccounts, setSelectedAccounts] = useState<Set<number>>(new Set());
   const [deactivating, setDeactivating] = useState(false);
+  const [webhookStatuses, setWebhookStatuses] = useState<{[key: number]: boolean}>({});
 
   const [formData, setFormData] = useState({
     name: '',
@@ -344,6 +345,24 @@ export default function Configuracoes() {
       );
       
       setAccounts(accountsWithDetails);
+      
+      // Buscar status do webhook para cada conta
+      const webhookStatusMap: {[key: number]: boolean} = {};
+      await Promise.all(
+        basicAccounts.map(async (account: any) => {
+          try {
+            const statusResponse = await api.get(`/webhook/status?account_id=${account.id}&period=24h`);
+            if (statusResponse.data.success && statusResponse.data.data) {
+              webhookStatusMap[account.id] = statusResponse.data.data.isActive || false;
+            } else {
+              webhookStatusMap[account.id] = false;
+            }
+          } catch (error) {
+            webhookStatusMap[account.id] = false;
+          }
+        })
+      );
+      setWebhookStatuses(webhookStatusMap);
     } catch (error) {
       console.error('Erro ao carregar contas:', error);
     } finally {
@@ -1138,28 +1157,28 @@ export default function Configuracoes() {
                         
                         {/* Status do Webhook */}
                         <div className={`bg-gradient-to-br ${
-                          (account as any).webhook_verify_token 
+                          webhookStatuses[account.id] 
                             ? 'from-blue-500/20 to-cyan-600/10 border-blue-500/40' 
                             : 'from-red-500/20 to-orange-600/10 border-red-500/40'
                         } border-2 rounded-xl p-4`}>
                           <div className="flex items-center justify-between">
                             <div className="flex-1">
                               <div className={`${
-                                (account as any).webhook_verify_token ? 'text-blue-300' : 'text-red-300'
+                                webhookStatuses[account.id] ? 'text-blue-300' : 'text-red-300'
                               } text-xs font-bold mb-2`}>🔗 WEBHOOK</div>
                               <div className="text-white text-xl font-black flex items-center gap-2">
                                 <span className={`w-3 h-3 rounded-full ${
-                                  (account as any).webhook_verify_token 
+                                  webhookStatuses[account.id] 
                                     ? 'bg-blue-400 animate-pulse shadow-lg shadow-blue-400/50' 
                                     : 'bg-red-400'
                                 }`}></span>
-                                {(account as any).webhook_verify_token ? 'Ativado' : 'Desativado'}
+                                {webhookStatuses[account.id] ? 'Ativado' : 'Desativado'}
                               </div>
                             </div>
                             <div className={`text-4xl ${
-                              (account as any).webhook_verify_token ? 'text-blue-300' : 'text-red-300'
+                              webhookStatuses[account.id] ? 'text-blue-300' : 'text-red-300'
                             }`}>
-                              {(account as any).webhook_verify_token ? '🔔' : '🔕'}
+                              {webhookStatuses[account.id] ? '🔔' : '🔕'}
                             </div>
                           </div>
                         </div>
