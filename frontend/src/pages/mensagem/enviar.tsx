@@ -54,7 +54,8 @@ export default function EnviarMensagemImediata() {
 
   const loadAccounts = async () => {
     try {
-      const response = await whatsappAccountsAPI.getActive();
+      // 🔧 Carregar APENAS contas de API Oficial (não QR Connect)
+      const response = await whatsappAccountsAPI.getActive('api');
       setAccounts(response.data.data);
       
       if (response.data.data.length > 0) {

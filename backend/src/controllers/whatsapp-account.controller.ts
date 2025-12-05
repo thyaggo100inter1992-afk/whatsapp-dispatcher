@@ -298,9 +298,13 @@ export class WhatsAppAccountController {
       const tenantId = req.tenant?.id;
       const userId = req.user?.id; // Pegar ID do usuário logado
       
+      // 🔧 FILTRO POR TIPO: ?type=api (só API Oficial) | ?type=qr (só QR Connect) | ?type=all ou vazio (ambos)
+      const connectionType = req.query.type as string || 'all';
+      
       console.log('🔍 [findActive] Buscando contas ativas...');
       console.log(`   Tenant ID: ${tenantId}`);
       console.log(`   User ID: ${userId}`);
+      console.log(`   Tipo de conexão: ${connectionType}`);
       
       if (!tenantId) {
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
@@ -314,47 +318,79 @@ export class WhatsAppAccountController {
       const isTenantOwner = req.user?.role === 'admin' || req.user?.role === 'super_admin';
       console.log(`   É dono do tenant? ${isTenantOwner} (role: ${req.user?.role})`);
       
-      let accounts = [];
+      let accounts: any[] = [];
+      let apiAccounts: any[] = [];
+      let qrInstances: any[] = [];
       
       if (isTenantOwner) {
-        // Dono do tenant vê TODAS as contas ativas
-        console.log('   ✅ Usuário master - retornando TODAS as contas');
-        accounts = await WhatsAppAccountModel.findActive(tenantId);
+        // Dono do tenant vê TODAS as contas ativas (filtradas por tipo)
+        console.log('   ✅ Usuário master - retornando contas do tenant');
+        
+        // Buscar contas API se solicitado
+        if (connectionType === 'api' || connectionType === 'all') {
+          apiAccounts = await WhatsAppAccountModel.findActive(tenantId);
+          console.log(`   📱 Contas API: ${apiAccounts.length}`);
+        }
+        
+        // Buscar instâncias QR se solicitado
+        if (connectionType === 'qr' || connectionType === 'all') {
+          const qrResult = await tenantQuery(req, `
+            SELECT ui.*, 'qr_connect' as connection_type
+            FROM uaz_instances ui
+            WHERE ui.tenant_id = $1 AND ui.is_active = true
+            ORDER BY ui.created_at DESC
+          `, [tenantId]);
+          qrInstances = qrResult.rows;
+          console.log(`   🔗 Instâncias QR: ${qrInstances.length}`);
+        }
+        
       } else {
-        // Usuário comum vê apenas suas contas autorizadas
+        // Usuário comum vê apenas suas contas autorizadas (filtradas por tipo)
         console.log('   🔒 Usuário comum - filtrando por permissões');
         
-        // Buscar contas API autorizadas
-        const apiAccountsResult = await tenantQuery(req, `
-          SELECT wa.* 
-          FROM whatsapp_accounts wa
-          INNER JOIN user_whatsapp_accounts uwa ON wa.id = uwa.whatsapp_account_id
-          WHERE uwa.user_id = $1 
-            AND uwa.tenant_id = $2 
-            AND wa.is_active = true
-          ORDER BY wa.created_at DESC
-        `, [userId, tenantId]);
+        // Buscar contas API autorizadas (se solicitado)
+        if (connectionType === 'api' || connectionType === 'all') {
+          const apiAccountsResult = await tenantQuery(req, `
+            SELECT wa.* 
+            FROM whatsapp_accounts wa
+            INNER JOIN user_whatsapp_accounts uwa ON wa.id = uwa.whatsapp_account_id
+            WHERE uwa.user_id = $1 
+              AND uwa.tenant_id = $2 
+              AND wa.is_active = true
+            ORDER BY wa.created_at DESC
+          `, [userId, tenantId]);
+          apiAccounts = apiAccountsResult.rows;
+          console.log(`   📱 Contas API autorizadas: ${apiAccounts.length}`);
+        }
         
-        // Buscar instâncias QR autorizadas
-        const qrInstancesResult = await tenantQuery(req, `
-          SELECT ui.*,
-            'qr_connect' as connection_type
-          FROM uaz_instances ui
-          INNER JOIN user_uaz_instances uui ON ui.id = uui.uaz_instance_id
-          WHERE uui.user_id = $1 
-            AND uui.tenant_id = $2 
-            AND ui.is_active = true
-          ORDER BY ui.created_at DESC
-        `, [userId, tenantId]);
-        
-        console.log(`   📱 Contas API autorizadas: ${apiAccountsResult.rows.length}`);
-        console.log(`   🔗 Instâncias QR autorizadas: ${qrInstancesResult.rows.length}`);
-        
-        // Combinar ambos os tipos de conta
-        accounts = [...apiAccountsResult.rows, ...qrInstancesResult.rows];
+        // Buscar instâncias QR autorizadas (se solicitado)
+        if (connectionType === 'qr' || connectionType === 'all') {
+          const qrInstancesResult = await tenantQuery(req, `
+            SELECT ui.*,
+              'qr_connect' as connection_type
+            FROM uaz_instances ui
+            INNER JOIN user_uaz_instances uui ON ui.id = uui.uaz_instance_id
+            WHERE uui.user_id = $1 
+              AND uui.tenant_id = $2 
+              AND ui.is_active = true
+            ORDER BY ui.created_at DESC
+          `, [userId, tenantId]);
+          qrInstances = qrInstancesResult.rows;
+          console.log(`   🔗 Instâncias QR autorizadas: ${qrInstances.length}`);
+        }
       }
       
-      console.log(`   ✅ Total de contas retornadas: ${accounts.length}`);
+      // Montar resultado baseado no tipo solicitado
+      if (connectionType === 'api') {
+        accounts = apiAccounts;
+      } else if (connectionType === 'qr') {
+        accounts = qrInstances;
+      } else {
+        // 'all' - combinar ambos
+        accounts = [...apiAccounts, ...qrInstances];
+      }
+      
+      console.log(`   ✅ Total de contas retornadas (tipo: ${connectionType}): ${accounts.length}`);
       res.json({ success: true, data: accounts });
     } catch (error: any) {
       console.error('❌ Erro ao buscar contas ativas:', error);

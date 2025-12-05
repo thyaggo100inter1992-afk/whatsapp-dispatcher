@@ -288,7 +288,8 @@ export default function CriarTemplate() {
   const loadAccounts = async () => {
     try {
       console.log('🔍 Carregando contas do WhatsApp...');
-      const response = await whatsappAccountsAPI.getActive();
+      // 🔧 Carregar APENAS contas de API Oficial (não QR Connect)
+      const response = await whatsappAccountsAPI.getActive('api');
       console.log('📋 Resposta da API:', response.data);
       
       // A resposta pode vir em diferentes formatos

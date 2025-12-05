@@ -108,7 +108,8 @@ export default function CriarCampanha() {
 
   const loadAccounts = async () => {
     try {
-      const response = await whatsappAccountsAPI.getActive();
+      // 🔧 Carregar APENAS contas de API Oficial (não QR Connect)
+      const response = await whatsappAccountsAPI.getActive('api');
       setAccounts(response.data.data);
     } catch (error) {
       console.error('Erro ao carregar contas:', error);

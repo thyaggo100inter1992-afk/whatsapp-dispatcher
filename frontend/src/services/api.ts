@@ -118,7 +118,8 @@ api.interceptors.response.use(
 // WhatsApp Accounts
 export const whatsappAccountsAPI = {
   getAll: () => api.get('/whatsapp-accounts'),
-  getActive: () => api.get('/whatsapp-accounts/active'),
+  // type: 'api' = só API Oficial, 'qr' = só QR Connect, 'all' = ambos (padrão)
+  getActive: (type: 'api' | 'qr' | 'all' = 'all') => api.get(`/whatsapp-accounts/active?type=${type}`),
   getById: (id: number) => api.get(`/whatsapp-accounts/${id}`),
   create: (data: any) => api.post('/whatsapp-accounts', data),
   update: (id: number, data: any) => api.put(`/whatsapp-accounts/${id}`, data),

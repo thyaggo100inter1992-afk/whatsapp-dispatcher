@@ -44,7 +44,8 @@ export default function AnalisarTemplate() {
 
   const loadAccounts = async () => {
     try {
-      const response = await whatsappAccountsAPI.getActive();
+      // 🔧 Carregar APENAS contas de API Oficial (não QR Connect)
+      const response = await whatsappAccountsAPI.getActive('api');
       const accountsData = response.data.data || response.data || [];
       setAccounts(Array.isArray(accountsData) ? accountsData : []);
     } catch (error) {
