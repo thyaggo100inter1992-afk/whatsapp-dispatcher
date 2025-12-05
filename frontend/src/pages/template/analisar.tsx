@@ -128,9 +128,14 @@ export default function AnalisarTemplate() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 p-8">
-      {/* Header */}
-      <div className="max-w-7xl mx-auto mb-8">
+    <>
+      <Head>
+        <title>Analisar Template | Disparador NettSistemas</title>
+      </Head>
+      
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 p-8">
+        {/* Header */}
+        <div className="max-w-7xl mx-auto mb-8">
         <button
           onClick={() => router.push('/configuracoes')}
           className="mb-6 px-6 py-3 bg-dark-700 hover:bg-dark-600 text-white rounded-xl transition-all flex items-center gap-2 font-bold"
@@ -347,7 +352,8 @@ export default function AnalisarTemplate() {
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
