@@ -2551,8 +2551,7 @@ export default function CriarCampanha() {
       
       {/* Toast Notifications */}
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
-        </div>
-      </div>
+    </div>
     </>
   );
 }
