@@ -635,7 +635,7 @@ export default function EnviarMensagemImediataV2() {
                         </button>
                         {accountDropdownOpen && (
                           <div className="absolute z-[9999] w-full mt-2 bg-dark-700 border-2 border-white/20 rounded-xl shadow-2xl overflow-hidden">
-                            <div className="max-h-60 overflow-y-auto">
+                            <div className="max-h-44 overflow-y-auto">
                               <div
                                 onClick={() => {
                                   handleAccountChange(0);
