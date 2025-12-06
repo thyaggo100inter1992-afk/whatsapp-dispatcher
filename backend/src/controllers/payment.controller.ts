@@ -8,6 +8,25 @@ import { pool } from '../database/connection';
 import asaasService from '../services/asaas.service';
 
 class PaymentController {
+  constructor() {
+    // Bind all methods to preserve 'this' context when called by Express
+    this.listPlans = this.listPlans.bind(this);
+    this.getFinancialInfo = this.getFinancialInfo.bind(this);
+    this.checkPaymentStatus = this.checkPaymentStatus.bind(this);
+    this.getPaymentStatus = this.getPaymentStatus.bind(this);
+    this.createPayment = this.createPayment.bind(this);
+    this.handleWebhook = this.handleWebhook.bind(this);
+    this.calculateUpgrade = this.calculateUpgrade.bind(this);
+    this.processUpgrade = this.processUpgrade.bind(this);
+    this.validateTenantUsage = this.validateTenantUsage.bind(this);
+    this.scheduleDowngrade = this.scheduleDowngrade.bind(this);
+    this.renewPlan = this.renewPlan.bind(this);
+    this.getPayment = this.getPayment.bind(this);
+    this.updatePixData = this.updatePixData.bind(this);
+    this.syncPayments = this.syncPayments.bind(this);
+    this.markAsPaid = this.markAsPaid.bind(this);
+  }
+
   /**
    * GET /api/payments/plans
    * Listar planos disponíveis
