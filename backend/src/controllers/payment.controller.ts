@@ -1264,7 +1264,7 @@ class PaymentController {
       // 1. Validar número de usuários ativos
       const usersResult = await pool.query(`
         SELECT COUNT(*) as total
-        FROM users
+        FROM tenant_users
         WHERE tenant_id = $1 AND ativo = true
       `, [tenantId]);
       const totalUsers = parseInt(usersResult.rows[0].total);
@@ -1273,16 +1273,25 @@ class PaymentController {
         errors.push(`${totalUsers} usuários ativos (plano permite ${plan.limite_usuarios})`);
       }
 
-      // 2. Validar número de conexões WhatsApp ativas
-      const whatsappResult = await pool.query(`
+      // 2. Validar número de conexões WhatsApp ativas (API Oficial + QR Connect)
+      const whatsappApiResult = await pool.query(`
         SELECT COUNT(*) as total
-        FROM whatsapp_connections
-        WHERE tenant_id = $1 AND status = 'connected'
+        FROM whatsapp_accounts
+        WHERE tenant_id = $1 AND is_active = true
       `, [tenantId]);
-      const totalWhatsApp = parseInt(whatsappResult.rows[0].total);
+      const totalWhatsAppApi = parseInt(whatsappApiResult.rows[0].total);
+      
+      const whatsappQrResult = await pool.query(`
+        SELECT COUNT(*) as total
+        FROM uaz_instances
+        WHERE tenant_id = $1 AND status = 'open'
+      `, [tenantId]);
+      const totalWhatsAppQr = parseInt(whatsappQrResult.rows[0].total);
+      
+      const totalWhatsApp = totalWhatsAppApi + totalWhatsAppQr;
       
       if (totalWhatsApp > plan.limite_contas_whatsapp) {
-        errors.push(`${totalWhatsApp} conexões WhatsApp ativas (plano permite ${plan.limite_contas_whatsapp})`);
+        errors.push(`${totalWhatsApp} conexões WhatsApp ativas (${totalWhatsAppApi} API + ${totalWhatsAppQr} QR) (plano permite ${plan.limite_contas_whatsapp})`);
       }
 
       // 3. Validar campanhas ativas/agendadas
@@ -1299,7 +1308,7 @@ class PaymentController {
 
       console.log(`🔍 Validação de uso - Tenant ${tenantId} → Plano ${plan.nome}:`);
       console.log(`  - Usuários: ${totalUsers}/${plan.limite_usuarios} ${totalUsers > plan.limite_usuarios ? '❌' : '✅'}`);
-      console.log(`  - WhatsApp: ${totalWhatsApp}/${plan.limite_contas_whatsapp} ${totalWhatsApp > plan.limite_contas_whatsapp ? '❌' : '✅'}`);
+      console.log(`  - WhatsApp: ${totalWhatsApp}/${plan.limite_contas_whatsapp} (${totalWhatsAppApi} API + ${totalWhatsAppQr} QR) ${totalWhatsApp > plan.limite_contas_whatsapp ? '❌' : '✅'}`);
       console.log(`  - Campanhas: ${totalCampaigns}/${plan.limite_campanhas_mes} ${totalCampaigns > plan.limite_campanhas_mes ? '❌' : '✅'}`);
 
       return {
