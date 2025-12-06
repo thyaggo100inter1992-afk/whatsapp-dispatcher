@@ -429,7 +429,20 @@ export default function MudarPlano() {
                 <p className="text-3xl font-black text-white">{formatCurrency(paymentData.valor)}</p>
               </div>
 
-              {/* PIX */}
+              {/* PIX QR Code */}
+              {paymentData.payment_type === 'PIX' && paymentData.pix_qr_code && (
+                <div className="flex justify-center">
+                  <div className="bg-white p-4 rounded-xl">
+                    <img 
+                      src={paymentData.pix_qr_code} 
+                      alt="QR Code PIX" 
+                      className="w-48 h-48"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* PIX Copia e Cola */}
               {paymentData.payment_type === 'PIX' && paymentData.pix_copy_paste && (
                 <div>
                   <p className="text-gray-400 mb-2">PIX Copia e Cola:</p>
