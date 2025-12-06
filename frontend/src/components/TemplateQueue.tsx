@@ -52,6 +52,7 @@ export const TemplateQueue: React.FC<TemplateQueueProps> = ({ onClose, toast: ex
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [newInterval, setNewInterval] = useState<number>(5);
   const [updating, setUpdating] = useState(false);
+  const [intervalInitialized, setIntervalInitialized] = useState(false);
   const [failures, setFailures] = useState<FailureItem[]>([]);
   const [showFailures, setShowFailures] = useState(false);
   const [editingFailure, setEditingFailure] = useState<number | null>(null);
@@ -96,7 +97,11 @@ export const TemplateQueue: React.FC<TemplateQueueProps> = ({ onClose, toast: ex
       const data = response.data;
       if (data.success) {
         setQueueStatus(data.queue);
-        setNewInterval(data.queue.interval);
+        // Só define o newInterval na primeira vez para não sobrescrever o que o usuário está digitando
+        if (!intervalInitialized) {
+          setNewInterval(data.queue.interval);
+          setIntervalInitialized(true);
+        }
       }
     } catch (error: any) {
       // Se for 403, significa que não tem permissão
