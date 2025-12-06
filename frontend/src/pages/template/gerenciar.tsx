@@ -57,6 +57,10 @@ export default function GerenciarTemplates() {
   const [bulkCopying, setBulkCopying] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   
+  // Estado para armazenar os novos nomes dos templates na cópia
+  const [templateNewNames, setTemplateNewNames] = useState<{ [originalName: string]: string }>({});
+  const [singleCopyNewName, setSingleCopyNewName] = useState<string>('');
+  
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
@@ -141,18 +145,26 @@ export default function GerenciarTemplates() {
   const handleCopyTemplate = (template: Template) => {
     setTemplateToCopy(template);
     setTargetAccountIds([]);
+    setSingleCopyNewName(template.name); // Inicializa com o nome atual
     setCopyModalOpen(true);
   };
 
   const executeCopyTemplate = async () => {
     if (!templateToCopy || targetAccountIds.length === 0) return;
 
+    // Validar nome do template
+    const newName = singleCopyNewName.trim();
+    if (!newName) {
+      toast.error('Nome do template não pode estar vazio!');
+      return;
+    }
+
     setCopying(true);
     try {
       const response = await api.post('/templates/create-multiple', {
         accountIds: targetAccountIds,
         templateData: {
-          name: templateToCopy.name,
+          name: newName, // Usa o novo nome editado
           category: templateToCopy.category,
           language: templateToCopy.language,
           components: templateToCopy.components,
@@ -167,6 +179,7 @@ export default function GerenciarTemplates() {
         setCopyModalOpen(false);
         setTemplateToCopy(null);
         setTargetAccountIds([]);
+        setSingleCopyNewName('');
       } else {
         toast.error('Erro ao copiar: ' + data.error);
       }
@@ -272,11 +285,24 @@ export default function GerenciarTemplates() {
       return;
     }
     setTargetAccountIds([]);
+    // Inicializa os novos nomes com os nomes originais
+    const initialNames: { [key: string]: string } = {};
+    selectedTemplateNames.forEach(name => {
+      initialNames[name] = name;
+    });
+    setTemplateNewNames(initialNames);
     setBulkCopyModalOpen(true);
   };
 
   const executeBulkCopy = async () => {
     if (selectedTemplateNames.length === 0 || targetAccountIds.length === 0) return;
+
+    // Validar se todos os nomes estão preenchidos
+    const emptyNames = selectedTemplateNames.filter(name => !templateNewNames[name]?.trim());
+    if (emptyNames.length > 0) {
+      toast.error('Todos os templates precisam ter um nome!');
+      return;
+    }
 
     setBulkCopying(true);
     const selectedTemplatesData = filteredTemplates.filter(t => selectedTemplateNames.includes(t.name));
@@ -285,10 +311,12 @@ export default function GerenciarTemplates() {
 
     try {
       for (const template of selectedTemplatesData) {
+        const newName = templateNewNames[template.name]?.trim() || template.name;
+        
         const response = await api.post('/templates/create-multiple', {
           accountIds: targetAccountIds,
           templateData: {
-            name: template.name,
+            name: newName, // Usa o novo nome editado
             category: template.category,
             language: template.language,
             components: template.components,
@@ -312,6 +340,7 @@ export default function GerenciarTemplates() {
       setBulkCopyModalOpen(false);
       clearSelection();
       setTargetAccountIds([]);
+      setTemplateNewNames({});
     } catch (error: any) {
       toast.error('Erro ao copiar templates: ' + error.message);
     } finally {
@@ -720,30 +749,57 @@ export default function GerenciarTemplates() {
 
       {bulkCopyModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-dark-800 border-2 border-primary-500/40 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-8">
+          <div className="bg-dark-800 border-2 border-primary-500/40 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-8">
             <h2 className="text-3xl font-black text-white mb-6 flex items-center gap-3">
               <span className="text-4xl">📋</span>
               Copiar {selectedTemplateNames.length} Template(s)
             </h2>
 
             <div className="mb-8">
-              <div className="p-6 bg-blue-500/10 border-2 border-blue-500/30 rounded-2xl mb-6">
-                <div className="font-black text-blue-300 text-xl mb-3">Templates Selecionados:</div>
-                <div className="text-white/80 text-base space-y-2 max-h-64 overflow-y-auto">
-                  {selectedTemplateNames.map((name, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="text-xl">•</span>
-                      <span className="font-medium">{name}</span>
+              {/* SEÇÃO: Editar Nomes dos Templates */}
+              <div className="p-6 bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-2 border-blue-500/30 rounded-2xl mb-6">
+                <div className="font-black text-blue-300 text-xl mb-4 flex items-center gap-2">
+                  <span className="text-2xl">✏️</span>
+                  Editar Nomes dos Templates
+                </div>
+                <p className="text-white/60 text-sm mb-4">
+                  Você pode alterar o nome de cada template antes de copiar para as outras contas
+                </p>
+                <div className="space-y-4 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                  {selectedTemplateNames.map((originalName, i) => (
+                    <div key={i} className="bg-dark-700/60 rounded-xl p-4 border border-white/10">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-lg text-white/50">#{i + 1}</span>
+                        <span className="text-sm text-white/40">Nome original:</span>
+                        <span className="text-sm text-white/60 font-mono">{originalName}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <label className="text-white font-bold text-sm whitespace-nowrap">Novo Nome:</label>
+                        <input
+                          type="text"
+                          value={templateNewNames[originalName] || ''}
+                          onChange={(e) => {
+                            setTemplateNewNames(prev => ({
+                              ...prev,
+                              [originalName]: e.target.value
+                            }));
+                          }}
+                          placeholder="Digite o novo nome do template"
+                          className="flex-1 px-4 py-3 bg-dark-600 border-2 border-white/20 rounded-xl text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 transition-all font-medium"
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <label className="block text-2xl font-black mb-4 text-white">
+              {/* SEÇÃO: Selecionar Contas de Destino */}
+              <label className="block text-2xl font-black mb-4 text-white flex items-center gap-2">
+                <span className="text-2xl">📱</span>
                 Selecionar Contas de Destino
               </label>
               
-              <div className="space-y-4 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-4 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
                 {accounts.filter(a => a.id !== selectedAccountId).map(account => (
                   <div
                     key={account.id}
@@ -754,7 +810,7 @@ export default function GerenciarTemplates() {
                         setTargetAccountIds([...targetAccountIds, account.id]);
                       }
                     }}
-                    className={`p-6 rounded-2xl border-2 cursor-pointer transition-all ${
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
                       targetAccountIds.includes(account.id)
                         ? 'border-green-500/50 bg-green-500/10'
                         : 'border-white/20 bg-white/5 hover:border-primary-500/50'
@@ -775,6 +831,16 @@ export default function GerenciarTemplates() {
                   </div>
                 ))}
               </div>
+
+              {/* Resumo da operação */}
+              {targetAccountIds.length > 0 && (
+                <div className="mt-6 p-4 bg-green-500/10 border-2 border-green-500/30 rounded-xl">
+                  <div className="text-green-300 font-bold flex items-center gap-2">
+                    <span className="text-xl">✅</span>
+                    Resumo: {selectedTemplateNames.length} template(s) serão copiados para {targetAccountIds.length} conta(s)
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-4">
@@ -782,6 +848,7 @@ export default function GerenciarTemplates() {
                 onClick={() => {
                   setBulkCopyModalOpen(false);
                   setTargetAccountIds([]);
+                  setTemplateNewNames({});
                 }}
                 className="flex-1 px-6 py-4 bg-dark-700 hover:bg-dark-600 text-white text-lg font-bold rounded-xl transition-all duration-200 border-2 border-white/20"
                 disabled={bulkCopying}
@@ -794,7 +861,10 @@ export default function GerenciarTemplates() {
                 className="flex-1 px-6 py-4 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white text-lg font-bold rounded-xl transition-all duration-200 shadow-lg shadow-primary-500/40 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {bulkCopying ? (
-                  'Copiando...'
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Copiando...
+                  </>
                 ) : (
                   <>
                     <FaCopy />
@@ -922,16 +992,44 @@ export default function GerenciarTemplates() {
       {copyModalOpen && templateToCopy && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-dark-800 border-2 border-primary-500/40 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-8">
-            <h2 className="text-3xl font-black text-white mb-6">
-              Copiar Template: <span className="text-primary-400">{templateToCopy.name}</span>
+            <h2 className="text-3xl font-black text-white mb-6 flex items-center gap-3">
+              <span className="text-4xl">📋</span>
+              Copiar Template
             </h2>
 
             <div className="mb-8">
-              <label className="block text-2xl font-black mb-4 text-white">
+              {/* SEÇÃO: Editar Nome do Template */}
+              <div className="p-6 bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-2 border-blue-500/30 rounded-2xl mb-6">
+                <div className="font-black text-blue-300 text-xl mb-4 flex items-center gap-2">
+                  <span className="text-2xl">✏️</span>
+                  Nome do Template
+                </div>
+                <div className="mb-3">
+                  <span className="text-sm text-white/40">Nome original:</span>
+                  <span className="text-sm text-white/60 font-mono ml-2">{templateToCopy.name}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="text-white font-bold text-sm whitespace-nowrap">Novo Nome:</label>
+                  <input
+                    type="text"
+                    value={singleCopyNewName}
+                    onChange={(e) => setSingleCopyNewName(e.target.value)}
+                    placeholder="Digite o nome do template"
+                    className="flex-1 px-4 py-3 bg-dark-600 border-2 border-white/20 rounded-xl text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 transition-all font-medium"
+                  />
+                </div>
+                <p className="text-white/50 text-xs mt-2">
+                  💡 Dica: Você pode manter o nome original ou alterá-lo para criar uma cópia com nome diferente
+                </p>
+              </div>
+
+              {/* SEÇÃO: Selecionar Contas de Destino */}
+              <label className="block text-2xl font-black mb-4 text-white flex items-center gap-2">
+                <span className="text-2xl">📱</span>
                 Selecionar Contas de Destino
               </label>
               
-              <div className="space-y-4 max-h-96 overflow-y-auto">
+              <div className="space-y-4 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
                 {accounts.filter(a => a.id !== selectedAccountId).map(account => (
                   <div
                     key={account.id}
@@ -942,7 +1040,7 @@ export default function GerenciarTemplates() {
                         setTargetAccountIds([...targetAccountIds, account.id]);
                       }
                     }}
-                    className={`p-6 rounded-2xl border-2 cursor-pointer transition-all ${
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
                       targetAccountIds.includes(account.id)
                         ? 'border-green-500/50 bg-green-500/10'
                         : 'border-white/20 bg-white/5 hover:border-primary-500/50'
@@ -963,6 +1061,16 @@ export default function GerenciarTemplates() {
                   </div>
                 ))}
               </div>
+
+              {/* Resumo da operação */}
+              {targetAccountIds.length > 0 && singleCopyNewName.trim() && (
+                <div className="mt-6 p-4 bg-green-500/10 border-2 border-green-500/30 rounded-xl">
+                  <div className="text-green-300 font-bold flex items-center gap-2">
+                    <span className="text-xl">✅</span>
+                    Template "{singleCopyNewName.trim()}" será copiado para {targetAccountIds.length} conta(s)
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-4">
@@ -971,6 +1079,7 @@ export default function GerenciarTemplates() {
                   setCopyModalOpen(false);
                   setTemplateToCopy(null);
                   setTargetAccountIds([]);
+                  setSingleCopyNewName('');
                 }}
                 className="flex-1 px-6 py-4 bg-dark-700 hover:bg-dark-600 text-white text-lg font-bold rounded-xl transition-all duration-200 border-2 border-white/20"
                 disabled={copying}
@@ -979,10 +1088,20 @@ export default function GerenciarTemplates() {
               </button>
               <button
                 onClick={executeCopyTemplate}
-                disabled={copying || targetAccountIds.length === 0}
+                disabled={copying || targetAccountIds.length === 0 || !singleCopyNewName.trim()}
                 className="flex-1 px-6 py-4 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white text-lg font-bold rounded-xl transition-all duration-200 shadow-lg shadow-primary-500/40 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {copying ? 'Copiando...' : <><FaCopy /> Copiar para {targetAccountIds.length} conta(s)</>}
+                {copying ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Copiando...
+                  </>
+                ) : (
+                  <>
+                    <FaCopy /> 
+                    Copiar para {targetAccountIds.length} conta(s)
+                  </>
+                )}
               </button>
             </div>
           </div>

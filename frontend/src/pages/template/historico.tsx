@@ -29,6 +29,7 @@ export default function HistoricoTemplates() {
   const [templates, setTemplates] = useState<TemplateHistory[]>([]);
   const [filteredTemplates, setFilteredTemplates] = useState<TemplateHistory[]>([]);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true); // Apenas para o primeiro carregamento
   
   // Filtros
   const [filterPeriod, setFilterPeriod] = useState<'today' | '7days' | '30days' | 'custom'>('30days');
@@ -39,7 +40,8 @@ export default function HistoricoTemplates() {
   const [searchTerm, setSearchTerm] = useState('');
   
   const [accounts, setAccounts] = useState<any[]>([]);
-  const [autoRefresh, setAutoRefresh] = useState(false); // Desativado por padrão, ativa apenas se houver pendentes
+  const [autoRefresh, setAutoRefresh] = useState(false); // Desativado por padrão
+  const [autoRefreshPaused, setAutoRefreshPaused] = useState(true); // PAUSADO por padrão - usuário ativa se quiser
   const [refreshing, setRefreshing] = useState(false);
   const [hasPending, setHasPending] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -49,24 +51,25 @@ export default function HistoricoTemplates() {
     loadTemplates();
   }, []);
 
-  // Auto-refresh inteligente: atualiza a cada 3 segundos quando há pendentes
+  // Auto-refresh: atualiza a cada 15 segundos quando ativado manualmente pelo usuário
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || autoRefreshPaused) return;
 
-    console.log('🔄 Auto-refresh ativado - aguardando aprovação de', pendingCount, 'template(s)');
+    console.log('🔄 Auto-refresh ativado pelo usuário');
     
     const interval = setInterval(() => {
       setRefreshing(true);
-      loadTemplates().finally(() => {
+      // No auto-refresh, NÃO chama update-statuses (é muito pesado)
+      loadTemplatesLight().finally(() => {
         setTimeout(() => setRefreshing(false), 500);
       });
-    }, 3000); // 3 segundos quando há pendentes
+    }, 15000); // 15 segundos - intervalo maior para não sobrecarregar
 
     return () => {
-      console.log('⏸️ Auto-refresh desativado - todos os templates processados');
+      console.log('⏸️ Auto-refresh desativado');
       clearInterval(interval);
     };
-  }, [autoRefresh]);
+  }, [autoRefresh, autoRefreshPaused]);
 
   useEffect(() => {
     applyFilters();
@@ -82,24 +85,55 @@ export default function HistoricoTemplates() {
     }
   };
 
-  const loadTemplates = async () => {
-    setLoading(true);
+  // Carregamento LEVE - apenas busca dados do banco, NÃO atualiza da API do WhatsApp
+  const loadTemplatesLight = async () => {
     try {
-      // Primeiro, atualizar os status buscando da API do WhatsApp
-      try {
-        console.log('🔄 Atualizando status dos templates da API do WhatsApp...');
-        await api.post('/templates/history/update-statuses');
-        console.log('✅ Status atualizados com sucesso!');
-      } catch (updateError: any) {
-        console.warn('⚠️ Erro ao atualizar status (não crítico):', updateError.message);
-      }
-      
-      // Depois, buscar os dados atualizados
       const response = await api.get('/templates/history');
       const data = response.data || [];
-    // Ocultar templates que já foram deletados
-    const filteredData = (data || []).filter((item: TemplateHistory) => item.status !== 'DELETED');
-    setTemplates(filteredData);
+      
+      const filteredData = (data || []).filter((item: TemplateHistory) => item.status !== 'DELETED');
+      setTemplates(filteredData);
+      
+      const pending = data.filter((t: TemplateHistory) => 
+        t.status === 'PENDING' || 
+        t.status === 'pending' || 
+        t.status === 'queued' ||
+        t.status === 'processing'
+      );
+      
+      setHasPending(pending.length > 0);
+      setPendingCount(pending.length);
+    } catch (error: any) {
+      console.error('Erro ao carregar histórico (light):', error);
+    }
+  };
+
+  // Carregamento COMPLETO - atualiza status da API do WhatsApp (usado apenas no botão "Atualizar Agora")
+  const loadTemplates = async (silentRefresh: boolean = false) => {
+    // Se não é refresh silencioso E é o primeiro carregamento, mostra loading completo
+    if (!silentRefresh && initialLoading) {
+      setLoading(true);
+    }
+    
+    try {
+      // Atualizar os status buscando da API do WhatsApp (apenas se não for silentRefresh)
+      if (!silentRefresh) {
+        try {
+          console.log('🔄 Atualizando status dos templates da API do WhatsApp...');
+          await api.post('/templates/history/update-statuses');
+          console.log('✅ Status atualizados com sucesso!');
+        } catch (updateError: any) {
+          console.warn('⚠️ Erro ao atualizar status (não crítico):', updateError.message);
+        }
+      }
+      
+      // Buscar os dados atualizados
+      const response = await api.get('/templates/history');
+      const data = response.data || [];
+      
+      // Ocultar templates que já foram deletados
+      const filteredData = (data || []).filter((item: TemplateHistory) => item.status !== 'DELETED');
+      setTemplates(filteredData);
       
       // Verificar se há templates pendentes ou na fila (aguardando aprovação do WhatsApp)
       const pending = data.filter((t: TemplateHistory) => 
@@ -109,20 +143,23 @@ export default function HistoricoTemplates() {
         t.status === 'processing'
       );
       
-      console.log('📊 Status dos templates:', data.map((t: any) => ({ name: t.template_name, status: t.status, error: t.error_message })));
-      
       const hasPendingTemplates = pending.length > 0;
       setHasPending(hasPendingTemplates);
       setPendingCount(pending.length);
       
-      // Ativar/desativar auto-refresh baseado em pendentes
-      setAutoRefresh(hasPendingTemplates);
+      // NÃO ativa auto-refresh automaticamente - usuário controla
+      if (hasPendingTemplates && !autoRefreshPaused) {
+        setAutoRefresh(true);
+      }
       
     } catch (error: any) {
       console.error('Erro ao carregar histórico:', error);
-      toast.error(error.response?.data?.error || 'Erro ao carregar histórico de templates');
+      if (!silentRefresh) {
+        toast.error(error.response?.data?.error || 'Erro ao carregar histórico de templates');
+      }
     } finally {
       setLoading(false);
+      setInitialLoading(false);
     }
   };
 
@@ -288,13 +325,16 @@ export default function HistoricoTemplates() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              {/* Indicador de status inteligente */}
+              {/* Indicador de status */}
               {hasPending ? (
                 <div className="flex items-center gap-2 text-yellow-400 text-sm font-bold bg-yellow-500/10 px-6 py-3 rounded-xl border-2 border-yellow-500/40">
-                  <FaSync className="animate-spin text-xl" />
+                  {!autoRefreshPaused && autoRefresh && <FaSync className="animate-spin text-xl" />}
+                  {(autoRefreshPaused || !autoRefresh) && <FaClock className="text-xl" />}
                   <div>
-                    <div className="text-base">Aguardando aprovação...</div>
-                    <div className="text-xs text-yellow-300/80">{pendingCount} template(s) pendente(s)</div>
+                    <div className="text-base">{pendingCount} template(s) pendente(s)</div>
+                    <div className="text-xs text-yellow-300/80">
+                      {autoRefreshPaused || !autoRefresh ? 'Auto-refresh desligado' : 'Atualizando a cada 15s'}
+                    </div>
                   </div>
                 </div>
               ) : filteredTemplates.length > 0 ? (
@@ -302,13 +342,47 @@ export default function HistoricoTemplates() {
                   <FaCheckCircle className="text-xl" />
                   <div>
                     <div className="text-base">Todos processados!</div>
-                    <div className="text-xs text-green-300/80">Nenhum template pendente</div>
                   </div>
                 </div>
               ) : null}
               
-              {/* Indicador quando está atualizando manualmente */}
-              {!hasPending && refreshing && (
+              {/* Botão Ligar/Desligar Auto-Refresh - sempre visível quando há pendentes */}
+              {hasPending && (
+                <button
+                  onClick={() => {
+                    if (autoRefreshPaused) {
+                      // Ligar auto-refresh
+                      setAutoRefreshPaused(false);
+                      setAutoRefresh(true);
+                    } else {
+                      // Desligar auto-refresh
+                      setAutoRefreshPaused(true);
+                      setAutoRefresh(false);
+                    }
+                  }}
+                  className={`px-5 py-3 rounded-xl font-bold transition-all duration-200 flex items-center gap-2 border-2 ${
+                    autoRefreshPaused || !autoRefresh
+                      ? 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border-blue-500/40'
+                      : 'bg-red-500/20 hover:bg-red-500/30 text-red-300 border-red-500/40'
+                  }`}
+                  title={autoRefreshPaused ? 'Ligar atualização automática' : 'Desligar atualização automática'}
+                >
+                  {autoRefreshPaused || !autoRefresh ? (
+                    <>
+                      <FaPlay />
+                      Ligar Auto
+                    </>
+                  ) : (
+                    <>
+                      <FaPause />
+                      Desligar Auto
+                    </>
+                  )}
+                </button>
+              )}
+              
+              {/* Indicador quando está atualizando */}
+              {refreshing && (
                 <div className="flex items-center gap-2 text-blue-400 text-sm font-bold bg-blue-500/10 px-4 py-2 rounded-lg border border-blue-500/30">
                   <FaSync className="animate-spin" />
                   Atualizando...
@@ -317,11 +391,16 @@ export default function HistoricoTemplates() {
               
               {/* Botão Atualizar Manual */}
               <button
-                onClick={loadTemplates}
-                disabled={loading}
+                onClick={() => {
+                  setRefreshing(true);
+                  loadTemplates(false).finally(() => {
+                    setTimeout(() => setRefreshing(false), 500);
+                  });
+                }}
+                disabled={loading || refreshing}
                 className="px-6 py-4 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white text-lg font-bold rounded-xl transition-all duration-200 shadow-lg shadow-primary-500/40 flex items-center gap-3 disabled:opacity-50"
               >
-                <FaSync className={loading ? 'animate-spin' : ''} />
+                <FaSync className={loading || refreshing ? 'animate-spin' : ''} />
                 Atualizar Agora
               </button>
             </div>
@@ -491,8 +570,17 @@ export default function HistoricoTemplates() {
         </div>
 
         {/* TABELA */}
-        <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-white/10 rounded-2xl overflow-hidden shadow-xl">
-          {loading ? (
+        <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-white/10 rounded-2xl overflow-hidden shadow-xl relative">
+          {/* Indicador de atualização em andamento (não esconde a tabela) */}
+          {refreshing && !initialLoading && (
+            <div className="absolute top-4 right-4 z-10 flex items-center gap-2 text-blue-400 text-sm font-bold bg-blue-500/20 px-4 py-2 rounded-lg border border-blue-500/30 backdrop-blur-sm">
+              <FaSync className="animate-spin" />
+              Atualizando...
+            </div>
+          )}
+          
+          {/* Loading apenas no primeiro carregamento */}
+          {initialLoading && loading ? (
             <div className="p-12 text-center">
               <FaSync className="animate-spin text-6xl text-primary-500 mx-auto mb-4" />
               <p className="text-white text-xl font-bold">Carregando histórico...</p>
