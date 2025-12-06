@@ -123,11 +123,28 @@ async function checkWhatsAppLimit(req, res, next) {
 
     if (parseInt(atual) >= parseInt(limite)) {
       console.log(`🚫 Limite de contas WhatsApp atingido - Tenant ${tenantId}: ${atual}/${limite}`);
+      
+      // Buscar nome do plano para mensagem mais clara
+      const planResult = await query(`
+        SELECT p.nome as plan_name 
+        FROM tenants t 
+        LEFT JOIN plans p ON t.plan_id = p.id 
+        WHERE t.id = $1
+      `, [tenantId]);
+      
+      const planName = planResult.rows[0]?.plan_name || 'Atual';
+      
       return res.status(403).json({
         success: false,
-        message: `❌ Limite de contas WhatsApp atingido! Máximo: ${limite}, Atual: ${atual}`,
+        message: `❌ LIMITE DE CONTAS WHATSAPP ATINGIDO!\n\n` +
+                 `📊 Seu plano "${planName}" permite no máximo ${limite} contas WhatsApp.\n` +
+                 `📱 Você já possui ${atual} contas ativas (API + QR Connect).\n\n` +
+                 `💡 Para adicionar mais contas, você precisa:\n` +
+                 `   • Fazer upgrade do seu plano\n` +
+                 `   • Ou solicitar customização via Super Admin`,
         limite: parseInt(limite),
-        atual: parseInt(atual)
+        atual: parseInt(atual),
+        tipo: 'limite_plano'
       });
     }
 

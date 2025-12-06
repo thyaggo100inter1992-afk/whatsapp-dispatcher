@@ -471,9 +471,24 @@ export default function Configuracoes() {
         showCancel: false
       });
     } catch (error: any) {
+      console.error('❌ Erro ao salvar conta:', error);
+      
+      // Extrair mensagem de erro detalhada
+      const errorData = error.response?.data;
+      let errorMessage = 'Erro ao salvar conta';
+      
+      if (errorData?.message) {
+        // Usar a mensagem completa do backend
+        errorMessage = errorData.message;
+      } else if (errorData?.error) {
+        errorMessage = errorData.error;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       await confirm({
-        title: '❌ Erro',
-        message: 'Erro ao salvar conta: ' + (error.response?.data?.error || error.message),
+        title: '❌ Erro ao Salvar Conta',
+        message: errorMessage,
         type: 'danger',
         confirmText: 'OK',
         showCancel: false
