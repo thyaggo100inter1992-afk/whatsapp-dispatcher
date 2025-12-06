@@ -59,8 +59,8 @@ export default function HistoricoTemplates() {
     
     const interval = setInterval(() => {
       setRefreshing(true);
-      // No auto-refresh, NÃO chama update-statuses (é muito pesado)
-      loadTemplatesLight().finally(() => {
+      // ATUALIZA os status da API do WhatsApp no auto-refresh
+      loadTemplates(false).finally(() => {
         setTimeout(() => setRefreshing(false), 500);
       });
     }, 15000); // 15 segundos - intervalo maior para não sobrecarregar
