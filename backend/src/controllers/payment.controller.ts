@@ -1168,6 +1168,27 @@ class PaymentController {
         externalReference: externalReference
       }, tenantId);
 
+      // Se for PIX, buscar QR Code separadamente
+      let pixQrCodeData = null;
+      if (billing_type === 'PIX') {
+        console.log('🔍 Buscando dados do QR Code PIX para upgrade...');
+        pixQrCodeData = await asaasService.getPixQrCode(asaasPayment.id, tenantId);
+        
+        if (pixQrCodeData) {
+          console.log('✅ QR Code PIX obtido:');
+          console.log('   - Payload (copia e cola):', pixQrCodeData.payload ? 'SIM' : 'NÃO');
+          console.log('   - EncodedImage (QR Code):', pixQrCodeData.encodedImage ? 'SIM' : 'NÃO');
+        } else {
+          console.log('⚠️  Não foi possível obter QR Code PIX');
+        }
+      }
+
+      // Preparar QR Code (evitar duplicação do prefixo data:image)
+      let qrCodeImage = pixQrCodeData?.encodedImage || asaasPayment.pixQrCodeUrl || null;
+      if (qrCodeImage && !qrCodeImage.startsWith('data:image/')) {
+        qrCodeImage = `data:image/png;base64,${qrCodeImage}`;
+      }
+
       // Salvar cobrança no banco
       const paymentInsert = await pool.query(`
         INSERT INTO payments (
@@ -1189,8 +1210,8 @@ class PaymentController {
         dueDate,
         asaasPayment.invoiceUrl,
         asaasPayment.bankSlipUrl,
-        asaasPayment.pixQrCodeUrl || asaasPayment.qrCode?.payload,
-        asaasPayment.pixCopyAndPaste || asaasPayment.qrCode?.encodedImage,
+        qrCodeImage,
+        pixQrCodeData?.payload || asaasPayment.pixCopyAndPaste || null,
         JSON.stringify({ 
           tipo: isFirstPurchase ? 'primeira_compra' : 'upgrade',
           plano_anterior_id: tenant.plan_id,
