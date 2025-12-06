@@ -56,6 +56,7 @@ export default function MudarPlano() {
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentData, setPaymentData] = useState<any>(null);
+  const [checkingPayment, setCheckingPayment] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -69,6 +70,55 @@ export default function MudarPlano() {
     }
     loadPlans();
   }, [user, router]);
+
+  // Polling para verificar status do pagamento PIX
+  useEffect(() => {
+    if (!paymentData?.id) return;
+
+    console.log('🔄 Iniciando polling de status do pagamento:', paymentData.id);
+    setCheckingPayment(true);
+
+    const checkPaymentStatus = async () => {
+      try {
+        const response = await api.get(`/payments/${paymentData.id}/status`);
+        console.log('📊 Status do pagamento:', response.data);
+        
+        if (response.data.status === 'CONFIRMED' || 
+            response.data.status === 'confirmed' || 
+            response.data.status === 'RECEIVED' ||
+            response.data.paid_at) {
+          console.log('✅ Pagamento confirmado!');
+          setCheckingPayment(false);
+          setPaymentData(null);
+          setShowPaymentModal(false);
+          setSelectedPlanId(null);
+          
+          // Mostrar toast de sucesso
+          const selectedPlan = plans.find(p => p.id === selectedPlanId);
+          setSuccessPlanName(selectedPlan?.nome || 'Novo Plano');
+          setShowSuccessToast(true);
+          
+          // Recarregar a página após 2 segundos
+          setTimeout(() => {
+            router.reload();
+          }, 2000);
+        }
+      } catch (error) {
+        console.error('Erro ao verificar status do pagamento:', error);
+      }
+    };
+
+    // Verificar a cada 5 segundos
+    const interval = setInterval(checkPaymentStatus, 5000);
+
+    // Verificar imediatamente também
+    checkPaymentStatus();
+
+    return () => {
+      clearInterval(interval);
+      setCheckingPayment(false);
+    };
+  }, [paymentData?.id]);
 
   const loadPlans = async () => {
     try {
@@ -476,6 +526,14 @@ export default function MudarPlano() {
                 >
                   Ver Boleto
                 </a>
+              )}
+
+              {/* Indicador de verificação de pagamento */}
+              {checkingPayment && (
+                <div className="flex items-center justify-center gap-2 py-4 bg-blue-500/20 rounded-xl border border-blue-500/30">
+                  <FaSpinner className="animate-spin text-blue-400" />
+                  <span className="text-blue-300 font-medium">Aguardando confirmação do pagamento...</span>
+                </div>
               )}
 
               <div className="pt-4 border-t border-white/10">
