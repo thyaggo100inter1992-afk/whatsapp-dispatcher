@@ -1261,6 +1261,9 @@ class PaymentController {
       const plan = planResult.rows[0];
       const errors: string[] = [];
 
+      // Helper function: -1 ou NULL significa "ilimitado"
+      const isUnlimited = (limit: number | null): boolean => limit === null || limit === -1;
+
       // 1. Validar número de usuários ativos
       const usersResult = await pool.query(`
         SELECT COUNT(*) as total
@@ -1268,9 +1271,10 @@ class PaymentController {
         WHERE tenant_id = $1 AND ativo = true
       `, [tenantId]);
       const totalUsers = parseInt(usersResult.rows[0].total);
+      const limiteUsuarios = plan.limite_usuarios;
       
-      if (totalUsers > plan.limite_usuarios) {
-        errors.push(`${totalUsers} usuários ativos (plano permite ${plan.limite_usuarios})`);
+      if (!isUnlimited(limiteUsuarios) && totalUsers > limiteUsuarios) {
+        errors.push(`${totalUsers} usuários ativos (plano permite ${limiteUsuarios})`);
       }
 
       // 2. Validar número de conexões WhatsApp ativas (API Oficial + QR Connect)
@@ -1289,9 +1293,10 @@ class PaymentController {
       const totalWhatsAppQr = parseInt(whatsappQrResult.rows[0].total);
       
       const totalWhatsApp = totalWhatsAppApi + totalWhatsAppQr;
+      const limiteWhatsApp = plan.limite_contas_whatsapp;
       
-      if (totalWhatsApp > plan.limite_contas_whatsapp) {
-        errors.push(`${totalWhatsApp} conexões WhatsApp ativas (${totalWhatsAppApi} API + ${totalWhatsAppQr} QR) (plano permite ${plan.limite_contas_whatsapp})`);
+      if (!isUnlimited(limiteWhatsApp) && totalWhatsApp > limiteWhatsApp) {
+        errors.push(`${totalWhatsApp} conexões WhatsApp ativas (${totalWhatsAppApi} API + ${totalWhatsAppQr} QR) (plano permite ${limiteWhatsApp})`);
       }
 
       // 3. Validar campanhas ativas/agendadas
@@ -1301,15 +1306,18 @@ class PaymentController {
         WHERE tenant_id = $1 AND status IN ('running', 'scheduled')
       `, [tenantId]);
       const totalCampaigns = parseInt(campaignsResult.rows[0].total);
+      const limiteCampanhas = plan.limite_campanhas_mes;
       
-      if (totalCampaigns > plan.limite_campanhas_mes) {
-        errors.push(`${totalCampaigns} campanhas ativas/agendadas (plano permite ${plan.limite_campanhas_mes})`);
+      if (!isUnlimited(limiteCampanhas) && totalCampaigns > limiteCampanhas) {
+        errors.push(`${totalCampaigns} campanhas ativas/agendadas (plano permite ${limiteCampanhas})`);
       }
 
+      const formatLimit = (limit: number | null): string => isUnlimited(limit) ? '∞' : String(limit);
+      
       console.log(`🔍 Validação de uso - Tenant ${tenantId} → Plano ${plan.nome}:`);
-      console.log(`  - Usuários: ${totalUsers}/${plan.limite_usuarios} ${totalUsers > plan.limite_usuarios ? '❌' : '✅'}`);
-      console.log(`  - WhatsApp: ${totalWhatsApp}/${plan.limite_contas_whatsapp} (${totalWhatsAppApi} API + ${totalWhatsAppQr} QR) ${totalWhatsApp > plan.limite_contas_whatsapp ? '❌' : '✅'}`);
-      console.log(`  - Campanhas: ${totalCampaigns}/${plan.limite_campanhas_mes} ${totalCampaigns > plan.limite_campanhas_mes ? '❌' : '✅'}`);
+      console.log(`  - Usuários: ${totalUsers}/${formatLimit(limiteUsuarios)} ${!isUnlimited(limiteUsuarios) && totalUsers > limiteUsuarios ? '❌' : '✅'}`);
+      console.log(`  - WhatsApp: ${totalWhatsApp}/${formatLimit(limiteWhatsApp)} (${totalWhatsAppApi} API + ${totalWhatsAppQr} QR) ${!isUnlimited(limiteWhatsApp) && totalWhatsApp > limiteWhatsApp ? '❌' : '✅'}`);
+      console.log(`  - Campanhas: ${totalCampaigns}/${formatLimit(limiteCampanhas)} ${!isUnlimited(limiteCampanhas) && totalCampaigns > limiteCampanhas ? '❌' : '✅'}`);
 
       return {
         valid: errors.length === 0,
