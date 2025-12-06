@@ -30,6 +30,7 @@ export default function EnviarMensagemImediataV2() {
   const notify = useNotifications();
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<number>(0);
+  const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('55');
   const [showPrefix, setShowPrefix] = useState(true);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -616,19 +617,50 @@ export default function EnviarMensagemImediataV2() {
                       <label className="block text-lg font-bold mb-3 text-white/90">
                         Número de Origem *
                       </label>
-                      <select
-                        required
-                        className="w-full px-6 py-4 text-lg bg-dark-700/80 backdrop-blur-md border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all duration-200"
-                        value={selectedAccountId}
-                        onChange={(e) => handleAccountChange(parseInt(e.target.value))}
-                      >
-                        <option value={0}>Selecione uma conta</option>
-                        {accounts.map(account => (
-                          <option key={account.id} value={account.id}>
-                            {account.name} - {account.phone_number}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setAccountDropdownOpen(!accountDropdownOpen)}
+                          className="w-full px-6 py-4 text-lg bg-dark-700/80 backdrop-blur-md border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all duration-200 text-left flex items-center justify-between"
+                        >
+                          <span className={selectedAccountId === 0 ? 'text-white/50' : ''}>
+                            {selectedAccountId === 0 
+                              ? 'Selecione uma conta' 
+                              : accounts.find(a => a.id === selectedAccountId)?.name + ' - ' + accounts.find(a => a.id === selectedAccountId)?.phone_number
+                            }
+                          </span>
+                          <svg className={`w-5 h-5 transition-transform ${accountDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {accountDropdownOpen && (
+                          <div className="absolute z-50 w-full mt-2 bg-dark-700 border-2 border-white/20 rounded-xl shadow-2xl overflow-hidden">
+                            <div className="max-h-64 overflow-y-auto">
+                              <div
+                                onClick={() => {
+                                  handleAccountChange(0);
+                                  setAccountDropdownOpen(false);
+                                }}
+                                className={`px-6 py-3 cursor-pointer transition-colors ${selectedAccountId === 0 ? 'bg-primary-500/30 text-white' : 'text-white/70 hover:bg-white/10'}`}
+                              >
+                                Selecione uma conta
+                              </div>
+                              {accounts.map(account => (
+                                <div
+                                  key={account.id}
+                                  onClick={() => {
+                                    handleAccountChange(account.id);
+                                    setAccountDropdownOpen(false);
+                                  }}
+                                  className={`px-6 py-3 cursor-pointer transition-colors ${selectedAccountId === account.id ? 'bg-primary-500/30 text-white' : 'text-white hover:bg-white/10'}`}
+                                >
+                                  {account.name} - {account.phone_number}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div>
