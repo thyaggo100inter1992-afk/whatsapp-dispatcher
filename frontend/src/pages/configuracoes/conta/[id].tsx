@@ -194,6 +194,58 @@ const [singleDate, setSingleDate] = useState('');
     service: templates.filter(t => t.category === 'SERVICE').length,
   };
 
+  // Função para extrair componentes do template
+  const extractTemplateComponents = (template: any) => {
+    const components = template.components || [];
+    
+    let header = '';
+    let headerType = '';
+    let body = '';
+    let footer = '';
+    let buttons: string[] = [];
+
+    components.forEach((comp: any) => {
+      switch (comp.type) {
+        case 'HEADER':
+          headerType = comp.format || 'TEXT';
+          if (comp.format === 'TEXT') {
+            header = comp.text || '';
+          } else {
+            header = `[${comp.format}]`; // IMAGE, VIDEO, DOCUMENT
+          }
+          break;
+        case 'BODY':
+          body = comp.text || '';
+          break;
+        case 'FOOTER':
+          footer = comp.text || '';
+          break;
+        case 'BUTTONS':
+          if (comp.buttons && Array.isArray(comp.buttons)) {
+            buttons = comp.buttons.map((btn: any) => {
+              const btnType = btn.type === 'URL' ? '🔗' : btn.type === 'PHONE_NUMBER' ? '📞' : '💬';
+              return `${btnType} ${btn.text}`;
+            });
+          }
+          break;
+      }
+    });
+
+    return { header, headerType, body, footer, buttons: buttons.join(' | ') };
+  };
+
+  // Função para escapar texto para CSV (evitar quebras de linha e ponto e vírgula)
+  const escapeCSV = (text: string) => {
+    if (!text) return '';
+    // Substituir quebras de linha por espaço e escapar aspas
+    let escaped = text.replace(/\r?\n/g, ' ').replace(/"/g, '""');
+    // Se contém ponto e vírgula ou aspas, envolver em aspas
+    if (escaped.includes(';') || escaped.includes('"') || escaped.includes(',')) {
+      escaped = `"${escaped}"`;
+    }
+    return escaped;
+  };
+
   // Função para exportar templates para Excel/CSV
   const exportTemplatesToExcel = () => {
     if (templates.length === 0) {
@@ -201,16 +253,34 @@ const [singleDate, setSingleDate] = useState('');
       return;
     }
 
-    // Criar cabeçalho
-    const headers = ['Nome do Template', 'Categoria', 'Status', 'Idioma'];
+    // Criar cabeçalho com todas as colunas
+    const headers = [
+      'Nome do Template',
+      'Categoria',
+      'Status',
+      'Idioma',
+      'Tipo Header',
+      'Header',
+      'Body',
+      'Footer',
+      'Botões'
+    ];
     
     // Criar linhas de dados
-    const rows = templates.map(template => [
-      template.name,
-      template.category || 'N/A',
-      template.status || 'N/A',
-      template.language || 'pt_BR'
-    ]);
+    const rows = templates.map(template => {
+      const { header, headerType, body, footer, buttons } = extractTemplateComponents(template);
+      return [
+        escapeCSV(template.name),
+        escapeCSV(template.category || 'N/A'),
+        escapeCSV(template.status || 'N/A'),
+        escapeCSV(template.language || 'pt_BR'),
+        escapeCSV(headerType || 'N/A'),
+        escapeCSV(header),
+        escapeCSV(body),
+        escapeCSV(footer),
+        escapeCSV(buttons)
+      ];
+    });
 
     // Combinar cabeçalho e dados
     const csvContent = [
