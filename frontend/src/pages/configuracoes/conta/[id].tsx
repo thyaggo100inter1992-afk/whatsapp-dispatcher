@@ -4,7 +4,8 @@ import Link from 'next/link';
 import {
   FaArrowLeft, FaPhone, FaUser, FaLock, FaChartBar, FaBell,
   FaDollarSign, FaCog, FaSave, FaImage,
-  FaQrcode, FaHeartbeat, FaFacebook, FaCheckCircle, FaGlobe, FaShieldAlt, FaInfoCircle, FaTimesCircle, FaFileAlt, FaSearch
+  FaQrcode, FaHeartbeat, FaFacebook, FaCheckCircle, FaGlobe, FaShieldAlt, FaInfoCircle, FaTimesCircle, FaFileAlt, FaSearch,
+  FaDownload, FaBullhorn, FaTools, FaKey, FaComments
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { useToast } from '@/hooks/useToast';
@@ -179,6 +180,59 @@ const [singleDate, setSingleDate] = useState('');
     } finally {
       setLoadingTemplates(false);
     }
+  };
+
+  // Calcular estatísticas dos templates
+  const templateStats = {
+    total: templates.length,
+    approved: templates.filter(t => t.status === 'APPROVED').length,
+    pending: templates.filter(t => t.status === 'PENDING').length,
+    rejected: templates.filter(t => t.status === 'REJECTED').length,
+    marketing: templates.filter(t => t.category === 'MARKETING').length,
+    utility: templates.filter(t => t.category === 'UTILITY').length,
+    authentication: templates.filter(t => t.category === 'AUTHENTICATION').length,
+    service: templates.filter(t => t.category === 'SERVICE').length,
+  };
+
+  // Função para exportar templates para Excel/CSV
+  const exportTemplatesToExcel = () => {
+    if (templates.length === 0) {
+      toast.error('Nenhum template para exportar');
+      return;
+    }
+
+    // Criar cabeçalho
+    const headers = ['Nome do Template', 'Categoria', 'Status', 'Idioma'];
+    
+    // Criar linhas de dados
+    const rows = templates.map(template => [
+      template.name,
+      template.category || 'N/A',
+      template.status || 'N/A',
+      template.language || 'pt_BR'
+    ]);
+
+    // Combinar cabeçalho e dados
+    const csvContent = [
+      headers.join(';'),
+      ...rows.map(row => row.join(';'))
+    ].join('\n');
+
+    // Adicionar BOM para UTF-8 (para Excel reconhecer acentos)
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    // Criar link de download
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `templates_${account?.name || 'conta'}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success(`${templates.length} templates exportados com sucesso!`);
   };
 
   // Analytics removido - causava erros
@@ -3009,7 +3063,87 @@ const [singleDate, setSingleDate] = useState('');
                     </p>
                   </div>
                 </div>
+                {/* Botão Exportar */}
+                <button
+                  onClick={exportTemplatesToExcel}
+                  disabled={templates.length === 0}
+                  className="flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 disabled:from-gray-500 disabled:to-gray-600 text-white font-bold rounded-xl shadow-lg transition-all transform hover:scale-105 disabled:hover:scale-100"
+                >
+                  <FaDownload className="text-xl" />
+                  Exportar Excel
+                </button>
               </div>
+
+              {/* Dashboard de Estatísticas */}
+              {!loadingTemplates && templates.length > 0 && (
+                <div className="space-y-6">
+                  {/* Estatísticas Gerais */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {/* Total */}
+                    <div className="bg-gradient-to-br from-purple-600/30 to-purple-800/30 backdrop-blur-xl border-2 border-purple-500/40 rounded-2xl p-5 text-center">
+                      <div className="text-5xl font-black text-purple-300 mb-2">{templateStats.total}</div>
+                      <div className="text-white/70 font-semibold">Total de Templates</div>
+                    </div>
+                    {/* Aprovados */}
+                    <div className="bg-gradient-to-br from-green-600/30 to-green-800/30 backdrop-blur-xl border-2 border-green-500/40 rounded-2xl p-5 text-center">
+                      <div className="text-5xl font-black text-green-300 mb-2">{templateStats.approved}</div>
+                      <div className="text-white/70 font-semibold">✅ Aprovados</div>
+                    </div>
+                    {/* Pendentes */}
+                    <div className="bg-gradient-to-br from-yellow-600/30 to-yellow-800/30 backdrop-blur-xl border-2 border-yellow-500/40 rounded-2xl p-5 text-center">
+                      <div className="text-5xl font-black text-yellow-300 mb-2">{templateStats.pending}</div>
+                      <div className="text-white/70 font-semibold">⏳ Pendentes</div>
+                    </div>
+                    {/* Rejeitados */}
+                    <div className="bg-gradient-to-br from-red-600/30 to-red-800/30 backdrop-blur-xl border-2 border-red-500/40 rounded-2xl p-5 text-center">
+                      <div className="text-5xl font-black text-red-300 mb-2">{templateStats.rejected}</div>
+                      <div className="text-white/70 font-semibold">❌ Rejeitados</div>
+                    </div>
+                  </div>
+
+                  {/* Estatísticas por Categoria */}
+                  <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-white/10 rounded-2xl p-6">
+                    <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                      <FaChartBar className="text-purple-400" />
+                      Templates por Categoria
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {/* Marketing */}
+                      <div className="flex items-center gap-3 bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                        <FaBullhorn className="text-3xl text-blue-400" />
+                        <div>
+                          <div className="text-3xl font-black text-blue-300">{templateStats.marketing}</div>
+                          <div className="text-sm text-white/60">Marketing</div>
+                        </div>
+                      </div>
+                      {/* Utility */}
+                      <div className="flex items-center gap-3 bg-purple-500/10 border border-purple-500/30 rounded-xl p-4">
+                        <FaTools className="text-3xl text-purple-400" />
+                        <div>
+                          <div className="text-3xl font-black text-purple-300">{templateStats.utility}</div>
+                          <div className="text-sm text-white/60">Utilitário</div>
+                        </div>
+                      </div>
+                      {/* Authentication */}
+                      <div className="flex items-center gap-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl p-4">
+                        <FaKey className="text-3xl text-indigo-400" />
+                        <div>
+                          <div className="text-3xl font-black text-indigo-300">{templateStats.authentication}</div>
+                          <div className="text-sm text-white/60">Autenticação</div>
+                        </div>
+                      </div>
+                      {/* Service */}
+                      <div className="flex items-center gap-3 bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-4">
+                        <FaComments className="text-3xl text-cyan-400" />
+                        <div>
+                          <div className="text-3xl font-black text-cyan-300">{templateStats.service}</div>
+                          <div className="text-sm text-white/60">Serviço</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Busca e Filtros */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
