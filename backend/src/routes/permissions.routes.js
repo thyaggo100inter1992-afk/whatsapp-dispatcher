@@ -181,14 +181,21 @@ router.get('/', async (req, res) => {
         };
       }
 
-      // Adicionar chat_atendimento
-      if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config && tenant.funcionalidades_config.permite_chat_atendimento !== undefined) {
-        funcionalidades.chat_atendimento = tenant.funcionalidades_config.permite_chat_atendimento === true;
+      // Adicionar chat_atendimento - verificar customização OU plano
+      if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config) {
+        // Se tem customização, usar o valor da customização (pode ser chat_atendimento ou permite_chat_atendimento)
+        const chatConfig = tenant.funcionalidades_config.chat_atendimento ?? tenant.funcionalidades_config.permite_chat_atendimento;
+        funcionalidades.chat_atendimento = chatConfig === true;
       } else {
+        // Se não tem customização, usar o valor do PLANO
         funcionalidades.chat_atendimento = tenant.permite_chat_atendimento === true;
       }
 
       console.log('📋 Funcionalidades do tenant (usuário não encontrado):', funcionalidades);
+      console.log('   - chat_atendimento:', funcionalidades.chat_atendimento);
+      console.log('   - plano permite_chat:', tenant.permite_chat_atendimento);
+      console.log('   - customizadas:', tenant.funcionalidades_customizadas);
+      console.log('   - config:', tenant.funcionalidades_config);
 
       return res.json({
         success: true,
@@ -249,14 +256,16 @@ router.get('/', async (req, res) => {
         };
       }
 
-      // Adicionar chat_atendimento
-      if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config && tenant.funcionalidades_config.permite_chat_atendimento !== undefined) {
-        funcionalidades.chat_atendimento = tenant.funcionalidades_config.permite_chat_atendimento === true;
+      // Adicionar chat_atendimento - verificar customização OU plano
+      if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config) {
+        const chatConfig = tenant.funcionalidades_config.chat_atendimento ?? tenant.funcionalidades_config.permite_chat_atendimento;
+        funcionalidades.chat_atendimento = chatConfig === true;
       } else {
         funcionalidades.chat_atendimento = tenant.permite_chat_atendimento === true;
       }
 
       console.log('📋 Funcionalidades do tenant (admin):', funcionalidades);
+      console.log('   - chat_atendimento:', funcionalidades.chat_atendimento);
 
       return res.json({
         success: true,
@@ -320,14 +329,16 @@ router.get('/', async (req, res) => {
         };
       }
 
-      // Adicionar chat_atendimento
-      if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config && tenant.funcionalidades_config.permite_chat_atendimento !== undefined) {
-        funcionalidades.chat_atendimento = tenant.funcionalidades_config.permite_chat_atendimento === true;
+      // Adicionar chat_atendimento - verificar customização OU plano
+      if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config) {
+        const chatConfig = tenant.funcionalidades_config.chat_atendimento ?? tenant.funcionalidades_config.permite_chat_atendimento;
+        funcionalidades.chat_atendimento = chatConfig === true;
       } else {
         funcionalidades.chat_atendimento = tenant.permite_chat_atendimento === true;
       }
 
       console.log('📋 Funcionalidades do tenant:', funcionalidades);
+      console.log('   - chat_atendimento:', funcionalidades.chat_atendimento);
 
       return res.json({
         success: true,
@@ -380,13 +391,15 @@ router.get('/', async (req, res) => {
     }
 
     // Adicionar chat_atendimento às funcionalidades do tenant
-    if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config && tenant.funcionalidades_config.permite_chat_atendimento !== undefined) {
-      funcionalidadesTenant.chat_atendimento = tenant.funcionalidades_config.permite_chat_atendimento === true;
+    if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config) {
+      const chatConfig = tenant.funcionalidades_config.chat_atendimento ?? tenant.funcionalidades_config.permite_chat_atendimento;
+      funcionalidadesTenant.chat_atendimento = chatConfig === true;
     } else {
       funcionalidadesTenant.chat_atendimento = tenant.permite_chat_atendimento === true;
     }
 
     console.log('📋 Funcionalidades do TENANT:', funcionalidadesTenant);
+    console.log('   - chat_atendimento:', funcionalidadesTenant.chat_atendimento);
     console.log('👤 Permissões do USUÁRIO:', permissoesUsuario);
     console.log('🔍 Tipo de permissoesUsuario:', typeof permissoesUsuario);
     console.log('🔍 Keys de permissoesUsuario:', Object.keys(permissoesUsuario));

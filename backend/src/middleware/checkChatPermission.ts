@@ -46,7 +46,8 @@ export const checkChatPermission = async (
     console.log('📊 [Chat Permission] Dados do tenant:', {
       id: tenant.id,
       funcionalidades_customizadas: tenant.funcionalidades_customizadas,
-      config_chat: tenant.funcionalidades_config?.permite_chat_atendimento,
+      config_chat_atendimento: tenant.funcionalidades_config?.chat_atendimento,
+      config_permite_chat: tenant.funcionalidades_config?.permite_chat_atendimento,
       plano_chat: tenant.permite_chat_atendimento
     });
 
@@ -54,13 +55,16 @@ export const checkChatPermission = async (
     if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config) {
       const config = tenant.funcionalidades_config;
       
+      // Verificar ambas as chaves possíveis (chat_atendimento ou permite_chat_atendimento)
+      const chatPermission = config.chat_atendimento ?? config.permite_chat_atendimento;
+      
       // Se está explicitamente definido nas configurações customizadas
-      if (config.permite_chat_atendimento !== undefined) {
-        if (config.permite_chat_atendimento === true) {
+      if (chatPermission !== undefined) {
+        if (chatPermission === true) {
           console.log('✅ [Chat Permission] PERMITIDO por customização');
           return next(); // Permitido por customização
         } else {
-          console.log('❌ [Chat Permission] NEGADO por customização');
+          console.log('❌ [Chat Permission] NEGADO por customização (valor:', chatPermission, ')');
           return res.status(403).json({
             success: false,
             error: 'Chat de Atendimento não está habilitado para sua conta',
