@@ -52,7 +52,8 @@ router.get('/', async (req, res) => {
           SELECT 
             t.funcionalidades_customizadas,
             t.funcionalidades_config,
-            p.funcionalidades as plano_funcionalidades
+            p.funcionalidades as plano_funcionalidades,
+            p.permite_chat_atendimento
           FROM tenants t
           LEFT JOIN plans p ON t.plan_id = p.id
           WHERE t.id = $1
@@ -82,6 +83,13 @@ router.get('/', async (req, res) => {
               auditoria: true,
               dashboard: true
             };
+          }
+
+          // Adicionar chat_atendimento baseado no plano OU na customização
+          if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config && tenant.funcionalidades_config.permite_chat_atendimento !== undefined) {
+            funcionalidades.chat_atendimento = tenant.funcionalidades_config.permite_chat_atendimento === true;
+          } else {
+            funcionalidades.chat_atendimento = tenant.permite_chat_atendimento === true;
           }
 
           console.log('📋 Funcionalidades do tenant (admin antigo):', funcionalidades);

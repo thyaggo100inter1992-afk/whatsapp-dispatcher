@@ -15,6 +15,7 @@ interface Permissions {
     lista_restricao?: boolean;
     webhooks?: boolean;
     configuracoes?: boolean;
+    chat_atendimento?: boolean;
     [key: string]: boolean | undefined;
   };
 }
@@ -62,6 +63,7 @@ export function usePermissions() {
   const canAccessRestrictionList = hasPermission('lista_restricao');
   const canAccessWebhooks = hasPermission('webhooks');
   const canAccessConfiguracoes = hasPermission('configuracoes');
+  const canAccessChat = hasPermission('chat_atendimento');
 
   return {
     permissions,
@@ -79,6 +81,7 @@ export function usePermissions() {
     canAccessRestrictionList,
     canAccessWebhooks,
     canAccessConfiguracoes,
+    canAccessChat,
   };
 }
 
