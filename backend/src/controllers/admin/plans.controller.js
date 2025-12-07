@@ -200,7 +200,8 @@ const updatePlan = async (req, res) => {
       ativo,
       visivel,
       ordem,
-      funcionalidades
+      funcionalidades,
+      permite_chat_atendimento
     } = req.body;
 
     console.log(`📝 Atualizando plano ID: ${id}`);
@@ -226,8 +227,9 @@ const updatePlan = async (req, res) => {
         visivel = COALESCE($16, visivel),
         ordem = COALESCE($17, ordem),
         funcionalidades = COALESCE($18, funcionalidades),
+        permite_chat_atendimento = COALESCE($19, permite_chat_atendimento),
         updated_at = NOW()
-      WHERE id = $19
+      WHERE id = $20
       RETURNING *
     `, [
       nome,
@@ -248,6 +250,7 @@ const updatePlan = async (req, res) => {
       visivel,
       ordem,
       funcionalidades ? JSON.stringify(funcionalidades) : null,
+      permite_chat_atendimento,
       id
     ]);
 
