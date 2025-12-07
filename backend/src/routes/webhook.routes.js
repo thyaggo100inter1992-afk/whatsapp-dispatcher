@@ -199,8 +199,16 @@ const qrWebhookController = QrWebhookController ? new QrWebhookController() : nu
 // Receber eventos do webhook por tenant (POST) - DETECTA AUTOMATICAMENTE SE É UAZAPI OU API OFICIAL
 router.post('/tenant-:tenantId', (req, res) => {
   const { tenantId } = req.params;
-  console.log(`\n🔔 ===== WEBHOOK RECEBIDO PARA TENANT ${tenantId} =====`);
-  console.log('📦 Body:', JSON.stringify(req.body, null, 2));
+  
+  // ✅ LOG FORÇADO PARA DEBUG
+  const timestamp = new Date().toISOString();
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`🔔 WEBHOOK RECEBIDO ÀS ${timestamp}`);
+  console.log(`📍 Tenant ID: ${tenantId}`);
+  console.log(`📦 Body Type: ${typeof req.body}`);
+  console.log(`📦 Body Keys: ${Object.keys(req.body || {}).join(', ')}`);
+  console.log(`📦 Body completo:`, JSON.stringify(req.body, null, 2));
+  console.log(`${'='.repeat(60)}\n`);
   
   // Adicionar tenantId ao request para o controller usar
   req.tenantIdFromWebhook = parseInt(tenantId);
