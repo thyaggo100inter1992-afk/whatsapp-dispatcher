@@ -125,7 +125,10 @@ const MessageContent = ({ msg }: { msg: Message }) => {
               {/* Botões sobre a imagem */}
               <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
-                  onClick={() => window.open(mediaUrl, '_blank')}
+                  onClick={() => {
+                    setImageModalSrc(mediaUrl!);
+                    setImageModalOpen(true);
+                  }}
                   className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg transition-all"
                   title="Ampliar"
                 >
@@ -134,6 +137,21 @@ const MessageContent = ({ msg }: { msg: Message }) => {
                 <a
                   href={mediaUrl}
                   download
+                  onClick={(e) => {
+                    e.preventDefault();
+                    fetch(mediaUrl!)
+                      .then(res => res.blob())
+                      .then(blob => {
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `imagem_${Date.now()}.jpg`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                      });
+                  }}
                   className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg transition-all"
                   title="Baixar"
                 >
@@ -179,6 +197,21 @@ const MessageContent = ({ msg }: { msg: Message }) => {
                 <a
                   href={mediaUrl}
                   download
+                  onClick={(e) => {
+                    e.preventDefault();
+                    fetch(mediaUrl!)
+                      .then(res => res.blob())
+                      .then(blob => {
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `video_${Date.now()}.mp4`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                      });
+                  }}
                   className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg transition-all inline-block"
                   title="Baixar"
                 >
@@ -215,14 +248,27 @@ const MessageContent = ({ msg }: { msg: Message }) => {
           <div className="flex items-center gap-2 bg-white/10 px-4 py-3 rounded-xl">
             <FaPlay className="text-emerald-400" />
             <audio src={mediaUrl} controls className="max-w-[300px]" />
-            <a
-              href={mediaUrl}
-              download
-              className="ml-2 bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-all"
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                fetch(mediaUrl!)
+                  .then(res => res.blob())
+                  .then(blob => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `audio_${Date.now()}.ogg`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                  });
+              }}
+              className="ml-2 bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-all cursor-pointer"
               title="Baixar áudio"
             >
               <FaDownload />
-            </a>
+            </button>
           </div>
         ) : (
           <>
@@ -267,14 +313,27 @@ const MessageContent = ({ msg }: { msg: Message }) => {
                   <FaExpand /> Ver
                 </button>
               )}
-              <a
-                href={mediaUrl}
-                download
-                className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 px-4 py-2 rounded-lg transition-all flex items-center gap-2"
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  fetch(mediaUrl!)
+                    .then(res => res.blob())
+                    .then(blob => {
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = msg.message_content || `documento_${Date.now()}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      window.URL.revokeObjectURL(url);
+                    });
+                }}
+                className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 px-4 py-2 rounded-lg transition-all flex items-center gap-2 cursor-pointer"
                 title="Baixar documento"
               >
                 <FaDownload /> Baixar
-              </a>
+              </button>
             </div>
           </div>
         ) : (
@@ -365,6 +424,8 @@ export default function Chat() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [imageModalSrc, setImageModalSrc] = useState('');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -779,7 +840,28 @@ export default function Chat() {
         <title>Chat - Atendimento WhatsApp</title>
       </Head>
 
-      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex flex-col">
+      {/* MODAL DE IMAGEM */}
+      {imageModalOpen && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setImageModalOpen(false)}
+        >
+          <button
+            onClick={() => setImageModalOpen(false)}
+            className="absolute top-4 right-4 text-white hover:text-red-400 transition-colors p-3 bg-black/50 rounded-full"
+          >
+            <FaTimes className="text-3xl" />
+          </button>
+          <img 
+            src={imageModalSrc} 
+            alt="Imagem ampliada" 
+            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
+      <div className="h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex flex-col overflow-hidden">
         
         {/* CABEÇALHO COM ABAS */}
         <header className="bg-dark-900 border-b border-gray-700 px-4 py-2 flex-shrink-0">
@@ -845,7 +927,7 @@ export default function Chat() {
         <div className="flex-1 flex overflow-hidden">
         
         {/* SIDEBAR - LISTA DE CONVERSAS */}
-        <div className="w-full md:w-96 bg-dark-800 border-r border-gray-700 flex flex-col">
+        <div className="w-full md:w-96 bg-dark-800 border-r border-gray-700 flex flex-col overflow-hidden">
           
           {/* Painel de Busca e Filtros */}
           <div className="bg-dark-900 p-4 border-b border-gray-700">
@@ -1050,11 +1132,11 @@ export default function Chat() {
         </div>
 
         {/* ÁREA DE CHAT */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col overflow-hidden">
           {selectedConversation ? (
             <>
               {/* Cabeçalho do Chat */}
-              <div className="bg-dark-900 p-4 border-b border-gray-700 flex items-center justify-between">
+              <div className="bg-dark-900 p-4 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
                     <span className="text-white font-bold">
@@ -1139,8 +1221,8 @@ export default function Chat() {
                 )}
               </div>
 
-              {/* Input de Mensagem - MELHORADO */}
-              <div className="bg-gradient-to-r from-dark-900 via-dark-800 to-dark-900 p-5 border-t-2 border-emerald-500/30">
+              {/* Input de Mensagem - FIXO NO BOTTOM */}
+              <div className="bg-gradient-to-r from-dark-900 via-dark-800 to-dark-900 p-5 border-t-2 border-emerald-500/30 flex-shrink-0">
                 {/* Inputs ocultos para arquivos */}
                 <input
                   type="file"
