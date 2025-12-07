@@ -611,6 +611,14 @@ export default function Chat() {
                         </div>
                       </div>
 
+                      {/* Nome da conta WhatsApp */}
+                      {(conv.whatsapp_account_name || conv.instance_name) && (
+                        <p className="text-xs text-blue-400 mt-1 truncate">
+                          <FaPlug className="inline mr-1" /> 
+                          {conv.whatsapp_account_name || conv.instance_name}
+                        </p>
+                      )}
+
                       {/* Nome do atendente se estiver em atendimento */}
                       {conv.status === 'open' && conv.attended_by_user_name && (
                         <p className="text-xs text-emerald-400 mt-1">
