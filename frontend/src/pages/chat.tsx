@@ -220,11 +220,13 @@ export default function Chat() {
     }
     
     try {
-      await api.put(`/conversations/${conversationId}/archive`);
+      await api.put(`/conversations/${conversationId}/archive`, { is_archived: true });
       setSelectedConversation(null);
       setMessages([]);
-      loadConversations();
-      loadUnreadCount();
+      await loadConversations();
+      await loadUnreadCount();
+      await loadStatusCounts();
+      alert('Chat encerrado com sucesso!');
     } catch (error) {
       console.error('Erro ao arquivar conversa:', error);
       alert('Erro ao encerrar o chat. Tente novamente.');
