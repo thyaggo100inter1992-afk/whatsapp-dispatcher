@@ -803,19 +803,20 @@ export default function Chat() {
     setSending(true);
     try {
       const formData = new FormData();
-      formData.append('audio', audioBlob, 'audio.webm');
+      // Usar 'file' como nome do campo para o multer
+      formData.append('file', audioBlob, 'audio.webm');
       formData.append('message_type', 'audio');
 
-      await api.post(`/conversations/${selectedConversation.id}/messages/media`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      // Não definir Content-Type manualmente - o browser define automaticamente com boundary
+      await api.post(`/conversations/${selectedConversation.id}/messages/media`, formData);
 
       setMessageInput('');
       loadMessages(selectedConversation.id);
       loadConversations();
+      alert('Áudio enviado com sucesso!');
     } catch (error: any) {
       console.error('Erro ao enviar áudio:', error);
-      alert('Erro ao enviar áudio. A funcionalidade de áudio ainda está em desenvolvimento.');
+      alert(error.response?.data?.error || 'Erro ao enviar áudio');
     } finally {
       setSending(false);
     }
@@ -834,23 +835,24 @@ export default function Chat() {
     if (!file || !selectedConversation) return;
 
     setSending(true);
+    setShowAttachMenu(false);
+    
     try {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('message_type', type);
 
-      await api.post(`/conversations/${selectedConversation.id}/messages/media`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      // Não definir Content-Type manualmente - o browser define automaticamente com boundary
+      await api.post(`/conversations/${selectedConversation.id}/messages/media`, formData);
 
       loadMessages(selectedConversation.id);
       loadConversations();
+      alert(`${type === 'image' ? 'Imagem' : 'Documento'} enviado com sucesso!`);
     } catch (error: any) {
       console.error('Erro ao enviar arquivo:', error);
-      alert('Erro ao enviar arquivo. A funcionalidade de mídia ainda está em desenvolvimento.');
+      alert(error.response?.data?.error || 'Erro ao enviar arquivo');
     } finally {
       setSending(false);
-      setShowAttachMenu(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (imageInputRef.current) imageInputRef.current.value = '';
     }

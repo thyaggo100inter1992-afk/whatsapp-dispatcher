@@ -43,8 +43,8 @@ router.get('/:id/messages', (req, res) => conversationController.getMessages(req
 router.post('/:id/messages', (req, res) => conversationController.sendMessage(req, res));
 
 // POST /api/conversations/:id/messages/media - Enviar mídia (imagem, documento, áudio)
+// Aceita campo 'file' para qualquer tipo de mídia
 router.post('/:id/messages/media', upload.single('file'), (req, res) => conversationController.sendMediaMessage(req, res));
-router.post('/:id/messages/audio', upload.single('audio'), (req, res) => conversationController.sendMediaMessage(req, res));
 
 // PUT /api/conversations/:id/read - Marcar como lida
 router.put('/:id/read', (req, res) => conversationController.markAsRead(req, res));
