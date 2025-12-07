@@ -502,6 +502,22 @@ export class WebhookController {
 
       console.log('   👤 Contato encontrado:', contactName || 'Não cadastrado', `(ID: ${contactId})`);
 
+      // Criar variações do número para busca (com e sem o 9)
+      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+      let phoneVariations = [from, normalizePhoneNumber(from)];
+      
+      if (from.startsWith('55') && from.length >= 12) {
+        const ddi = from.substring(0, 2);
+        const ddd = from.substring(2, 4);
+        const localNumber = from.substring(4);
+        if (localNumber.length === 8) {
+          phoneVariations.push(`${ddi}${ddd}9${localNumber}`);
+        } else if (localNumber.length === 9 && localNumber.startsWith('9')) {
+          phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
+        }
+      }
+      console.log('   📱 Variações de número para busca:', phoneVariations);
+
       // Tentar buscar pela mensagem usando o context.id (WhatsApp Message ID)
       const contextMessageId = message.context?.id;
       let messageResult;
@@ -518,17 +534,17 @@ export class WebhookController {
         );
       }
       
-      // Se não encontrou pelo context, busca pela última mensagem do número
+      // Se não encontrou pelo context, busca pela última mensagem do número (variações)
       if (!messageResult || messageResult.rows.length === 0) {
-        console.log('   🔍 Buscando última mensagem enviada para:', from);
+        console.log('   🔍 Buscando última mensagem enviada para (variações):', phoneVariations);
         messageResult = await queryNoTenant(
           `SELECT m.*, c.id as campaign_id, c.name as campaign_name
            FROM messages m
            LEFT JOIN campaigns c ON m.campaign_id = c.id
-           WHERE m.phone_number = $1
+           WHERE m.phone_number = ANY($1)
            ORDER BY m.sent_at DESC
            LIMIT 1`,
-          [from]
+          [phoneVariations]
         );
       }
 
@@ -953,20 +969,60 @@ export class WebhookController {
       console.log('   From:', from);
       console.log('   Message ID:', messageId);
 
-      // Buscar conta WhatsApp pela mensagem mais recente
+      // Normalizar número para busca (gerar variações com e sem o 9)
+      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+      const normalizedFrom = normalizePhoneNumber(from);
+      
+      // Criar variações do número para busca
+      let phoneVariations = [from, normalizedFrom];
+      
+      // Se o número tem DDI BR, criar variação com/sem 9
+      if (from.startsWith('55') && from.length >= 12) {
+        const ddi = from.substring(0, 2); // 55
+        const ddd = from.substring(2, 4); // 62
+        const localNumber = from.substring(4);
+        
+        if (localNumber.length === 8) {
+          // Número sem 9, adicionar versão com 9
+          phoneVariations.push(`${ddi}${ddd}9${localNumber}`);
+        } else if (localNumber.length === 9 && localNumber.startsWith('9')) {
+          // Número com 9, adicionar versão sem 9
+          phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
+        }
+      }
+      
+      console.log('   📱 Variações de número:', phoneVariations);
+
+      // Buscar conta WhatsApp pela mensagem mais recente (tentando todas as variações)
       const messageResult = await queryNoTenant(
         `SELECT m.whatsapp_account_id, m.tenant_id, c.name as contact_name
          FROM messages m
-         LEFT JOIN contacts c ON c.phone_number = $1
-         WHERE m.phone_number = $1
+         LEFT JOIN contacts c ON c.phone_number = m.phone_number
+         WHERE m.phone_number = ANY($1)
          ORDER BY m.sent_at DESC
          LIMIT 1`,
-        [from]
+        [phoneVariations]
       );
 
-      const whatsappAccountId = messageResult.rows[0]?.whatsapp_account_id;
-      const tenantId = messageResult.rows[0]?.tenant_id;
+      let whatsappAccountId = messageResult.rows[0]?.whatsapp_account_id;
+      let tenantId = messageResult.rows[0]?.tenant_id;
       const contactName = messageResult.rows[0]?.contact_name;
+
+      // Se não encontrou, tentar buscar pela conversa existente
+      if (!whatsappAccountId || !tenantId) {
+        console.log('   ⚠️ Não encontrou em messages, buscando em conversas...');
+        const convResult = await queryNoTenant(
+          `SELECT whatsapp_account_id, tenant_id 
+           FROM conversations 
+           WHERE phone_number = ANY($1) 
+           ORDER BY last_message_at DESC 
+           LIMIT 1`,
+          [phoneVariations]
+        );
+        
+        whatsappAccountId = convResult.rows[0]?.whatsapp_account_id;
+        tenantId = convResult.rows[0]?.tenant_id;
+      }
 
       if (!whatsappAccountId || !tenantId) {
         console.log('⚠️ Conta WhatsApp ou Tenant não identificado');
@@ -974,6 +1030,8 @@ export class WebhookController {
         // Por enquanto, apenas retornar
         return;
       }
+      
+      console.log('   ✅ Conta identificada:', whatsappAccountId, 'Tenant:', tenantId);
 
       // ===================================
       // 💬 SALVAR MENSAGEM NO CHAT
