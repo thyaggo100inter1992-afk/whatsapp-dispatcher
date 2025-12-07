@@ -47,6 +47,7 @@ interface Message {
   message_content: string | null;
   media_url: string | null;
   media_caption: string | null;
+  media_type: string | null;
   button_text: string | null;
   button_payload: string | null;
   status: string | null;
