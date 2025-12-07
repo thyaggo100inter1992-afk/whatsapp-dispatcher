@@ -21,6 +21,8 @@ export class ConversationController {
         offset = 0
       } = req.query;
 
+      console.log(`📋 [Conversations] Listando conversas - Tenant: ${tenantId}, Filtro: ${filter}, Busca: ${search}`);
+
       let whereClause = 'WHERE c.tenant_id = $1';
       const params: any[] = [tenantId];
       let paramIndex = 2;
@@ -86,6 +88,8 @@ export class ConversationController {
       params.push(limit, offset);
 
       const result = await query(sql, params);
+
+      console.log(`   ✅ Encontradas ${result.rows.length} conversas`);
 
       // Contar total
       const countSql = `

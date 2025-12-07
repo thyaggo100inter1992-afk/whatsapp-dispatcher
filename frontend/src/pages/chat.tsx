@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox, FaBullhorn, FaClock, FaHeadset, FaHandPaper } from 'react-icons/fa';
+import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox, FaBullhorn, FaClock, FaHeadset, FaHandPaper, FaSync } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
@@ -60,6 +60,9 @@ export default function Chat() {
   const [statusCounts, setStatusCounts] = useState<StatusCounts>({ open: 0, pending: 0, archived: 0, broadcast: 0 });
   const [chatDisabled, setChatDisabled] = useState(false);
   const [chatDisabledMessage, setChatDisabledMessage] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -70,24 +73,46 @@ export default function Chat() {
     }
   }, [isAuthenticated, router]);
 
+  // Função de atualização manual
+  const refreshAll = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        loadConversations(),
+        loadUnreadCount(),
+        loadStatusCounts()
+      ]);
+      if (selectedConversation) {
+        await loadMessages(selectedConversation.id);
+      }
+      setLastUpdate(new Date());
+    } finally {
+      setRefreshing(false);
+    }
+  }, [selectedConversation]);
+
   // Carregar conversas
   useEffect(() => {
     loadConversations();
     loadUnreadCount();
     loadStatusCounts();
+    setLastUpdate(new Date());
     
-    // Atualizar a cada 10 segundos
+    // Atualizar a cada 5 segundos (se auto-refresh ativado)
     const interval = setInterval(() => {
-      loadConversations();
-      loadUnreadCount();
-      loadStatusCounts();
-      if (selectedConversation) {
-        loadMessages(selectedConversation.id);
+      if (autoRefresh) {
+        loadConversations();
+        loadUnreadCount();
+        loadStatusCounts();
+        if (selectedConversation) {
+          loadMessages(selectedConversation.id);
+        }
+        setLastUpdate(new Date());
       }
-    }, 10000);
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [filter, searchTerm]);
+  }, [filter, searchTerm, autoRefresh]);
 
   // Carregar mensagens quando selecionar conversa
   useEffect(() => {
@@ -363,8 +388,33 @@ export default function Chat() {
               />
             </div>
 
+            {/* Barra de atualização */}
+            <div className="flex items-center justify-between mt-3 mb-2">
+              <button
+                onClick={refreshAll}
+                disabled={refreshing}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  refreshing ? 'bg-gray-600 text-gray-400' : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                }`}
+              >
+                <FaSync className={refreshing ? 'animate-spin' : ''} />
+                {refreshing ? 'Atualizando...' : 'Atualizar'}
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setAutoRefresh(!autoRefresh)}
+                  className={`px-2 py-1 rounded text-xs font-bold transition-colors ${
+                    autoRefresh ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-700 text-gray-400'
+                  }`}
+                  title={autoRefresh ? 'Atualização automática LIGADA' : 'Atualização automática DESLIGADA'}
+                >
+                  {autoRefresh ? '🟢 Auto' : '⚪ Auto'}
+                </button>
+              </div>
+            </div>
+
             {/* Filtros - 4 Filas */}
-            <div className="grid grid-cols-2 gap-2 mt-3">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setFilter('open')}
                 className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
