@@ -10,7 +10,7 @@ import {
   FaSave, FaArrowLeft, FaChartBar, FaUserFriends, FaSearch, FaCog,
   FaCheckCircle, FaTimesCircle, FaEdit, FaTrash, FaPlus, FaShieldAlt,
   FaTachometerAlt, FaHistory, FaSync, FaDollarSign, FaFileInvoice, FaCopy, FaSpinner,
-  FaDatabase, FaInfoCircle, FaCoins, FaDownload, FaTimes
+  FaDatabase, FaInfoCircle, FaCoins, FaDownload, FaTimes, FaComments
 } from 'react-icons/fa';
 import { buildFileUrl } from '@/utils/urlHelpers';
 
@@ -275,6 +275,7 @@ export default function TenantDetailsPage() {
     { key: 'consulta_dados', label: '📊 Consulta de Dados', icon: FaDatabase },
     { key: 'verificar_numeros', label: '🔍 Verificar Números', icon: FaCheckCircle },
     { key: 'gerenciar_proxies', label: '🌐 Gerenciar Proxies', icon: FaShieldAlt },
+    { key: 'chat_atendimento', label: '💬 Chat de Atendimento', icon: FaComments },
     { key: 'campanhas', label: 'Campanhas', icon: FaBullhorn },
     { key: 'templates', label: 'Templates', icon: FaTemplate },
     { key: 'lista_restricao', label: 'Lista de Restrição', icon: FaBan },
