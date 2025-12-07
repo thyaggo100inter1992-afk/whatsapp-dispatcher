@@ -98,11 +98,17 @@ const MessageContent = ({ msg }: { msg: Message }) => {
   
   // Imagem
   if (messageType === 'image' || messageType === 'imagemessage') {
-    const mediaUrl = msg.media_url?.startsWith('http') ? msg.media_url : `${process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br'}${msg.media_url}`;
+    // Construir URL completa da mídia
+    let mediaUrl = msg.media_url;
+    if (mediaUrl && !mediaUrl.startsWith('http')) {
+      // Se não começar com http, é um caminho relativo - adicionar o domínio da API
+      const apiDomain = process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br';
+      mediaUrl = `${apiDomain}${mediaUrl}`;
+    }
     
     return (
       <div>
-        {msg.media_url ? (
+        {mediaUrl ? (
           <div className="space-y-2">
             <div className="relative group">
               <img 
@@ -110,6 +116,10 @@ const MessageContent = ({ msg }: { msg: Message }) => {
                 alt="Imagem" 
                 className="max-w-full rounded-lg cursor-pointer"
                 style={{ maxHeight: '400px', width: 'auto' }}
+                onError={(e) => {
+                  console.error('Erro ao carregar imagem:', mediaUrl);
+                  (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><text x="50%" y="50%" text-anchor="middle" fill="gray">Erro ao carregar</text></svg>';
+                }}
               />
               {/* Botões sobre a imagem */}
               <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -146,11 +156,15 @@ const MessageContent = ({ msg }: { msg: Message }) => {
   
   // Vídeo
   if (messageType === 'video' || messageType === 'videomessage') {
-    const mediaUrl = msg.media_url?.startsWith('http') ? msg.media_url : `${process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br'}${msg.media_url}`;
+    let mediaUrl = msg.media_url;
+    if (mediaUrl && !mediaUrl.startsWith('http')) {
+      const apiDomain = process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br';
+      mediaUrl = `${apiDomain}${mediaUrl}`;
+    }
     
     return (
       <div>
-        {msg.media_url ? (
+        {mediaUrl ? (
           <div className="space-y-2">
             <div className="relative group">
               <video 
@@ -186,11 +200,15 @@ const MessageContent = ({ msg }: { msg: Message }) => {
   
   // Áudio
   if (messageType === 'audio' || messageType === 'audiomessage' || messageType === 'ptt' || messageType === 'voice') {
-    const mediaUrl = msg.media_url?.startsWith('http') ? msg.media_url : `${process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br'}${msg.media_url}`;
+    let mediaUrl = msg.media_url;
+    if (mediaUrl && !mediaUrl.startsWith('http')) {
+      const apiDomain = process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br';
+      mediaUrl = `${apiDomain}${mediaUrl}`;
+    }
     
     return (
       <div className="flex items-center gap-3">
-        {msg.media_url ? (
+        {mediaUrl ? (
           <div className="flex items-center gap-2 bg-white/10 px-4 py-3 rounded-xl">
             <FaPlay className="text-emerald-400" />
             <audio src={mediaUrl} controls className="max-w-[300px]" />
@@ -217,12 +235,16 @@ const MessageContent = ({ msg }: { msg: Message }) => {
   
   // Documento
   if (messageType === 'document' || messageType === 'documentmessage') {
-    const mediaUrl = msg.media_url?.startsWith('http') ? msg.media_url : `${process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br'}${msg.media_url}`;
+    let mediaUrl = msg.media_url;
+    if (mediaUrl && !mediaUrl.startsWith('http')) {
+      const apiDomain = process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br';
+      mediaUrl = `${apiDomain}${mediaUrl}`;
+    }
     const isPdf = msg.media_type?.includes('pdf') || msg.message_content?.toLowerCase().includes('.pdf');
     
     return (
       <div>
-        {msg.media_url ? (
+        {mediaUrl ? (
           <div className="bg-white/10 p-4 rounded-xl flex items-center gap-4">
             <div className="bg-blue-500/20 p-3 rounded-lg">
               <FaFileAlt className="text-3xl text-blue-400" />
