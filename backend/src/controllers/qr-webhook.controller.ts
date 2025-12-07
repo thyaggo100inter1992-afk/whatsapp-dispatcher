@@ -504,20 +504,26 @@ export class QrWebhookController {
 
       console.log(`   📝 Conteúdo: ${messageContent?.substring(0, 50)}...`);
       console.log(`   📎 Mídia: ${mediaUrl ? 'Sim' : 'Não'}`);
+      console.log(`   🔌 Instance ID: ${instanceId}`);
 
-      // Buscar ou criar conversa
+      // Buscar conversa ATIVA (não arquivada) para esta instância específica
       let conversationId;
       const convCheck = await this.runTenantQuery(
         tenantId,
-        'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2 AND instance_id = $3',
+        `SELECT id, status, is_archived FROM conversations 
+         WHERE phone_number = $1 AND tenant_id = $2 AND instance_id = $3 
+         AND (status != 'archived' AND is_archived = false)
+         ORDER BY created_at DESC LIMIT 1`,
         [normalizedPhone, tenantId, instanceId]
       );
 
       if (convCheck.rows.length > 0) {
+        // Conversa ativa encontrada - usar ela
         conversationId = convCheck.rows[0].id;
-        console.log(`   ✅ Conversa existente: ${conversationId}`);
+        console.log(`   ✅ Conversa ativa existente: ${conversationId}`);
       } else {
-        // Criar nova conversa
+        // Não tem conversa ativa - criar nova (mesmo que exista uma arquivada)
+        console.log(`   📭 Nenhuma conversa ativa encontrada, criando nova...`);
         const newConv = await this.runTenantQuery(
           tenantId,
           `INSERT INTO conversations (
@@ -527,13 +533,15 @@ export class QrWebhookController {
             unread_count,
             last_message_at,
             last_message_text,
-            last_message_direction
-          ) VALUES ($1, $2, $3, 1, NOW(), $4, 'inbound')
+            last_message_direction,
+            status,
+            is_archived
+          ) VALUES ($1, $2, $3, 1, NOW(), $4, 'inbound', 'pending', false)
           RETURNING id`,
           [normalizedPhone, tenantId, instanceId, messageContent?.substring(0, 100) || '[Mensagem]']
         );
         conversationId = newConv.rows[0].id;
-        console.log(`   ✨ Nova conversa criada: ${conversationId}`);
+        console.log(`   ✨ Nova conversa criada: ${conversationId} (status: pending)`);
       }
 
       // Verificar se mensagem já foi salva (duplicação)
