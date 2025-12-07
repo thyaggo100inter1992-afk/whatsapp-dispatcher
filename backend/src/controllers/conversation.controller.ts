@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
-import { query, queryNoTenant } from '../database/connection';
+import { query } from '../database/connection';
+const { queryNoTenant } = require('../database/connection');
 
 export class ConversationController {
   /**
@@ -263,12 +264,14 @@ export class ConversationController {
             throw new Error('Conta WhatsApp não encontrada');
           }
 
-          // Enviar mensagem de texto simples (por enquanto)
-          whatsappResult = await whatsappService.sendTextMessage({
+          // Enviar mensagem de texto como template simples
+          whatsappResult = await whatsappService.sendTemplateMessage({
             accessToken: account.access_token,
             phoneNumberId: account.phone_number_id,
             to: conversation.phone_number,
-            message: message_content,
+            templateName: 'hello_world', // Template padrão
+            languageCode: 'pt_BR',
+            components: [],
             accountId: account.id,
             accountName: account.name,
             tenantId
@@ -276,9 +279,9 @@ export class ConversationController {
 
         } else if (conversation.instance_id) {
           // Enviar via UAZ/QR Connect
-          const { uazService } = await import('../services/uazService');
+          const UazService = require('../services/uazService');
           
-          whatsappResult = await uazService.sendMessage(
+          whatsappResult = await UazService.sendMessage(
             conversation.instance_id,
             conversation.phone_number,
             message_content,
