@@ -226,7 +226,8 @@ export class WebhookController {
       for (const entry of body.entry || []) {
         for (const change of entry.changes || []) {
           if (change.field === 'messages') {
-            const result = await this.processMessageUpdate(change.value);
+            // Passar whatsappAccountId e tenantId identificados no início do webhook
+            const result = await this.processMessageUpdate(change.value, whatsappAccountId, tenantId);
             messagesProcessed += result.messages || 0;
             statusesProcessed += result.statuses || 0;
             clicksDetected += result.clicks || 0;
@@ -273,8 +274,15 @@ export class WebhookController {
 
   /**
    * Processar atualização de status de mensagem
+   * @param value - O valor do webhook
+   * @param identifiedWhatsappAccountId - O ID da conta WhatsApp identificado pelo display_phone_number do webhook
+   * @param identifiedTenantId - O ID do tenant identificado
    */
-  private async processMessageUpdate(value: any): Promise<{messages: number, statuses: number, clicks: number}> {
+  private async processMessageUpdate(
+    value: any, 
+    identifiedWhatsappAccountId: number | null, 
+    identifiedTenantId: number | null
+  ): Promise<{messages: number, statuses: number, clicks: number}> {
     let messagesCount = 0;
     let statusesCount = 0;
     let clicksCount = 0;
@@ -283,6 +291,8 @@ export class WebhookController {
       console.log('\n🔍 [DEBUG] processMessageUpdate chamado');
       console.log('🔍 [DEBUG] value.messages existe?', !!value.messages);
       console.log('🔍 [DEBUG] value.statuses existe?', !!value.statuses);
+      console.log('🔍 [DEBUG] identifiedWhatsappAccountId:', identifiedWhatsappAccountId);
+      console.log('🔍 [DEBUG] identifiedTenantId:', identifiedTenantId);
       
       // Processar CLIQUES EM BOTÕES (mensagens interativas)
       const messages = value.messages || [];
@@ -297,28 +307,28 @@ export class WebhookController {
         // Detectar cliques em botões (tipos: 'interactive', 'button')
         if (message.type === 'interactive' || message.type === 'button' || message.interactive) {
           console.log('\n👆 ===== CLIQUE EM BOTÃO DETECTADO =====');
-          await this.processButtonClick(message, value);
+          await this.processButtonClick(message, value, identifiedWhatsappAccountId, identifiedTenantId);
           clicksCount++;
         } 
         // Processar mensagens de texto (para palavras-chave)
         else if (message.type === 'text') {
           console.log('\n💬 ===== MENSAGEM DE TEXTO DETECTADA =====');
-          await this.processTextMessage(message, value);
+          await this.processTextMessage(message, value, identifiedWhatsappAccountId, identifiedTenantId);
         }
         // Processar mensagens de MÍDIA (imagem, áudio, vídeo, documento, sticker)
         else if (['image', 'audio', 'video', 'document', 'sticker', 'voice'].includes(message.type)) {
           console.log(`\n📎 ===== MENSAGEM DE MÍDIA DETECTADA (${message.type}) =====`);
-          await this.processMediaMessage(message, value);
+          await this.processMediaMessage(message, value, identifiedWhatsappAccountId, identifiedTenantId);
         }
         // Processar localização
         else if (message.type === 'location') {
           console.log('\n📍 ===== LOCALIZAÇÃO DETECTADA =====');
-          await this.processLocationMessage(message, value);
+          await this.processLocationMessage(message, value, identifiedWhatsappAccountId, identifiedTenantId);
         }
         // Processar contatos compartilhados
         else if (message.type === 'contacts') {
           console.log('\n👤 ===== CONTATO COMPARTILHADO DETECTADO =====');
-          await this.processContactMessage(message, value);
+          await this.processContactMessage(message, value, identifiedWhatsappAccountId, identifiedTenantId);
         }
         else {
           console.log(`ℹ️ Mensagem ignorada (tipo: ${message.type})`);
@@ -460,8 +470,15 @@ export class WebhookController {
 
   /**
    * Processar cliques em botões
+   * @param identifiedWhatsappAccountId - O ID da conta WhatsApp identificado pelo webhook
+   * @param identifiedTenantId - O ID do tenant identificado pelo webhook
    */
-  private async processButtonClick(message: any, value: any) {
+  private async processButtonClick(
+    message: any, 
+    value: any,
+    identifiedWhatsappAccountId: number | null,
+    identifiedTenantId: number | null
+  ) {
     try {
       const from = message.from; // Telefone de quem clicou
       const timestamp = message.timestamp;
@@ -470,6 +487,8 @@ export class WebhookController {
       console.log('📋 Dados do clique:');
       console.log('   De:', from);
       console.log('   Timestamp:', new Date(parseInt(timestamp) * 1000).toLocaleString());
+      console.log('   🎯 WhatsApp Account ID (do webhook):', identifiedWhatsappAccountId);
+      console.log('   🎯 Tenant ID (do webhook):', identifiedTenantId);
       console.log('   Mensagem completa:', JSON.stringify(message, null, 2));
 
       // Extrair informações do botão clicado
@@ -603,11 +622,13 @@ export class WebhookController {
       // ============================================================
       // 🆕 VERIFICAR LISTAS DE RESTRIÇÃO
       // ============================================================
+      // Usar o whatsappAccountId do webhook ou fallback para o da mensagem
+      const accountIdForRestriction = identifiedWhatsappAccountId || sentMessage?.whatsapp_account_id;
       await this.checkAndAddToRestrictionList(
         from,
         buttonText,
         buttonPayload,
-        sentMessage?.whatsapp_account_id,
+        accountIdForRestriction,
         campaignId,
         messageId,
         contactName
@@ -616,16 +637,21 @@ export class WebhookController {
       // ============================================================
       // 💬 SALVAR CLIQUE NO CHAT
       // ============================================================
-      if (sentMessage?.whatsapp_account_id && sentMessage?.tenant_id) {
+      // PRIORIZAR o ID identificado pelo webhook (mais confiável!)
+      const chatAccountId = identifiedWhatsappAccountId || sentMessage?.whatsapp_account_id;
+      const chatTenantId = identifiedTenantId || sentMessage?.tenant_id;
+      
+      if (chatAccountId && chatTenantId) {
         console.log('   💬 Salvando clique no chat...');
+        console.log('   🎯 Usando WhatsApp Account ID:', chatAccountId, '(webhook:', identifiedWhatsappAccountId, ', mensagem:', sentMessage?.whatsapp_account_id, ')');
         await this.saveButtonClickToChat(
           from,
           buttonText,
           buttonPayload,
           buttonType,
           message.id || null,
-          sentMessage.whatsapp_account_id,
-          sentMessage.tenant_id
+          chatAccountId,
+          chatTenantId
         );
         console.log('   ✅ Clique salvo no chat!');
       } else {
@@ -970,8 +996,15 @@ export class WebhookController {
 
   /**
    * Processar mensagens de texto (para palavras-chave digitadas)
+   * @param identifiedWhatsappAccountId - O ID da conta WhatsApp identificado pelo webhook (mais confiável!)
+   * @param identifiedTenantId - O ID do tenant identificado pelo webhook
    */
-  private async processTextMessage(message: any, value: any) {
+  private async processTextMessage(
+    message: any, 
+    value: any,
+    identifiedWhatsappAccountId: number | null,
+    identifiedTenantId: number | null
+  ) {
     try {
       const from = message.from;
       const text = message.text?.body || '';
@@ -984,6 +1017,8 @@ export class WebhookController {
       console.log('\n💬 Mensagem de texto recebida:', text);
       console.log('   From:', from);
       console.log('   Message ID:', messageId);
+      console.log('   🎯 WhatsApp Account ID (do webhook):', identifiedWhatsappAccountId);
+      console.log('   🎯 Tenant ID (do webhook):', identifiedTenantId);
 
       // Normalizar número para busca (gerar variações com e sem o 9)
       const { normalizePhoneNumber } = require('../utils/phone-normalizer');
@@ -1009,22 +1044,30 @@ export class WebhookController {
       
       console.log('   📱 Variações de número:', phoneVariations);
 
-      // Buscar conta WhatsApp pela mensagem mais recente (tentando todas as variações)
-      const messageResult = await queryNoTenant(
-        `SELECT m.whatsapp_account_id, m.tenant_id, c.name as contact_name
-         FROM messages m
-         LEFT JOIN contacts c ON c.phone_number = m.phone_number
-         WHERE m.phone_number = ANY($1)
-         ORDER BY m.sent_at DESC
-         LIMIT 1`,
-        [phoneVariations]
-      );
+      // USAR O whatsappAccountId e tenantId IDENTIFICADOS PELO WEBHOOK (mais confiável!)
+      let whatsappAccountId = identifiedWhatsappAccountId;
+      let tenantId = identifiedTenantId;
+      let contactName: string | null = null;
 
-      let whatsappAccountId = messageResult.rows[0]?.whatsapp_account_id;
-      let tenantId = messageResult.rows[0]?.tenant_id;
-      const contactName = messageResult.rows[0]?.contact_name;
+      // Só buscar fallback se não tiver identificado pelo webhook
+      if (!whatsappAccountId || !tenantId) {
+        console.log('   ⚠️ Webhook não identificou conta, fazendo fallback para busca em messages...');
+        const messageResult = await queryNoTenant(
+          `SELECT m.whatsapp_account_id, m.tenant_id, c.name as contact_name
+           FROM messages m
+           LEFT JOIN contacts c ON c.phone_number = m.phone_number
+           WHERE m.phone_number = ANY($1)
+           ORDER BY m.sent_at DESC
+           LIMIT 1`,
+          [phoneVariations]
+        );
 
-      // Se não encontrou, tentar buscar pela conversa existente
+        whatsappAccountId = whatsappAccountId || messageResult.rows[0]?.whatsapp_account_id;
+        tenantId = tenantId || messageResult.rows[0]?.tenant_id;
+        contactName = messageResult.rows[0]?.contact_name;
+      }
+
+      // Fallback para conversas se ainda não encontrou
       if (!whatsappAccountId || !tenantId) {
         console.log('   ⚠️ Não encontrou em messages, buscando em conversas...');
         const convResult = await queryNoTenant(
@@ -1036,18 +1079,16 @@ export class WebhookController {
           [phoneVariations]
         );
         
-        whatsappAccountId = convResult.rows[0]?.whatsapp_account_id;
-        tenantId = convResult.rows[0]?.tenant_id;
+        whatsappAccountId = whatsappAccountId || convResult.rows[0]?.whatsapp_account_id;
+        tenantId = tenantId || convResult.rows[0]?.tenant_id;
       }
 
       if (!whatsappAccountId || !tenantId) {
-        console.log('⚠️ Conta WhatsApp ou Tenant não identificado');
-        // Tentar pelo whatsapp_account_id do webhook metadata
-        // Por enquanto, apenas retornar
+        console.log('⚠️ Conta WhatsApp ou Tenant não identificado por nenhum método');
         return;
       }
       
-      console.log('   ✅ Conta identificada:', whatsappAccountId, 'Tenant:', tenantId);
+      console.log('   ✅ Conta FINAL identificada:', whatsappAccountId, 'Tenant:', tenantId);
 
       // ===================================
       // 💬 SALVAR MENSAGEM NO CHAT
@@ -1192,7 +1233,12 @@ export class WebhookController {
   /**
    * Processar mensagens de MÍDIA (imagem, áudio, vídeo, documento, sticker)
    */
-  private async processMediaMessage(message: any, value: any) {
+  private async processMediaMessage(
+    message: any, 
+    value: any,
+    identifiedWhatsappAccountId: number | null,
+    identifiedTenantId: number | null
+  ) {
     try {
       const from = message.from;
       const messageId = message.id;
@@ -1201,6 +1247,8 @@ export class WebhookController {
       console.log(`📎 Mídia recebida: ${mediaType}`);
       console.log('   From:', from);
       console.log('   Message ID:', messageId);
+      console.log('   🎯 WhatsApp Account ID (do webhook):', identifiedWhatsappAccountId);
+      console.log('   🎯 Tenant ID (do webhook):', identifiedTenantId);
 
       // Extrair dados da mídia
       let mediaData = message[mediaType] || {};
@@ -1214,51 +1262,60 @@ export class WebhookController {
       console.log('   Caption:', caption);
       console.log('   Filename:', fileName);
 
-      // Buscar conta WhatsApp
-      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
-      let phoneVariations = [from, normalizePhoneNumber(from)];
-      
-      if (from.startsWith('55') && from.length >= 12) {
-        const ddi = from.substring(0, 2);
-        const ddd = from.substring(2, 4);
-        const localNumber = from.substring(4);
-        if (localNumber.length === 8) {
-          phoneVariations.push(`${ddi}${ddd}9${localNumber}`);
-        } else if (localNumber.length === 9 && localNumber.startsWith('9')) {
-          phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
-        }
-      }
+      // USAR O whatsappAccountId e tenantId IDENTIFICADOS PELO WEBHOOK (mais confiável!)
+      let whatsappAccountId = identifiedWhatsappAccountId;
+      let tenantId = identifiedTenantId;
 
-      // Buscar conta WhatsApp pela última mensagem
-      const messageResult = await queryNoTenant(
-        `SELECT m.whatsapp_account_id, m.tenant_id
-         FROM messages m
-         WHERE m.phone_number = ANY($1)
-         ORDER BY m.sent_at DESC
-         LIMIT 1`,
-        [phoneVariations]
-      );
-
-      let whatsappAccountId = messageResult.rows[0]?.whatsapp_account_id;
-      let tenantId = messageResult.rows[0]?.tenant_id;
-
+      // Só buscar fallback se não tiver identificado pelo webhook
       if (!whatsappAccountId || !tenantId) {
-        const convResult = await queryNoTenant(
-          `SELECT whatsapp_account_id, tenant_id 
-           FROM conversations 
-           WHERE phone_number = ANY($1) 
-           ORDER BY last_message_at DESC 
+        console.log('   ⚠️ Webhook não identificou conta, fazendo fallback para busca em messages...');
+        
+        const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+        let phoneVariations = [from, normalizePhoneNumber(from)];
+        
+        if (from.startsWith('55') && from.length >= 12) {
+          const ddi = from.substring(0, 2);
+          const ddd = from.substring(2, 4);
+          const localNumber = from.substring(4);
+          if (localNumber.length === 8) {
+            phoneVariations.push(`${ddi}${ddd}9${localNumber}`);
+          } else if (localNumber.length === 9 && localNumber.startsWith('9')) {
+            phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
+          }
+        }
+
+        const messageResult = await queryNoTenant(
+          `SELECT m.whatsapp_account_id, m.tenant_id
+           FROM messages m
+           WHERE m.phone_number = ANY($1)
+           ORDER BY m.sent_at DESC
            LIMIT 1`,
           [phoneVariations]
         );
-        whatsappAccountId = convResult.rows[0]?.whatsapp_account_id;
-        tenantId = convResult.rows[0]?.tenant_id;
+
+        whatsappAccountId = whatsappAccountId || messageResult.rows[0]?.whatsapp_account_id;
+        tenantId = tenantId || messageResult.rows[0]?.tenant_id;
+
+        if (!whatsappAccountId || !tenantId) {
+          const convResult = await queryNoTenant(
+            `SELECT whatsapp_account_id, tenant_id 
+             FROM conversations 
+             WHERE phone_number = ANY($1) 
+             ORDER BY last_message_at DESC 
+             LIMIT 1`,
+            [phoneVariations]
+          );
+          whatsappAccountId = whatsappAccountId || convResult.rows[0]?.whatsapp_account_id;
+          tenantId = tenantId || convResult.rows[0]?.tenant_id;
+        }
       }
 
       if (!whatsappAccountId || !tenantId) {
-        console.log('⚠️ Conta WhatsApp ou Tenant não identificado para mídia');
+        console.log('⚠️ Conta WhatsApp ou Tenant não identificado para mídia por nenhum método');
         return;
       }
+
+      console.log('   ✅ Conta FINAL identificada:', whatsappAccountId, 'Tenant:', tenantId);
 
       // Montar conteúdo da mensagem
       let messageContent = '';
@@ -1353,7 +1410,12 @@ export class WebhookController {
   /**
    * Processar mensagens de LOCALIZAÇÃO
    */
-  private async processLocationMessage(message: any, value: any) {
+  private async processLocationMessage(
+    message: any, 
+    value: any,
+    identifiedWhatsappAccountId: number | null,
+    identifiedTenantId: number | null
+  ) {
     try {
       const from = message.from;
       const messageId = message.id;
@@ -1368,51 +1430,63 @@ export class WebhookController {
       console.log('   Lat/Long:', latitude, longitude);
       console.log('   Nome:', name);
       console.log('   Endereço:', address);
+      console.log('   🎯 WhatsApp Account ID (do webhook):', identifiedWhatsappAccountId);
+      console.log('   🎯 Tenant ID (do webhook):', identifiedTenantId);
 
-      // Buscar conta WhatsApp
-      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
-      let phoneVariations = [from, normalizePhoneNumber(from)];
-      
-      if (from.startsWith('55') && from.length >= 12) {
-        const ddi = from.substring(0, 2);
-        const ddd = from.substring(2, 4);
-        const localNumber = from.substring(4);
-        if (localNumber.length === 8) {
-          phoneVariations.push(`${ddi}${ddd}9${localNumber}`);
-        } else if (localNumber.length === 9 && localNumber.startsWith('9')) {
-          phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
-        }
-      }
+      // USAR O whatsappAccountId e tenantId IDENTIFICADOS PELO WEBHOOK (mais confiável!)
+      let whatsappAccountId = identifiedWhatsappAccountId;
+      let tenantId = identifiedTenantId;
 
-      const messageResult = await queryNoTenant(
-        `SELECT m.whatsapp_account_id, m.tenant_id
-         FROM messages m
-         WHERE m.phone_number = ANY($1)
-         ORDER BY m.sent_at DESC
-         LIMIT 1`,
-        [phoneVariations]
-      );
-
-      let whatsappAccountId = messageResult.rows[0]?.whatsapp_account_id;
-      let tenantId = messageResult.rows[0]?.tenant_id;
-
+      // Só buscar fallback se não tiver identificado pelo webhook
       if (!whatsappAccountId || !tenantId) {
-        const convResult = await queryNoTenant(
-          `SELECT whatsapp_account_id, tenant_id 
-           FROM conversations 
-           WHERE phone_number = ANY($1) 
-           ORDER BY last_message_at DESC 
+        console.log('   ⚠️ Webhook não identificou conta, fazendo fallback para busca em messages...');
+        
+        const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+        let phoneVariations = [from, normalizePhoneNumber(from)];
+        
+        if (from.startsWith('55') && from.length >= 12) {
+          const ddi = from.substring(0, 2);
+          const ddd = from.substring(2, 4);
+          const localNumber = from.substring(4);
+          if (localNumber.length === 8) {
+            phoneVariations.push(`${ddi}${ddd}9${localNumber}`);
+          } else if (localNumber.length === 9 && localNumber.startsWith('9')) {
+            phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
+          }
+        }
+
+        const messageResult = await queryNoTenant(
+          `SELECT m.whatsapp_account_id, m.tenant_id
+           FROM messages m
+           WHERE m.phone_number = ANY($1)
+           ORDER BY m.sent_at DESC
            LIMIT 1`,
           [phoneVariations]
         );
-        whatsappAccountId = convResult.rows[0]?.whatsapp_account_id;
-        tenantId = convResult.rows[0]?.tenant_id;
+
+        whatsappAccountId = whatsappAccountId || messageResult.rows[0]?.whatsapp_account_id;
+        tenantId = tenantId || messageResult.rows[0]?.tenant_id;
+
+        if (!whatsappAccountId || !tenantId) {
+          const convResult = await queryNoTenant(
+            `SELECT whatsapp_account_id, tenant_id 
+             FROM conversations 
+             WHERE phone_number = ANY($1) 
+             ORDER BY last_message_at DESC 
+             LIMIT 1`,
+            [phoneVariations]
+          );
+          whatsappAccountId = whatsappAccountId || convResult.rows[0]?.whatsapp_account_id;
+          tenantId = tenantId || convResult.rows[0]?.tenant_id;
+        }
       }
 
       if (!whatsappAccountId || !tenantId) {
-        console.log('⚠️ Conta WhatsApp ou Tenant não identificado');
+        console.log('⚠️ Conta WhatsApp ou Tenant não identificado por nenhum método');
         return;
       }
+
+      console.log('   ✅ Conta FINAL identificada:', whatsappAccountId, 'Tenant:', tenantId);
 
       const messageContent = `📍 Localização: ${name || address || `${latitude}, ${longitude}`}`;
 
@@ -1438,7 +1512,12 @@ export class WebhookController {
   /**
    * Processar CONTATOS compartilhados
    */
-  private async processContactMessage(message: any, value: any) {
+  private async processContactMessage(
+    message: any, 
+    value: any,
+    identifiedWhatsappAccountId: number | null,
+    identifiedTenantId: number | null
+  ) {
     try {
       const from = message.from;
       const messageId = message.id;
@@ -1447,51 +1526,63 @@ export class WebhookController {
       console.log('👤 Contatos compartilhados:');
       console.log('   From:', from);
       console.log('   Quantidade:', contacts.length);
+      console.log('   🎯 WhatsApp Account ID (do webhook):', identifiedWhatsappAccountId);
+      console.log('   🎯 Tenant ID (do webhook):', identifiedTenantId);
 
-      // Buscar conta WhatsApp
-      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
-      let phoneVariations = [from, normalizePhoneNumber(from)];
-      
-      if (from.startsWith('55') && from.length >= 12) {
-        const ddi = from.substring(0, 2);
-        const ddd = from.substring(2, 4);
-        const localNumber = from.substring(4);
-        if (localNumber.length === 8) {
-          phoneVariations.push(`${ddi}${ddd}9${localNumber}`);
-        } else if (localNumber.length === 9 && localNumber.startsWith('9')) {
-          phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
-        }
-      }
+      // USAR O whatsappAccountId e tenantId IDENTIFICADOS PELO WEBHOOK (mais confiável!)
+      let whatsappAccountId = identifiedWhatsappAccountId;
+      let tenantId = identifiedTenantId;
 
-      const messageResult = await queryNoTenant(
-        `SELECT m.whatsapp_account_id, m.tenant_id
-         FROM messages m
-         WHERE m.phone_number = ANY($1)
-         ORDER BY m.sent_at DESC
-         LIMIT 1`,
-        [phoneVariations]
-      );
-
-      let whatsappAccountId = messageResult.rows[0]?.whatsapp_account_id;
-      let tenantId = messageResult.rows[0]?.tenant_id;
-
+      // Só buscar fallback se não tiver identificado pelo webhook
       if (!whatsappAccountId || !tenantId) {
-        const convResult = await queryNoTenant(
-          `SELECT whatsapp_account_id, tenant_id 
-           FROM conversations 
-           WHERE phone_number = ANY($1) 
-           ORDER BY last_message_at DESC 
+        console.log('   ⚠️ Webhook não identificou conta, fazendo fallback para busca em messages...');
+        
+        const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+        let phoneVariations = [from, normalizePhoneNumber(from)];
+        
+        if (from.startsWith('55') && from.length >= 12) {
+          const ddi = from.substring(0, 2);
+          const ddd = from.substring(2, 4);
+          const localNumber = from.substring(4);
+          if (localNumber.length === 8) {
+            phoneVariations.push(`${ddi}${ddd}9${localNumber}`);
+          } else if (localNumber.length === 9 && localNumber.startsWith('9')) {
+            phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
+          }
+        }
+
+        const messageResult = await queryNoTenant(
+          `SELECT m.whatsapp_account_id, m.tenant_id
+           FROM messages m
+           WHERE m.phone_number = ANY($1)
+           ORDER BY m.sent_at DESC
            LIMIT 1`,
           [phoneVariations]
         );
-        whatsappAccountId = convResult.rows[0]?.whatsapp_account_id;
-        tenantId = convResult.rows[0]?.tenant_id;
+
+        whatsappAccountId = whatsappAccountId || messageResult.rows[0]?.whatsapp_account_id;
+        tenantId = tenantId || messageResult.rows[0]?.tenant_id;
+
+        if (!whatsappAccountId || !tenantId) {
+          const convResult = await queryNoTenant(
+            `SELECT whatsapp_account_id, tenant_id 
+             FROM conversations 
+             WHERE phone_number = ANY($1) 
+             ORDER BY last_message_at DESC 
+             LIMIT 1`,
+            [phoneVariations]
+          );
+          whatsappAccountId = whatsappAccountId || convResult.rows[0]?.whatsapp_account_id;
+          tenantId = tenantId || convResult.rows[0]?.tenant_id;
+        }
       }
 
       if (!whatsappAccountId || !tenantId) {
-        console.log('⚠️ Conta WhatsApp ou Tenant não identificado');
+        console.log('⚠️ Conta WhatsApp ou Tenant não identificado por nenhum método');
         return;
       }
+
+      console.log('   ✅ Conta FINAL identificada:', whatsappAccountId, 'Tenant:', tenantId);
 
       // Montar lista de contatos
       let contactNames = contacts.map((c: any) => {
