@@ -1285,8 +1285,48 @@ export class WebhookController {
           messageContent = `📎 [${mediaType}]`;
       }
 
-      // TODO: Se quiser baixar a mídia, usar o Graph API com o media_id
-      // Por enquanto, salvar apenas a referência
+      // BAIXAR A MÍDIA DO WHATSAPP
+      if (mediaId) {
+        console.log('   📥 Baixando mídia do WhatsApp...');
+        
+        // Buscar access token da conta
+        const accountResult = await queryNoTenant(
+          'SELECT access_token FROM whatsapp_accounts WHERE id = $1',
+          [whatsappAccountId]
+        );
+        
+        const accessToken = accountResult.rows[0]?.access_token;
+        
+        if (accessToken) {
+          const { WhatsAppService } = require('../services/whatsapp.service');
+          const whatsappService = new WhatsAppService();
+          
+          const mediaDownload = await whatsappService.downloadMedia(mediaId, accessToken, whatsappAccountId, tenantId);
+          
+          if (mediaDownload) {
+            // Salvar arquivo localmente
+            const fs = require('fs');
+            const path = require('path');
+            
+            const mediaDir = path.join(__dirname, '../../public/media');
+            if (!fs.existsSync(mediaDir)) {
+              fs.mkdirSync(mediaDir, { recursive: true });
+            }
+            
+            const filePath = path.join(mediaDir, mediaDownload.fileName);
+            fs.writeFileSync(filePath, mediaDownload.buffer);
+            
+            // URL pública para acessar a mídia
+            mediaUrl = `/media/${mediaDownload.fileName}`;
+            
+            console.log(`   ✅ Mídia salva: ${mediaUrl}`);
+          } else {
+            console.log('   ⚠️ Não foi possível baixar a mídia');
+          }
+        } else {
+          console.log('   ⚠️ Access token não encontrado');
+        }
+      }
 
       console.log('   ✅ Salvando mídia no chat...');
 
@@ -1298,8 +1338,9 @@ export class WebhookController {
         whatsappAccountId,
         null,
         tenantId,
-        mediaId, // Salvar media_id para referência futura
-        mimeType
+        mediaId,
+        mimeType,
+        mediaUrl // URL local da mídia baixada
       );
 
       console.log('   ✅ Mídia salva no chat!');
@@ -1900,7 +1941,8 @@ export class WebhookController {
     instanceId: number | null,
     tenantId: number,
     mediaId: string | null = null,
-    mimeType: string | null = null
+    mimeType: string | null = null,
+    mediaUrl: string | null = null
   ) {
     try {
       // Normalizar número de telefone (remover 9 extra se tiver)
@@ -1971,8 +2013,9 @@ export class WebhookController {
           tenant_id,
           is_read_by_agent,
           media_id,
-          media_type
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          media_type,
+          media_url
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           conversationId,
           'inbound',
@@ -1982,7 +2025,8 @@ export class WebhookController {
           tenantId,
           false, // Não lida pelo agente
           mediaId || null,
-          mimeType || null
+          mimeType || null,
+          mediaUrl || null
         ]
       );
 

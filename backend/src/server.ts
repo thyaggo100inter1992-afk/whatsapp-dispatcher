@@ -60,6 +60,10 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
+// Servir arquivos estáticos (mídias do chat)
+app.use('/media', express.static(path.join(__dirname, '../public/media')));
+console.log('📁 Pasta de mídias configurada: /media');
+
 // 🔧 MIDDLEWARE ESPECIAL: Corrigir JSON malformado da UAZAPI
 app.use(['/api/qr-webhook/uaz-event', '/api/webhook/tenant-'], express.raw({ type: 'application/json' }), (req: any, res, next) => {
   try {

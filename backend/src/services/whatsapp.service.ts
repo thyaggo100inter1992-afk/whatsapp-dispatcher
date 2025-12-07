@@ -534,6 +534,71 @@ export class WhatsAppService {
   }
 
   /**
+   * Baixar mídia do WhatsApp (imagem, áudio, vídeo, documento)
+   */
+  async downloadMedia(mediaId: string, accessToken: string, accountId?: number, tenantId?: number): Promise<{ buffer: Buffer, mimeType: string, fileName: string } | null> {
+    try {
+      console.log(`📥 Baixando mídia do WhatsApp: ${mediaId}`);
+
+      // 1. Buscar URL da mídia
+      const mediaInfoUrl = `${this.baseUrl}/${mediaId}`;
+      
+      let axiosConfig: AxiosRequestConfig = {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        }
+      };
+
+      // Aplicar proxy se houver
+      if (accountId && tenantId) {
+        const proxyConfig = await getProxyConfigFromAccount(accountId, tenantId);
+        if (proxyConfig) {
+          axiosConfig = applyProxyToRequest(axiosConfig, proxyConfig, 'Media Download');
+        }
+      }
+
+      const mediaInfoResponse = await axios.get(mediaInfoUrl, axiosConfig);
+      const mediaUrl = mediaInfoResponse.data.url;
+      const mimeType = mediaInfoResponse.data.mime_type;
+      const fileSize = mediaInfoResponse.data.file_size;
+
+      console.log(`   URL: ${mediaUrl}`);
+      console.log(`   MIME: ${mimeType}`);
+      console.log(`   Size: ${fileSize} bytes`);
+
+      // 2. Baixar o arquivo
+      const downloadConfig: AxiosRequestConfig = {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        responseType: 'arraybuffer'
+      };
+
+      // Aplicar proxy novamente para o download
+      if (accountId && tenantId) {
+        const proxyConfig = await getProxyConfigFromAccount(accountId, tenantId);
+        if (proxyConfig) {
+          applyProxyToRequest(downloadConfig, proxyConfig, 'Media File Download');
+        }
+      }
+
+      const fileResponse = await axios.get(mediaUrl, downloadConfig);
+      const buffer = Buffer.from(fileResponse.data);
+
+      // Gerar nome do arquivo baseado no MIME type
+      const extension = mimeType.split('/')[1] || 'bin';
+      const fileName = `media_${Date.now()}.${extension}`;
+
+      console.log(`   ✅ Mídia baixada: ${fileName} (${buffer.length} bytes)`);
+
+      return { buffer, mimeType, fileName };
+    } catch (error: any) {
+      console.error('❌ Erro ao baixar mídia:', error.response?.data || error.message);
+      return null;
+    }
+  }
+
+  /**
    * Criar um template via API do WhatsApp
    */
   async createTemplate(params: {

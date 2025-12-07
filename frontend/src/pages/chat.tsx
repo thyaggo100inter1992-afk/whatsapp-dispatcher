@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox, FaBullhorn, FaClock, FaHeadset, FaHandPaper, FaSync, FaCalendarAlt, FaLayerGroup, FaPlug, FaTags, FaReply, FaTrello, FaHome, FaMicrophone, FaStop, FaImage, FaFile } from 'react-icons/fa';
+import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox, FaBullhorn, FaClock, FaHeadset, FaHandPaper, FaSync, FaCalendarAlt, FaLayerGroup, FaPlug, FaTags, FaReply, FaTrello, FaHome, FaMicrophone, FaStop, FaImage, FaFile, FaDownload, FaExpand, FaPlay, FaFileAlt } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
@@ -97,19 +97,40 @@ const MessageContent = ({ msg }: { msg: Message }) => {
   
   // Imagem
   if (messageType === 'image' || messageType === 'imagemessage') {
+    const mediaUrl = msg.media_url?.startsWith('http') ? msg.media_url : `${process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br'}${msg.media_url}`;
+    
     return (
       <div>
         {msg.media_url ? (
           <div className="space-y-2">
-            <img 
-              src={msg.media_url} 
-              alt="Imagem" 
-              className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-              style={{ maxHeight: '300px' }}
-              onClick={() => window.open(msg.media_url!, '_blank')}
-            />
-            {(msg.media_caption || msg.message_content) && (
-              <p className="text-base">{msg.media_caption || msg.message_content}</p>
+            <div className="relative group">
+              <img 
+                src={mediaUrl} 
+                alt="Imagem" 
+                className="max-w-full rounded-lg cursor-pointer"
+                style={{ maxHeight: '400px', width: 'auto' }}
+              />
+              {/* Botões sobre a imagem */}
+              <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => window.open(mediaUrl, '_blank')}
+                  className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg transition-all"
+                  title="Ampliar"
+                >
+                  <FaExpand />
+                </button>
+                <a
+                  href={mediaUrl}
+                  download
+                  className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg transition-all"
+                  title="Baixar"
+                >
+                  <FaDownload />
+                </a>
+              </div>
+            </div>
+            {(msg.media_caption || msg.message_content) && msg.message_content !== '📷 [Imagem]' && (
+              <p className="text-base mt-2">{msg.media_caption || msg.message_content}</p>
             )}
           </div>
         ) : (
@@ -124,18 +145,32 @@ const MessageContent = ({ msg }: { msg: Message }) => {
   
   // Vídeo
   if (messageType === 'video' || messageType === 'videomessage') {
+    const mediaUrl = msg.media_url?.startsWith('http') ? msg.media_url : `${process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br'}${msg.media_url}`;
+    
     return (
       <div>
         {msg.media_url ? (
           <div className="space-y-2">
-            <video 
-              src={msg.media_url} 
-              controls
-              className="max-w-full rounded-lg"
-              style={{ maxHeight: '300px' }}
-            />
-            {(msg.media_caption || msg.message_content) && (
-              <p className="text-base">{msg.media_caption || msg.message_content}</p>
+            <div className="relative group">
+              <video 
+                src={mediaUrl} 
+                controls
+                className="max-w-full rounded-lg bg-black"
+                style={{ maxHeight: '400px' }}
+              />
+              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <a
+                  href={mediaUrl}
+                  download
+                  className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg transition-all inline-block"
+                  title="Baixar"
+                >
+                  <FaDownload />
+                </a>
+              </div>
+            </div>
+            {(msg.media_caption || msg.message_content) && msg.message_content !== '🎥 [Vídeo]' && (
+              <p className="text-base mt-2">{msg.media_caption || msg.message_content}</p>
             )}
           </div>
         ) : (
@@ -149,23 +184,31 @@ const MessageContent = ({ msg }: { msg: Message }) => {
   }
   
   // Áudio
-  if (messageType === 'audio' || messageType === 'audiomessage' || messageType === 'ptt') {
+  if (messageType === 'audio' || messageType === 'audiomessage' || messageType === 'ptt' || messageType === 'voice') {
+    const mediaUrl = msg.media_url?.startsWith('http') ? msg.media_url : `${process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br'}${msg.media_url}`;
+    
     return (
       <div className="flex items-center gap-3">
-        <div className="bg-white/20 p-3 rounded-full">
-          <span className="text-2xl">🎵</span>
-        </div>
         {msg.media_url ? (
-          <audio src={msg.media_url} controls className="max-w-[250px]" />
-        ) : (
-          <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-full">
-            <div className="flex gap-1">
-              {[...Array(12)].map((_, i) => (
-                <div key={i} className="w-1 bg-white/60 rounded-full" style={{ height: `${Math.random() * 20 + 8}px` }} />
-              ))}
-            </div>
-            <span className="text-sm opacity-70">Áudio</span>
+          <div className="flex items-center gap-2 bg-white/10 px-4 py-3 rounded-xl">
+            <FaPlay className="text-emerald-400" />
+            <audio src={mediaUrl} controls className="max-w-[300px]" />
+            <a
+              href={mediaUrl}
+              download
+              className="ml-2 bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-all"
+              title="Baixar áudio"
+            >
+              <FaDownload />
+            </a>
           </div>
+        ) : (
+          <>
+            <div className="bg-white/20 p-3 rounded-full">
+              <span className="text-2xl">🎵</span>
+            </div>
+            <span className="text-base">{msg.message_content || '[Áudio]'}</span>
+          </>
         )}
       </div>
     );
@@ -173,24 +216,46 @@ const MessageContent = ({ msg }: { msg: Message }) => {
   
   // Documento
   if (messageType === 'document' || messageType === 'documentmessage') {
+    const mediaUrl = msg.media_url?.startsWith('http') ? msg.media_url : `${process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br'}${msg.media_url}`;
+    const isPdf = msg.media_type?.includes('pdf') || msg.message_content?.toLowerCase().includes('.pdf');
+    
     return (
-      <div className="flex items-center gap-3">
-        <div className="bg-white/20 p-3 rounded-lg">
-          <span className="text-3xl">📄</span>
-        </div>
-        <div>
-          <p className="text-base font-medium">{msg.message_content || 'Documento'}</p>
-          {msg.media_url && (
-            <a 
-              href={msg.media_url} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-sm text-blue-300 hover:underline"
-            >
-              Baixar arquivo
-            </a>
-          )}
-        </div>
+      <div>
+        {msg.media_url ? (
+          <div className="bg-white/10 p-4 rounded-xl flex items-center gap-4">
+            <div className="bg-blue-500/20 p-3 rounded-lg">
+              <FaFileAlt className="text-3xl text-blue-400" />
+            </div>
+            <div className="flex-1">
+              <p className="text-base font-semibold">{msg.message_content || 'Documento'}</p>
+              <p className="text-sm opacity-70">{msg.media_type || 'Arquivo'}</p>
+            </div>
+            <div className="flex gap-2">
+              {isPdf && (
+                <button
+                  onClick={() => window.open(mediaUrl, '_blank')}
+                  className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg transition-all flex items-center gap-2"
+                  title="Visualizar PDF"
+                >
+                  <FaExpand /> Ver
+                </button>
+              )}
+              <a
+                href={mediaUrl}
+                download
+                className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 px-4 py-2 rounded-lg transition-all flex items-center gap-2"
+                title="Baixar documento"
+              >
+                <FaDownload /> Baixar
+              </a>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-3xl">📄</span>
+            <span className="text-base">{msg.message_content || '[Documento]'}</span>
+          </div>
+        )}
       </div>
     );
   }
