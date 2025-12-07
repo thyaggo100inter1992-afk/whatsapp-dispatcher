@@ -658,6 +658,53 @@ export class ConversationController {
       return res.status(500).json({ success: false, error: error.message });
     }
   }
+
+  /**
+   * DELETE /api/conversations/:id
+   * Apagar conversa PERMANENTEMENTE (não vai para arquivo)
+   */
+  async deleteConversation(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      const { id } = req.params;
+
+      console.log(`🗑️ [Conversations] Apagando conversa ${id} - Tenant: ${tenantId}`);
+
+      // Verificar se a conversa existe e pertence ao tenant
+      const checkResult = await query(
+        'SELECT id FROM conversations WHERE id = $1 AND tenant_id = $2',
+        [id, tenantId]
+      );
+
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Conversa não encontrada' });
+      }
+
+      // Primeiro apagar as mensagens da conversa
+      await query(
+        'DELETE FROM conversation_messages WHERE conversation_id = $1',
+        [id]
+      );
+
+      // Depois apagar a conversa
+      await query(
+        'DELETE FROM conversations WHERE id = $1 AND tenant_id = $2',
+        [id, tenantId]
+      );
+
+      console.log(`✅ Conversa ${id} apagada permanentemente`);
+
+      return res.json({ success: true, message: 'Conversa apagada permanentemente' });
+
+    } catch (error: any) {
+      console.error('❌ Erro ao apagar conversa:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
 }
 
 export const conversationController = new ConversationController();

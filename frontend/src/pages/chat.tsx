@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox, FaBullhorn, FaClock, FaHeadset, FaHandPaper, FaSync, FaCalendarAlt, FaLayerGroup, FaPlug, FaTags, FaReply, FaTrello, FaHome, FaMicrophone, FaStop, FaImage, FaFile, FaDownload, FaExpand, FaPlay, FaFileAlt } from 'react-icons/fa';
+import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox, FaBullhorn, FaClock, FaHeadset, FaHandPaper, FaSync, FaCalendarAlt, FaLayerGroup, FaPlug, FaTags, FaReply, FaTrello, FaHome, FaMicrophone, FaStop, FaImage, FaFile, FaDownload, FaExpand, FaPlay, FaFileAlt, FaTrash, FaCheckSquare, FaSquare } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
@@ -428,6 +428,10 @@ export default function Chat() {
   const [imageModalOpen, setImageModalOpen] = useState(false);
   const [imageModalSrc, setImageModalSrc] = useState('');
   
+  // Estados para seleção múltipla
+  const [selectedConversationIds, setSelectedConversationIds] = useState<number[]>([]);
+  const [selectMode, setSelectMode] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -617,6 +621,89 @@ export default function Chat() {
     } catch (error) {
       console.error('Erro ao arquivar conversa:', error);
       alert('Erro ao encerrar o chat. Tente novamente.');
+    }
+  };
+
+  // Toggle seleção de conversa
+  const toggleSelectConversation = (conversationId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedConversationIds(prev => 
+      prev.includes(conversationId) 
+        ? prev.filter(id => id !== conversationId)
+        : [...prev, conversationId]
+    );
+  };
+
+  // Selecionar todas as conversas visíveis
+  const selectAllConversations = () => {
+    setSelectedConversationIds(conversations.map(c => c.id));
+  };
+
+  // Desselecionar todas
+  const deselectAllConversations = () => {
+    setSelectedConversationIds([]);
+    setSelectMode(false);
+  };
+
+  // Encerrar (arquivar) múltiplas conversas
+  const archiveMultipleConversations = async () => {
+    if (selectedConversationIds.length === 0) return;
+    
+    if (!confirm(`Deseja encerrar e arquivar ${selectedConversationIds.length} conversa(s)?`)) {
+      return;
+    }
+    
+    try {
+      for (const id of selectedConversationIds) {
+        await api.put(`/conversations/${id}/archive`, { is_archived: true });
+      }
+      
+      // Se a conversa selecionada está na lista, limpar
+      if (selectedConversation && selectedConversationIds.includes(selectedConversation.id)) {
+        setSelectedConversation(null);
+        setMessages([]);
+      }
+      
+      setSelectedConversationIds([]);
+      setSelectMode(false);
+      await loadConversations();
+      await loadUnreadCount();
+      await loadStatusCounts();
+      alert(`${selectedConversationIds.length} conversa(s) arquivada(s) com sucesso!`);
+    } catch (error) {
+      console.error('Erro ao arquivar conversas:', error);
+      alert('Erro ao encerrar as conversas. Tente novamente.');
+    }
+  };
+
+  // Apagar (excluir permanentemente) múltiplas conversas
+  const deleteMultipleConversations = async () => {
+    if (selectedConversationIds.length === 0) return;
+    
+    if (!confirm(`⚠️ ATENÇÃO: Deseja APAGAR PERMANENTEMENTE ${selectedConversationIds.length} conversa(s)? Esta ação NÃO pode ser desfeita!`)) {
+      return;
+    }
+    
+    try {
+      for (const id of selectedConversationIds) {
+        await api.delete(`/conversations/${id}`);
+      }
+      
+      // Se a conversa selecionada está na lista, limpar
+      if (selectedConversation && selectedConversationIds.includes(selectedConversation.id)) {
+        setSelectedConversation(null);
+        setMessages([]);
+      }
+      
+      setSelectedConversationIds([]);
+      setSelectMode(false);
+      await loadConversations();
+      await loadUnreadCount();
+      await loadStatusCounts();
+      alert(`${selectedConversationIds.length} conversa(s) apagada(s) permanentemente!`);
+    } catch (error) {
+      console.error('Erro ao apagar conversas:', error);
+      alert('Erro ao apagar as conversas. Tente novamente.');
     }
   };
 
@@ -1032,6 +1119,59 @@ export default function Chat() {
             </div>
           </div>
 
+          {/* Barra de ações para seleção múltipla */}
+          {selectMode && (
+            <div className="bg-dark-900 p-3 border-b border-gray-700 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">
+                  {selectedConversationIds.length} selecionado(s)
+                </span>
+                <button
+                  onClick={selectAllConversations}
+                  className="text-xs text-emerald-400 hover:text-emerald-300"
+                >
+                  Selecionar Todos
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={archiveMultipleConversations}
+                  disabled={selectedConversationIds.length === 0}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-yellow-600/20 hover:bg-yellow-600/40 border border-yellow-500/50 rounded-lg text-yellow-400 text-xs font-bold disabled:opacity-50"
+                  title="Arquivar selecionados"
+                >
+                  <FaArchive className="text-xs" /> Encerrar
+                </button>
+                <button
+                  onClick={deleteMultipleConversations}
+                  disabled={selectedConversationIds.length === 0}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 rounded-lg text-red-400 text-xs font-bold disabled:opacity-50"
+                  title="Apagar permanentemente"
+                >
+                  <FaTrash className="text-xs" /> Apagar
+                </button>
+                <button
+                  onClick={deselectAllConversations}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-gray-600/20 hover:bg-gray-600/40 border border-gray-500/50 rounded-lg text-gray-400 text-xs font-bold"
+                >
+                  <FaTimes className="text-xs" /> Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Botão para ativar modo de seleção */}
+          {!selectMode && conversations.length > 0 && (
+            <div className="bg-dark-900/50 px-4 py-2 border-b border-gray-700/50">
+              <button
+                onClick={() => setSelectMode(true)}
+                className="text-xs text-gray-400 hover:text-white flex items-center gap-1"
+              >
+                <FaCheckSquare className="text-xs" /> Selecionar múltiplos
+              </button>
+            </div>
+          )}
+
           {/* Lista de Conversas - com scroll estilizado */}
           <div className="flex-1 overflow-y-auto chat-sidebar-scroll">
             {loading ? (
@@ -1054,101 +1194,116 @@ export default function Chat() {
               conversations.map((conv) => (
                 <div
                   key={conv.id}
-                  onClick={() => setSelectedConversation(conv)}
+                  onClick={() => !selectMode && setSelectedConversation(conv)}
                   className={`p-4 border-b border-gray-700/50 cursor-pointer transition-all duration-200 ${
                     selectedConversation?.id === conv.id
                       ? 'bg-gradient-to-r from-emerald-900/40 to-dark-700 border-l-4 border-l-emerald-500'
-                      : 'hover:bg-dark-700/70 border-l-4 border-l-transparent'
+                      : selectedConversationIds.includes(conv.id)
+                        ? 'bg-gradient-to-r from-blue-900/40 to-dark-700 border-l-4 border-l-blue-500'
+                        : 'hover:bg-dark-700/70 border-l-4 border-l-transparent'
                   }`}
                 >
-                  <div className="flex items-start gap-4">
+                  <div className="flex items-start gap-3">
+                    {/* Checkbox para seleção múltipla */}
+                    {selectMode && (
+                      <div 
+                        onClick={(e) => toggleSelectConversation(conv.id, e)}
+                        className="flex-shrink-0 pt-1"
+                      >
+                        {selectedConversationIds.includes(conv.id) ? (
+                          <FaCheckSquare className="text-xl text-blue-400" />
+                        ) : (
+                          <FaSquare className="text-xl text-gray-500" />
+                        )}
+                      </div>
+                    )}
+
                     {/* Avatar com indicador de status */}
-                    <div className="relative">
-                      <div className={`w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg ${
+                    <div className="relative flex-shrink-0">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg ${
                         conv.status === 'pending' ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' :
                         conv.status === 'broadcast' ? 'bg-gradient-to-br from-blue-400 to-blue-600' :
                         conv.status === 'archived' ? 'bg-gradient-to-br from-gray-400 to-gray-600' :
                         'bg-gradient-to-br from-emerald-400 to-emerald-600'
                       }`}>
-                        <span className="text-white font-bold text-xl">
+                        <span className="text-white font-bold text-lg">
                           {(conv.contact_name || conv.phone_number)?.[0]?.toUpperCase()}
                         </span>
                       </div>
                       {/* Indicador de status */}
-                      <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-dark-800 ${
+                      <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-dark-800 ${
                         conv.status === 'pending' ? 'bg-yellow-500' :
                         conv.status === 'broadcast' ? 'bg-blue-500' :
                         conv.status === 'archived' ? 'bg-gray-500' :
                         'bg-emerald-500'
-                      }`} title={
-                        conv.status === 'pending' ? 'Aguardando atendente' :
-                        conv.status === 'broadcast' ? 'Disparo sem resposta' :
-                        conv.status === 'archived' ? 'Arquivada' :
-                        'Em atendimento'
-                      }></div>
+                      }`}></div>
                     </div>
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-white font-semibold text-lg truncate">
+                      {/* Linha 1: Nome + Horário */}
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="text-white font-semibold text-base truncate">
                           {conv.contact_name || conv.phone_number}
                         </h3>
                         {conv.last_message_at && (
-                          <span className="text-sm text-gray-400 ml-2 font-medium">
+                          <span className="text-xs text-gray-400 ml-2 font-medium flex-shrink-0">
                             {formatTime(conv.last_message_at)}
                           </span>
                         )}
                       </div>
                       
-                      <div className="flex items-center justify-between">
-                        <p className="text-base text-gray-300 truncate">
-                          {conv.last_message_direction === 'outbound' && '✓ '}
-                          {conv.last_message_text || 'Sem mensagens'}
-                        </p>
-                        <div className="flex items-center gap-2 ml-2">
+                      {/* Linha 2: Última mensagem (com mais espaço) */}
+                      <p className="text-sm text-gray-300 mb-2 line-clamp-2">
+                        {conv.last_message_direction === 'outbound' && '✓ '}
+                        {conv.last_message_text || 'Sem mensagens'}
+                      </p>
+
+                      {/* Linha 3: Contagem de mensagens + Botões */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
                           {conv.unread_count > 0 && (
-                            <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-sm font-bold px-3 py-1 rounded-full shadow-lg shadow-emerald-500/30 animate-pulse">
+                            <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-lg shadow-emerald-500/30 animate-pulse">
                               {conv.unread_count}
                             </div>
                           )}
-                          {/* Botões para conversas pendentes ou broadcast */}
-                          {(conv.status === 'pending' || conv.status === 'broadcast') && (
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  acceptConversation(conv.id);
-                                }}
-                                className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-lg transition-all duration-200"
-                                title="Aceitar e iniciar atendimento"
-                              >
-                                <FaCheck className="text-xs" /> Aceitar
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  quickArchiveConversation(conv.id);
-                                }}
-                                className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-lg transition-all duration-200"
-                                title="Encerrar e arquivar"
-                              >
-                                <FaTimes className="text-xs" /> Encerrar
-                              </button>
-                            </div>
+                          {/* Nome da conta WhatsApp */}
+                          {(conv.whatsapp_account_name || conv.instance_name) && (
+                            <span className="text-xs text-blue-400 truncate">
+                              <FaPlug className="inline mr-1 text-[10px]" /> 
+                              {conv.whatsapp_account_name || conv.instance_name}
+                            </span>
                           )}
                         </div>
+                        
+                        {/* Botões para conversas pendentes ou broadcast */}
+                        {!selectMode && (conv.status === 'pending' || conv.status === 'broadcast') && (
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                acceptConversation(conv.id);
+                              }}
+                              className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-lg transition-all duration-200"
+                              title="Aceitar e iniciar atendimento"
+                            >
+                              <FaCheck className="text-[10px]" /> Aceitar
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                quickArchiveConversation(conv.id);
+                              }}
+                              className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-lg transition-all duration-200"
+                              title="Encerrar e arquivar"
+                            >
+                              <FaTimes className="text-[10px]" /> Encerrar
+                            </button>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Nome da conta WhatsApp */}
-                      {(conv.whatsapp_account_name || conv.instance_name) && (
-                        <p className="text-xs text-blue-400 mt-1 truncate">
-                          <FaPlug className="inline mr-1" /> 
-                          {conv.whatsapp_account_name || conv.instance_name}
-                        </p>
-                      )}
-
-                      {/* Nome do atendente se estiver em atendimento */}
+                      {/* Linha 4: Nome do atendente se estiver em atendimento */}
                       {conv.status === 'open' && conv.attended_by_user_name && (
                         <p className="text-xs text-emerald-400 mt-1">
                           <FaHeadset className="inline mr-1" /> {conv.attended_by_user_name}

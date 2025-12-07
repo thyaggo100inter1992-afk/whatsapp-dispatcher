@@ -42,6 +42,9 @@ router.put('/:id/archive', (req, res) => conversationController.toggleArchive(re
 // PUT /api/conversations/:id/accept - Aceitar conversa pendente
 router.put('/:id/accept', (req, res) => conversationController.acceptConversation(req, res));
 
+// DELETE /api/conversations/:id - Apagar conversa permanentemente
+router.delete('/:id', (req, res) => conversationController.deleteConversation(req, res));
+
 export default router;
 
 
