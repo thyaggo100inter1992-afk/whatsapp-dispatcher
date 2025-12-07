@@ -35,6 +35,9 @@ const bulkProfileRoutes = require('./bulk-profile.routes').default;
 const paymentsRoutes = require('./payments.routes').default;
 const consultasAvulsasRoutes = require('./consultas-avulsas.routes').default;
 
+// Import rotas de conversas (chat)
+const conversationsRoutes = require('./conversations.routes').default;
+
 // Import rotas de administração
 const adminTenantsRoutes = require('./admin/tenants.routes');
 const adminPlansRoutes = require('./admin/plans.routes');
@@ -160,6 +163,10 @@ console.log('✅ Rotas de permissões registradas');
 const gestaoRoutes = require('./gestao.routes');
 router.use('/gestao', authenticate, gestaoRoutes);
 console.log('✅ Rotas de gestão do tenant registradas');
+
+// Rotas de conversas (chat)
+router.use('/conversations', authenticate, setTenantContext, conversationsRoutes);
+console.log('✅ Rotas de conversas (chat) registradas');
 
 console.log('✅ Rotas principais registradas (WhatsApp API Oficial)');
 

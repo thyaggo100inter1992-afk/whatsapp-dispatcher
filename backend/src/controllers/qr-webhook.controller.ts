@@ -342,7 +342,7 @@ export class QrWebhookController {
 
   /**
    * Processar mensagem recebida (messages)
-   * Detecta cliques em botões e respostas de lista
+   * Detecta cliques em botões, respostas de lista E salva no chat
    */
   private async processIncomingMessage(data: any, instanceId: number | null, tenantId?: number) {
     try {
@@ -355,6 +355,7 @@ export class QrWebhookController {
         const from = msg.from || msg.key?.remoteJid || msg.remoteJid;
         const messageType = msg.type || msg.messageType;
         const contextId = msg.context?.id || msg.contextInfo?.stanzaId;
+        const messageId = msg.id || msg.key?.id;
 
         // Limpar número de telefone
         const phoneNumber = from?.replace('@s.whatsapp.net', '').replace('@c.us', '');
@@ -362,8 +363,25 @@ export class QrWebhookController {
         console.log(`   📱 De: ${phoneNumber}`);
         console.log(`   📋 Tipo: ${messageType}`);
         console.log(`   🔗 Context ID: ${contextId}`);
+        console.log(`   🆔 Message ID: ${messageId}`);
 
-        // Verificar se é resposta de botão
+        // ===================================
+        // 💬 SALVAR MENSAGEM NO CHAT
+        // ===================================
+        if (phoneNumber && tenantId) {
+          await this.saveIncomingMessageToChat(
+            phoneNumber,
+            messageType,
+            msg,
+            messageId,
+            instanceId,
+            tenantId
+          );
+        }
+
+        // ===================================
+        // 👆 DETECTAR CLIQUES EM BOTÕES
+        // ===================================
         let buttonText = '';
         let buttonPayload = '';
         let isButtonClick = false;
@@ -408,6 +426,170 @@ export class QrWebhookController {
       }
     } catch (error: any) {
       console.error('❌ Erro ao processar mensagem recebida:', error);
+    }
+  }
+
+  /**
+   * Salvar mensagem recebida no sistema de chat
+   */
+  private async saveIncomingMessageToChat(
+    phoneNumber: string,
+    messageType: string,
+    msg: any,
+    messageId: string,
+    instanceId: number | null,
+    tenantId: number
+  ) {
+    try {
+      console.log('\n💾 Salvando mensagem no chat...');
+
+      // Extrair conteúdo da mensagem
+      let messageContent = '';
+      let mediaUrl = null;
+      let mediaCaption = null;
+
+      // Texto
+      if (msg.text || msg.body || msg.content) {
+        messageContent = msg.text || msg.body || msg.content;
+      }
+
+      // Mídia
+      if (msg.mediaUrl || msg.media?.url) {
+        mediaUrl = msg.mediaUrl || msg.media?.url;
+        mediaCaption = msg.caption || msg.media?.caption;
+      }
+
+      // Imagem
+      if (messageType === 'image' || messageType === 'imageMessage') {
+        mediaUrl = msg.imageMessage?.url || msg.image?.url || mediaUrl;
+        messageContent = msg.imageMessage?.caption || msg.caption || '[Imagem]';
+      }
+
+      // Vídeo
+      if (messageType === 'video' || messageType === 'videoMessage') {
+        mediaUrl = msg.videoMessage?.url || msg.video?.url || mediaUrl;
+        messageContent = msg.videoMessage?.caption || msg.caption || '[Vídeo]';
+      }
+
+      // Áudio
+      if (messageType === 'audio' || messageType === 'audioMessage' || messageType === 'ptt') {
+        mediaUrl = msg.audioMessage?.url || msg.audio?.url || mediaUrl;
+        messageContent = '[Áudio]';
+      }
+
+      // Documento
+      if (messageType === 'document' || messageType === 'documentMessage') {
+        mediaUrl = msg.documentMessage?.url || msg.document?.url || mediaUrl;
+        messageContent = msg.documentMessage?.fileName || msg.document?.fileName || '[Documento]';
+      }
+
+      // Localização
+      if (messageType === 'location' || messageType === 'locationMessage') {
+        const lat = msg.location?.latitude || msg.locationMessage?.degreesLatitude;
+        const lng = msg.location?.longitude || msg.locationMessage?.degreesLongitude;
+        messageContent = `📍 Localização: ${lat}, ${lng}`;
+      }
+
+      // Sticker
+      if (messageType === 'sticker' || messageType === 'stickerMessage') {
+        messageContent = '[Sticker]';
+        mediaUrl = msg.stickerMessage?.url || msg.sticker?.url || mediaUrl;
+      }
+
+      console.log(`   📝 Conteúdo: ${messageContent?.substring(0, 50)}...`);
+      console.log(`   📎 Mídia: ${mediaUrl ? 'Sim' : 'Não'}`);
+
+      // Buscar ou criar conversa
+      let conversationId;
+      const convCheck = await this.runTenantQuery(
+        tenantId,
+        'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2',
+        [phoneNumber, tenantId]
+      );
+
+      if (convCheck.rows.length > 0) {
+        conversationId = convCheck.rows[0].id;
+        console.log(`   ✅ Conversa existente: ${conversationId}`);
+      } else {
+        // Criar nova conversa
+        const newConv = await this.runTenantQuery(
+          tenantId,
+          `INSERT INTO conversations (
+            phone_number,
+            tenant_id,
+            instance_id,
+            unread_count,
+            last_message_at,
+            last_message_text,
+            last_message_direction
+          ) VALUES ($1, $2, $3, 1, NOW(), $4, 'inbound')
+          RETURNING id`,
+          [phoneNumber, tenantId, instanceId, messageContent?.substring(0, 100) || '[Mensagem]']
+        );
+        conversationId = newConv.rows[0].id;
+        console.log(`   ✨ Nova conversa criada: ${conversationId}`);
+      }
+
+      // Verificar se mensagem já foi salva (duplicação)
+      const duplicate = await this.runTenantQuery(
+        tenantId,
+        'SELECT id FROM conversation_messages WHERE whatsapp_message_id = $1 AND tenant_id = $2',
+        [messageId, tenantId]
+      );
+
+      if (duplicate.rows.length > 0) {
+        console.log('   ⚠️ Mensagem já salva, ignorando duplicação');
+        return;
+      }
+
+      // Salvar mensagem
+      await this.runTenantQuery(
+        tenantId,
+        `INSERT INTO conversation_messages (
+          conversation_id,
+          message_direction,
+          message_type,
+          message_content,
+          media_url,
+          media_caption,
+          whatsapp_message_id,
+          tenant_id,
+          is_read_by_agent
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          conversationId,
+          'inbound',
+          messageType || 'text',
+          messageContent || null,
+          mediaUrl || null,
+          mediaCaption || null,
+          messageId || null,
+          tenantId,
+          false // Não lida pelo agente
+        ]
+      );
+
+      // Atualizar conversa
+      await this.runTenantQuery(
+        tenantId,
+        `UPDATE conversations 
+         SET last_message_at = NOW(),
+             last_message_text = $1,
+             last_message_direction = 'inbound',
+             unread_count = unread_count + 1,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [messageContent?.substring(0, 100) || '[Mensagem]', conversationId]
+      );
+
+      console.log('   ✅ Mensagem salva no chat com sucesso!');
+
+      // TODO: Emitir evento Socket.IO
+      // io.to(`tenant:${tenantId}`).emit('chat:new-message', { conversationId, ... });
+
+    } catch (error: any) {
+      console.error('❌ Erro ao salvar mensagem no chat:', error);
+      console.error('Stack:', error.stack);
     }
   }
 

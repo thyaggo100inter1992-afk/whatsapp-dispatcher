@@ -823,16 +823,19 @@ export class WebhookController {
     try {
       const from = message.from;
       const text = message.text?.body || '';
+      const messageId = message.id;
 
       if (!text) {
         return;
       }
 
       console.log('\n💬 Mensagem de texto recebida:', text);
+      console.log('   From:', from);
+      console.log('   Message ID:', messageId);
 
       // Buscar conta WhatsApp pela mensagem mais recente
       const messageResult = await queryNoTenant(
-        `SELECT m.whatsapp_account_id, c.name as contact_name
+        `SELECT m.whatsapp_account_id, m.tenant_id, c.name as contact_name
          FROM messages m
          LEFT JOIN contacts c ON c.phone_number = $1
          WHERE m.phone_number = $1
@@ -842,12 +845,28 @@ export class WebhookController {
       );
 
       const whatsappAccountId = messageResult.rows[0]?.whatsapp_account_id;
+      const tenantId = messageResult.rows[0]?.tenant_id;
       const contactName = messageResult.rows[0]?.contact_name;
 
-      if (!whatsappAccountId) {
-        console.log('⚠️ Conta WhatsApp não identificada');
+      if (!whatsappAccountId || !tenantId) {
+        console.log('⚠️ Conta WhatsApp ou Tenant não identificado');
+        // Tentar pelo whatsapp_account_id do webhook metadata
+        // Por enquanto, apenas retornar
         return;
       }
+
+      // ===================================
+      // 💬 SALVAR MENSAGEM NO CHAT
+      // ===================================
+      await this.saveIncomingMessageToChat(
+        from,
+        'text',
+        text,
+        messageId,
+        whatsappAccountId,
+        null, // instanceId (API Oficial não usa)
+        tenantId
+      );
 
       // Buscar palavras-chave do tipo 'text' desta conta OU globais (todas as contas)
       const keywordsResult = await queryNoTenant(
@@ -1381,6 +1400,108 @@ export class WebhookController {
     } catch (error: any) {
       console.error('Erro ao buscar configuração:', error);
       res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * Salvar mensagem recebida no sistema de chat (API Oficial)
+   */
+  private async saveIncomingMessageToChat(
+    phoneNumber: string,
+    messageType: string,
+    messageContent: string,
+    messageId: string,
+    whatsappAccountId: number,
+    instanceId: number | null,
+    tenantId: number
+  ) {
+    try {
+      console.log('\n💾 Salvando mensagem no chat (API Oficial)...');
+      console.log(`   📱 Telefone: ${phoneNumber}`);
+      console.log(`   📝 Conteúdo: ${messageContent?.substring(0, 50)}...`);
+
+      // Buscar ou criar conversa
+      let conversationId;
+      const convCheck = await queryNoTenant(
+        'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2',
+        [phoneNumber, tenantId]
+      );
+
+      if (convCheck.rows.length > 0) {
+        conversationId = convCheck.rows[0].id;
+        console.log(`   ✅ Conversa existente: ${conversationId}`);
+      } else {
+        // Criar nova conversa
+        const newConv = await queryNoTenant(
+          `INSERT INTO conversations (
+            phone_number,
+            tenant_id,
+            whatsapp_account_id,
+            unread_count,
+            last_message_at,
+            last_message_text,
+            last_message_direction
+          ) VALUES ($1, $2, $3, 1, NOW(), $4, 'inbound')
+          RETURNING id`,
+          [phoneNumber, tenantId, whatsappAccountId, messageContent?.substring(0, 100) || '[Mensagem]']
+        );
+        conversationId = newConv.rows[0].id;
+        console.log(`   ✨ Nova conversa criada: ${conversationId}`);
+      }
+
+      // Verificar se mensagem já foi salva (duplicação)
+      const duplicate = await queryNoTenant(
+        'SELECT id FROM conversation_messages WHERE whatsapp_message_id = $1 AND tenant_id = $2',
+        [messageId, tenantId]
+      );
+
+      if (duplicate.rows.length > 0) {
+        console.log('   ⚠️ Mensagem já salva, ignorando duplicação');
+        return;
+      }
+
+      // Salvar mensagem
+      await queryNoTenant(
+        `INSERT INTO conversation_messages (
+          conversation_id,
+          message_direction,
+          message_type,
+          message_content,
+          whatsapp_message_id,
+          tenant_id,
+          is_read_by_agent
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          conversationId,
+          'inbound',
+          messageType || 'text',
+          messageContent || null,
+          messageId || null,
+          tenantId,
+          false // Não lida pelo agente
+        ]
+      );
+
+      // Atualizar conversa
+      await queryNoTenant(
+        `UPDATE conversations 
+         SET last_message_at = NOW(),
+             last_message_text = $1,
+             last_message_direction = 'inbound',
+             unread_count = unread_count + 1,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [messageContent?.substring(0, 100) || '[Mensagem]', conversationId]
+      );
+
+      console.log('   ✅ Mensagem salva no chat com sucesso!');
+
+      // TODO: Emitir evento Socket.IO
+      // io.to(`tenant:${tenantId}`).emit('chat:new-message', { conversationId, ... });
+
+    } catch (error: any) {
+      console.error('❌ Erro ao salvar mensagem no chat:', error);
+      console.error('Stack:', error.stack);
     }
   }
 }
