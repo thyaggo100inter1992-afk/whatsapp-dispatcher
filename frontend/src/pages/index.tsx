@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaWhatsapp, FaQrcode, FaRocket, FaCheckCircle, FaShieldAlt, FaSearch, FaGlobe, FaDatabase, FaSignOutAlt, FaUser, FaBuilding, FaLock, FaBan } from 'react-icons/fa';
+import { FaWhatsapp, FaQrcode, FaRocket, FaCheckCircle, FaShieldAlt, FaSearch, FaGlobe, FaDatabase, FaSignOutAlt, FaUser, FaBuilding, FaLock, FaBan, FaComments, FaClock } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useFeatures } from '../hooks/useFeatures';
 import { usePermissions } from '../hooks/usePermissions';
@@ -122,13 +122,13 @@ export default function ChooseIntegration() {
           </p>
         </div>
 
-        {/* CARDS DE ESCOLHA - MOSTRAR DESABILITADOS SE SEM PERMISSÃO */}
-        <div className="grid md:grid-cols-2 gap-8 max-w-6xl mx-auto">
+        {/* CARDS DE ESCOLHA - GRID 3 COLUNAS */}
+        <div className="grid md:grid-cols-3 gap-8 max-w-7xl mx-auto">
           
           {/* CARD 1: API OFICIAL */}
           <button
             onClick={() => router.push('/dashboard-oficial')}
-            className="group relative overflow-hidden rounded-3xl p-12 text-left transition-all duration-300 bg-gradient-to-br from-green-500/20 to-green-600/10 hover:from-green-500/30 hover:to-green-600/20 border-4 border-green-500/40 hover:border-green-500/60 hover:scale-105 hover:shadow-2xl shadow-lg shadow-green-500/30 cursor-pointer"
+            className="group relative overflow-hidden rounded-3xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-green-500/20 to-green-600/10 hover:from-green-500/30 hover:to-green-600/20 border-4 border-green-500/40 hover:border-green-500/60 hover:scale-105 hover:shadow-2xl shadow-lg shadow-green-500/30 cursor-pointer"
           >
             <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/10 rounded-full blur-3xl"></div>
             
@@ -139,49 +139,43 @@ export default function ChooseIntegration() {
               </div>
 
               {/* Ícone e Título */}
-              <div className="space-y-4">
-                <div className="bg-green-500/20 backdrop-blur-sm p-8 rounded-3xl group-hover:bg-green-500/30 transition-all duration-300 w-fit">
-                  <FaShieldAlt className="text-7xl text-green-300" />
+              <div className="space-y-3">
+                <div className="bg-green-500/20 backdrop-blur-sm p-6 rounded-3xl group-hover:bg-green-500/30 transition-all duration-300 w-fit">
+                  <FaShieldAlt className="text-6xl text-green-300" />
                 </div>
-                <h2 className="text-5xl font-black text-white">API Oficial WhatsApp</h2>
-                <p className="text-white/70 text-xl leading-relaxed">
-                  Integração oficial da Meta com máxima segurança e confiabilidade
+                <h2 className="text-3xl font-black text-white">API Oficial WhatsApp</h2>
+                <p className="text-white/70 text-base leading-relaxed">
+                  Integração oficial da Meta com máxima segurança
                 </p>
               </div>
 
               {/* Vantagens */}
-              <div className="space-y-4 pt-4">
-                <div className="flex items-center gap-4">
-                  <div className="bg-green-500/30 p-3 rounded-xl">
-                    <FaCheckCircle className="text-2xl text-green-300" />
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center gap-3">
+                  <div className="bg-green-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-green-300" />
                   </div>
-                  <span className="text-white text-lg font-bold">✅ Oficialmente suportado pela Meta</span>
+                  <span className="text-white text-sm font-bold">Suportado pela Meta</span>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="bg-green-500/30 p-3 rounded-xl">
-                    <FaCheckCircle className="text-2xl text-green-300" />
+                <div className="flex items-center gap-3">
+                  <div className="bg-green-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-green-300" />
                   </div>
-                  <span className="text-white text-lg font-bold">✅ Menor risco de banimento</span>
+                  <span className="text-white text-sm font-bold">Menor risco</span>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="bg-green-500/30 p-3 rounded-xl">
-                    <FaCheckCircle className="text-2xl text-green-300" />
+                <div className="flex items-center gap-3">
+                  <div className="bg-green-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-green-300" />
                   </div>
-                  <span className="text-white text-lg font-bold">✅ Melhor para uso comercial</span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="bg-green-500/30 p-3 rounded-xl">
-                    <FaCheckCircle className="text-2xl text-green-300" />
-                  </div>
-                  <span className="text-white text-lg font-bold">✅ WhatsApp Business API</span>
+                  <span className="text-white text-sm font-bold">Uso comercial</span>
                 </div>
               </div>
 
               {/* Botão de Ação */}
-              <div className="pt-6">
-                <div className="flex items-center gap-4 text-white text-2xl font-black">
-                  Acessar Sistema Oficial
-                  <FaRocket className="text-3xl group-hover:translate-x-3 transition-transform duration-200" />
+              <div className="pt-4">
+                <div className="flex items-center gap-3 text-white text-lg font-black">
+                  Acessar
+                  <FaRocket className="text-2xl group-hover:translate-x-3 transition-transform duration-200" />
                 </div>
               </div>
             </div>
@@ -190,7 +184,7 @@ export default function ChooseIntegration() {
           {/* CARD 2: WhatsApp QR Connect */}
           <button
             onClick={() => router.push('/dashboard-uaz')}
-            className="group relative overflow-hidden rounded-3xl p-12 text-left transition-all duration-300 bg-gradient-to-br from-blue-500/20 to-indigo-600/10 hover:from-blue-500/30 hover:to-indigo-600/20 border-4 border-blue-500/40 hover:border-blue-500/60 hover:scale-105 hover:shadow-2xl shadow-lg shadow-blue-500/30 cursor-pointer"
+            className="group relative overflow-hidden rounded-3xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-blue-500/20 to-indigo-600/10 hover:from-blue-500/30 hover:to-indigo-600/20 border-4 border-blue-500/40 hover:border-blue-500/60 hover:scale-105 hover:shadow-2xl shadow-lg shadow-blue-500/30 cursor-pointer"
           >
             <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl"></div>
             
@@ -201,49 +195,99 @@ export default function ChooseIntegration() {
               </div>
 
               {/* Ícone e Título */}
-              <div className="space-y-4">
-                <div className="bg-blue-500/20 backdrop-blur-sm p-8 rounded-3xl group-hover:bg-blue-500/30 transition-all duration-300 w-fit">
-                  <FaQrcode className="text-7xl text-blue-300" />
+              <div className="space-y-3">
+                <div className="bg-blue-500/20 backdrop-blur-sm p-6 rounded-3xl group-hover:bg-blue-500/30 transition-all duration-300 w-fit">
+                  <FaQrcode className="text-6xl text-blue-300" />
                 </div>
-                <h2 className="text-5xl font-black text-white">WhatsApp QR Connect</h2>
-                <p className="text-white/70 text-xl leading-relaxed">
-                  Conexão rápida via QR Code com máxima flexibilidade
+                <h2 className="text-3xl font-black text-white">WhatsApp QR Connect</h2>
+                <p className="text-white/70 text-base leading-relaxed">
+                  Conexão rápida via QR Code com flexibilidade
                 </p>
               </div>
 
               {/* Vantagens */}
-              <div className="space-y-4 pt-4">
-                <div className="flex items-center gap-4">
-                  <div className="bg-blue-500/30 p-3 rounded-xl">
-                    <FaCheckCircle className="text-2xl text-blue-300" />
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-blue-300" />
                   </div>
-                  <span className="text-white text-lg font-bold">✅ Setup rápido por QR Code</span>
+                  <span className="text-white text-sm font-bold">Setup rápido</span>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="bg-blue-500/30 p-3 rounded-xl">
-                    <FaCheckCircle className="text-2xl text-blue-300" />
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-blue-300" />
                   </div>
-                  <span className="text-white text-lg font-bold">✅ Múltiplas sessões simultâneas</span>
+                  <span className="text-white text-sm font-bold">Múltiplas sessões</span>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="bg-blue-500/30 p-3 rounded-xl">
-                    <FaCheckCircle className="text-2xl text-blue-300" />
+                <div className="flex items-center gap-3">
+                  <div className="bg-yellow-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-yellow-300" />
                   </div>
-                  <span className="text-white text-lg font-bold">✅ Mais flexibilidade</span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="bg-yellow-500/30 p-3 rounded-xl">
-                    <FaCheckCircle className="text-2xl text-yellow-300" />
-                  </div>
-                  <span className="text-yellow-300 text-lg font-bold">⚠️ Não oficial (usar com cuidado)</span>
+                  <span className="text-yellow-300 text-sm font-bold">⚠️ Não oficial</span>
                 </div>
               </div>
 
               {/* Botão de Ação */}
-              <div className="pt-6">
-                <div className="flex items-center gap-4 text-white text-2xl font-black">
-                  Acessar WhatsApp QR Connect
-                  <FaRocket className="text-3xl group-hover:translate-x-3 transition-transform duration-200" />
+              <div className="pt-4">
+                <div className="flex items-center gap-3 text-white text-lg font-black">
+                  Acessar
+                  <FaRocket className="text-2xl group-hover:translate-x-3 transition-transform duration-200" />
+                </div>
+              </div>
+            </div>
+          </button>
+
+          {/* CARD 3: CHAT - ATIVO AGORA! */}
+          <button
+            onClick={() => router.push('/chat')}
+            className="group relative overflow-hidden rounded-3xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-purple-500/20 to-purple-600/10 hover:from-purple-500/30 hover:to-purple-600/20 border-4 border-purple-500/40 hover:border-purple-500/60 hover:scale-105 hover:shadow-2xl shadow-lg shadow-purple-500/30 cursor-pointer"
+          >
+            <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl"></div>
+            
+            <div className="relative space-y-6">
+              {/* Badge */}
+              <div className="inline-block px-6 py-2 bg-purple-500/20 border-2 border-purple-400 rounded-full">
+                <span className="text-purple-300 font-black text-sm tracking-wider">NOVIDADE</span>
+              </div>
+
+              {/* Ícone e Título */}
+              <div className="space-y-3">
+                <div className="bg-purple-500/20 backdrop-blur-sm p-6 rounded-3xl group-hover:bg-purple-500/30 transition-all duration-300 w-fit">
+                  <FaComments className="text-6xl text-purple-300" />
+                </div>
+                <h2 className="text-3xl font-black text-white">Chat Atendimento</h2>
+                <p className="text-white/70 text-base leading-relaxed">
+                  Sistema completo de conversação em tempo real
+                </p>
+              </div>
+
+              {/* Vantagens */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center gap-3">
+                  <div className="bg-purple-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-purple-300" />
+                  </div>
+                  <span className="text-white text-sm font-bold">Inbox de conversas</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="bg-purple-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-purple-300" />
+                  </div>
+                  <span className="text-white text-sm font-bold">Tempo real</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="bg-purple-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-purple-300" />
+                  </div>
+                  <span className="text-white text-sm font-bold">Envio de mídias</span>
+                </div>
+              </div>
+
+              {/* Botão de Ação */}
+              <div className="pt-4">
+                <div className="flex items-center gap-3 text-white text-lg font-black">
+                  Acessar Chat
+                  <FaRocket className="text-2xl group-hover:translate-x-3 transition-transform duration-200" />
                 </div>
               </div>
             </div>
@@ -542,3 +586,4 @@ export default function ChooseIntegration() {
     </>
   );
 }
+
