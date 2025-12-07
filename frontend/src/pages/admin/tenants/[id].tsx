@@ -287,11 +287,19 @@ export default function TenantDetailsPage() {
     { key: 'dashboard', label: 'Dashboard', icon: FaTachometerAlt },
   ];
 
-  // Filtrar funcionalidades baseadas no plano do tenant
+  // Funcionalidades disponíveis para customização
+  // Quando modo customizado está ativo, mostra TODAS as funcionalidades
+  // Quando não está, mostra apenas as do plano
   const funcionalidadesDisponiveis = todasFuncionalidades.filter(func => {
     // Se não temos informações do tenant, não mostrar nada
     if (!tenant) {
       return false;
+    }
+    
+    // Se está em modo customizado, mostra TODAS as funcionalidades
+    // para que o admin possa habilitar qualquer uma
+    if (editForm.funcionalidades_customizadas) {
+      return true;
     }
     
     // Se não temos informações do plano, não mostrar (será exibida mensagem)
@@ -302,13 +310,6 @@ export default function TenantDetailsPage() {
     
     // Mostrar apenas funcionalidades que estão habilitadas no plano
     const estaNoPlano = tenant.plano_funcionalidades[func.key] === true;
-    
-    // Debug: mostrar quais funcionalidades estão sendo filtradas
-    if (estaNoPlano) {
-      console.log(`✅ ${func.label} - está no plano`);
-    } else {
-      console.log(`❌ ${func.label} - NÃO está no plano`);
-    }
     
     return estaNoPlano;
   });
