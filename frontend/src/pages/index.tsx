@@ -12,7 +12,7 @@ export default function ChooseIntegration() {
   const router = useRouter();
   const { user, isAuthenticated, loading, signOut } = useAuth();
   const { hasFeature, isTrial, getBlockedMessage, loading: loadingFeatures } = useFeatures();
-  const { canAccessNovaVida, canVerifyNumbers, canManageProxies, loading: loadingPermissions } = usePermissions();
+  const { canAccessNovaVida, canVerifyNumbers, canManageProxies, canAccessChat, loading: loadingPermissions } = usePermissions();
   
   // Verificar tanto o plano quanto as permissões do usuário
   const canAccessConsultaDados = hasFeature('consulta_dados') && canAccessNovaVida;
@@ -237,60 +237,117 @@ export default function ChooseIntegration() {
             </div>
           </button>
 
-          {/* CARD 3: CHAT - EM BREVE */}
-          <div
-            className="group relative overflow-hidden rounded-3xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-gray-700/20 to-gray-800/10 border-4 border-gray-600/40 shadow-lg shadow-gray-500/20 cursor-not-allowed opacity-75"
-          >
-            <div className="absolute top-0 right-0 w-64 h-64 bg-gray-500/10 rounded-full blur-3xl"></div>
-            
-            <div className="relative space-y-6">
-              {/* Badge */}
-              <div className="inline-block px-6 py-2 bg-yellow-500/20 border-2 border-yellow-400 rounded-full">
-                <span className="text-yellow-300 font-black text-sm tracking-wider">EM BREVE</span>
-              </div>
+          {/* CARD 3: CHAT - DINÂMICO */}
+          {canAccessChat ? (
+            <button
+              onClick={() => router.push('/chat')}
+              className="group relative overflow-hidden rounded-3xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-purple-500/20 to-purple-600/10 hover:from-purple-500/30 hover:to-purple-600/20 border-4 border-purple-500/40 hover:border-purple-500/60 hover:scale-105 hover:shadow-2xl shadow-lg shadow-purple-500/30 cursor-pointer"
+            >
+              <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl"></div>
+              
+              <div className="relative space-y-6">
+                {/* Badge */}
+                <div className="inline-block px-6 py-2 bg-purple-500/20 border-2 border-purple-400 rounded-full">
+                  <span className="text-purple-300 font-black text-sm tracking-wider">NOVIDADE</span>
+                </div>
 
-              {/* Ícone e Título */}
-              <div className="space-y-3">
-                <div className="bg-gray-500/20 backdrop-blur-sm p-6 rounded-3xl w-fit">
-                  <FaComments className="text-6xl text-gray-300" />
+                {/* Ícone e Título */}
+                <div className="space-y-3">
+                  <div className="bg-purple-500/20 backdrop-blur-sm p-6 rounded-3xl group-hover:bg-purple-500/30 transition-all duration-300 w-fit">
+                    <FaComments className="text-6xl text-purple-300" />
+                  </div>
+                  <h2 className="text-3xl font-black text-white">Chat Atendimento</h2>
+                  <p className="text-white/70 text-base leading-relaxed">
+                    Sistema completo de conversação em tempo real
+                  </p>
                 </div>
-                <h2 className="text-3xl font-black text-white">Chat Atendimento</h2>
-                <p className="text-white/50 text-base leading-relaxed">
-                  Sistema completo de conversação em tempo real
-                </p>
-              </div>
 
-              {/* Vantagens */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center gap-3">
-                  <div className="bg-gray-500/30 p-2 rounded-lg">
-                    <FaClock className="text-lg text-gray-300" />
+                {/* Vantagens */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-purple-500/30 p-2 rounded-lg">
+                      <FaCheckCircle className="text-lg text-purple-300" />
+                    </div>
+                    <span className="text-white text-sm font-bold">Inbox de conversas</span>
                   </div>
-                  <span className="text-white/60 text-sm font-bold">Inbox de conversas</span>
+                  <div className="flex items-center gap-3">
+                    <div className="bg-purple-500/30 p-2 rounded-lg">
+                      <FaCheckCircle className="text-lg text-purple-300" />
+                    </div>
+                    <span className="text-white text-sm font-bold">Tempo real</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="bg-purple-500/30 p-2 rounded-lg">
+                      <FaCheckCircle className="text-lg text-purple-300" />
+                    </div>
+                    <span className="text-white text-sm font-bold">Envio de mídias</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="bg-gray-500/30 p-2 rounded-lg">
-                    <FaClock className="text-lg text-gray-300" />
+
+                {/* Botão de Ação */}
+                <div className="pt-4">
+                  <div className="flex items-center gap-3 text-white text-lg font-black">
+                    Acessar Chat
+                    <FaRocket className="text-2xl group-hover:translate-x-3 transition-transform duration-200" />
                   </div>
-                  <span className="text-white/60 text-sm font-bold">Tempo real</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="bg-gray-500/30 p-2 rounded-lg">
-                    <FaClock className="text-lg text-gray-300" />
-                  </div>
-                  <span className="text-white/60 text-sm font-bold">Envio de mídias</span>
                 </div>
               </div>
+            </button>
+          ) : (
+            <div
+              className="group relative overflow-hidden rounded-3xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-gray-700/20 to-gray-800/10 border-4 border-gray-600/40 shadow-lg shadow-gray-500/20 cursor-not-allowed opacity-75"
+            >
+              <div className="absolute top-0 right-0 w-64 h-64 bg-gray-500/10 rounded-full blur-3xl"></div>
+              
+              <div className="relative space-y-6">
+                {/* Badge */}
+                <div className="inline-block px-6 py-2 bg-yellow-500/20 border-2 border-yellow-400 rounded-full">
+                  <span className="text-yellow-300 font-black text-sm tracking-wider">EM BREVE</span>
+                </div>
 
-              {/* Mensagem de Status */}
-              <div className="pt-4">
-                <div className="flex items-center gap-3 text-yellow-300 text-lg font-black">
-                  <FaClock className="text-2xl" />
-                  Disponível em breve
+                {/* Ícone e Título */}
+                <div className="space-y-3">
+                  <div className="bg-gray-500/20 backdrop-blur-sm p-6 rounded-3xl w-fit">
+                    <FaComments className="text-6xl text-gray-300" />
+                  </div>
+                  <h2 className="text-3xl font-black text-white">Chat Atendimento</h2>
+                  <p className="text-white/50 text-base leading-relaxed">
+                    Sistema completo de conversação em tempo real
+                  </p>
+                </div>
+
+                {/* Vantagens */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-gray-500/30 p-2 rounded-lg">
+                      <FaClock className="text-lg text-gray-300" />
+                    </div>
+                    <span className="text-white/60 text-sm font-bold">Inbox de conversas</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="bg-gray-500/30 p-2 rounded-lg">
+                      <FaClock className="text-lg text-gray-300" />
+                    </div>
+                    <span className="text-white/60 text-sm font-bold">Tempo real</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="bg-gray-500/30 p-2 rounded-lg">
+                      <FaClock className="text-lg text-gray-300" />
+                    </div>
+                    <span className="text-white/60 text-sm font-bold">Envio de mídias</span>
+                  </div>
+                </div>
+
+                {/* Mensagem de Status */}
+                <div className="pt-4">
+                  <div className="flex items-center gap-3 text-yellow-300 text-lg font-black">
+                    <FaClock className="text-2xl" />
+                    Disponível em breve
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* FUNÇÕES EXTRAS */}

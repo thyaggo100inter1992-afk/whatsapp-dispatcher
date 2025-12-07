@@ -1,0 +1,26 @@
+-- Script SQL para adicionar uma helper function que retorna as funcionalidades com chat
+-- Este é apenas um exemplo, a lógica real está em JavaScript no permissions.routes.js
+
+-- O que precisa ser feito:
+-- Em TODOS os lugares do permissions.routes.js onde tem:
+--   1. SELECT ... FROM tenants t LEFT JOIN plans p ... 
+--      Adicionar: p.permite_chat_atendimento
+
+--   2. Antes do return res.json() que tem funcionalidades
+--      Adicionar a lógica:
+/*
+  // Adicionar chat_atendimento baseado no plano OU na customização
+  if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config && tenant.funcionalidades_config.permite_chat_atendimento !== undefined) {
+    funcionalidades.chat_atendimento = tenant.funcionalidades_config.permite_chat_atendimento === true;
+  } else {
+    funcionalidades.chat_atendimento = tenant.permite_chat_atendimento === true;
+  }
+*/
+
+-- Localizações que precisam ser atualizadas (linhas aprox):
+-- Linha 56 - já feito
+-- Linha 138 - precisa fazer
+-- Linha 197 - precisa fazer  
+-- Linha 260 - precisa fazer
+-- Linha 320 - precisa fazer
+
