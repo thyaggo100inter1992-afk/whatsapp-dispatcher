@@ -75,7 +75,7 @@ export class ConversationController {
           c.updated_at,
           w.name as whatsapp_account_name,
           u.name as instance_name,
-          att.name as attended_by_user_name
+          att.nome as attended_by_user_name
         FROM conversations c
         LEFT JOIN whatsapp_accounts w ON c.whatsapp_account_id = w.id
         LEFT JOIN uaz_instances u ON c.instance_id = u.id
