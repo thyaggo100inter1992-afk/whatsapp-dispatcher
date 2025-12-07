@@ -380,6 +380,42 @@ export class ConversationController {
   }
 
   /**
+   * POST /api/conversations/:id/messages/media
+   * Enviar mídia (imagem, documento, áudio)
+   * NOTA: Por enquanto apenas retorna erro informativo pois a funcionalidade completa de upload de mídia
+   * para WhatsApp requer implementação adicional no servidor
+   */
+  async sendMediaMessage(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      const { id } = req.params;
+      const { message_type } = req.body;
+
+      console.log(`📎 [Conversations] Tentativa de envio de mídia - Conversa: ${id}, Tipo: ${message_type}`);
+
+      // Por enquanto, retornar mensagem informativa
+      // A implementação completa de upload de mídia para WhatsApp é mais complexa:
+      // 1. Precisa fazer upload do arquivo para os servidores do WhatsApp
+      // 2. Obter o media_id retornado
+      // 3. Enviar a mensagem referenciando o media_id
+      
+      return res.status(501).json({
+        success: false,
+        error: `A funcionalidade de ${message_type === 'audio' ? 'áudio' : 'mídia'} ainda está em desenvolvimento.`,
+        message: 'O envio de mídia pelo chat será implementado em breve. Por enquanto, use o envio de texto.'
+      });
+
+    } catch (error: any) {
+      console.error('❌ Erro ao processar envio de mídia:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
    * PUT /api/conversations/:id/read
    * Marca conversa como lida
    */

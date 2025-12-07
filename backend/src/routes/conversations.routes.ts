@@ -33,6 +33,9 @@ router.get('/:id/messages', (req, res) => conversationController.getMessages(req
 // POST /api/conversations/:id/messages - Enviar mensagem
 router.post('/:id/messages', (req, res) => conversationController.sendMessage(req, res));
 
+// POST /api/conversations/:id/messages/media - Enviar mídia (imagem, documento, áudio)
+router.post('/:id/messages/media', (req, res) => conversationController.sendMediaMessage(req, res));
+
 // PUT /api/conversations/:id/read - Marcar como lida
 router.put('/:id/read', (req, res) => conversationController.markAsRead(req, res));
 

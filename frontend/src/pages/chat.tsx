@@ -1097,16 +1097,6 @@ export default function Chat() {
                 <FaClock /> Pendentes ({statusCounts.pending})
               </button>
               <button
-                onClick={() => setFilter('broadcast')}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
-                  filter === 'broadcast'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-dark-700 text-gray-400 hover:bg-dark-600'
-                }`}
-              >
-                <FaBullhorn /> Disparos ({statusCounts.broadcast})
-              </button>
-              <button
                 onClick={() => setFilter('archived')}
                 className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
                   filter === 'archived'
@@ -1121,23 +1111,25 @@ export default function Chat() {
 
           {/* Barra de ações para seleção múltipla */}
           {selectMode && (
-            <div className="bg-dark-900 p-3 border-b border-gray-700 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-400">
+            <div className="bg-dark-900 p-3 border-b border-gray-700">
+              {/* Linha 1: Contador e botão selecionar todos */}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-white font-bold">
                   {selectedConversationIds.length} selecionado(s)
                 </span>
                 <button
                   onClick={selectAllConversations}
-                  className="text-xs text-emerald-400 hover:text-emerald-300"
+                  className="text-xs text-emerald-400 hover:text-emerald-300 underline"
                 >
                   Selecionar Todos
                 </button>
               </div>
+              {/* Linha 2: Botões de ação */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={archiveMultipleConversations}
                   disabled={selectedConversationIds.length === 0}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-yellow-600/20 hover:bg-yellow-600/40 border border-yellow-500/50 rounded-lg text-yellow-400 text-xs font-bold disabled:opacity-50"
+                  className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-white text-xs font-bold disabled:opacity-50 disabled:bg-gray-600"
                   title="Arquivar selecionados"
                 >
                   <FaArchive className="text-xs" /> Encerrar
@@ -1145,16 +1137,16 @@ export default function Chat() {
                 <button
                   onClick={deleteMultipleConversations}
                   disabled={selectedConversationIds.length === 0}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 rounded-lg text-red-400 text-xs font-bold disabled:opacity-50"
+                  className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white text-xs font-bold disabled:opacity-50 disabled:bg-gray-600"
                   title="Apagar permanentemente"
                 >
                   <FaTrash className="text-xs" /> Apagar
                 </button>
                 <button
                   onClick={deselectAllConversations}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-gray-600/20 hover:bg-gray-600/40 border border-gray-500/50 rounded-lg text-gray-400 text-xs font-bold"
+                  className="px-3 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg text-white text-xs font-bold"
                 >
-                  <FaTimes className="text-xs" /> Cancelar
+                  <FaTimes className="text-xs" />
                 </button>
               </div>
             </div>
@@ -1259,55 +1251,52 @@ export default function Chat() {
                         {conv.last_message_text || 'Sem mensagens'}
                       </p>
 
-                      {/* Linha 3: Contagem de mensagens + Botões */}
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          {conv.unread_count > 0 && (
-                            <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-lg shadow-emerald-500/30 animate-pulse">
-                              {conv.unread_count}
-                            </div>
-                          )}
-                          {/* Nome da conta WhatsApp */}
-                          {(conv.whatsapp_account_name || conv.instance_name) && (
-                            <span className="text-xs text-blue-400 truncate">
-                              <FaPlug className="inline mr-1 text-[10px]" /> 
-                              {conv.whatsapp_account_name || conv.instance_name}
-                            </span>
-                          )}
-                        </div>
-                        
-                        {/* Botões para conversas pendentes ou broadcast */}
-                        {!selectMode && (conv.status === 'pending' || conv.status === 'broadcast') && (
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                acceptConversation(conv.id);
-                              }}
-                              className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-lg transition-all duration-200"
-                              title="Aceitar e iniciar atendimento"
-                            >
-                              <FaCheck className="text-[10px]" /> Aceitar
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                quickArchiveConversation(conv.id);
-                              }}
-                              className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-lg transition-all duration-200"
-                              title="Encerrar e arquivar"
-                            >
-                              <FaTimes className="text-[10px]" /> Encerrar
-                            </button>
+                      {/* Linha 3: Contagem de mensagens + Conexão */}
+                      <div className="flex items-center gap-2 mb-2">
+                        {conv.unread_count > 0 && (
+                          <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-lg shadow-emerald-500/30 animate-pulse">
+                            {conv.unread_count}
                           </div>
                         )}
+                        {/* Nome da conta WhatsApp */}
+                        {(conv.whatsapp_account_name || conv.instance_name) && (
+                          <span className="text-xs text-blue-400 truncate">
+                            <FaPlug className="inline mr-1 text-[10px]" /> 
+                            {conv.whatsapp_account_name || conv.instance_name}
+                          </span>
+                        )}
+                        {/* Nome do atendente se estiver em atendimento */}
+                        {conv.status === 'open' && conv.attended_by_user_name && (
+                          <span className="text-xs text-emerald-400">
+                            <FaHeadset className="inline mr-1" /> {conv.attended_by_user_name}
+                          </span>
+                        )}
                       </div>
-
-                      {/* Linha 4: Nome do atendente se estiver em atendimento */}
-                      {conv.status === 'open' && conv.attended_by_user_name && (
-                        <p className="text-xs text-emerald-400 mt-1">
-                          <FaHeadset className="inline mr-1" /> {conv.attended_by_user_name}
-                        </p>
+                        
+                      {/* Linha 4: Botões para conversas pendentes (LINHA SEPARADA) */}
+                      {!selectMode && conv.status === 'pending' && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              acceptConversation(conv.id);
+                            }}
+                            className="flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg flex items-center justify-center gap-1 shadow-lg transition-all duration-200"
+                            title="Aceitar e iniciar atendimento"
+                          >
+                            <FaCheck className="text-xs" /> Aceitar
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              quickArchiveConversation(conv.id);
+                            }}
+                            className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs font-bold px-3 py-2 rounded-lg flex items-center justify-center gap-1 shadow-lg transition-all duration-200"
+                            title="Encerrar e arquivar"
+                          >
+                            <FaTimes className="text-xs" /> Encerrar
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
