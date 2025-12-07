@@ -366,32 +366,20 @@ export class QrWebhookController {
         console.log(`   🆔 Message ID: ${messageId}`);
 
         // ===================================
-        // 💬 SALVAR MENSAGEM NO CHAT
-        // ===================================
-        if (phoneNumber && tenantId) {
-          await this.saveIncomingMessageToChat(
-            phoneNumber,
-            messageType,
-            msg,
-            messageId,
-            instanceId,
-            tenantId
-          );
-        }
-
-        // ===================================
-        // 👆 DETECTAR CLIQUES EM BOTÕES
+        // 👆 DETECTAR CLIQUES EM BOTÕES (ANTES DE SALVAR)
         // ===================================
         let buttonText = '';
         let buttonPayload = '';
         let isButtonClick = false;
+        let finalMessageType = messageType;
 
         // Formato button_reply
         if (msg.type === 'button_reply' || msg.buttonReply) {
           const reply = msg.buttonReply || msg;
-          buttonText = reply.selectedButtonId || reply.id || '';
+          buttonText = reply.selectedButtonId || reply.title || reply.id || '';
           buttonPayload = reply.selectedButtonId || reply.id || '';
           isButtonClick = true;
+          finalMessageType = 'button';
           console.log(`   👆 BOTÃO CLICADO: ${buttonText}`);
         }
 
@@ -399,13 +387,15 @@ export class QrWebhookController {
         if (msg.type === 'interactive' || msg.interactive) {
           const interactive = msg.interactive || msg;
           if (interactive.type === 'button_reply') {
-            buttonText = interactive.button_reply?.title || '';
+            buttonText = interactive.button_reply?.title || interactive.button_reply?.id || '';
             buttonPayload = interactive.button_reply?.id || '';
             isButtonClick = true;
+            finalMessageType = 'button';
           } else if (interactive.type === 'list_reply') {
-            buttonText = interactive.list_reply?.title || '';
+            buttonText = interactive.list_reply?.title || interactive.list_reply?.id || '';
             buttonPayload = interactive.list_reply?.id || '';
             isButtonClick = true;
+            finalMessageType = 'list';
           }
           console.log(`   👆 INTERATIVO CLICADO: ${buttonText}`);
         }
@@ -416,10 +406,27 @@ export class QrWebhookController {
           buttonText = reply.title || reply.selectedRowId || '';
           buttonPayload = reply.id || reply.selectedRowId || '';
           isButtonClick = true;
+          finalMessageType = 'list';
           console.log(`   👆 LISTA SELECIONADA: ${buttonText}`);
         }
 
-        // Se foi clique em botão, registrar
+        // ===================================
+        // 💬 SALVAR MENSAGEM NO CHAT
+        // ===================================
+        if (phoneNumber && tenantId) {
+          await this.saveIncomingMessageToChat(
+            phoneNumber,
+            finalMessageType,
+            msg,
+            messageId,
+            instanceId,
+            tenantId,
+            buttonText,
+            buttonPayload
+          );
+        }
+
+        // Se foi clique em botão, registrar também na tabela de cliques
         if (isButtonClick && phoneNumber) {
           await this.registerButtonClick(phoneNumber, buttonText, buttonPayload, contextId, instanceId, tenantId);
         }
@@ -438,7 +445,9 @@ export class QrWebhookController {
     msg: any,
     messageId: string,
     instanceId: number | null,
-    tenantId: number
+    tenantId: number,
+    buttonText: string = '',
+    buttonPayload: string = ''
   ) {
     try {
       // Normalizar número de telefone (remover 9 extra se tiver)
@@ -556,7 +565,7 @@ export class QrWebhookController {
         return;
       }
 
-      // Salvar mensagem
+      // Salvar mensagem (incluindo dados de botão se houver)
       await this.runTenantQuery(
         tenantId,
         `INSERT INTO conversation_messages (
@@ -566,17 +575,21 @@ export class QrWebhookController {
           message_content,
           media_url,
           media_caption,
+          button_text,
+          button_payload,
           whatsapp_message_id,
           tenant_id,
           is_read_by_agent
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           conversationId,
           'inbound',
           messageType || 'text',
-          messageContent || null,
+          buttonText || messageContent || null, // Se for botão, usar o texto do botão
           mediaUrl || null,
           mediaCaption || null,
+          buttonText || null,
+          buttonPayload || null,
           messageId || null,
           tenantId,
           false // Não lida pelo agente

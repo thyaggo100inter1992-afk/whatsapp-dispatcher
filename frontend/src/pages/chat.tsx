@@ -46,6 +46,9 @@ interface Message {
   message_type: string;
   message_content: string | null;
   media_url: string | null;
+  media_caption: string | null;
+  button_text: string | null;
+  button_payload: string | null;
   status: string | null;
   sent_at: string;
   delivered_at: string | null;
@@ -53,6 +56,195 @@ interface Message {
   sent_by_user_name: string | null;
   is_read_by_agent: boolean;
 }
+
+// Componente para renderizar mensagem baseado no tipo
+const MessageContent = ({ msg }: { msg: Message }) => {
+  const messageType = msg.message_type?.toLowerCase() || 'text';
+  
+  // Clique em botão
+  if (messageType === 'button' || messageType === 'button_reply' || messageType === 'interactive') {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="bg-white/20 p-2 rounded-lg">
+          <span className="text-2xl">👆</span>
+        </div>
+        <div>
+          <p className="text-xs opacity-70 mb-1">Clicou no botão:</p>
+          <p className="text-base font-semibold bg-white/10 px-3 py-1 rounded-lg">
+            {msg.button_text || msg.message_content || '[Botão]'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Lista selecionada
+  if (messageType === 'list' || messageType === 'list_reply') {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="bg-white/20 p-2 rounded-lg">
+          <span className="text-2xl">📋</span>
+        </div>
+        <div>
+          <p className="text-xs opacity-70 mb-1">Selecionou da lista:</p>
+          <p className="text-base font-semibold bg-white/10 px-3 py-1 rounded-lg">
+            {msg.button_text || msg.message_content || '[Item da lista]'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Imagem
+  if (messageType === 'image' || messageType === 'imagemessage') {
+    return (
+      <div>
+        {msg.media_url ? (
+          <div className="space-y-2">
+            <img 
+              src={msg.media_url} 
+              alt="Imagem" 
+              className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+              style={{ maxHeight: '300px' }}
+              onClick={() => window.open(msg.media_url!, '_blank')}
+            />
+            {(msg.media_caption || msg.message_content) && (
+              <p className="text-base">{msg.media_caption || msg.message_content}</p>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-3xl">🖼️</span>
+            <span className="text-base">{msg.message_content || '[Imagem]'}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  // Vídeo
+  if (messageType === 'video' || messageType === 'videomessage') {
+    return (
+      <div>
+        {msg.media_url ? (
+          <div className="space-y-2">
+            <video 
+              src={msg.media_url} 
+              controls
+              className="max-w-full rounded-lg"
+              style={{ maxHeight: '300px' }}
+            />
+            {(msg.media_caption || msg.message_content) && (
+              <p className="text-base">{msg.media_caption || msg.message_content}</p>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-3xl">🎥</span>
+            <span className="text-base">{msg.message_content || '[Vídeo]'}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  // Áudio
+  if (messageType === 'audio' || messageType === 'audiomessage' || messageType === 'ptt') {
+    return (
+      <div className="flex items-center gap-3">
+        <div className="bg-white/20 p-3 rounded-full">
+          <span className="text-2xl">🎵</span>
+        </div>
+        {msg.media_url ? (
+          <audio src={msg.media_url} controls className="max-w-[250px]" />
+        ) : (
+          <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-full">
+            <div className="flex gap-1">
+              {[...Array(12)].map((_, i) => (
+                <div key={i} className="w-1 bg-white/60 rounded-full" style={{ height: `${Math.random() * 20 + 8}px` }} />
+              ))}
+            </div>
+            <span className="text-sm opacity-70">Áudio</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  // Documento
+  if (messageType === 'document' || messageType === 'documentmessage') {
+    return (
+      <div className="flex items-center gap-3">
+        <div className="bg-white/20 p-3 rounded-lg">
+          <span className="text-3xl">📄</span>
+        </div>
+        <div>
+          <p className="text-base font-medium">{msg.message_content || 'Documento'}</p>
+          {msg.media_url && (
+            <a 
+              href={msg.media_url} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-sm text-blue-300 hover:underline"
+            >
+              Baixar arquivo
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
+  
+  // Sticker
+  if (messageType === 'sticker' || messageType === 'stickermessage') {
+    return (
+      <div>
+        {msg.media_url ? (
+          <img 
+            src={msg.media_url} 
+            alt="Sticker" 
+            className="max-w-[150px]"
+          />
+        ) : (
+          <div className="text-5xl">🎭</div>
+        )}
+      </div>
+    );
+  }
+  
+  // Localização
+  if (messageType === 'location' || messageType === 'locationmessage') {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-3xl">📍</span>
+        <div>
+          <p className="text-base font-medium">Localização compartilhada</p>
+          <p className="text-sm opacity-70">{msg.message_content}</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Contato
+  if (messageType === 'contact' || messageType === 'contactmessage' || messageType === 'vcard') {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-3xl">👤</span>
+        <div>
+          <p className="text-base font-medium">Contato compartilhado</p>
+          <p className="text-sm opacity-70">{msg.message_content}</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Texto padrão
+  return (
+    <p className="text-base leading-relaxed whitespace-pre-wrap break-words">
+      {msg.message_content || '[Mensagem]'}
+    </p>
+  );
+};
 
 export default function Chat() {
   const router = useRouter();
@@ -703,9 +895,10 @@ export default function Chat() {
                               : 'bg-gradient-to-br from-gray-700 to-gray-800 text-white rounded-bl-md'
                           }`}
                         >
-                          <p className="text-base leading-relaxed whitespace-pre-wrap break-words">
-                            {msg.message_content || '[Mídia]'}
-                          </p>
+                          {/* Renderiza o conteúdo baseado no tipo */}
+                          <MessageContent msg={msg} />
+                          
+                          {/* Horário e status */}
                           <div className={`flex items-center gap-2 mt-2 ${msg.message_direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
                             <span className="text-sm opacity-80 font-medium">
                               {formatMessageTime(msg.sent_at)}
