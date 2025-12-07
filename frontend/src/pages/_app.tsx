@@ -113,7 +113,7 @@ export default function App({ Component, pageProps }: AppProps) {
   }
   
   // Rotas sem layout mas COM autenticação (têm seu próprio design)
-  const noLayoutRoutes = ['/', '/configuracoes/webhook', '/perfil', '/gestao', '/tutoriais', '/planos', '/checkout', '/mudar-plano', '/escolher-plano'];
+  const noLayoutRoutes = ['/', '/configuracoes/webhook', '/perfil', '/gestao', '/tutoriais', '/planos', '/checkout', '/mudar-plano', '/escolher-plano', '/chat'];
   const isNoLayoutRoute = noLayoutRoutes.includes(router.pathname);
   
   if (isNoLayoutRoute) {
