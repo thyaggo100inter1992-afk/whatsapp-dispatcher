@@ -304,7 +304,23 @@ export class WebhookController {
         else if (message.type === 'text') {
           console.log('\n💬 ===== MENSAGEM DE TEXTO DETECTADA =====');
           await this.processTextMessage(message, value);
-        } else {
+        }
+        // Processar mensagens de MÍDIA (imagem, áudio, vídeo, documento, sticker)
+        else if (['image', 'audio', 'video', 'document', 'sticker', 'voice'].includes(message.type)) {
+          console.log(`\n📎 ===== MENSAGEM DE MÍDIA DETECTADA (${message.type}) =====`);
+          await this.processMediaMessage(message, value);
+        }
+        // Processar localização
+        else if (message.type === 'location') {
+          console.log('\n📍 ===== LOCALIZAÇÃO DETECTADA =====');
+          await this.processLocationMessage(message, value);
+        }
+        // Processar contatos compartilhados
+        else if (message.type === 'contacts') {
+          console.log('\n👤 ===== CONTATO COMPARTILHADO DETECTADO =====');
+          await this.processContactMessage(message, value);
+        }
+        else {
           console.log(`ℹ️ Mensagem ignorada (tipo: ${message.type})`);
         }
       }
@@ -1174,6 +1190,297 @@ export class WebhookController {
   }
 
   /**
+   * Processar mensagens de MÍDIA (imagem, áudio, vídeo, documento, sticker)
+   */
+  private async processMediaMessage(message: any, value: any) {
+    try {
+      const from = message.from;
+      const messageId = message.id;
+      const mediaType = message.type;
+
+      console.log(`📎 Mídia recebida: ${mediaType}`);
+      console.log('   From:', from);
+      console.log('   Message ID:', messageId);
+
+      // Extrair dados da mídia
+      let mediaData = message[mediaType] || {};
+      let mediaId = mediaData.id;
+      let mimeType = mediaData.mime_type || '';
+      let caption = mediaData.caption || '';
+      let fileName = mediaData.filename || '';
+
+      console.log('   Media ID:', mediaId);
+      console.log('   MIME Type:', mimeType);
+      console.log('   Caption:', caption);
+      console.log('   Filename:', fileName);
+
+      // Buscar conta WhatsApp
+      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+      let phoneVariations = [from, normalizePhoneNumber(from)];
+      
+      if (from.startsWith('55') && from.length >= 12) {
+        const ddi = from.substring(0, 2);
+        const ddd = from.substring(2, 4);
+        const localNumber = from.substring(4);
+        if (localNumber.length === 8) {
+          phoneVariations.push(`${ddi}${ddd}9${localNumber}`);
+        } else if (localNumber.length === 9 && localNumber.startsWith('9')) {
+          phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
+        }
+      }
+
+      // Buscar conta WhatsApp pela última mensagem
+      const messageResult = await queryNoTenant(
+        `SELECT m.whatsapp_account_id, m.tenant_id
+         FROM messages m
+         WHERE m.phone_number = ANY($1)
+         ORDER BY m.sent_at DESC
+         LIMIT 1`,
+        [phoneVariations]
+      );
+
+      let whatsappAccountId = messageResult.rows[0]?.whatsapp_account_id;
+      let tenantId = messageResult.rows[0]?.tenant_id;
+
+      if (!whatsappAccountId || !tenantId) {
+        const convResult = await queryNoTenant(
+          `SELECT whatsapp_account_id, tenant_id 
+           FROM conversations 
+           WHERE phone_number = ANY($1) 
+           ORDER BY last_message_at DESC 
+           LIMIT 1`,
+          [phoneVariations]
+        );
+        whatsappAccountId = convResult.rows[0]?.whatsapp_account_id;
+        tenantId = convResult.rows[0]?.tenant_id;
+      }
+
+      if (!whatsappAccountId || !tenantId) {
+        console.log('⚠️ Conta WhatsApp ou Tenant não identificado para mídia');
+        return;
+      }
+
+      // Montar conteúdo da mensagem
+      let messageContent = '';
+      let mediaUrl = null;
+
+      switch (mediaType) {
+        case 'image':
+          messageContent = caption || '📷 [Imagem]';
+          break;
+        case 'video':
+          messageContent = caption || '🎥 [Vídeo]';
+          break;
+        case 'audio':
+        case 'voice':
+          messageContent = '🎤 [Áudio]';
+          break;
+        case 'document':
+          messageContent = `📄 ${fileName || '[Documento]'}`;
+          break;
+        case 'sticker':
+          messageContent = '🎭 [Sticker]';
+          break;
+        default:
+          messageContent = `📎 [${mediaType}]`;
+      }
+
+      // TODO: Se quiser baixar a mídia, usar o Graph API com o media_id
+      // Por enquanto, salvar apenas a referência
+
+      console.log('   ✅ Salvando mídia no chat...');
+
+      await this.saveIncomingMessageToChat(
+        from,
+        mediaType,
+        messageContent,
+        messageId,
+        whatsappAccountId,
+        null,
+        tenantId,
+        mediaId, // Salvar media_id para referência futura
+        mimeType
+      );
+
+      console.log('   ✅ Mídia salva no chat!');
+
+    } catch (error: any) {
+      console.error('❌ Erro ao processar mensagem de mídia:', error);
+    }
+  }
+
+  /**
+   * Processar mensagens de LOCALIZAÇÃO
+   */
+  private async processLocationMessage(message: any, value: any) {
+    try {
+      const from = message.from;
+      const messageId = message.id;
+      const location = message.location || {};
+      const latitude = location.latitude;
+      const longitude = location.longitude;
+      const name = location.name || '';
+      const address = location.address || '';
+
+      console.log('📍 Localização recebida:');
+      console.log('   From:', from);
+      console.log('   Lat/Long:', latitude, longitude);
+      console.log('   Nome:', name);
+      console.log('   Endereço:', address);
+
+      // Buscar conta WhatsApp
+      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+      let phoneVariations = [from, normalizePhoneNumber(from)];
+      
+      if (from.startsWith('55') && from.length >= 12) {
+        const ddi = from.substring(0, 2);
+        const ddd = from.substring(2, 4);
+        const localNumber = from.substring(4);
+        if (localNumber.length === 8) {
+          phoneVariations.push(`${ddi}${ddd}9${localNumber}`);
+        } else if (localNumber.length === 9 && localNumber.startsWith('9')) {
+          phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
+        }
+      }
+
+      const messageResult = await queryNoTenant(
+        `SELECT m.whatsapp_account_id, m.tenant_id
+         FROM messages m
+         WHERE m.phone_number = ANY($1)
+         ORDER BY m.sent_at DESC
+         LIMIT 1`,
+        [phoneVariations]
+      );
+
+      let whatsappAccountId = messageResult.rows[0]?.whatsapp_account_id;
+      let tenantId = messageResult.rows[0]?.tenant_id;
+
+      if (!whatsappAccountId || !tenantId) {
+        const convResult = await queryNoTenant(
+          `SELECT whatsapp_account_id, tenant_id 
+           FROM conversations 
+           WHERE phone_number = ANY($1) 
+           ORDER BY last_message_at DESC 
+           LIMIT 1`,
+          [phoneVariations]
+        );
+        whatsappAccountId = convResult.rows[0]?.whatsapp_account_id;
+        tenantId = convResult.rows[0]?.tenant_id;
+      }
+
+      if (!whatsappAccountId || !tenantId) {
+        console.log('⚠️ Conta WhatsApp ou Tenant não identificado');
+        return;
+      }
+
+      const messageContent = `📍 Localização: ${name || address || `${latitude}, ${longitude}`}`;
+
+      await this.saveIncomingMessageToChat(
+        from,
+        'location',
+        messageContent,
+        messageId,
+        whatsappAccountId,
+        null,
+        tenantId,
+        `${latitude},${longitude}`, // Coordenadas como "media"
+        null
+      );
+
+      console.log('   ✅ Localização salva no chat!');
+
+    } catch (error: any) {
+      console.error('❌ Erro ao processar localização:', error);
+    }
+  }
+
+  /**
+   * Processar CONTATOS compartilhados
+   */
+  private async processContactMessage(message: any, value: any) {
+    try {
+      const from = message.from;
+      const messageId = message.id;
+      const contacts = message.contacts || [];
+
+      console.log('👤 Contatos compartilhados:');
+      console.log('   From:', from);
+      console.log('   Quantidade:', contacts.length);
+
+      // Buscar conta WhatsApp
+      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+      let phoneVariations = [from, normalizePhoneNumber(from)];
+      
+      if (from.startsWith('55') && from.length >= 12) {
+        const ddi = from.substring(0, 2);
+        const ddd = from.substring(2, 4);
+        const localNumber = from.substring(4);
+        if (localNumber.length === 8) {
+          phoneVariations.push(`${ddi}${ddd}9${localNumber}`);
+        } else if (localNumber.length === 9 && localNumber.startsWith('9')) {
+          phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
+        }
+      }
+
+      const messageResult = await queryNoTenant(
+        `SELECT m.whatsapp_account_id, m.tenant_id
+         FROM messages m
+         WHERE m.phone_number = ANY($1)
+         ORDER BY m.sent_at DESC
+         LIMIT 1`,
+        [phoneVariations]
+      );
+
+      let whatsappAccountId = messageResult.rows[0]?.whatsapp_account_id;
+      let tenantId = messageResult.rows[0]?.tenant_id;
+
+      if (!whatsappAccountId || !tenantId) {
+        const convResult = await queryNoTenant(
+          `SELECT whatsapp_account_id, tenant_id 
+           FROM conversations 
+           WHERE phone_number = ANY($1) 
+           ORDER BY last_message_at DESC 
+           LIMIT 1`,
+          [phoneVariations]
+        );
+        whatsappAccountId = convResult.rows[0]?.whatsapp_account_id;
+        tenantId = convResult.rows[0]?.tenant_id;
+      }
+
+      if (!whatsappAccountId || !tenantId) {
+        console.log('⚠️ Conta WhatsApp ou Tenant não identificado');
+        return;
+      }
+
+      // Montar lista de contatos
+      let contactNames = contacts.map((c: any) => {
+        const name = c.name?.formatted_name || 'Contato';
+        const phone = c.phones?.[0]?.phone || '';
+        return `${name} (${phone})`;
+      }).join(', ');
+
+      const messageContent = `👤 Contato(s): ${contactNames}`;
+
+      await this.saveIncomingMessageToChat(
+        from,
+        'contact',
+        messageContent,
+        messageId,
+        whatsappAccountId,
+        null,
+        tenantId,
+        JSON.stringify(contacts), // Salvar dados completos
+        null
+      );
+
+      console.log('   ✅ Contatos salvos no chat!');
+
+    } catch (error: any) {
+      console.error('❌ Erro ao processar contatos:', error);
+    }
+  }
+
+  /**
    * Processar atualização de status de template
    */
   private async processTemplateStatusUpdate(value: any, businessAccountId: string) {
@@ -1591,7 +1898,9 @@ export class WebhookController {
     messageId: string,
     whatsappAccountId: number,
     instanceId: number | null,
-    tenantId: number
+    tenantId: number,
+    mediaId: string | null = null,
+    mimeType: string | null = null
   ) {
     try {
       // Normalizar número de telefone (remover 9 extra se tiver)
@@ -1660,8 +1969,10 @@ export class WebhookController {
           message_content,
           whatsapp_message_id,
           tenant_id,
-          is_read_by_agent
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          is_read_by_agent,
+          media_id,
+          media_type
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           conversationId,
           'inbound',
@@ -1669,7 +1980,9 @@ export class WebhookController {
           messageContent || null,
           messageId || null,
           tenantId,
-          false // Não lida pelo agente
+          false, // Não lida pelo agente
+          mediaId || null,
+          mimeType || null
         ]
       );
 
