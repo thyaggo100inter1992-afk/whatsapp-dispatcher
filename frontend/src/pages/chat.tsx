@@ -134,6 +134,23 @@ export default function Chat() {
     }
   };
 
+  const handleArchiveConversation = async (conversationId: number) => {
+    if (!confirm('Tem certeza que deseja encerrar e arquivar este chat?')) {
+      return;
+    }
+    
+    try {
+      await api.put(`/conversations/${conversationId}/archive`);
+      setSelectedConversation(null);
+      setMessages([]);
+      loadConversations();
+      loadUnreadCount();
+    } catch (error) {
+      console.error('Erro ao arquivar conversa:', error);
+      alert('Erro ao encerrar o chat. Tente novamente.');
+    }
+  };
+
   const sendMessage = async () => {
     if (!messageInput.trim() || !selectedConversation || sending) return;
 
@@ -364,9 +381,25 @@ export default function Chat() {
                     </h2>
                     <p className="text-xs text-gray-400">
                       {selectedConversation.phone_number}
+                      {selectedConversation.whatsapp_account_name && (
+                        <span className="ml-2 text-emerald-400">• {selectedConversation.whatsapp_account_name}</span>
+                      )}
+                      {selectedConversation.instance_name && (
+                        <span className="ml-2 text-purple-400">• {selectedConversation.instance_name}</span>
+                      )}
                     </p>
                   </div>
                 </div>
+                
+                {/* Botão Encerrar Chat */}
+                <button
+                  onClick={() => handleArchiveConversation(selectedConversation.id)}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 rounded-lg text-red-400 hover:text-red-300 transition-all"
+                  title="Encerrar e arquivar esta conversa"
+                >
+                  <FaTimes className="text-sm" />
+                  <span className="text-sm font-medium">Encerrar Chat</span>
+                </button>
               </div>
 
               {/* Mensagens */}
