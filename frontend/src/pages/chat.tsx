@@ -102,9 +102,10 @@ const MessageContent = ({ msg }: { msg: Message }) => {
     let mediaUrl = msg.media_url;
     if (mediaUrl && !mediaUrl.startsWith('http')) {
       // Se não começar com http, é um caminho relativo - adicionar o domínio da API
-      const apiDomain = process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br';
+      const apiDomain = 'https://api.sistemasnettsistemas.com.br';
       mediaUrl = `${apiDomain}${mediaUrl}`;
     }
+    console.log('🖼️ URL da imagem construída:', mediaUrl);
     
     return (
       <div>
@@ -117,7 +118,7 @@ const MessageContent = ({ msg }: { msg: Message }) => {
                 className="max-w-full rounded-lg cursor-pointer"
                 style={{ maxHeight: '400px', width: 'auto' }}
                 onError={(e) => {
-                  console.error('Erro ao carregar imagem:', mediaUrl);
+                  console.error('❌ Erro ao carregar imagem:', mediaUrl);
                   (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><text x="50%" y="50%" text-anchor="middle" fill="gray">Erro ao carregar</text></svg>';
                 }}
               />
@@ -158,9 +159,10 @@ const MessageContent = ({ msg }: { msg: Message }) => {
   if (messageType === 'video' || messageType === 'videomessage') {
     let mediaUrl = msg.media_url;
     if (mediaUrl && !mediaUrl.startsWith('http')) {
-      const apiDomain = process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br';
+      const apiDomain = 'https://api.sistemasnettsistemas.com.br';
       mediaUrl = `${apiDomain}${mediaUrl}`;
     }
+    console.log('🎥 URL do vídeo construída:', mediaUrl);
     
     return (
       <div>
@@ -202,9 +204,10 @@ const MessageContent = ({ msg }: { msg: Message }) => {
   if (messageType === 'audio' || messageType === 'audiomessage' || messageType === 'ptt' || messageType === 'voice') {
     let mediaUrl = msg.media_url;
     if (mediaUrl && !mediaUrl.startsWith('http')) {
-      const apiDomain = process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br';
+      const apiDomain = 'https://api.sistemasnettsistemas.com.br';
       mediaUrl = `${apiDomain}${mediaUrl}`;
     }
+    console.log('🎤 URL do áudio construída:', mediaUrl);
     
     return (
       <div className="flex items-center gap-3">
@@ -237,9 +240,10 @@ const MessageContent = ({ msg }: { msg: Message }) => {
   if (messageType === 'document' || messageType === 'documentmessage') {
     let mediaUrl = msg.media_url;
     if (mediaUrl && !mediaUrl.startsWith('http')) {
-      const apiDomain = process.env.NEXT_PUBLIC_API_URL || 'https://api.sistemasnettsistemas.com.br';
+      const apiDomain = 'https://api.sistemasnettsistemas.com.br';
       mediaUrl = `${apiDomain}${mediaUrl}`;
     }
+    console.log('📄 URL do documento construída:', mediaUrl);
     const isPdf = msg.media_type?.includes('pdf') || msg.message_content?.toLowerCase().includes('.pdf');
     
     return (
