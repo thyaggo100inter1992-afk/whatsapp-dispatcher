@@ -142,7 +142,8 @@ router.get('/', async (req, res) => {
         SELECT 
           t.funcionalidades_customizadas,
           t.funcionalidades_config,
-          p.funcionalidades as plano_funcionalidades
+          p.funcionalidades as plano_funcionalidades,
+          p.permite_chat_atendimento
         FROM tenants t
         LEFT JOIN plans p ON t.plan_id = p.id
         WHERE t.id = $1
@@ -180,6 +181,13 @@ router.get('/', async (req, res) => {
         };
       }
 
+      // Adicionar chat_atendimento
+      if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config && tenant.funcionalidades_config.permite_chat_atendimento !== undefined) {
+        funcionalidades.chat_atendimento = tenant.funcionalidades_config.permite_chat_atendimento === true;
+      } else {
+        funcionalidades.chat_atendimento = tenant.permite_chat_atendimento === true;
+      }
+
       console.log('📋 Funcionalidades do tenant (usuário não encontrado):', funcionalidades);
 
       return res.json({
@@ -201,7 +209,8 @@ router.get('/', async (req, res) => {
         SELECT 
           t.funcionalidades_customizadas,
           t.funcionalidades_config,
-          p.funcionalidades as plano_funcionalidades
+          p.funcionalidades as plano_funcionalidades,
+          p.permite_chat_atendimento
         FROM tenants t
         LEFT JOIN plans p ON t.plan_id = p.id
         WHERE t.id = $1
@@ -238,6 +247,13 @@ router.get('/', async (req, res) => {
           auditoria: true,
           dashboard: true
         };
+      }
+
+      // Adicionar chat_atendimento
+      if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config && tenant.funcionalidades_config.permite_chat_atendimento !== undefined) {
+        funcionalidades.chat_atendimento = tenant.funcionalidades_config.permite_chat_atendimento === true;
+      } else {
+        funcionalidades.chat_atendimento = tenant.permite_chat_atendimento === true;
       }
 
       console.log('📋 Funcionalidades do tenant (admin):', funcionalidades);
@@ -264,7 +280,8 @@ router.get('/', async (req, res) => {
         SELECT 
           t.funcionalidades_customizadas,
           t.funcionalidades_config,
-          p.funcionalidades as plano_funcionalidades
+          p.funcionalidades as plano_funcionalidades,
+          p.permite_chat_atendimento
         FROM tenants t
         LEFT JOIN plans p ON t.plan_id = p.id
         WHERE t.id = $1
@@ -303,6 +320,13 @@ router.get('/', async (req, res) => {
         };
       }
 
+      // Adicionar chat_atendimento
+      if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config && tenant.funcionalidades_config.permite_chat_atendimento !== undefined) {
+        funcionalidades.chat_atendimento = tenant.funcionalidades_config.permite_chat_atendimento === true;
+      } else {
+        funcionalidades.chat_atendimento = tenant.permite_chat_atendimento === true;
+      }
+
       console.log('📋 Funcionalidades do tenant:', funcionalidades);
 
       return res.json({
@@ -324,7 +348,8 @@ router.get('/', async (req, res) => {
       SELECT 
         t.funcionalidades_customizadas,
         t.funcionalidades_config,
-        p.funcionalidades as plano_funcionalidades
+        p.funcionalidades as plano_funcionalidades,
+        p.permite_chat_atendimento
       FROM tenants t
       LEFT JOIN plans p ON t.plan_id = p.id
       WHERE t.id = $1
@@ -354,6 +379,13 @@ router.get('/', async (req, res) => {
       };
     }
 
+    // Adicionar chat_atendimento às funcionalidades do tenant
+    if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config && tenant.funcionalidades_config.permite_chat_atendimento !== undefined) {
+      funcionalidadesTenant.chat_atendimento = tenant.funcionalidades_config.permite_chat_atendimento === true;
+    } else {
+      funcionalidadesTenant.chat_atendimento = tenant.permite_chat_atendimento === true;
+    }
+
     console.log('📋 Funcionalidades do TENANT:', funcionalidadesTenant);
     console.log('👤 Permissões do USUÁRIO:', permissoesUsuario);
     console.log('🔍 Tipo de permissoesUsuario:', typeof permissoesUsuario);
@@ -373,6 +405,7 @@ router.get('/', async (req, res) => {
       webhooks: (permissoesUsuario.webhooks === true) && (funcionalidadesTenant.webhooks === true),
       relatorios: (permissoesUsuario.relatorios === true) && (funcionalidadesTenant.relatorios === true),
       auditoria: (permissoesUsuario.auditoria === true) && (funcionalidadesTenant.auditoria === true),
+      chat_atendimento: (permissoesUsuario.chat_atendimento === true) && (funcionalidadesTenant.chat_atendimento === true),
       dashboard: true, // Dashboard sempre liberado
       configuracoes: (permissoesUsuario.configuracoes === true) // Configurações depende apenas da permissão do usuário
     };
