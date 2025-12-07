@@ -515,8 +515,8 @@ export default function Chat() {
             </div>
           </div>
 
-          {/* Lista de Conversas */}
-          <div className="flex-1 overflow-y-auto">
+          {/* Lista de Conversas - com scroll estilizado */}
+          <div className="flex-1 overflow-y-auto chat-sidebar-scroll">
             {loading ? (
               <div className="flex items-center justify-center h-64">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
@@ -524,8 +524,8 @@ export default function Chat() {
             ) : conversations.length === 0 ? (
               <div className="text-center py-12 px-4">
                 <FaComments className="text-6xl text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400 text-lg">Nenhuma conversa encontrada</p>
-                <p className="text-gray-500 text-sm mt-2">
+                <p className="text-gray-400 text-xl font-medium">Nenhuma conversa</p>
+                <p className="text-gray-500 text-base mt-2">
                   {filter === 'pending' ? 'Nenhuma conversa aguardando atendimento' : 
                    filter === 'open' ? 'Você não está atendendo nenhuma conversa' :
                    filter === 'broadcast' ? 'Nenhum disparo sem resposta' :
@@ -538,22 +538,22 @@ export default function Chat() {
                 <div
                   key={conv.id}
                   onClick={() => setSelectedConversation(conv)}
-                  className={`p-4 border-b border-gray-700 cursor-pointer transition-colors ${
+                  className={`p-4 border-b border-gray-700/50 cursor-pointer transition-all duration-200 ${
                     selectedConversation?.id === conv.id
-                      ? 'bg-dark-700'
-                      : 'hover:bg-dark-700/50'
+                      ? 'bg-gradient-to-r from-emerald-900/40 to-dark-700 border-l-4 border-l-emerald-500'
+                      : 'hover:bg-dark-700/70 border-l-4 border-l-transparent'
                   }`}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-4">
                     {/* Avatar com indicador de status */}
                     <div className="relative">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        conv.status === 'pending' ? 'bg-gradient-to-br from-yellow-500 to-yellow-600' :
-                        conv.status === 'broadcast' ? 'bg-gradient-to-br from-blue-500 to-blue-600' :
-                        conv.status === 'archived' ? 'bg-gradient-to-br from-gray-500 to-gray-600' :
-                        'bg-gradient-to-br from-emerald-500 to-emerald-600'
+                      <div className={`w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg ${
+                        conv.status === 'pending' ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' :
+                        conv.status === 'broadcast' ? 'bg-gradient-to-br from-blue-400 to-blue-600' :
+                        conv.status === 'archived' ? 'bg-gradient-to-br from-gray-400 to-gray-600' :
+                        'bg-gradient-to-br from-emerald-400 to-emerald-600'
                       }`}>
-                        <span className="text-white font-bold text-lg">
+                        <span className="text-white font-bold text-xl">
                           {(conv.contact_name || conv.phone_number)?.[0]?.toUpperCase()}
                         </span>
                       </div>
@@ -573,25 +573,25 @@ export default function Chat() {
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <h3 className="text-white font-medium truncate">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-white font-semibold text-lg truncate">
                           {conv.contact_name || conv.phone_number}
                         </h3>
                         {conv.last_message_at && (
-                          <span className="text-xs text-gray-400 ml-2">
+                          <span className="text-sm text-gray-400 ml-2 font-medium">
                             {formatTime(conv.last_message_at)}
                           </span>
                         )}
                       </div>
                       
                       <div className="flex items-center justify-between">
-                        <p className="text-sm text-gray-400 truncate">
+                        <p className="text-base text-gray-300 truncate">
                           {conv.last_message_direction === 'outbound' && '✓ '}
                           {conv.last_message_text || 'Sem mensagens'}
                         </p>
                         <div className="flex items-center gap-2 ml-2">
                           {conv.unread_count > 0 && (
-                            <div className="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                            <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-sm font-bold px-3 py-1 rounded-full shadow-lg shadow-emerald-500/30 animate-pulse">
                               {conv.unread_count}
                             </div>
                           )}
@@ -602,10 +602,10 @@ export default function Chat() {
                                 e.stopPropagation();
                                 acceptConversation(conv.id);
                               }}
-                              className="bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1"
+                              className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white text-sm font-bold px-3 py-1.5 rounded-full flex items-center gap-1 shadow-lg transition-all duration-200"
                               title="Aceitar conversa"
                             >
-                              <FaHandPaper className="text-xs" /> Aceitar
+                              <FaHandPaper className="text-sm" /> Aceitar
                             </button>
                           )}
                         </div>
@@ -672,37 +672,46 @@ export default function Chat() {
                 </button>
               </div>
 
-              {/* Mensagens */}
-              <div className="flex-1 overflow-y-auto p-4 bg-dark-800" style={{ 
-                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.02\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-              }}>
+              {/* Mensagens - com barra de rolagem estilizada */}
+              <div 
+                className="flex-1 overflow-y-auto p-6 bg-gradient-to-b from-dark-800 to-dark-900 scrollbar-thin scrollbar-thumb-emerald-600 scrollbar-track-dark-700" 
+                style={{ 
+                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%2310b981\' fill-opacity=\'0.03\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: '#10b981 #1f2937'
+                }}
+              >
                 {messages.length === 0 ? (
                   <div className="flex items-center justify-center h-full">
-                    <p className="text-gray-500">Nenhuma mensagem ainda</p>
+                    <div className="text-center">
+                      <FaComments className="text-6xl text-gray-600 mx-auto mb-4" />
+                      <p className="text-xl text-gray-400 font-medium">Nenhuma mensagem ainda</p>
+                      <p className="text-gray-500 mt-2">As mensagens aparecerão aqui</p>
+                    </div>
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-2 max-w-4xl mx-auto">
                     {messages.map((msg) => (
                       <div
                         key={msg.id}
-                        className={`flex ${msg.message_direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
+                        className={`flex ${msg.message_direction === 'outbound' ? 'justify-end' : 'justify-start'} mb-3`}
                       >
                         <div
-                          className={`max-w-md px-4 py-2 rounded-lg ${
+                          className={`max-w-lg px-5 py-3 rounded-2xl shadow-lg ${
                             msg.message_direction === 'outbound'
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-dark-700 text-white'
+                              ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-br-md'
+                              : 'bg-gradient-to-br from-gray-700 to-gray-800 text-white rounded-bl-md'
                           }`}
                         >
-                          <p className="text-sm whitespace-pre-wrap break-words">
+                          <p className="text-base leading-relaxed whitespace-pre-wrap break-words">
                             {msg.message_content || '[Mídia]'}
                           </p>
-                          <div className="flex items-center justify-end gap-1 mt-1">
-                            <span className="text-xs opacity-70">
+                          <div className={`flex items-center gap-2 mt-2 ${msg.message_direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+                            <span className="text-sm opacity-80 font-medium">
                               {formatMessageTime(msg.sent_at)}
                             </span>
                             {msg.message_direction === 'outbound' && (
-                              <span className="text-xs">{getStatusIcon(msg)}</span>
+                              <span className="text-sm">{getStatusIcon(msg)}</span>
                             )}
                           </div>
                         </div>
@@ -713,34 +722,44 @@ export default function Chat() {
                 )}
               </div>
 
-              {/* Input de Mensagem */}
-              <div className="bg-dark-900 p-4 border-t border-gray-700">
-                <div className="flex items-end gap-2">
-                  <button className="p-3 hover:bg-dark-700 rounded-lg transition-colors">
-                    <FaPaperclip className="text-xl text-gray-400" />
-                  </button>
-                  <button className="p-3 hover:bg-dark-700 rounded-lg transition-colors">
-                    <FaSmile className="text-xl text-gray-400" />
-                  </button>
-                  <textarea
-                    value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    placeholder="Digite uma mensagem..."
-                    disabled={sending}
-                    rows={1}
-                    className="flex-1 px-4 py-3 bg-dark-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-emerald-500 resize-none"
-                  />
+              {/* Input de Mensagem - MELHORADO */}
+              <div className="bg-gradient-to-r from-dark-900 via-dark-800 to-dark-900 p-5 border-t-2 border-emerald-500/30">
+                <div className="flex items-end gap-4 max-w-4xl mx-auto">
+                  {/* Botões de ação */}
+                  <div className="flex gap-2">
+                    <button className="p-3 bg-dark-700 hover:bg-dark-600 rounded-xl transition-all duration-200 hover:scale-105 border border-gray-600">
+                      <FaPaperclip className="text-xl text-emerald-400" />
+                    </button>
+                    <button className="p-3 bg-dark-700 hover:bg-dark-600 rounded-xl transition-all duration-200 hover:scale-105 border border-gray-600">
+                      <FaSmile className="text-xl text-yellow-400" />
+                    </button>
+                  </div>
+                  
+                  {/* Campo de texto */}
+                  <div className="flex-1 relative">
+                    <textarea
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      placeholder="Digite sua mensagem aqui..."
+                      disabled={sending}
+                      rows={2}
+                      className="w-full px-5 py-4 bg-dark-700 border-2 border-gray-600 rounded-2xl text-white text-lg placeholder-gray-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 resize-none transition-all duration-200"
+                      style={{ minHeight: '60px', maxHeight: '120px' }}
+                    />
+                  </div>
+                  
+                  {/* Botão enviar */}
                   <button
                     onClick={sendMessage}
                     disabled={!messageInput.trim() || sending}
-                    className={`p-3 rounded-lg transition-colors ${
+                    className={`p-4 rounded-xl transition-all duration-200 ${
                       messageInput.trim() && !sending
-                        ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                        : 'bg-dark-700 text-gray-500 cursor-not-allowed'
+                        ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 hover:scale-105'
+                        : 'bg-dark-700 text-gray-500 cursor-not-allowed border border-gray-600'
                     }`}
                   >
-                    <FaPaperPlane className="text-xl" />
+                    <FaPaperPlane className="text-2xl" />
                   </button>
                 </div>
               </div>
