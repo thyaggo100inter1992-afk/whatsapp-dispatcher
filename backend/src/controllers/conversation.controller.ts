@@ -264,14 +264,12 @@ export class ConversationController {
             throw new Error('Conta WhatsApp não encontrada');
           }
 
-          // Enviar mensagem de texto como template simples
-          whatsappResult = await whatsappService.sendTemplateMessage({
+          // Enviar mensagem de texto livre (funciona após cliente responder)
+          whatsappResult = await whatsappService.sendFreeTextMessage({
             accessToken: account.access_token,
             phoneNumberId: account.phone_number_id,
             to: conversation.phone_number,
-            templateName: 'hello_world', // Template padrão
-            languageCode: 'pt_BR',
-            components: [],
+            text: message_content,
             accountId: account.id,
             accountName: account.name,
             tenantId

@@ -451,6 +451,76 @@ export class WhatsAppService {
     ];
   }
 
+  /**
+   * Envia mensagem de texto livre (NÃO template)
+   * Só funciona após o cliente iniciar conversa ou dentro de 24h após ele responder
+   */
+  async sendFreeTextMessage(params: {
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    text: string;
+    accountId?: number;
+    accountName?: string;
+    tenantId?: number;
+  }) {
+    try {
+      const { accessToken, phoneNumberId, to, text, accountId, accountName, tenantId } = params;
+
+      const url = `${this.baseUrl}/${phoneNumberId}/messages`;
+
+      const payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: this.formatPhoneNumber(to),
+        type: 'text',
+        text: {
+          body: text
+        }
+      };
+
+      console.log(`📤 Enviando mensagem de texto livre para ${to}`);
+      console.log(`   Conta: ${accountName || accountId || 'N/A'}`);
+
+      // Buscar configuração de proxy
+      let proxyConfig: ProxyConfig | null = null;
+      let axiosConfig: AxiosRequestConfig = {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        }
+      };
+
+      if (accountId && tenantId) {
+        proxyConfig = await getProxyConfigFromAccount(accountId, tenantId);
+        if (proxyConfig) {
+          axiosConfig = applyProxyToRequest(axiosConfig, proxyConfig);
+          console.log(`   🌐 Usando proxy: ${formatProxyInfo(proxyConfig)}`);
+        }
+      }
+
+      const response = await axios.post(url, payload, axiosConfig);
+
+      console.log('✅ Mensagem de texto livre enviada com sucesso!');
+      console.log('   Message ID:', response.data.messages?.[0]?.id);
+
+      return {
+        success: true,
+        messageId: response.data.messages?.[0]?.id,
+        proxyUsed: !!proxyConfig,
+        proxyHost: proxyConfig?.host || null,
+        proxyType: proxyConfig?.type || null
+      };
+
+    } catch (error: any) {
+      console.error('❌ Erro ao enviar mensagem de texto livre:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.error?.message || error.message
+      };
+    }
+  }
+
   formatPhoneNumber(phoneNumber: string): string {
     // Remove todos os caracteres não numéricos
     let cleaned = phoneNumber.replace(/\D/g, '');
