@@ -47,6 +47,8 @@ export default function Chat() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [chatDisabled, setChatDisabled] = useState(false);
+  const [chatDisabledMessage, setChatDisabledMessage] = useState('');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -98,8 +100,24 @@ export default function Chat() {
       });
       setConversations(response.data.data || []);
       setLoading(false);
-    } catch (error) {
+      setChatDisabled(false);
+    } catch (error: any) {
       console.error('Erro ao carregar conversas:', error);
+      
+      // Verificar se é erro de permissão
+      if (error.response?.status === 403) {
+        setChatDisabled(true);
+        const errorCode = error.response?.data?.code;
+        
+        if (errorCode === 'CHAT_DISABLED') {
+          setChatDisabledMessage('O Chat de Atendimento não está habilitado para sua conta. Entre em contato com o suporte.');
+        } else if (errorCode === 'CHAT_NOT_IN_PLAN') {
+          setChatDisabledMessage('O Chat de Atendimento não está disponível no seu plano atual. Faça upgrade para desbloquear esta funcionalidade.');
+        } else {
+          setChatDisabledMessage(error.response?.data?.error || 'Você não tem permissão para acessar o Chat de Atendimento.');
+        }
+      }
+      
       setLoading(false);
     }
   };
@@ -217,6 +235,51 @@ export default function Chat() {
   };
 
   if (!isAuthenticated) return null;
+
+  // Tela de bloqueio quando chat não está habilitado
+  if (chatDisabled) {
+    return (
+      <>
+        <Head>
+          <title>Chat - Atendimento WhatsApp</title>
+        </Head>
+
+        <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex items-center justify-center p-8">
+          <div className="max-w-2xl w-full">
+            <div className="bg-dark-800 border-2 border-yellow-500/50 rounded-3xl p-12 text-center space-y-6">
+              <div className="inline-block p-6 bg-yellow-500/20 rounded-full">
+                <FaTimes className="text-6xl text-yellow-400" />
+              </div>
+              
+              <h1 className="text-3xl font-black text-white">
+                Chat de Atendimento Indisponível
+              </h1>
+              
+              <p className="text-xl text-gray-300 leading-relaxed">
+                {chatDisabledMessage}
+              </p>
+              
+              <div className="pt-6 space-y-4">
+                <button
+                  onClick={() => router.push('/')}
+                  className="w-full px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold rounded-xl transition-all transform hover:scale-105"
+                >
+                  Voltar para Dashboard
+                </button>
+                
+                <button
+                  onClick={() => router.push('/mudar-plano')}
+                  className="w-full px-8 py-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-bold rounded-xl transition-all transform hover:scale-105"
+                >
+                  Ver Planos e Fazer Upgrade
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

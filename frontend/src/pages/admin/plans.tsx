@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import {
   FaCreditCard, FaEdit, FaTrash, FaPlus,
   FaCheckCircle, FaTimesCircle, FaUsers, FaWhatsapp, FaEnvelope,
-  FaSave, FaTimes, FaEye, FaEyeSlash, FaSignOutAlt
+  FaSave, FaTimes, FaEye, FaEyeSlash, FaSignOutAlt, FaComments
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -36,6 +36,7 @@ interface Plan {
     nova_vida?: boolean;
     verificar_numeros?: boolean;
     gerenciar_proxies?: boolean;
+    chat_atendimento?: boolean;
     [key: string]: boolean | undefined;
   };
 }
@@ -74,6 +75,7 @@ export default function AdminPlans() {
       nova_vida: true,
       verificar_numeros: true,
       gerenciar_proxies: true,
+      chat_atendimento: false,
     }
   };
 
@@ -349,12 +351,13 @@ export default function AdminPlans() {
                     </h3>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {[
+                      {                      [
                         { key: 'whatsapp_api', label: 'WhatsApp API Oficial', icon: <FaWhatsapp /> },
                         { key: 'whatsapp_qr', label: 'WhatsApp QR Connect', icon: <FaWhatsapp /> },
                         { key: 'nova_vida', label: 'Consulta de Dados', icon: <FaCheckCircle /> },
                         { key: 'verificar_numeros', label: 'Verificar Números', icon: <FaCheckCircle /> },
                         { key: 'gerenciar_proxies', label: 'Gerenciar Proxies', icon: <FaCheckCircle /> },
+                        { key: 'chat_atendimento', label: 'Chat de Atendimento', icon: <FaComments /> },
                       ].map((field) => (
                         <label key={field.key} className="flex items-center gap-2 text-white cursor-pointer bg-gray-700/50 p-3 rounded-lg hover:bg-gray-700 transition-all">
                           <input

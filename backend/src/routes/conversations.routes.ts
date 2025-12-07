@@ -1,11 +1,16 @@
 import express from 'express';
 import { conversationController } from '../controllers/conversation.controller';
+import { checkChatPermission } from '../middleware/checkChatPermission';
 
 const router = express.Router();
 
 /**
  * Rotas do Sistema de Chat
+ * TODAS as rotas aqui requerem permissão de chat
  */
+
+// Aplicar middleware de verificação de permissão para TODAS as rotas
+router.use(checkChatPermission);
 
 // GET /api/conversations/unread-count - Contador de não lidas (ANTES de /:id)
 router.get('/unread-count', (req, res) => conversationController.getUnreadCount(req, res));
@@ -32,4 +37,5 @@ router.put('/:id/read', (req, res) => conversationController.markAsRead(req, res
 router.put('/:id/archive', (req, res) => conversationController.toggleArchive(req, res));
 
 export default router;
+
 
