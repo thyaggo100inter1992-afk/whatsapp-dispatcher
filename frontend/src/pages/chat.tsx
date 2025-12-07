@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox, FaBullhorn, FaClock, FaHeadset, FaHandPaper, FaSync, FaCalendarAlt, FaLayerGroup, FaPlug, FaTags, FaReply, FaTrello, FaHome } from 'react-icons/fa';
+import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox, FaBullhorn, FaClock, FaHeadset, FaHandPaper, FaSync, FaCalendarAlt, FaLayerGroup, FaPlug, FaTags, FaReply, FaTrello, FaHome, FaMicrophone, FaStop, FaImage, FaFile } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
@@ -268,7 +268,18 @@ export default function Chat() {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState('chat');
   
+  // Estados para funcionalidades extras
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Redirecionar se não autenticado
   useEffect(() => {
@@ -462,6 +473,127 @@ export default function Chat() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
+    }
+  };
+
+  // Lista de emojis comuns
+  const commonEmojis = [
+    '😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘',
+    '😗', '😙', '😚', '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐',
+    '😑', '😶', '😏', '😒', '🙄', '😬', '🤥', '😌', '😔', '😪', '🤤', '😴', '😷', '🤒', '🤕', '🤢',
+    '👍', '👎', '👌', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '👇', '☝️', '👋', '🤚', '🖐️',
+    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖',
+    '✅', '❌', '⭐', '🌟', '💯', '🎉', '🎊', '🔥', '💪', '🙏', '📱', '💰', '💵', '📞', '✨', '🚀'
+  ];
+
+  // Adicionar emoji ao input
+  const addEmoji = (emoji: string) => {
+    setMessageInput(prev => prev + emoji);
+    setShowEmojiPicker(false);
+  };
+
+  // Iniciar gravação de áudio
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await sendAudioMessage(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+
+    } catch (error) {
+      console.error('Erro ao iniciar gravação:', error);
+      alert('Não foi possível acessar o microfone. Verifique as permissões.');
+    }
+  };
+
+  // Parar gravação
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+    }
+  };
+
+  // Enviar áudio
+  const sendAudioMessage = async (audioBlob: Blob) => {
+    if (!selectedConversation) return;
+
+    setSending(true);
+    try {
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'audio.webm');
+      formData.append('message_type', 'audio');
+
+      await api.post(`/conversations/${selectedConversation.id}/messages/media`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      setMessageInput('');
+      loadMessages(selectedConversation.id);
+      loadConversations();
+    } catch (error: any) {
+      console.error('Erro ao enviar áudio:', error);
+      alert('Erro ao enviar áudio. A funcionalidade de áudio ainda está em desenvolvimento.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Formatar tempo de gravação
+  const formatRecordingTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Enviar arquivo
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'document') => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedConversation) return;
+
+    setSending(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('message_type', type);
+
+      await api.post(`/conversations/${selectedConversation.id}/messages/media`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      loadMessages(selectedConversation.id);
+      loadConversations();
+    } catch (error: any) {
+      console.error('Erro ao enviar arquivo:', error);
+      alert('Erro ao enviar arquivo. A funcionalidade de mídia ainda está em desenvolvimento.');
+    } finally {
+      setSending(false);
+      setShowAttachMenu(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (imageInputRef.current) imageInputRef.current.value = '';
     }
   };
 
@@ -917,37 +1049,130 @@ export default function Chat() {
 
               {/* Input de Mensagem - MELHORADO */}
               <div className="bg-gradient-to-r from-dark-900 via-dark-800 to-dark-900 p-5 border-t-2 border-emerald-500/30">
+                {/* Inputs ocultos para arquivos */}
+                <input
+                  type="file"
+                  ref={imageInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleFileSelect(e, 'image')}
+                />
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv"
+                  className="hidden"
+                  onChange={(e) => handleFileSelect(e, 'document')}
+                />
+
                 <div className="flex items-end gap-4 max-w-4xl mx-auto">
                   {/* Botões de ação */}
-                  <div className="flex gap-2">
-                    <button className="p-3 bg-dark-700 hover:bg-dark-600 rounded-xl transition-all duration-200 hover:scale-105 border border-gray-600">
-                      <FaPaperclip className="text-xl text-emerald-400" />
-                    </button>
-                    <button className="p-3 bg-dark-700 hover:bg-dark-600 rounded-xl transition-all duration-200 hover:scale-105 border border-gray-600">
-                      <FaSmile className="text-xl text-yellow-400" />
+                  <div className="flex gap-2 relative">
+                    {/* Botão Anexar */}
+                    <div className="relative">
+                      <button 
+                        onClick={() => setShowAttachMenu(!showAttachMenu)}
+                        className="p-3 bg-dark-700 hover:bg-dark-600 rounded-xl transition-all duration-200 hover:scale-105 border border-gray-600"
+                      >
+                        <FaPaperclip className="text-xl text-emerald-400" />
+                      </button>
+                      
+                      {/* Menu de anexos */}
+                      {showAttachMenu && (
+                        <div className="absolute bottom-full left-0 mb-2 bg-dark-700 rounded-xl shadow-xl border border-gray-600 p-2 min-w-[150px]">
+                          <button
+                            onClick={() => imageInputRef.current?.click()}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-dark-600 rounded-lg text-white transition-colors"
+                          >
+                            <FaImage className="text-purple-400" />
+                            <span>Imagem</span>
+                          </button>
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-dark-600 rounded-lg text-white transition-colors"
+                          >
+                            <FaFile className="text-blue-400" />
+                            <span>Documento</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botão Emoji */}
+                    <div className="relative">
+                      <button 
+                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                        className="p-3 bg-dark-700 hover:bg-dark-600 rounded-xl transition-all duration-200 hover:scale-105 border border-gray-600"
+                      >
+                        <FaSmile className="text-xl text-yellow-400" />
+                      </button>
+                      
+                      {/* Emoji Picker */}
+                      {showEmojiPicker && (
+                        <div className="absolute bottom-full left-0 mb-2 bg-dark-700 rounded-xl shadow-xl border border-gray-600 p-3 w-80 max-h-64 overflow-y-auto">
+                          <div className="grid grid-cols-8 gap-1">
+                            {commonEmojis.map((emoji, index) => (
+                              <button
+                                key={index}
+                                onClick={() => addEmoji(emoji)}
+                                className="text-2xl p-2 hover:bg-dark-600 rounded-lg transition-colors"
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botão Gravar Áudio */}
+                    <button 
+                      onClick={isRecording ? stopRecording : startRecording}
+                      className={`p-3 rounded-xl transition-all duration-200 hover:scale-105 border ${
+                        isRecording 
+                          ? 'bg-red-600 border-red-500 animate-pulse' 
+                          : 'bg-dark-700 hover:bg-dark-600 border-gray-600'
+                      }`}
+                    >
+                      {isRecording ? (
+                        <FaStop className="text-xl text-white" />
+                      ) : (
+                        <FaMicrophone className="text-xl text-red-400" />
+                      )}
                     </button>
                   </div>
-                  
-                  {/* Campo de texto */}
-                  <div className="flex-1 relative">
-                    <textarea
-                      value={messageInput}
-                      onChange={(e) => setMessageInput(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder="Digite sua mensagem aqui..."
-                      disabled={sending}
-                      rows={2}
-                      className="w-full px-5 py-4 bg-dark-700 border-2 border-gray-600 rounded-2xl text-white text-lg placeholder-gray-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 resize-none transition-all duration-200"
-                      style={{ minHeight: '60px', maxHeight: '120px' }}
-                    />
-                  </div>
+
+                  {/* Indicador de gravação ou campo de texto */}
+                  {isRecording ? (
+                    <div className="flex-1 flex items-center justify-center bg-red-900/30 border-2 border-red-500 rounded-2xl px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                        <span className="text-white text-lg font-bold">
+                          Gravando... {formatRecordingTime(recordingTime)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 relative">
+                      <textarea
+                        value={messageInput}
+                        onChange={(e) => setMessageInput(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Digite sua mensagem aqui..."
+                        disabled={sending}
+                        rows={2}
+                        className="w-full px-5 py-4 bg-dark-700 border-2 border-gray-600 rounded-2xl text-white text-lg placeholder-gray-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 resize-none transition-all duration-200"
+                        style={{ minHeight: '60px', maxHeight: '120px' }}
+                      />
+                    </div>
+                  )}
                   
                   {/* Botão enviar */}
                   <button
                     onClick={sendMessage}
-                    disabled={!messageInput.trim() || sending}
+                    disabled={!messageInput.trim() || sending || isRecording}
                     className={`p-4 rounded-xl transition-all duration-200 ${
-                      messageInput.trim() && !sending
+                      messageInput.trim() && !sending && !isRecording
                         ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 hover:scale-105'
                         : 'bg-dark-700 text-gray-500 cursor-not-allowed border border-gray-600'
                     }`}
