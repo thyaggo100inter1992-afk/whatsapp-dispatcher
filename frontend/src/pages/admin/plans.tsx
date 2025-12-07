@@ -123,16 +123,25 @@ export default function AdminPlans() {
 
   const handleSave = async () => {
     try {
+      // Adicionar permite_chat_atendimento baseado no funcionalidades.chat_atendimento
+      const dataToSend = {
+        ...formData,
+        permite_chat_atendimento: formData.funcionalidades?.chat_atendimento === true
+      };
+      
+      console.log('📤 Salvando plano com dados:', dataToSend);
+      
       if (isCreating) {
-        await api.post('/admin/plans', formData);
+        await api.post('/admin/plans', dataToSend);
         showNotification('✅ Plano criado com sucesso!', 'success');
       } else if (editingPlan) {
-        await api.put(`/admin/plans/${editingPlan.id}`, formData);
+        await api.put(`/admin/plans/${editingPlan.id}`, dataToSend);
         showNotification('✅ Plano atualizado com sucesso!', 'success');
       }
       await loadPlans();
       handleCancel();
     } catch (error: any) {
+      console.error('❌ Erro ao salvar plano:', error);
       showNotification('❌ Erro ao salvar plano', 'error');
     }
   };
