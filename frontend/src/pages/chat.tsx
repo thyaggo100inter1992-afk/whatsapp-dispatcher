@@ -59,7 +59,7 @@ interface Message {
 }
 
 // Componente para renderizar mensagem baseado no tipo
-const MessageContent = ({ msg }: { msg: Message }) => {
+const MessageContent = ({ msg, onImageClick }: { msg: Message; onImageClick?: (url: string) => void }) => {
   const messageType = msg.message_type?.toLowerCase() || 'text';
   
   // Clique em botão
@@ -126,8 +126,9 @@ const MessageContent = ({ msg }: { msg: Message }) => {
               <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={() => {
-                    setImageModalSrc(mediaUrl!);
-                    setImageModalOpen(true);
+                    if (onImageClick) {
+                      onImageClick(mediaUrl!);
+                    }
                   }}
                   className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg transition-all"
                   title="Ampliar"
@@ -1202,7 +1203,13 @@ export default function Chat() {
                           }`}
                         >
                           {/* Renderiza o conteúdo baseado no tipo */}
-                          <MessageContent msg={msg} />
+                          <MessageContent 
+                            msg={msg} 
+                            onImageClick={(url) => {
+                              setImageModalSrc(url);
+                              setImageModalOpen(true);
+                            }}
+                          />
                           
                           {/* Horário e status */}
                           <div className={`flex items-center gap-2 mt-2 ${msg.message_direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
