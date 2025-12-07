@@ -1187,7 +1187,7 @@ class QrCampaignWorker {
           null, // whatsappAccountId (QR não usa)
           template.instance_id,
           campaign.tenant_id,
-          campaign.user_id
+          null // userId - QR campaigns não tem user_id
         );
       } else {
         // Verificar se é erro de "não tem WhatsApp"
