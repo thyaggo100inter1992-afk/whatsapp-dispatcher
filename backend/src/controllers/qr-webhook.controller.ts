@@ -441,7 +441,13 @@ export class QrWebhookController {
     tenantId: number
   ) {
     try {
+      // Normalizar número de telefone (remover 9 extra se tiver)
+      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      
       console.log('\n💾 Salvando mensagem no chat...');
+      console.log(`   📱 Telefone original: ${phoneNumber}`);
+      console.log(`   📱 Telefone normalizado: ${normalizedPhone}`);
 
       // Extrair conteúdo da mensagem
       let messageContent = '';
@@ -504,7 +510,7 @@ export class QrWebhookController {
       const convCheck = await this.runTenantQuery(
         tenantId,
         'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2',
-        [phoneNumber, tenantId]
+        [normalizedPhone, tenantId]
       );
 
       if (convCheck.rows.length > 0) {
@@ -524,7 +530,7 @@ export class QrWebhookController {
             last_message_direction
           ) VALUES ($1, $2, $3, 1, NOW(), $4, 'inbound')
           RETURNING id`,
-          [phoneNumber, tenantId, instanceId, messageContent?.substring(0, 100) || '[Mensagem]']
+          [normalizedPhone, tenantId, instanceId, messageContent?.substring(0, 100) || '[Mensagem]']
         );
         conversationId = newConv.rows[0].id;
         console.log(`   ✨ Nova conversa criada: ${conversationId}`);
@@ -590,7 +596,7 @@ export class QrWebhookController {
         if (io) {
           io.to(`tenant:${tenantId}`).emit('chat:new-message', {
             conversationId,
-            phoneNumber,
+            phoneNumber: normalizedPhone,
             messageType,
             messageContent,
             direction: 'inbound',

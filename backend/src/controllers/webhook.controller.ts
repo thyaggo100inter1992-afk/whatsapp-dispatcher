@@ -1416,15 +1416,20 @@ export class WebhookController {
     tenantId: number
   ) {
     try {
+      // Normalizar número de telefone (remover 9 extra se tiver)
+      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      
       console.log('\n💾 Salvando mensagem no chat (API Oficial)...');
-      console.log(`   📱 Telefone: ${phoneNumber}`);
+      console.log(`   📱 Telefone original: ${phoneNumber}`);
+      console.log(`   📱 Telefone normalizado: ${normalizedPhone}`);
       console.log(`   📝 Conteúdo: ${messageContent?.substring(0, 50)}...`);
 
       // Buscar ou criar conversa
       let conversationId;
       const convCheck = await queryNoTenant(
         'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2',
-        [phoneNumber, tenantId]
+        [normalizedPhone, tenantId]
       );
 
       if (convCheck.rows.length > 0) {
@@ -1443,7 +1448,7 @@ export class WebhookController {
             last_message_direction
           ) VALUES ($1, $2, $3, 1, NOW(), $4, 'inbound')
           RETURNING id`,
-          [phoneNumber, tenantId, whatsappAccountId, messageContent?.substring(0, 100) || '[Mensagem]']
+          [normalizedPhone, tenantId, whatsappAccountId, messageContent?.substring(0, 100) || '[Mensagem]']
         );
         conversationId = newConv.rows[0].id;
         console.log(`   ✨ Nova conversa criada: ${conversationId}`);
@@ -1502,7 +1507,7 @@ export class WebhookController {
         if (io) {
           io.to(`tenant:${tenantId}`).emit('chat:new-message', {
             conversationId,
-            phoneNumber,
+            phoneNumber: normalizedPhone,
             messageType,
             messageContent,
             direction: 'inbound',

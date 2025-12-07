@@ -1172,11 +1172,15 @@ class CampaignWorker {
     userId: number | null
   ) {
     try {
+      // Normalizar número de telefone
+      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      
       // Buscar ou criar conversa
       let conversationId;
       const convCheck = await queryNoTenant(
         'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2',
-        [phoneNumber, tenantId]
+        [normalizedPhone, tenantId]
       );
 
       if (convCheck.rows.length > 0) {
@@ -1188,7 +1192,7 @@ class CampaignWorker {
             last_message_at, last_message_text, last_message_direction
           ) VALUES ($1, $2, $3, 0, NOW(), $4, 'outbound')
           RETURNING id`,
-          [phoneNumber, tenantId, whatsappAccountId, `Template: ${templateName}`]
+          [normalizedPhone, tenantId, whatsappAccountId, `Template: ${templateName}`]
         );
         conversationId = newConv.rows[0].id;
       }
