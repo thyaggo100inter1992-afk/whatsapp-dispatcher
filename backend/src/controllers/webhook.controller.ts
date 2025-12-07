@@ -581,10 +581,130 @@ export class WebhookController {
         contactName
       );
 
+      // ============================================================
+      // 💬 SALVAR CLIQUE NO CHAT
+      // ============================================================
+      if (sentMessage?.whatsapp_account_id && sentMessage?.tenant_id) {
+        console.log('   💬 Salvando clique no chat...');
+        await this.saveButtonClickToChat(
+          from,
+          buttonText,
+          buttonPayload,
+          buttonType,
+          message.id || null,
+          sentMessage.whatsapp_account_id,
+          sentMessage.tenant_id
+        );
+        console.log('   ✅ Clique salvo no chat!');
+      } else {
+        console.log('   ⚠️ Não foi possível salvar no chat (falta whatsapp_account_id ou tenant_id)');
+      }
+
       console.log('================================\n');
 
     } catch (error: any) {
       console.error('❌ Erro ao processar clique:', error);
+    }
+  }
+
+  /**
+   * Salvar clique de botão no sistema de chat
+   */
+  private async saveButtonClickToChat(
+    phoneNumber: string,
+    buttonText: string,
+    buttonPayload: string,
+    buttonType: string,
+    messageId: string | null,
+    whatsappAccountId: number,
+    tenantId: number
+  ) {
+    try {
+      const { normalizePhoneNumber } = require('../utils/phone-normalizer');
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      
+      console.log(`   📱 Telefone: ${normalizedPhone}`);
+      console.log(`   👆 Botão: ${buttonText}`);
+
+      // Buscar conversa ATIVA
+      let conversationId;
+      const convCheck = await queryNoTenant(
+        `SELECT id, status, is_archived FROM conversations 
+         WHERE phone_number = $1 AND tenant_id = $2 AND whatsapp_account_id = $3 
+         AND (status != 'archived' AND is_archived = false)
+         ORDER BY created_at DESC LIMIT 1`,
+        [normalizedPhone, tenantId, whatsappAccountId]
+      );
+
+      if (convCheck.rows.length > 0) {
+        conversationId = convCheck.rows[0].id;
+        // Atualizar status para pending se estava em broadcast
+        if (convCheck.rows[0].status === 'broadcast') {
+          await queryNoTenant(
+            `UPDATE conversations SET status = 'pending', updated_at = NOW() WHERE id = $1`,
+            [conversationId]
+          );
+        }
+      } else {
+        // Criar nova conversa
+        const newConv = await queryNoTenant(
+          `INSERT INTO conversations (
+            phone_number, tenant_id, whatsapp_account_id, unread_count,
+            last_message_at, last_message_text, last_message_direction, status, is_archived
+          ) VALUES ($1, $2, $3, 1, NOW(), $4, 'inbound', 'pending', false)
+          RETURNING id`,
+          [normalizedPhone, tenantId, whatsappAccountId, `👆 ${buttonText}`]
+        );
+        conversationId = newConv.rows[0].id;
+      }
+
+      // Salvar mensagem do clique
+      await queryNoTenant(
+        `INSERT INTO conversation_messages (
+          conversation_id, message_direction, message_type, message_content,
+          button_text, button_payload, whatsapp_message_id, tenant_id, is_read_by_agent
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          conversationId,
+          'inbound',
+          buttonType || 'button',
+          buttonText,
+          buttonText,
+          buttonPayload,
+          messageId,
+          tenantId,
+          false
+        ]
+      );
+
+      // Atualizar conversa
+      await queryNoTenant(
+        `UPDATE conversations 
+         SET last_message_at = NOW(), last_message_text = $1, last_message_direction = 'inbound',
+             unread_count = unread_count + 1, updated_at = NOW()
+         WHERE id = $2`,
+        [`👆 ${buttonText}`, conversationId]
+      );
+
+      // Emitir Socket.IO
+      try {
+        const { io } = require('../server');
+        if (io) {
+          io.to(`tenant:${tenantId}`).emit('chat:new-message', {
+            conversationId,
+            phoneNumber: normalizedPhone,
+            messageType: 'button',
+            messageContent: buttonText,
+            direction: 'inbound',
+            timestamp: new Date()
+          });
+        }
+      } catch (socketError) {
+        console.error('   ❌ Erro Socket.IO:', socketError);
+      }
+
+    } catch (error: any) {
+      console.error('❌ Erro ao salvar clique no chat:', error);
     }
   }
 
