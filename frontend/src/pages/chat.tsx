@@ -602,6 +602,24 @@ export default function Chat() {
     }
   };
 
+  // Arquivar rapidamente (para botão na lista, sem confirmação modal)
+  const quickArchiveConversation = async (conversationId: number) => {
+    try {
+      await api.put(`/conversations/${conversationId}/archive`, { is_archived: true });
+      // Se a conversa selecionada é a que foi arquivada, limpar seleção
+      if (selectedConversation?.id === conversationId) {
+        setSelectedConversation(null);
+        setMessages([]);
+      }
+      await loadConversations();
+      await loadUnreadCount();
+      await loadStatusCounts();
+    } catch (error) {
+      console.error('Erro ao arquivar conversa:', error);
+      alert('Erro ao encerrar o chat. Tente novamente.');
+    }
+  };
+
   const sendMessage = async () => {
     if (!messageInput.trim() || !selectedConversation || sending) return;
 
@@ -1094,18 +1112,30 @@ export default function Chat() {
                               {conv.unread_count}
                             </div>
                           )}
-                          {/* Botão aceitar para conversas pendentes */}
-                          {conv.status === 'pending' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                acceptConversation(conv.id);
-                              }}
-                              className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white text-sm font-bold px-3 py-1.5 rounded-full flex items-center gap-1 shadow-lg transition-all duration-200"
-                              title="Aceitar conversa"
-                            >
-                              <FaHandPaper className="text-sm" /> Aceitar
-                            </button>
+                          {/* Botões para conversas pendentes ou broadcast */}
+                          {(conv.status === 'pending' || conv.status === 'broadcast') && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  acceptConversation(conv.id);
+                                }}
+                                className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-lg transition-all duration-200"
+                                title="Aceitar e iniciar atendimento"
+                              >
+                                <FaCheck className="text-xs" /> Aceitar
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  quickArchiveConversation(conv.id);
+                                }}
+                                className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-lg transition-all duration-200"
+                                title="Encerrar e arquivar"
+                              >
+                                <FaTimes className="text-xs" /> Encerrar
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1139,7 +1169,11 @@ export default function Chat() {
               {/* Cabeçalho do Chat */}
               <div className="bg-dark-900 p-4 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    selectedConversation.status === 'pending' ? 'bg-gradient-to-br from-yellow-500 to-yellow-600' :
+                    selectedConversation.status === 'broadcast' ? 'bg-gradient-to-br from-blue-500 to-blue-600' :
+                    'bg-gradient-to-br from-emerald-500 to-emerald-600'
+                  }`}>
                     <span className="text-white font-bold">
                       {(selectedConversation.contact_name || selectedConversation.phone_number)?.[0]?.toUpperCase()}
                     </span>
@@ -1157,78 +1191,150 @@ export default function Chat() {
                         <span className="ml-2 text-purple-400">• {selectedConversation.instance_name}</span>
                       )}
                     </p>
+                    {/* Badge de status */}
+                    {selectedConversation.status === 'pending' && (
+                      <span className="inline-block mt-1 px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded-full">
+                        ⏳ Aguardando atendimento
+                      </span>
+                    )}
+                    {selectedConversation.status === 'broadcast' && (
+                      <span className="inline-block mt-1 px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs font-bold rounded-full">
+                        📢 Disparo sem resposta
+                      </span>
+                    )}
                   </div>
                 </div>
                 
-                {/* Botão Encerrar Chat */}
-                <button
-                  onClick={() => handleArchiveConversation(selectedConversation.id)}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 rounded-lg text-red-400 hover:text-red-300 transition-all"
-                  title="Encerrar e arquivar esta conversa"
-                >
-                  <FaTimes className="text-sm" />
-                  <span className="text-sm font-medium">Encerrar Chat</span>
-                </button>
+                {/* Botões de ação do cabeçalho */}
+                <div className="flex items-center gap-2">
+                  {/* Botão Aceitar (para pendentes e broadcasts) */}
+                  {(selectedConversation.status === 'pending' || selectedConversation.status === 'broadcast') && (
+                    <button
+                      onClick={() => acceptConversation(selectedConversation.id)}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/50 rounded-lg text-emerald-400 hover:text-emerald-300 transition-all"
+                      title="Aceitar e iniciar atendimento"
+                    >
+                      <FaCheck className="text-sm" />
+                      <span className="text-sm font-medium">Aceitar</span>
+                    </button>
+                  )}
+                  {/* Botão Encerrar Chat */}
+                  <button
+                    onClick={() => handleArchiveConversation(selectedConversation.id)}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 rounded-lg text-red-400 hover:text-red-300 transition-all"
+                    title="Encerrar e arquivar esta conversa"
+                  >
+                    <FaTimes className="text-sm" />
+                    <span className="text-sm font-medium">Encerrar</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Mensagens - com barra de rolagem estilizada */}
-              <div 
-                className="flex-1 overflow-y-auto p-6 bg-gradient-to-b from-dark-800 to-dark-900 scrollbar-thin scrollbar-thumb-emerald-600 scrollbar-track-dark-700" 
-                style={{ 
-                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%2310b981\' fill-opacity=\'0.03\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-                  scrollbarWidth: 'thin',
-                  scrollbarColor: '#10b981 #1f2937'
-                }}
-              >
-                {messages.length === 0 ? (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center">
-                      <FaComments className="text-6xl text-gray-600 mx-auto mb-4" />
-                      <p className="text-xl text-gray-400 font-medium">Nenhuma mensagem ainda</p>
-                      <p className="text-gray-500 mt-2">As mensagens aparecerão aqui</p>
+              {/* Área de Mensagens ou Bloqueio para Pendentes */}
+              {(selectedConversation.status === 'pending' || selectedConversation.status === 'broadcast') ? (
+                /* TELA DE BLOQUEIO - Conversa não aceita */
+                <div className="flex-1 flex items-center justify-center p-6 bg-gradient-to-b from-dark-800 to-dark-900">
+                  <div className="text-center max-w-md">
+                    <div className={`w-24 h-24 mx-auto mb-6 rounded-full flex items-center justify-center ${
+                      selectedConversation.status === 'pending' 
+                        ? 'bg-gradient-to-br from-yellow-500/20 to-yellow-600/20 border-2 border-yellow-500/50' 
+                        : 'bg-gradient-to-br from-blue-500/20 to-blue-600/20 border-2 border-blue-500/50'
+                    }`}>
+                      {selectedConversation.status === 'pending' ? (
+                        <FaClock className="text-5xl text-yellow-400" />
+                      ) : (
+                        <FaBullhorn className="text-5xl text-blue-400" />
+                      )}
+                    </div>
+                    <h3 className={`text-2xl font-bold mb-3 ${
+                      selectedConversation.status === 'pending' ? 'text-yellow-400' : 'text-blue-400'
+                    }`}>
+                      {selectedConversation.status === 'pending' 
+                        ? 'Conversa Aguardando Atendimento' 
+                        : 'Disparo Aguardando Resposta'}
+                    </h3>
+                    <p className="text-gray-400 text-base mb-6">
+                      {selectedConversation.status === 'pending' 
+                        ? 'Esta conversa ainda não foi aceita. Clique em "Aceitar" para iniciar o atendimento e visualizar as mensagens.'
+                        : 'Este é um disparo que ainda não foi respondido. Aceite para iniciar o atendimento ou encerre se não houver interesse.'}
+                    </p>
+                    <div className="flex items-center justify-center gap-3">
+                      <button
+                        onClick={() => acceptConversation(selectedConversation.id)}
+                        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 rounded-xl text-white font-bold text-base shadow-lg shadow-emerald-500/30 transition-all hover:scale-105"
+                      >
+                        <FaCheck /> Aceitar e Atender
+                      </button>
+                      <button
+                        onClick={() => quickArchiveConversation(selectedConversation.id)}
+                        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 rounded-xl text-white font-bold text-base shadow-lg shadow-red-500/30 transition-all hover:scale-105"
+                      >
+                        <FaTimes /> Encerrar
+                      </button>
                     </div>
                   </div>
-                ) : (
-                  <div className="space-y-2 max-w-4xl mx-auto">
-                    {messages.map((msg) => (
-                      <div
-                        key={msg.id}
-                        className={`flex ${msg.message_direction === 'outbound' ? 'justify-end' : 'justify-start'} mb-3`}
-                      >
+                </div>
+              ) : (
+                /* MENSAGENS - Conversa aceita/aberta */
+                <div 
+                  className="flex-1 overflow-y-auto p-6 bg-gradient-to-b from-dark-800 to-dark-900 scrollbar-thin scrollbar-thumb-emerald-600 scrollbar-track-dark-700" 
+                  style={{ 
+                    backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%2310b981\' fill-opacity=\'0.03\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: '#10b981 #1f2937'
+                  }}
+                >
+                  {messages.length === 0 ? (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-center">
+                        <FaComments className="text-6xl text-gray-600 mx-auto mb-4" />
+                        <p className="text-xl text-gray-400 font-medium">Nenhuma mensagem ainda</p>
+                        <p className="text-gray-500 mt-2">As mensagens aparecerão aqui</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-w-4xl mx-auto">
+                      {messages.map((msg) => (
                         <div
-                          className={`max-w-lg px-5 py-3 rounded-2xl shadow-lg ${
-                            msg.message_direction === 'outbound'
-                              ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-br-md'
-                              : 'bg-gradient-to-br from-gray-700 to-gray-800 text-white rounded-bl-md'
-                          }`}
+                          key={msg.id}
+                          className={`flex ${msg.message_direction === 'outbound' ? 'justify-end' : 'justify-start'} mb-3`}
                         >
-                          {/* Renderiza o conteúdo baseado no tipo */}
-                          <MessageContent 
-                            msg={msg} 
-                            onImageClick={(url) => {
-                              setImageModalSrc(url);
-                              setImageModalOpen(true);
-                            }}
-                          />
-                          
-                          {/* Horário e status */}
-                          <div className={`flex items-center gap-2 mt-2 ${msg.message_direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-                            <span className="text-sm opacity-80 font-medium">
-                              {formatMessageTime(msg.sent_at)}
-                            </span>
-                            {msg.message_direction === 'outbound' && (
-                              <span className="text-sm">{getStatusIcon(msg)}</span>
-                            )}
+                          <div
+                            className={`max-w-lg px-5 py-3 rounded-2xl shadow-lg ${
+                              msg.message_direction === 'outbound'
+                                ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-br-md'
+                                : 'bg-gradient-to-br from-gray-700 to-gray-800 text-white rounded-bl-md'
+                            }`}
+                          >
+                            {/* Renderiza o conteúdo baseado no tipo */}
+                            <MessageContent 
+                              msg={msg} 
+                              onImageClick={(url) => {
+                                setImageModalSrc(url);
+                                setImageModalOpen(true);
+                              }}
+                            />
+                            
+                            {/* Horário e status */}
+                            <div className={`flex items-center gap-2 mt-2 ${msg.message_direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+                              <span className="text-sm opacity-80 font-medium">
+                                {formatMessageTime(msg.sent_at)}
+                              </span>
+                              {msg.message_direction === 'outbound' && (
+                                <span className="text-sm">{getStatusIcon(msg)}</span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                    <div ref={messagesEndRef} />
-                  </div>
-                )}
-              </div>
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  )}
+                </div>
+              )}
 
-              {/* Input de Mensagem - FIXO NO BOTTOM */}
+              {/* Input de Mensagem - FIXO NO BOTTOM - Só mostra se conversa aceita */}
+              {selectedConversation.status !== 'pending' && selectedConversation.status !== 'broadcast' && (
               <div className="bg-gradient-to-r from-dark-900 via-dark-800 to-dark-900 p-5 border-t-2 border-emerald-500/30 flex-shrink-0">
                 {/* Inputs ocultos para arquivos */}
                 <input
@@ -1362,6 +1468,7 @@ export default function Chat() {
                   </button>
                 </div>
               </div>
+              )}
             </>
           ) : (
             // Nenhuma conversa selecionada
