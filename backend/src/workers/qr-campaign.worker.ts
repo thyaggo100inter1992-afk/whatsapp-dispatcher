@@ -1178,6 +1178,17 @@ class QrCampaignWorker {
         );
 
         console.log(`✅ [QR Worker] Mensagem enviada para ${contact.phone_number}`);
+
+        // 💬 SALVAR NO CHAT TAMBÉM (mensagem enviada QR)
+        await this.saveOutboundMessageToChat(
+          contact.phone_number,
+          template.template_name || 'Template QR',
+          sendResult.messageId,
+          null, // whatsappAccountId (QR não usa)
+          template.instance_id,
+          campaign.tenant_id,
+          campaign.user_id
+        );
       } else {
         // Verificar se é erro de "não tem WhatsApp"
         const errorMessage = sendResult.error || '';
@@ -2090,6 +2101,73 @@ class QrCampaignWorker {
         listNames: 'Erro na verificação - Bloqueado por segurança',
         types: ['error']
       };
+    }
+  }
+
+  /**
+   * Salvar mensagem ENVIADA no chat (de campanha QR)
+   */
+  private async saveOutboundMessageToChat(
+    phoneNumber: string,
+    templateName: string,
+    whatsappMessageId: string,
+    whatsappAccountId: number | null,
+    instanceId: number,
+    tenantId: number,
+    userId: number | null
+  ) {
+    try {
+      const { queryNoTenant } = require('../database/connection');
+
+      // Buscar ou criar conversa
+      let conversationId;
+      const convCheck = await queryNoTenant(
+        'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2',
+        [phoneNumber, tenantId]
+      );
+
+      if (convCheck.rows.length > 0) {
+        conversationId = convCheck.rows[0].id;
+      } else {
+        const newConv = await queryNoTenant(
+          `INSERT INTO conversations (
+            phone_number, tenant_id, instance_id, unread_count,
+            last_message_at, last_message_text, last_message_direction
+          ) VALUES ($1, $2, $3, 0, NOW(), $4, 'outbound')
+          RETURNING id`,
+          [phoneNumber, tenantId, instanceId, `Template: ${templateName}`]
+        );
+        conversationId = newConv.rows[0].id;
+      }
+
+      // Verificar duplicata
+      const duplicate = await queryNoTenant(
+        'SELECT id FROM conversation_messages WHERE whatsapp_message_id = $1 AND tenant_id = $2',
+        [whatsappMessageId, tenantId]
+      );
+
+      if (duplicate.rows.length > 0) return;
+
+      // Salvar mensagem ENVIADA
+      await queryNoTenant(
+        `INSERT INTO conversation_messages (
+          conversation_id, message_direction, message_type, message_content,
+          whatsapp_message_id, status, tenant_id, sent_by_user_id, is_read_by_agent
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [conversationId, 'outbound', 'template', `Template: ${templateName}`,
+         whatsappMessageId, 'sent', tenantId, userId, true]
+      );
+
+      // Atualizar conversa
+      await queryNoTenant(
+        `UPDATE conversations 
+         SET last_message_at = NOW(), last_message_text = $1,
+             last_message_direction = 'outbound', updated_at = NOW()
+         WHERE id = $2`,
+        [`Template: ${templateName}`, conversationId]
+      );
+    } catch (error: any) {
+      console.error('❌ Erro ao salvar no chat (QR):', error);
     }
   }
 }

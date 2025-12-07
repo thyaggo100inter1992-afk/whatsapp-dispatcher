@@ -28,3 +28,4 @@ $plinkPath = "$env:USERPROFILE\plink.exe"
 & $plinkPath -ssh root@72.60.141.244 -pw "Tg74108520963," -hostkey "ssh-ed25519 255 SHA256:mwH4j3imJiJAwSaKb1IxslHWE8OCPyzy8VOWB6qnWsM" "cd /root/whatsapp-dispatcher && git pull && cd frontend && npm run build && pm2 restart frontend"
 
 Write-Host "`n=== DEPLOY CONCLUIDO ===" -ForegroundColor Green
+

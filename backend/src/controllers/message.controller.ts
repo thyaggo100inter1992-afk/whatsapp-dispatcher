@@ -274,6 +274,16 @@ export class MessageController {
             [result.messageId, result.proxyUsed || false, result.proxyHost || null, result.proxyType || null, message.id]
           )
         );
+
+        // 💬 SALVAR NO CHAT TAMBÉM (mensagem enviada)
+        await this.saveOutboundMessageToChat(
+          phone_number,
+          template_name,
+          result.messageId,
+          whatsapp_account_id,
+          tenantId,
+          (req as any).user?.id
+        );
       } else {
         console.error('❌ Erro ao enviar:', result.error);
         await MessageModel.updateStatus(message.id!, 'failed');
@@ -460,6 +470,108 @@ export class MessageController {
       res.json({ success: true, data: stats });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * Salvar mensagem ENVIADA no chat (outbound)
+   */
+  private async saveOutboundMessageToChat(
+    phoneNumber: string,
+    templateName: string,
+    whatsappMessageId: string,
+    whatsappAccountId: number,
+    tenantId: number,
+    userId: number | null
+  ) {
+    try {
+      console.log('\n💬 Salvando mensagem ENVIADA no chat...');
+      console.log(`   📱 Para: ${phoneNumber}`);
+      console.log(`   📝 Template: ${templateName}`);
+
+      const { queryNoTenant } = require('../database/connection');
+
+      // Buscar ou criar conversa
+      let conversationId;
+      const convCheck = await queryNoTenant(
+        'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2',
+        [phoneNumber, tenantId]
+      );
+
+      if (convCheck.rows.length > 0) {
+        conversationId = convCheck.rows[0].id;
+        console.log(`   ✅ Conversa existente: ${conversationId}`);
+      } else {
+        // Criar nova conversa
+        const newConv = await queryNoTenant(
+          `INSERT INTO conversations (
+            phone_number,
+            tenant_id,
+            whatsapp_account_id,
+            unread_count,
+            last_message_at,
+            last_message_text,
+            last_message_direction
+          ) VALUES ($1, $2, $3, 0, NOW(), $4, 'outbound')
+          RETURNING id`,
+          [phoneNumber, tenantId, whatsappAccountId, `Template: ${templateName}`]
+        );
+        conversationId = newConv.rows[0].id;
+        console.log(`   ✨ Nova conversa criada: ${conversationId}`);
+      }
+
+      // Verificar se mensagem já foi salva
+      const duplicate = await queryNoTenant(
+        'SELECT id FROM conversation_messages WHERE whatsapp_message_id = $1 AND tenant_id = $2',
+        [whatsappMessageId, tenantId]
+      );
+
+      if (duplicate.rows.length > 0) {
+        console.log('   ⚠️ Mensagem já salva no chat');
+        return;
+      }
+
+      // Salvar mensagem ENVIADA
+      await queryNoTenant(
+        `INSERT INTO conversation_messages (
+          conversation_id,
+          message_direction,
+          message_type,
+          message_content,
+          whatsapp_message_id,
+          status,
+          tenant_id,
+          sent_by_user_id,
+          is_read_by_agent
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          conversationId,
+          'outbound',
+          'template',
+          `Template: ${templateName}`,
+          whatsappMessageId,
+          'sent',
+          tenantId,
+          userId,
+          true // Já marcada como lida pois você enviou
+        ]
+      );
+
+      // Atualizar conversa
+      await queryNoTenant(
+        `UPDATE conversations 
+         SET last_message_at = NOW(),
+             last_message_text = $1,
+             last_message_direction = 'outbound',
+             updated_at = NOW()
+         WHERE id = $2`,
+        [`Template: ${templateName}`, conversationId]
+      );
+
+      console.log('   ✅ Mensagem ENVIADA salva no chat!');
+
+    } catch (error: any) {
+      console.error('❌ Erro ao salvar mensagem enviada no chat:', error);
     }
   }
 }
