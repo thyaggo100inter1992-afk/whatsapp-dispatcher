@@ -1,9 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox, FaBullhorn, FaClock, FaHeadset, FaHandPaper, FaSync } from 'react-icons/fa';
+import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox, FaBullhorn, FaClock, FaHeadset, FaHandPaper, FaSync, FaCalendarAlt, FaLayerGroup, FaPlug, FaTags, FaReply, FaTrello, FaHome } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
+
+// Definição das abas do sistema de atendimento
+const CHAT_TABS = [
+  { id: 'chat', label: 'Chat', icon: FaComments, active: true },
+  { id: 'agenda', label: 'Agenda', icon: FaCalendarAlt, active: false },
+  { id: 'fila', label: 'Fila', icon: FaLayerGroup, active: false },
+  { id: 'conexao', label: 'Conexão', icon: FaPlug, active: false },
+  { id: 'etiquetas', label: 'Etiquetas', icon: FaTags, active: false },
+  { id: 'resposta-rapida', label: 'Resposta Rápida', icon: FaReply, active: false },
+  { id: 'kanban', label: 'Kanban', icon: FaTrello, active: false },
+];
 
 interface Conversation {
   id: number;
@@ -63,6 +74,7 @@ export default function Chat() {
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [activeTab, setActiveTab] = useState('chat');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -351,33 +363,76 @@ export default function Chat() {
         <title>Chat - Atendimento WhatsApp</title>
       </Head>
 
-      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex">
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex flex-col">
+        
+        {/* CABEÇALHO COM ABAS */}
+        <header className="bg-dark-900 border-b border-gray-700 px-4 py-2 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            {/* Botão Voltar + Logo */}
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => router.push('/')}
+                className="p-2 hover:bg-dark-700 rounded-lg transition-colors"
+                title="Voltar ao Início"
+              >
+                <FaHome className="text-xl text-gray-400 hover:text-white" />
+              </button>
+              <div className="flex items-center gap-2">
+                <FaComments className="text-2xl text-emerald-400" />
+                <span className="text-xl font-bold text-white hidden md:block">Atendimento</span>
+              </div>
+            </div>
+
+            {/* Abas de Navegação */}
+            <nav className="flex items-center gap-1">
+              {CHAT_TABS.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                const isDisabled = !tab.active;
+                
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => tab.active && setActiveTab(tab.id)}
+                    disabled={isDisabled}
+                    className={`
+                      flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
+                      ${isActive 
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' 
+                        : isDisabled
+                          ? 'text-gray-600 cursor-not-allowed'
+                          : 'text-gray-400 hover:text-white hover:bg-dark-700'
+                      }
+                    `}
+                    title={isDisabled ? 'Em breve' : tab.label}
+                  >
+                    <Icon className="text-lg" />
+                    <span className="hidden lg:inline">{tab.label}</span>
+                    {isDisabled && <span className="text-xs text-yellow-500 hidden xl:inline">(em breve)</span>}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* Contador de não lidas */}
+            <div className="flex items-center gap-3">
+              {unreadCount > 0 && (
+                <div className="bg-red-500 text-white px-3 py-1 rounded-full text-sm font-bold animate-pulse">
+                  {unreadCount} nova{unreadCount > 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* CONTEÚDO PRINCIPAL */}
+        <div className="flex-1 flex overflow-hidden">
         
         {/* SIDEBAR - LISTA DE CONVERSAS */}
         <div className="w-full md:w-96 bg-dark-800 border-r border-gray-700 flex flex-col">
           
-          {/* Cabeçalho */}
+          {/* Painel de Busca e Filtros */}
           <div className="bg-dark-900 p-4 border-b border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => router.push('/')}
-                  className="p-2 hover:bg-dark-700 rounded-lg transition-colors"
-                >
-                  <FaArrowLeft className="text-xl text-gray-400" />
-                </button>
-                <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-                  <FaComments className="text-emerald-400" />
-                  Chat
-                </h1>
-              </div>
-              {unreadCount > 0 && (
-                <div className="bg-emerald-500 text-white px-3 py-1 rounded-full text-sm font-bold">
-                  {unreadCount}
-                </div>
-              )}
-            </div>
-
             {/* Busca */}
             <div className="relative">
               <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -696,6 +751,7 @@ export default function Chat() {
               </div>
             </div>
           )}
+        </div>
         </div>
       </div>
     </>
