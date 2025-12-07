@@ -15,7 +15,7 @@ export class ConversationController {
       }
 
       const {
-        filter = 'all', // all, unread, archived
+        filter = 'all', // all, open, pending, archived, broadcast
         search = '',
         limit = 50,
         offset = 0
@@ -26,11 +26,23 @@ export class ConversationController {
       let paramIndex = 2;
 
       // Filtro por status
-      if (filter === 'unread') {
-        whereClause += ' AND c.unread_count > 0';
+      if (filter === 'open') {
+        // Conversas que o atendente está atendendo
+        whereClause += " AND c.status = 'open'";
+      } else if (filter === 'pending') {
+        // Conversas aguardando atendente aceitar
+        whereClause += " AND c.status = 'pending'";
       } else if (filter === 'archived') {
-        whereClause += ' AND c.is_archived = true';
+        // Conversas encerradas
+        whereClause += " AND c.status = 'archived'";
+      } else if (filter === 'broadcast') {
+        // Disparos sem resposta do cliente
+        whereClause += " AND c.status = 'broadcast'";
+      } else if (filter === 'unread') {
+        // Legado: não lidas
+        whereClause += ' AND c.unread_count > 0 AND c.is_archived = false';
       } else {
+        // 'all' - todas não arquivadas
         whereClause += ' AND c.is_archived = false';
       }
 
@@ -51,16 +63,21 @@ export class ConversationController {
           c.last_message_direction,
           c.unread_count,
           c.is_archived,
+          c.status,
+          c.attended_by_user_id,
+          c.accepted_at,
           c.whatsapp_account_id,
           c.instance_id,
           c.metadata,
           c.created_at,
           c.updated_at,
           w.name as whatsapp_account_name,
-          u.name as instance_name
+          u.name as instance_name,
+          att.name as attended_by_user_name
         FROM conversations c
         LEFT JOIN whatsapp_accounts w ON c.whatsapp_account_id = w.id
         LEFT JOIN uaz_instances u ON c.instance_id = u.id
+        LEFT JOIN tenant_users att ON c.attended_by_user_id = att.id
         ${whereClause}
         ORDER BY c.last_message_at DESC NULLS LAST
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -413,7 +430,7 @@ export class ConversationController {
 
   /**
    * PUT /api/conversations/:id/archive
-   * Arquiva/desarquiva conversa
+   * Arquiva/desarquiva conversa (encerra atendimento)
    */
   async toggleArchive(req: Request, res: Response) {
     try {
@@ -425,12 +442,21 @@ export class ConversationController {
       const { id } = req.params;
       const { is_archived } = req.body;
 
+      // Se está arquivando, muda status para 'archived'
+      // Se está desarquivando, muda status para 'pending' (volta para fila)
+      const newStatus = is_archived ? 'archived' : 'pending';
+
       await query(
         `UPDATE conversations 
-         SET is_archived = $1, updated_at = NOW()
-         WHERE id = $2 AND tenant_id = $3`,
-        [is_archived, id, tenantId]
+         SET is_archived = $1, 
+             status = $2,
+             attended_by_user_id = CASE WHEN $1 = true THEN NULL ELSE attended_by_user_id END,
+             updated_at = NOW()
+         WHERE id = $3 AND tenant_id = $4`,
+        [is_archived, newStatus, id, tenantId]
       );
+
+      console.log(`📦 Conversa ${id} ${is_archived ? 'arquivada' : 'reaberta'}`);
 
       return res.json({ success: true });
 
@@ -525,6 +551,106 @@ export class ConversationController {
 
     } catch (error: any) {
       console.error('❌ Erro ao criar conversa:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * PUT /api/conversations/:id/accept
+   * Aceita uma conversa pendente (muda status para 'open')
+   */
+  async acceptConversation(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      const userId = (req as any).user?.id;
+
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      const { id } = req.params;
+
+      // Verificar se conversa existe e está pendente
+      const convResult = await query(
+        `SELECT id, status FROM conversations WHERE id = $1 AND tenant_id = $2`,
+        [id, tenantId]
+      );
+
+      if (convResult.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Conversa não encontrada' });
+      }
+
+      const conversation = convResult.rows[0];
+
+      // Permitir aceitar de pending ou broadcast (quando cliente responde um disparo)
+      if (!['pending', 'broadcast'].includes(conversation.status)) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Esta conversa já está sendo atendida ou está arquivada' 
+        });
+      }
+
+      // Atualizar para 'open'
+      await query(
+        `UPDATE conversations 
+         SET status = 'open', 
+             attended_by_user_id = $1, 
+             accepted_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $2`,
+        [userId, id]
+      );
+
+      console.log(`✅ Conversa ${id} aceita pelo usuário ${userId}`);
+
+      return res.json({ success: true, message: 'Conversa aceita com sucesso' });
+
+    } catch (error: any) {
+      console.error('❌ Erro ao aceitar conversa:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * GET /api/conversations/status-counts
+   * Conta conversas por status
+   */
+  async getStatusCounts(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      const result = await query(
+        `SELECT 
+          status,
+          COUNT(*) as count
+         FROM conversations 
+         WHERE tenant_id = $1
+         GROUP BY status`,
+        [tenantId]
+      );
+
+      // Transformar em objeto
+      const counts: { [key: string]: number } = {
+        open: 0,
+        pending: 0,
+        archived: 0,
+        broadcast: 0
+      };
+
+      result.rows.forEach((row: any) => {
+        counts[row.status] = parseInt(row.count);
+      });
+
+      return res.json({
+        success: true,
+        data: counts
+      });
+
+    } catch (error: any) {
+      console.error('❌ Erro ao contar status:', error);
       return res.status(500).json({ success: false, error: error.message });
     }
   }

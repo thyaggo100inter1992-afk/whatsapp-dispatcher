@@ -15,6 +15,9 @@ router.use(checkChatPermission);
 // GET /api/conversations/unread-count - Contador de não lidas (ANTES de /:id)
 router.get('/unread-count', (req, res) => conversationController.getUnreadCount(req, res));
 
+// GET /api/conversations/status-counts - Contador por status (ANTES de /:id)
+router.get('/status-counts', (req, res) => conversationController.getStatusCounts(req, res));
+
 // POST /api/conversations/create - Criar nova conversa
 router.post('/create', (req, res) => conversationController.create(req, res));
 
@@ -35,6 +38,9 @@ router.put('/:id/read', (req, res) => conversationController.markAsRead(req, res
 
 // PUT /api/conversations/:id/archive - Arquivar/desarquivar
 router.put('/:id/archive', (req, res) => conversationController.toggleArchive(req, res));
+
+// PUT /api/conversations/:id/accept - Aceitar conversa pendente
+router.put('/:id/accept', (req, res) => conversationController.acceptConversation(req, res));
 
 export default router;
 

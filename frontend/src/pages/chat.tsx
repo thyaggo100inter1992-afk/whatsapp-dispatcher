@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox } from 'react-icons/fa';
+import { FaComments, FaSearch, FaPaperPlane, FaPaperclip, FaSmile, FaArrowLeft, FaCheck, FaCheckDouble, FaCircle, FaTimes, FaArchive, FaInbox, FaBullhorn, FaClock, FaHeadset, FaHandPaper } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
@@ -14,8 +14,18 @@ interface Conversation {
   last_message_direction: 'inbound' | 'outbound' | null;
   unread_count: number;
   is_archived: boolean;
+  status: 'open' | 'pending' | 'archived' | 'broadcast';
+  attended_by_user_id: number | null;
+  attended_by_user_name: string | null;
   whatsapp_account_name: string | null;
   instance_name: string | null;
+}
+
+interface StatusCounts {
+  open: number;
+  pending: number;
+  archived: number;
+  broadcast: number;
 }
 
 interface Message {
@@ -43,10 +53,11 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageInput, setMessageInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState<'all' | 'unread' | 'archived'>('all');
+  const [filter, setFilter] = useState<'open' | 'pending' | 'archived' | 'broadcast'>('open');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [statusCounts, setStatusCounts] = useState<StatusCounts>({ open: 0, pending: 0, archived: 0, broadcast: 0 });
   const [chatDisabled, setChatDisabled] = useState(false);
   const [chatDisabledMessage, setChatDisabledMessage] = useState('');
   
@@ -63,11 +74,13 @@ export default function Chat() {
   useEffect(() => {
     loadConversations();
     loadUnreadCount();
+    loadStatusCounts();
     
     // Atualizar a cada 10 segundos
     const interval = setInterval(() => {
       loadConversations();
       loadUnreadCount();
+      loadStatusCounts();
       if (selectedConversation) {
         loadMessages(selectedConversation.id);
       }
@@ -139,6 +152,30 @@ export default function Chat() {
       setUnreadCount(response.data.unread_count || 0);
     } catch (error) {
       console.error('Erro ao carregar contador:', error);
+    }
+  };
+
+  const loadStatusCounts = async () => {
+    try {
+      const response = await api.get('/conversations/status-counts');
+      setStatusCounts(response.data.data || { open: 0, pending: 0, archived: 0, broadcast: 0 });
+    } catch (error) {
+      console.error('Erro ao carregar contadores de status:', error);
+    }
+  };
+
+  const acceptConversation = async (conversationId: number) => {
+    try {
+      await api.put(`/conversations/${conversationId}/accept`);
+      loadConversations();
+      loadStatusCounts();
+      // Se a conversa selecionada é a que foi aceita, atualizar
+      if (selectedConversation?.id === conversationId) {
+        setSelectedConversation({ ...selectedConversation, status: 'open' });
+      }
+    } catch (error: any) {
+      console.error('Erro ao aceitar conversa:', error);
+      alert(error.response?.data?.error || 'Erro ao aceitar conversa');
     }
   };
 
@@ -326,37 +363,47 @@ export default function Chat() {
               />
             </div>
 
-            {/* Filtros */}
-            <div className="flex gap-2 mt-3">
+            {/* Filtros - 4 Filas */}
+            <div className="grid grid-cols-2 gap-2 mt-3">
               <button
-                onClick={() => setFilter('all')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === 'all'
+                onClick={() => setFilter('open')}
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+                  filter === 'open'
                     ? 'bg-emerald-500 text-white'
                     : 'bg-dark-700 text-gray-400 hover:bg-dark-600'
                 }`}
               >
-                <FaInbox className="inline mr-1" /> Todas
+                <FaHeadset /> Abertos ({statusCounts.open})
               </button>
               <button
-                onClick={() => setFilter('unread')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === 'unread'
-                    ? 'bg-emerald-500 text-white'
+                onClick={() => setFilter('pending')}
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+                  filter === 'pending'
+                    ? 'bg-yellow-500 text-white'
                     : 'bg-dark-700 text-gray-400 hover:bg-dark-600'
                 }`}
               >
-                Não lidas ({unreadCount})
+                <FaClock /> Pendentes ({statusCounts.pending})
+              </button>
+              <button
+                onClick={() => setFilter('broadcast')}
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+                  filter === 'broadcast'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-dark-700 text-gray-400 hover:bg-dark-600'
+                }`}
+              >
+                <FaBullhorn /> Disparos ({statusCounts.broadcast})
               </button>
               <button
                 onClick={() => setFilter('archived')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
                   filter === 'archived'
-                    ? 'bg-emerald-500 text-white'
+                    ? 'bg-gray-500 text-white'
                     : 'bg-dark-700 text-gray-400 hover:bg-dark-600'
                 }`}
               >
-                <FaArchive className="inline mr-1" /> Arquivadas
+                <FaArchive /> Arquivadas ({statusCounts.archived})
               </button>
             </div>
           </div>
@@ -372,7 +419,11 @@ export default function Chat() {
                 <FaComments className="text-6xl text-gray-600 mx-auto mb-4" />
                 <p className="text-gray-400 text-lg">Nenhuma conversa encontrada</p>
                 <p className="text-gray-500 text-sm mt-2">
-                  {filter === 'unread' ? 'Todas as conversas foram lidas' : 'Aguardando mensagens de clientes'}
+                  {filter === 'pending' ? 'Nenhuma conversa aguardando atendimento' : 
+                   filter === 'open' ? 'Você não está atendendo nenhuma conversa' :
+                   filter === 'broadcast' ? 'Nenhum disparo sem resposta' :
+                   filter === 'archived' ? 'Nenhuma conversa arquivada' :
+                   'Aguardando mensagens de clientes'}
                 </p>
               </div>
             ) : (
@@ -387,11 +438,30 @@ export default function Chat() {
                   }`}
                 >
                   <div className="flex items-start gap-3">
-                    {/* Avatar */}
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center flex-shrink-0">
-                      <span className="text-white font-bold text-lg">
-                        {(conv.contact_name || conv.phone_number)?.[0]?.toUpperCase()}
-                      </span>
+                    {/* Avatar com indicador de status */}
+                    <div className="relative">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        conv.status === 'pending' ? 'bg-gradient-to-br from-yellow-500 to-yellow-600' :
+                        conv.status === 'broadcast' ? 'bg-gradient-to-br from-blue-500 to-blue-600' :
+                        conv.status === 'archived' ? 'bg-gradient-to-br from-gray-500 to-gray-600' :
+                        'bg-gradient-to-br from-emerald-500 to-emerald-600'
+                      }`}>
+                        <span className="text-white font-bold text-lg">
+                          {(conv.contact_name || conv.phone_number)?.[0]?.toUpperCase()}
+                        </span>
+                      </div>
+                      {/* Indicador de status */}
+                      <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-dark-800 ${
+                        conv.status === 'pending' ? 'bg-yellow-500' :
+                        conv.status === 'broadcast' ? 'bg-blue-500' :
+                        conv.status === 'archived' ? 'bg-gray-500' :
+                        'bg-emerald-500'
+                      }`} title={
+                        conv.status === 'pending' ? 'Aguardando atendente' :
+                        conv.status === 'broadcast' ? 'Disparo sem resposta' :
+                        conv.status === 'archived' ? 'Arquivada' :
+                        'Em atendimento'
+                      }></div>
                     </div>
 
                     {/* Info */}
@@ -412,12 +482,34 @@ export default function Chat() {
                           {conv.last_message_direction === 'outbound' && '✓ '}
                           {conv.last_message_text || 'Sem mensagens'}
                         </p>
-                        {conv.unread_count > 0 && (
-                          <div className="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded-full ml-2">
-                            {conv.unread_count}
-                          </div>
-                        )}
+                        <div className="flex items-center gap-2 ml-2">
+                          {conv.unread_count > 0 && (
+                            <div className="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                              {conv.unread_count}
+                            </div>
+                          )}
+                          {/* Botão aceitar para conversas pendentes */}
+                          {conv.status === 'pending' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                acceptConversation(conv.id);
+                              }}
+                              className="bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1"
+                              title="Aceitar conversa"
+                            >
+                              <FaHandPaper className="text-xs" /> Aceitar
+                            </button>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Nome do atendente se estiver em atendimento */}
+                      {conv.status === 'open' && conv.attended_by_user_name && (
+                        <p className="text-xs text-emerald-400 mt-1">
+                          <FaHeadset className="inline mr-1" /> {conv.attended_by_user_name}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
