@@ -41,6 +41,9 @@ const io = new Server(httpServer, {
   },
 });
 
+// Exportar io para uso em outros módulos
+export { io };
+
 // Middlewares
 app.use(cors({
   origin: [

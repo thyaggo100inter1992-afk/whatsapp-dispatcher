@@ -584,8 +584,23 @@ export class QrWebhookController {
 
       console.log('   ✅ Mensagem salva no chat com sucesso!');
 
-      // TODO: Emitir evento Socket.IO
-      // io.to(`tenant:${tenantId}`).emit('chat:new-message', { conversationId, ... });
+      // Emitir evento Socket.IO para atualização em tempo real
+      try {
+        const { io } = require('../server');
+        if (io) {
+          io.to(`tenant:${tenantId}`).emit('chat:new-message', {
+            conversationId,
+            phoneNumber,
+            messageType,
+            messageContent,
+            direction: 'inbound',
+            timestamp: new Date()
+          });
+          console.log('   📡 Evento Socket.IO emitido: chat:new-message');
+        }
+      } catch (ioError: any) {
+        console.warn('⚠️ Erro ao emitir evento Socket.IO:', ioError.message);
+      }
 
     } catch (error: any) {
       console.error('❌ Erro ao salvar mensagem no chat:', error);
