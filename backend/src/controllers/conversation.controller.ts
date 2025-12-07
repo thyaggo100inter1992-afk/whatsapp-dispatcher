@@ -382,31 +382,168 @@ export class ConversationController {
   /**
    * POST /api/conversations/:id/messages/media
    * Enviar mídia (imagem, documento, áudio)
-   * NOTA: Por enquanto apenas retorna erro informativo pois a funcionalidade completa de upload de mídia
-   * para WhatsApp requer implementação adicional no servidor
    */
   async sendMediaMessage(req: Request, res: Response) {
     try {
       const tenantId = (req as any).tenant?.id;
+      const userId = (req as any).user?.id;
+      
       if (!tenantId) {
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
       }
 
       const { id } = req.params;
+      const file = (req as any).file;
       const { message_type } = req.body;
 
-      console.log(`📎 [Conversations] Tentativa de envio de mídia - Conversa: ${id}, Tipo: ${message_type}`);
+      console.log(`📎 [Conversations] Envio de mídia - Conversa: ${id}, Tipo: ${message_type}`);
+      console.log('   Arquivo recebido:', file ? `${file.originalname} (${file.mimetype}, ${file.size} bytes)` : 'NENHUM');
 
-      // Por enquanto, retornar mensagem informativa
-      // A implementação completa de upload de mídia para WhatsApp é mais complexa:
-      // 1. Precisa fazer upload do arquivo para os servidores do WhatsApp
-      // 2. Obter o media_id retornado
-      // 3. Enviar a mensagem referenciando o media_id
+      if (!file) {
+        return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+      }
+
+      // Buscar conversa
+      const convResult = await query(
+        `SELECT c.*, wa.id as wa_id, wa.phone_number_id, wa.access_token, wa.name as wa_name
+         FROM conversations c
+         LEFT JOIN whatsapp_accounts wa ON c.whatsapp_account_id = wa.id
+         WHERE c.id = $1 AND c.tenant_id = $2`,
+        [id, tenantId]
+      );
+
+      if (convResult.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Conversa não encontrada' });
+      }
+
+      const conversation = convResult.rows[0];
       
-      return res.status(501).json({
-        success: false,
-        error: `A funcionalidade de ${message_type === 'audio' ? 'áudio' : 'mídia'} ainda está em desenvolvimento.`,
-        message: 'O envio de mídia pelo chat será implementado em breve. Por enquanto, use o envio de texto.'
+      if (!conversation.phone_number_id || !conversation.access_token) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Conta WhatsApp não configurada corretamente para esta conversa' 
+        });
+      }
+
+      // Determinar tipo de mídia
+      let mediaType = message_type || 'document';
+      const mimeType = file.mimetype;
+      
+      if (mimeType.startsWith('image/')) {
+        mediaType = 'image';
+      } else if (mimeType.startsWith('audio/') || mimeType === 'application/ogg') {
+        mediaType = 'audio';
+      } else if (mimeType.startsWith('video/')) {
+        mediaType = 'video';
+      } else {
+        mediaType = 'document';
+      }
+
+      console.log(`   📤 Tipo de mídia detectado: ${mediaType}`);
+
+      // Fazer upload da mídia para o WhatsApp
+      const WhatsAppService = require('../services/whatsapp.service').default;
+      const whatsappService = new WhatsAppService();
+
+      const uploadResult = await whatsappService.uploadMedia(
+        conversation.access_token,
+        conversation.phone_number_id,
+        file.buffer,
+        mimeType,
+        conversation.wa_id,
+        conversation.wa_name,
+        tenantId
+      );
+
+      if (!uploadResult || !uploadResult.id) {
+        console.error('❌ Falha no upload da mídia:', uploadResult);
+        return res.status(500).json({ 
+          success: false, 
+          error: 'Falha ao fazer upload da mídia para o WhatsApp' 
+        });
+      }
+
+      const mediaId = uploadResult.id;
+      console.log(`   ✅ Mídia enviada para WhatsApp - Media ID: ${mediaId}`);
+
+      // Enviar mensagem com a mídia
+      const messagePayload: any = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: conversation.phone_number,
+        type: mediaType
+      };
+
+      // Configurar payload conforme tipo
+      if (mediaType === 'image') {
+        messagePayload.image = { id: mediaId };
+      } else if (mediaType === 'audio') {
+        messagePayload.audio = { id: mediaId };
+      } else if (mediaType === 'video') {
+        messagePayload.video = { id: mediaId };
+      } else {
+        messagePayload.document = { 
+          id: mediaId,
+          filename: file.originalname
+        };
+      }
+
+      const axios = require('axios');
+      const sendResponse = await axios.post(
+        `https://graph.facebook.com/v18.0/${conversation.phone_number_id}/messages`,
+        messagePayload,
+        {
+          headers: {
+            'Authorization': `Bearer ${conversation.access_token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const whatsappMessageId = sendResponse.data?.messages?.[0]?.id;
+      console.log(`   ✅ Mensagem enviada - WhatsApp Message ID: ${whatsappMessageId}`);
+
+      // Salvar mensagem no banco
+      const messageContent = mediaType === 'image' ? '📷 [Imagem]' :
+                             mediaType === 'audio' ? '🎤 [Áudio]' :
+                             mediaType === 'video' ? '🎥 [Vídeo]' :
+                             `📄 ${file.originalname}`;
+
+      const savedMessage = await query(
+        `INSERT INTO conversation_messages (
+          conversation_id, message_direction, message_type, message_content,
+          media_url, media_type, whatsapp_message_id, tenant_id, sent_by_user_id, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING *`,
+        [
+          id, 'outbound', mediaType, messageContent,
+          null, mimeType, whatsappMessageId, tenantId, userId, 'sent'
+        ]
+      );
+
+      // Atualizar conversa
+      await query(
+        `UPDATE conversations 
+         SET last_message_at = NOW(), 
+             last_message_text = $1,
+             last_message_direction = 'outbound',
+             updated_at = NOW()
+         WHERE id = $2`,
+        [messageContent, id]
+      );
+
+      // Emitir evento Socket.IO
+      const io = (req as any).app.get('io');
+      if (io) {
+        io.to(`tenant:${tenantId}`).emit('chat:new-message', {
+          conversationId: parseInt(id),
+          message: savedMessage.rows[0]
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: savedMessage.rows[0]
       });
 
     } catch (error: any) {

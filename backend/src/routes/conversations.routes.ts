@@ -1,8 +1,17 @@
 import express from 'express';
+import multer from 'multer';
 import { conversationController } from '../controllers/conversation.controller';
 import { checkChatPermission } from '../middleware/checkChatPermission';
 
 const router = express.Router();
+
+// Configurar multer para upload de arquivos em memória
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 16 * 1024 * 1024, // 16MB max
+  }
+});
 
 /**
  * Rotas do Sistema de Chat
@@ -34,7 +43,8 @@ router.get('/:id/messages', (req, res) => conversationController.getMessages(req
 router.post('/:id/messages', (req, res) => conversationController.sendMessage(req, res));
 
 // POST /api/conversations/:id/messages/media - Enviar mídia (imagem, documento, áudio)
-router.post('/:id/messages/media', (req, res) => conversationController.sendMediaMessage(req, res));
+router.post('/:id/messages/media', upload.single('file'), (req, res) => conversationController.sendMediaMessage(req, res));
+router.post('/:id/messages/audio', upload.single('audio'), (req, res) => conversationController.sendMediaMessage(req, res));
 
 // PUT /api/conversations/:id/read - Marcar como lida
 router.put('/:id/read', (req, res) => conversationController.markAsRead(req, res));
