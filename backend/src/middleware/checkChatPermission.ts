@@ -12,6 +12,8 @@ export const checkChatPermission = async (
   try {
     const tenantId = (req as any).tenant?.id;
 
+    console.log('🔍 [Chat Permission] Verificando permissão para tenant:', tenantId);
+
     if (!tenantId) {
       return res.status(401).json({
         success: false,
@@ -40,6 +42,13 @@ export const checkChatPermission = async (
     }
 
     const tenant = result.rows[0];
+    
+    console.log('📊 [Chat Permission] Dados do tenant:', {
+      id: tenant.id,
+      funcionalidades_customizadas: tenant.funcionalidades_customizadas,
+      config_chat: tenant.funcionalidades_config?.permite_chat_atendimento,
+      plano_chat: tenant.permite_chat_atendimento
+    });
 
     // Verificar se tem funcionalidades customizadas
     if (tenant.funcionalidades_customizadas && tenant.funcionalidades_config) {
@@ -48,8 +57,10 @@ export const checkChatPermission = async (
       // Se está explicitamente definido nas configurações customizadas
       if (config.permite_chat_atendimento !== undefined) {
         if (config.permite_chat_atendimento === true) {
+          console.log('✅ [Chat Permission] PERMITIDO por customização');
           return next(); // Permitido por customização
         } else {
+          console.log('❌ [Chat Permission] NEGADO por customização');
           return res.status(403).json({
             success: false,
             error: 'Chat de Atendimento não está habilitado para sua conta',
@@ -61,10 +72,12 @@ export const checkChatPermission = async (
 
     // Se não tem customização, verifica o plano
     if (tenant.permite_chat_atendimento === true) {
+      console.log('✅ [Chat Permission] PERMITIDO pelo plano');
       return next(); // Permitido pelo plano
     }
 
     // Não tem permissão
+    console.log('❌ [Chat Permission] NEGADO - não tem permissão');
     return res.status(403).json({
       success: false,
       error: 'Chat de Atendimento não está disponível no seu plano atual',
