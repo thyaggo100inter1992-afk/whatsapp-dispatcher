@@ -494,7 +494,7 @@ export class WhatsAppService {
       if (accountId && tenantId) {
         proxyConfig = await getProxyConfigFromAccount(accountId, tenantId);
         if (proxyConfig) {
-          axiosConfig = applyProxyToRequest(axiosConfig, proxyConfig);
+          axiosConfig = applyProxyToRequest(axiosConfig, proxyConfig, accountName || `Account ${accountId}`);
           console.log(`   🌐 Usando proxy: ${formatProxyInfo(proxyConfig)}`);
         }
       }
