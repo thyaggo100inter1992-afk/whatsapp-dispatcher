@@ -1425,11 +1425,11 @@ export class WebhookController {
       console.log(`   📱 Telefone normalizado: ${normalizedPhone}`);
       console.log(`   📝 Conteúdo: ${messageContent?.substring(0, 50)}...`);
 
-      // Buscar ou criar conversa
+      // Buscar ou criar conversa - AGORA POR CONTA WHATSAPP
       let conversationId;
       const convCheck = await queryNoTenant(
-        'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2',
-        [normalizedPhone, tenantId]
+        'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2 AND whatsapp_account_id = $3',
+        [normalizedPhone, tenantId, whatsappAccountId]
       );
 
       if (convCheck.rows.length > 0) {

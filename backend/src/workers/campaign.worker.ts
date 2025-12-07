@@ -1176,11 +1176,11 @@ class CampaignWorker {
       const { normalizePhoneNumber } = require('../utils/phone-normalizer');
       const normalizedPhone = normalizePhoneNumber(phoneNumber);
       
-      // Buscar ou criar conversa
+      // Buscar ou criar conversa - POR CONTA WHATSAPP
       let conversationId;
       const convCheck = await queryNoTenant(
-        'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2',
-        [normalizedPhone, tenantId]
+        'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2 AND whatsapp_account_id = $3',
+        [normalizedPhone, tenantId, whatsappAccountId]
       );
 
       if (convCheck.rows.length > 0) {

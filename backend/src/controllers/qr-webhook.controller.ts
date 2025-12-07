@@ -509,8 +509,8 @@ export class QrWebhookController {
       let conversationId;
       const convCheck = await this.runTenantQuery(
         tenantId,
-        'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2',
-        [normalizedPhone, tenantId]
+        'SELECT id FROM conversations WHERE phone_number = $1 AND tenant_id = $2 AND instance_id = $3',
+        [normalizedPhone, tenantId, instanceId]
       );
 
       if (convCheck.rows.length > 0) {
