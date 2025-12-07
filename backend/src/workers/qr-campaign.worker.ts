@@ -1,4 +1,5 @@
 import { query, pool } from '../database/connection';
+import { query as queryNoTenant } from '../database/connection';
 import * as fs from 'fs';
 import * as path from 'path';
 import { RestrictionListController } from '../controllers/restriction-list.controller';
@@ -2117,8 +2118,6 @@ class QrCampaignWorker {
     userId: number | null
   ) {
     try {
-      const { queryNoTenant } = require('../database/connection');
-
       // Buscar ou criar conversa
       let conversationId;
       const convCheck = await queryNoTenant(

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { ContactModel } from '../models/Contact';
 import { MessageModel } from '../models/Message';
 import { RestrictionListController } from './restriction-list.controller';
+import { query as queryNoTenant } from '../database/connection';
 
 export class MessageController {
   async sendImmediate(req: Request, res: Response) {
@@ -488,8 +489,6 @@ export class MessageController {
       console.log('\n💬 Salvando mensagem ENVIADA no chat...');
       console.log(`   📱 Para: ${phoneNumber}`);
       console.log(`   📝 Template: ${templateName}`);
-
-      const { queryNoTenant } = require('../database/connection');
 
       // Buscar ou criar conversa
       let conversationId;

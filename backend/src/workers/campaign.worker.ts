@@ -4,6 +4,7 @@ import { whatsappService } from '../services/whatsapp.service';
 import { whatsappHealthService } from '../services/whatsapp-health.service';
 import { RestrictionListController } from '../controllers/restriction-list.controller';
 import { getBrazilNow } from '../utils/timezone';
+import { query as queryNoTenant } from '../database/connection';
 
 // ========================================
 // 🔄 FUNÇÕES AUXILIARES PARA SPIN TEXT
@@ -1171,8 +1172,6 @@ class CampaignWorker {
     userId: number | null
   ) {
     try {
-      const { queryNoTenant } = require('../database/connection');
-
       // Buscar ou criar conversa
       let conversationId;
       const convCheck = await queryNoTenant(
