@@ -45,7 +45,18 @@ function hasSpinText(text: string): boolean {
 interface WorkerConfig {
   work_start_time: string;
   work_end_time: string;
-  interval_seconds: number;
+  interval_seconds?: number; // Deprecated - usar min/max
+  interval_seconds_min?: number;
+  interval_seconds_max?: number;
+}
+
+// Função para obter intervalo aleatório entre min e max
+function getRandomInterval(config: WorkerConfig): number {
+  const min = config.interval_seconds_min || config.interval_seconds || 10;
+  const max = config.interval_seconds_max || config.interval_seconds || min;
+  
+  if (min === max) return min;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 interface PauseConfig {
@@ -765,8 +776,10 @@ class CampaignWorker {
           campaign.sent_count++;
           console.log(`📊 Progresso: ${campaign.sent_count}/${totalMessages} (${Math.round(campaign.sent_count/totalMessages*100)}%)`);
           
-          // Aguardar intervalo antes do próximo
-          await this.sleep(campaign.schedule_config.interval_seconds * 1000);
+          // Aguardar intervalo aleatório antes do próximo
+          const randomInterval = getRandomInterval(campaign.schedule_config);
+          console.log(`⏳ Aguardando ${randomInterval}s (aleatório entre ${campaign.schedule_config.interval_seconds_min || campaign.schedule_config.interval_seconds}s e ${campaign.schedule_config.interval_seconds_max || campaign.schedule_config.interval_seconds}s)...`);
+          await this.sleep(randomInterval * 1000);
           continue; // Pular para o próximo contato
         }
         
@@ -829,7 +842,7 @@ class CampaignWorker {
         if (updatedCampaignResult.rows.length > 0) {
           campaign.pause_config = updatedCampaignResult.rows[0].pause_config || {};
           campaign.schedule_config = updatedCampaignResult.rows[0].schedule_config || {};
-          console.log(`🔄 Config atualizada: intervalo=${campaign.schedule_config.interval_seconds}s, pause_after=${campaign.pause_config.pause_after}, pause_duration=${campaign.pause_config.pause_duration_minutes}min`);
+          console.log(`🔄 Config atualizada: intervalo=${campaign.schedule_config.interval_seconds_min || campaign.schedule_config.interval_seconds}s-${campaign.schedule_config.interval_seconds_max || campaign.schedule_config.interval_seconds}s, pause_after=${campaign.pause_config.pause_after}, pause_duration=${campaign.pause_config.pause_duration_minutes}min`);
         }
 
         // 🔥 CORREÇÃO: Verificar pause_config usando contador ISOLADO do ciclo atual
@@ -871,9 +884,10 @@ class CampaignWorker {
           return; // ✅ SAIR do método sem bloquear outras campanhas
         }
 
-        // ⏳ Aguardar intervalo configurado APENAS se NÃO houver pausa
-        console.log(`⏳ [Campanha ${campaign.id}] Aguardando ${campaign.schedule_config.interval_seconds}s antes da próxima mensagem...`);
-        await this.sleep(campaign.schedule_config.interval_seconds * 1000);
+        // ⏳ Aguardar intervalo aleatório configurado APENAS se NÃO houver pausa
+        const finalRandomInterval = getRandomInterval(campaign.schedule_config);
+        console.log(`⏳ [Campanha ${campaign.id}] Aguardando ${finalRandomInterval}s antes da próxima mensagem...`);
+        await this.sleep(finalRandomInterval * 1000);
 
       } catch (error: any) {
         console.error(`❌ Erro ao enviar para ${contact.phone_number}:`, error.message);

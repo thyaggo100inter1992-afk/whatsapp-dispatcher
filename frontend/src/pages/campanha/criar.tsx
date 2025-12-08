@@ -88,7 +88,8 @@ export default function CriarCampanha() {
   const [scheduleTime, setScheduleTime] = useState('');
   const [workStartTime, setWorkStartTime] = useState('08:00');
   const [workEndTime, setWorkEndTime] = useState('20:00');
-  const [intervalSeconds, setIntervalSeconds] = useState('5');
+  const [intervalSecondsMin, setIntervalSecondsMin] = useState('10');
+  const [intervalSecondsMax, setIntervalSecondsMax] = useState('20');
   
   // 7. Configurações Avançadas
   const [pauseAfter, setPauseAfter] = useState('100');
@@ -1159,7 +1160,8 @@ export default function CriarCampanha() {
       const scheduleConfig = {
         work_start_time: workStartTime,
         work_end_time: workEndTime,
-        interval_seconds: parseInt(intervalSeconds),
+        interval_seconds_min: parseInt(intervalSecondsMin),
+        interval_seconds_max: parseInt(intervalSecondsMax),
       };
       
       const pauseConfig = {
@@ -2365,15 +2367,36 @@ export default function CriarCampanha() {
                     <label className="block text-base font-bold mb-2 text-white/90">
                       Intervalo entre envios (segundos)
                     </label>
-                    <input
-                      type="number"
-                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
-                      min="1"
-                      value={intervalSeconds}
-                      onChange={(e) => setIntervalSeconds(e.target.value)}
-                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm text-white/70 mb-1">Mínimo</label>
+                        <input
+                          type="number"
+                          className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
+                          min="5"
+                          value={intervalSecondsMin}
+                          onChange={(e) => {
+                            setIntervalSecondsMin(e.target.value);
+                            // Garantir que máximo seja sempre >= mínimo
+                            if (parseInt(e.target.value) > parseInt(intervalSecondsMax)) {
+                              setIntervalSecondsMax(e.target.value);
+                            }
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-white/70 mb-1">Máximo</label>
+                        <input
+                          type="number"
+                          className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
+                          min={intervalSecondsMin}
+                          value={intervalSecondsMax}
+                          onChange={(e) => setIntervalSecondsMax(e.target.value)}
+                        />
+                      </div>
+                    </div>
                     <p className="text-sm text-white/60 mt-2">
-                      ⏱️ Aguardar {intervalSeconds}s entre cada mensagem
+                      ⏱️ Aguardar entre {intervalSecondsMin}s e {intervalSecondsMax}s (aleatório) entre cada mensagem
                     </p>
                   </div>
                 </div>
@@ -2478,7 +2501,7 @@ export default function CriarCampanha() {
               <div className="bg-white/10 backdrop-blur-md rounded-xl p-5 border border-white/20">
                 <p className="text-white/70 mb-2">Tempo estimado:</p>
                 <p className="font-bold text-xl text-white">
-                  ~{Math.ceil(((contacts.length - 1) * parseInt(intervalSeconds) + (contacts.length * 2)) / 60)} min
+                  ~{Math.ceil(((contacts.length - 1) * ((parseInt(intervalSecondsMin) + parseInt(intervalSecondsMax)) / 2) + (contacts.length * 2)) / 60)} min
                 </p>
               </div>
             </div>
@@ -2522,7 +2545,7 @@ export default function CriarCampanha() {
         onClose={() => setShowRestrictionModal(false)}
         result={restrictionCheckResult}
         totalTemplates={totalSelected}
-        intervalSeconds={parseInt(intervalSeconds)}
+        intervalSeconds={Math.round((parseInt(intervalSecondsMin) + parseInt(intervalSecondsMax)) / 2)}
         onExcludeRestricted={handleExcludeRestricted}
         onKeepAll={handleKeepAll}
       />
