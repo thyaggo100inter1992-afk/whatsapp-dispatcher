@@ -138,8 +138,9 @@ app.use((req, res, next) => {
     path.includes('/system-settings/logo') || 
     path.includes('/tutorials/upload') || 
     path.includes('/screenshots') ||
-    path.includes('/restriction-lists/import') ||  // ✅ ADICIONADO
-    path.includes('/restriction-lists/bulk-import')  // ✅ ADICIONADO
+    path.includes('/restriction-lists/import') ||
+    path.includes('/restriction-lists/bulk-import') ||
+    (path.includes('/conversations') && path.includes('/messages/media'))  // ✅ Chat media upload
   ) {
     console.log('🔄 Rota de upload detectada - pulando express-fileupload (usa Multer)');
     return next();
