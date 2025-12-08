@@ -1036,11 +1036,29 @@ class CampaignWorker {
     };
     
     // Converter variáveis do contato para array ordenado
+    console.log('📋 [DEBUG] contact.variables RAW:', JSON.stringify(contact.variables));
+    console.log('📋 [DEBUG] Tipo de contact.variables:', typeof contact.variables);
+    
     if (contact.variables) {
+      // Se for uma string JSON, parsear primeiro
+      let vars = contact.variables;
+      if (typeof vars === 'string') {
+        try {
+          vars = JSON.parse(vars);
+          console.log('📋 [DEBUG] Variables parseado de string:', JSON.stringify(vars));
+        } catch (e) {
+          console.log('📋 [DEBUG] Não foi possível parsear como JSON, usando como está');
+        }
+      }
+      
       // Supondo que as variáveis sejam um objeto com keys numéricas: {0: "valor1", 1: "valor2"}
-      const keys = Object.keys(contact.variables).sort();
+      // Ou um array: ["valor1", "valor2"]
+      const keys = Object.keys(vars).sort();
+      console.log('📋 [DEBUG] Keys encontradas:', keys);
+      
       keys.forEach(key => {
-        let value = String(contact.variables[key]);
+        let value = String(vars[key]);
+        console.log(`📋 [DEBUG] Variável ${key}: "${value}"`);
         
         // 🌅 PROCESSAR {{greeting}} - substituir por Bom dia/Boa tarde/Boa noite
         if (value.includes('{{greeting}}') || value.includes('{{GREETING}}')) {
@@ -1058,6 +1076,8 @@ class CampaignWorker {
         variableValues.push(value);
       });
     }
+    
+    console.log('📋 [DEBUG] variableValues FINAL:', JSON.stringify(variableValues));
 
     // Se a mídia for local (upload), fazer upload para WhatsApp API primeiro
     let finalMediaUrl = template.media_url;
