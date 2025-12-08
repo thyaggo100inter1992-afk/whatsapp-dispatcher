@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { 
   FaList, FaTrash, FaCopy, FaSync, FaSearch, FaCheckCircle, FaTimesCircle, 
-  FaPlus, FaEye, FaEdit, FaClock, FaCheck, FaTimes, FaMobileAlt, FaArrowLeft
+  FaPlus, FaEye, FaEdit, FaClock, FaCheck, FaTimes, FaMobileAlt, FaArrowLeft, FaHistory
 } from 'react-icons/fa';
 import api, { whatsappAccountsAPI } from '@/services/api';
 import { TemplateQueue } from '@/components/TemplateQueue';
@@ -472,6 +472,13 @@ export default function GerenciarTemplates() {
                   >
                     <FaPlus className="text-xl" />
                     Criar Novo
+                  </button>
+                  <button
+                    onClick={() => router.push('/template/historico')}
+                    className="flex items-center gap-3 px-6 py-4 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border-2 border-purple-500/40 rounded-xl font-bold transition-all duration-200 shadow-lg hover:shadow-purple-500/30"
+                  >
+                    <FaHistory className="text-xl" />
+                    Ver Histórico
                   </button>
                 </div>
               </div>
