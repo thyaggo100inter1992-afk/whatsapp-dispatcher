@@ -75,7 +75,7 @@ export class ContactModel {
       tenantId,
       `INSERT INTO contacts (phone_number, name, variables, tenant_id)
        VALUES ${placeholders.join(', ')}
-       ON CONFLICT (phone_number) DO UPDATE
+       ON CONFLICT (phone_number, tenant_id) DO UPDATE
        SET name = COALESCE(EXCLUDED.name, contacts.name),
            variables = EXCLUDED.variables,
            updated_at = NOW()
