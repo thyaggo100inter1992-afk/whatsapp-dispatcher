@@ -50,10 +50,23 @@ export class ContactModel {
     uniqueContacts.forEach((contact, index) => {
       const offset = index * 4; // Agora são 4 campos
       placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
+      
+      // Converter variáveis de array para objeto se necessário
+      let varsToStore = contact.variables || {};
+      if (Array.isArray(varsToStore)) {
+        // Se for array, converter para objeto com índices numéricos
+        const objVars: Record<string, string> = {};
+        varsToStore.forEach((v, i) => {
+          objVars[i.toString()] = String(v);
+        });
+        varsToStore = objVars;
+        console.log(`📋 [Contact] Variáveis convertidas de array para objeto:`, varsToStore);
+      }
+      
       values.push(
         contact.phone_number,
         contact.name || null,
-        JSON.stringify(contact.variables || {}),
+        JSON.stringify(varsToStore),
         tenantId
       );
     });
@@ -64,7 +77,7 @@ export class ContactModel {
        VALUES ${placeholders.join(', ')}
        ON CONFLICT (phone_number) DO UPDATE
        SET name = COALESCE(EXCLUDED.name, contacts.name),
-           variables = COALESCE(EXCLUDED.variables, contacts.variables),
+           variables = EXCLUDED.variables,
            updated_at = NOW()
        RETURNING *`,
       values
