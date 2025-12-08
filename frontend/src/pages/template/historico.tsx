@@ -45,6 +45,10 @@ export default function HistoricoTemplates() {
   const [refreshing, setRefreshing] = useState(false);
   const [hasPending, setHasPending] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  
+  // Estados para seleção múltipla
+  const [selectedTemplates, setSelectedTemplates] = useState<Set<number>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
 
   useEffect(() => {
     loadAccounts();
@@ -224,6 +228,84 @@ export default function HistoricoTemplates() {
     setFilteredTemplates(filtered);
   };
 
+  // Funções de seleção múltipla
+  const handleSelectTemplate = (id: number) => {
+    const newSelected = new Set(selectedTemplates);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedTemplates(newSelected);
+    setSelectAll(newSelected.size === filteredTemplates.length);
+  };
+
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedTemplates(new Set());
+      setSelectAll(false);
+    } else {
+      const allIds = new Set(filteredTemplates.map(t => t.id));
+      setSelectedTemplates(allIds);
+      setSelectAll(true);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedTemplates.size === 0) {
+      toast.error('Selecione pelo menos um template para excluir');
+      return;
+    }
+
+    const confirmationMessage = `Tem certeza que deseja excluir ${selectedTemplates.size} template(s) selecionado(s)?\n\nEsta ação irá excluí-los também na Meta.`;
+    if (!confirm(confirmationMessage)) return;
+
+    try {
+      const selectedArray = Array.from(selectedTemplates);
+      const templatesToDelete = templates.filter(t => selectedArray.includes(t.id));
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Excluir cada template
+      for (const template of templatesToDelete) {
+        try {
+          const response = await api.delete(`/templates/${template.account_id}/${template.template_name}`, {
+            data: { useQueue: true }
+          });
+
+          if (response.data?.queueId || response.data?.success) {
+            successCount++;
+          }
+        } catch (error: any) {
+          console.error(`Erro ao excluir template ${template.template_name}:`, error);
+          errorCount++;
+        }
+      }
+
+      // Mostrar resultado
+      if (successCount > 0) {
+        toast.success(`${successCount} template(s) enviado(s) para exclusão!`);
+      }
+      if (errorCount > 0) {
+        toast.error(`Erro ao excluir ${errorCount} template(s)`);
+      }
+
+      // Limpar seleção e recarregar
+      setSelectedTemplates(new Set());
+      setSelectAll(false);
+      
+      // Aguardar 2 segundos e recarregar
+      setTimeout(() => {
+        loadTemplates();
+      }, 2000);
+
+    } catch (error: any) {
+      console.error('Erro ao excluir templates:', error);
+      toast.error('Erro ao excluir templates selecionados');
+    }
+  };
+
   const handleDelete = async (template: TemplateHistory) => {
     const confirmationMessage = `Tem certeza que deseja excluir o template "${template.template_name}" também lá na Meta?`;
     if (!confirm(confirmationMessage)) return;
@@ -387,6 +469,17 @@ export default function HistoricoTemplates() {
                   <FaSync className="animate-spin" />
                   Atualizando...
                 </div>
+              )}
+              
+              {/* Botão Excluir Selecionados */}
+              {selectedTemplates.size > 0 && (
+                <button
+                  onClick={handleDeleteSelected}
+                  className="px-6 py-4 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-lg font-bold rounded-xl transition-all duration-200 shadow-lg shadow-red-500/40 flex items-center gap-3"
+                >
+                  <FaTrash />
+                  Excluir Selecionados ({selectedTemplates.size})
+                </button>
               )}
               
               {/* Botão Atualizar Manual */}
@@ -594,6 +687,14 @@ export default function HistoricoTemplates() {
               <table className="w-full">
                 <thead className="bg-dark-700/80 border-b-2 border-white/10">
                   <tr>
+                    <th className="px-4 py-4 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectAll}
+                        onChange={handleSelectAll}
+                        className="w-5 h-5 rounded border-2 border-white/30 bg-dark-700 checked:bg-purple-500 checked:border-purple-500 cursor-pointer"
+                      />
+                    </th>
                     <th className="px-6 py-4 text-left text-sm font-black text-white uppercase">Template</th>
                     <th className="px-6 py-4 text-left text-sm font-black text-white uppercase">Operação</th>
                     <th className="px-6 py-4 text-left text-sm font-black text-white uppercase">Conta</th>
@@ -607,6 +708,14 @@ export default function HistoricoTemplates() {
                 <tbody className="divide-y divide-white/10">
                   {filteredTemplates.map((template) => (
                     <tr key={template.id} className="hover:bg-white/5 transition-all">
+                      <td className="px-4 py-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedTemplates.has(template.id)}
+                          onChange={() => handleSelectTemplate(template.id)}
+                          className="w-5 h-5 rounded border-2 border-white/30 bg-dark-700 checked:bg-purple-500 checked:border-purple-500 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="text-white font-bold text-base">{template.template_name}</div>
