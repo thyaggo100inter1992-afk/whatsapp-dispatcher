@@ -175,3 +175,4 @@ Quando o backend iniciar, você deve ver:
 *Checkpoint 1 - 40% concluído*  
 *Continuar em Fase 3: Webhooks*
 
+

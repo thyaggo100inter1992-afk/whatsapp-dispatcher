@@ -359,3 +359,4 @@ Parabéns! 🚀
 *Guia de Teste - Sistema de Chat v1.0*  
 *07/12/2025*
 
+

@@ -446,3 +446,4 @@ Após implementação básica, pode-se adicionar:
 *Documento gerado em: 07/12/2025*  
 *Versão: 1.0*
 
+

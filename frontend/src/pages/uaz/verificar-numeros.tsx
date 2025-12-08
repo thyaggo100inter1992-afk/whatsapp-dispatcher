@@ -1208,14 +1208,14 @@ export default function VerificarNumerosUaz() {
                                 <span className="text-white/90 font-mono text-lg">{result.phone}</span>
                                 <button
                                   onClick={() => {
-                                    // Copia APENAS números (remove qualquer formatação) e garante que tem 55
+                                    // Copia APENAS DDD + número (sem o DDI 55)
                                     const cleanNumber = result.phone.replace(/\D/g, '');
-                                    const numberToCopy = cleanNumber.startsWith('55') ? cleanNumber : '55' + cleanNumber;
+                                    const numberToCopy = cleanNumber.startsWith('55') ? cleanNumber.substring(2) : cleanNumber;
                                     navigator.clipboard.writeText(numberToCopy);
                                     showNotification('📋 Número copiado: ' + numberToCopy, 'success');
                                   }}
                                   className="p-2 bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 rounded-lg transition-all duration-200 border border-blue-500/30 hover:border-blue-400"
-                                  title="Copiar número completo (com 55)"
+                                  title="Copiar número (DDD + número)"
                                 >
                                   <FaCopy className="text-sm" />
                                 </button>
