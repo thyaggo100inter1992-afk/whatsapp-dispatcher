@@ -24,6 +24,9 @@ router.get('/template/contacts', (req, res) => controller.downloadContactsTempla
 // Aplicar verificação de funcionalidade em TODAS as rotas abaixo
 router.use(checkCampaigns);
 
+// Deletar todas as campanhas finalizadas (DEVE vir ANTES de /:id)
+router.delete('/finished/all', (req, res) => controller.deleteFinished(req, res));
+
 // Listar todas as campanhas
 router.get('/', (req, res) => controller.findAll(req, res));
 
