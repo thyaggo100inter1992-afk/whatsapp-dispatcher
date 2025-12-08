@@ -450,7 +450,8 @@ export default function CriarCampanha() {
   };
 
   // ✅ Função auxiliar para converter notação científica de volta para número
-  const fixScientificNotation = (value: string): string => {
+  // ⚠️ IMPORTANTE: SÓ aplicar em números de telefone, NÃO em variáveis de texto!
+  const fixScientificNotation = (value: string, isPhoneNumber: boolean = false): string => {
     // Se não tem números, retornar como está
     if (!/\d/.test(value)) return value;
     
@@ -471,10 +472,14 @@ export default function CriarCampanha() {
       }
     }
     
-    // Remover caracteres não numéricos (exceto + no início)
-    let cleaned = value.replace(/[^\d+]/g, '');
+    // SÓ remover caracteres não numéricos se for NÚMERO DE TELEFONE
+    if (isPhoneNumber) {
+      let cleaned = value.replace(/[^\d+]/g, '');
+      return cleaned;
+    }
     
-    return cleaned;
+    // Para variáveis de texto, retornar como está (sem modificar!)
+    return value;
   };
 
   const parseContacts = (input: string): Contact[] => {
@@ -504,8 +509,8 @@ export default function CriarCampanha() {
       
       // Adicionar contato se tiver número de telefone válido
       if (parts.length > 0 && parts[0] && /\d/.test(parts[0])) {
-        // ✅ CORRIGIR: Converter notação científica do telefone
-        const phone = fixScientificNotation(parts[0]);
+        // ✅ CORRIGIR: Converter notação científica do telefone (é número de telefone!)
+        const phone = fixScientificNotation(parts[0], true);
         
         // ✅ REMOVER DUPLICATAS: Pular se o número já foi visto
         if (seenPhones.has(phone)) {
@@ -515,8 +520,8 @@ export default function CriarCampanha() {
         
         seenPhones.add(phone);
         
-        // ✅ CORRIGIR: Converter notação científica das variáveis também
-        const variables = parts.slice(1).map(v => fixScientificNotation(v));
+        // ✅ VARIÁVEIS: NÃO remover caracteres, apenas converter notação científica se necessário
+        const variables = parts.slice(1).map(v => fixScientificNotation(v, false));
         
         console.log(`📞 Linha ${i + 1}: ${parts[0]} -> ${phone}`, variables.length > 0 ? `(${variables.length} vars)` : '');
         
