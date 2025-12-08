@@ -683,11 +683,11 @@ export default function HistoricoTemplates() {
               <p className="text-white/60 text-2xl font-bold">📭 Nenhum template encontrado</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className="overflow-x-auto pb-4">
+              <table className="w-full min-w-max">
                 <thead className="bg-dark-700/80 border-b-2 border-white/10">
                   <tr>
-                    <th className="px-4 py-4 text-center">
+                    <th className="px-4 py-4 text-center w-12">
                       <input
                         type="checkbox"
                         checked={selectAll}
@@ -695,14 +695,14 @@ export default function HistoricoTemplates() {
                         className="w-5 h-5 rounded border-2 border-white/30 bg-dark-700 checked:bg-purple-500 checked:border-purple-500 cursor-pointer"
                       />
                     </th>
-                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase">Template</th>
-                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase">Operação</th>
-                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase">Conta</th>
-                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase">Data/Hora</th>
-                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase">Status</th>
-                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase">Categoria</th>
-                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase">Proxy</th>
-                    <th className="px-6 py-4 text-center text-sm font-black text-white uppercase">Ações</th>
+                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase min-w-[200px]">Template</th>
+                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase min-w-[120px]">Operação</th>
+                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase min-w-[200px]">Conta</th>
+                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase min-w-[150px]">Data/Hora</th>
+                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase min-w-[120px]">Status</th>
+                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase min-w-[120px]">Categoria</th>
+                    <th className="px-6 py-4 text-left text-sm font-black text-white uppercase min-w-[120px]">Proxy</th>
+                    <th className="px-6 py-4 text-center text-sm font-black text-white uppercase min-w-[150px]">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10">
@@ -803,7 +803,7 @@ export default function HistoricoTemplates() {
                       <td className="px-6 py-4 text-center">
                         <button
                           onClick={() => handleDelete(template)}
-                          className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 border-2 border-red-500/40 rounded-lg font-bold transition-all flex items-center gap-2 mx-auto"
+                          className="px-6 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 border-2 border-red-500/40 rounded-lg font-bold transition-all inline-flex items-center gap-2 whitespace-nowrap"
                         >
                           <FaTrash />
                           Excluir
