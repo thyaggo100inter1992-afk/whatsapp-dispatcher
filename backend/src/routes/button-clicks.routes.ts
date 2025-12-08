@@ -20,6 +20,10 @@ router.get('/ranking', (req, res) => controller.getRanking(req, res));
 // GET /api/button-clicks/stats?date_from=&date_to=
 router.get('/stats', (req, res) => controller.getStats(req, res));
 
+// Exportar cliques para Excel
+// GET /api/button-clicks/export?button_text=&date_from=&date_to=
+router.get('/export', (req, res) => controller.exportToExcel(req, res));
+
 export default router;
 
 

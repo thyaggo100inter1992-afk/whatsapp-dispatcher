@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { queryNoTenant } from '../database/tenant-query';
+import ExcelJS from 'exceljs';
 
 export class ButtonClicksController {
   /**
@@ -231,6 +232,128 @@ export class ButtonClicksController {
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch button clicks stats',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  /**
+   * Exportar cliques para Excel
+   */
+  async exportToExcel(req: Request, res: Response) {
+    try {
+      const { button_text, date_from, date_to } = req.query;
+      const tenantId = (req as any).tenant?.id;
+      
+      console.log('📊 Exportando relatório de cliques para Excel...');
+      
+      // Construir filtros (mesma lógica do listClicks)
+      const filters: string[] = ['m.tenant_id = $1'];
+      const params: any[] = [tenantId];
+      let paramIndex = 2;
+      
+      if (button_text) {
+        filters.push(`bc.button_text ILIKE $${paramIndex}`);
+        params.push(`%${button_text}%`);
+        paramIndex++;
+      }
+      
+      if (date_from) {
+        filters.push(`bc.clicked_at >= $${paramIndex}::date`);
+        params.push(date_from);
+        paramIndex++;
+      }
+      
+      if (date_to) {
+        filters.push(`bc.clicked_at < ($${paramIndex}::date + interval '1 day')`);
+        params.push(date_to);
+        paramIndex++;
+      }
+      
+      const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+      
+      // Buscar TODOS os dados (sem paginação)
+      const dataQuery = `
+        SELECT 
+          bc.id,
+          bc.button_text,
+          bc.button_payload,
+          bc.phone_number,
+          bc.contact_name,
+          bc.clicked_at,
+          bc.campaign_id,
+          bc.campaign_type,
+          c.name as campaign_name,
+          m.template_name,
+          wa.name as account_name,
+          wa.phone_number as account_phone
+        FROM button_clicks bc
+        INNER JOIN messages m ON bc.message_id = m.id
+        LEFT JOIN campaigns c ON bc.campaign_id = c.id
+        LEFT JOIN whatsapp_accounts wa ON m.whatsapp_account_id = wa.id
+        ${whereClause}
+        ORDER BY bc.clicked_at DESC
+      `;
+      
+      const dataResult = await queryNoTenant(dataQuery, params);
+      
+      console.log(`✅ Encontrados ${dataResult.rows.length} cliques para exportar`);
+      
+      // Criar workbook e worksheet
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Cliques em Botões');
+      
+      // Definir colunas
+      worksheet.columns = [
+        { header: 'Data/Hora', key: 'clicked_at', width: 20 },
+        { header: 'Telefone', key: 'phone_number', width: 18 },
+        { header: 'Nome', key: 'contact_name', width: 30 },
+        { header: 'Botão Clicado', key: 'button_text', width: 25 },
+        { header: 'Campanha', key: 'campaign_name', width: 30 },
+        { header: 'Conta', key: 'account_name', width: 25 },
+      ];
+      
+      // Estilizar cabeçalho
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.getRow(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF4CAF50' }
+      };
+      
+      // Adicionar dados
+      dataResult.rows.forEach((row: any) => {
+        worksheet.addRow({
+          clicked_at: new Date(row.clicked_at).toLocaleString('pt-BR'),
+          phone_number: row.phone_number,
+          contact_name: row.contact_name || 'N/A',
+          button_text: row.button_text,
+          campaign_name: row.campaign_name || 'N/A',
+          account_name: row.account_name || 'N/A',
+        });
+      });
+      
+      // Gerar buffer
+      const buffer = await workbook.xlsx.writeBuffer();
+      
+      // Definir headers de resposta
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=cliques-botoes-${new Date().toISOString().split('T')[0]}.xlsx`
+      );
+      
+      console.log('✅ Arquivo Excel gerado com sucesso!');
+      
+      return res.send(buffer);
+    } catch (error) {
+      console.error('❌ Erro ao exportar para Excel:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to export to Excel',
         message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
