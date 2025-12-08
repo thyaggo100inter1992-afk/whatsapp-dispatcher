@@ -237,8 +237,40 @@ export class MessageController {
         }
       }
       
-      // Construir componentes com variáveis
-      const components = whatsappService.buildTemplateComponents(variables || {});
+      // 🌅 Função para obter saudação baseada no horário (fuso horário de Brasília)
+      const getGreeting = (): string => {
+        const now = new Date();
+        // Converter para horário de Brasília (UTC-3)
+        const brasiliaOffset = -3 * 60; // em minutos
+        const localOffset = now.getTimezoneOffset();
+        const brasiliaTime = new Date(now.getTime() + (localOffset + brasiliaOffset) * 60000);
+        const hour = brasiliaTime.getHours();
+        
+        if (hour >= 6 && hour < 12) {
+          return 'Bom dia';
+        } else if (hour >= 12 && hour < 18) {
+          return 'Boa tarde';
+        } else {
+          return 'Boa noite';
+        }
+      };
+      
+      // 🔄 Processar {{greeting}} nas variáveis
+      const processedVariables: Record<string, string> = {};
+      if (variables) {
+        for (const [key, value] of Object.entries(variables)) {
+          let processedValue = String(value);
+          if (processedValue.includes('{{greeting}}') || processedValue.includes('{{GREETING}}')) {
+            const originalValue = processedValue;
+            processedValue = processedValue.replace(/\{\{greeting\}\}/gi, getGreeting());
+            console.log(`🌅 {{greeting}} processado: "${originalValue}" -> "${processedValue}"`);
+          }
+          processedVariables[key] = processedValue;
+        }
+      }
+      
+      // Construir componentes com variáveis processadas
+      const components = whatsappService.buildTemplateComponents(processedVariables);
       
       const result = await whatsappService.sendTemplateMessage({
         accessToken: account.access_token,

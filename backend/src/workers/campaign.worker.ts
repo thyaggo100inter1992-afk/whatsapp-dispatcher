@@ -1011,12 +1011,43 @@ class CampaignWorker {
     // Preparar variáveis do template como array de valores
     const variableValues: string[] = [];
     
+    // 🌅 Função para obter saudação baseada no horário (fuso horário de Brasília)
+    const getGreeting = (): string => {
+      const now = new Date();
+      // Converter para horário de Brasília (UTC-3)
+      const brasiliaOffset = -3 * 60; // em minutos
+      const localOffset = now.getTimezoneOffset();
+      const brasiliaTime = new Date(now.getTime() + (localOffset + brasiliaOffset) * 60000);
+      const hour = brasiliaTime.getHours();
+      
+      if (hour >= 6 && hour < 12) {
+        return 'Bom dia';
+      } else if (hour >= 12 && hour < 18) {
+        return 'Boa tarde';
+      } else {
+        return 'Boa noite';
+      }
+    };
+    
+    // 🔄 Função para processar {{greeting}} na variável
+    const processGreeting = (text: string): string => {
+      // Substituir {{greeting}} pelo cumprimento apropriado (case insensitive)
+      return text.replace(/\{\{greeting\}\}/gi, getGreeting());
+    };
+    
     // Converter variáveis do contato para array ordenado
     if (contact.variables) {
       // Supondo que as variáveis sejam um objeto com keys numéricas: {0: "valor1", 1: "valor2"}
       const keys = Object.keys(contact.variables).sort();
       keys.forEach(key => {
         let value = String(contact.variables[key]);
+        
+        // 🌅 PROCESSAR {{greeting}} - substituir por Bom dia/Boa tarde/Boa noite
+        if (value.includes('{{greeting}}') || value.includes('{{GREETING}}')) {
+          const originalValue = value;
+          value = processGreeting(value);
+          console.log(`🌅 {{greeting}} processado: "${originalValue}" -> "${value}"`);
+        }
         
         // 🔄 PROCESSAR SPIN TEXT nas variáveis
         if (hasSpinText(value)) {
