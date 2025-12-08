@@ -51,6 +51,7 @@ export default function RelatorioCliques() {
   const [total, setTotal] = useState(0);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [selectAll, setSelectAll] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false);
   const [filters, setFilters] = useState({
     button_text: '',
     date_from: '',
@@ -67,6 +68,20 @@ export default function RelatorioCliques() {
     setSelectedIds([]);
     setSelectAll(false);
   }, [page, filters]);
+
+  // Auto-refresh a cada 10 segundos
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    const interval = setInterval(() => {
+      console.log('🔄 Auto-atualizando relatório de cliques...');
+      loadData();
+      loadRanking();
+      loadStats();
+    }, 10000); // 10 segundos
+
+    return () => clearInterval(interval);
+  }, [autoRefresh, page, filters]);
 
   const loadData = async () => {
     try {
@@ -297,18 +312,36 @@ export default function RelatorioCliques() {
             <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
             <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl"></div>
             
-            <div className="relative flex items-center gap-6">
-              <div className="bg-gradient-to-br from-cyan-500 to-cyan-600 p-6 rounded-2xl shadow-lg shadow-cyan-500/50">
-                <span className="text-6xl">📊</span>
+            <div className="relative flex items-center justify-between">
+              <div className="flex items-center gap-6">
+                <div className="bg-gradient-to-br from-cyan-500 to-cyan-600 p-6 rounded-2xl shadow-lg shadow-cyan-500/50">
+                  <span className="text-6xl">📊</span>
+                </div>
+                <div>
+                  <h1 className="text-6xl font-black text-white mb-2 tracking-tight">
+                    Relatório de Cliques em Botões
+                  </h1>
+                  <p className="text-2xl text-white/80 font-medium">
+                    Analise todos os cliques recebidos de todas as contas
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-6xl font-black text-white mb-2 tracking-tight">
-                  Relatório de Cliques em Botões
-                </h1>
-                <p className="text-2xl text-white/80 font-medium">
-                  Analise todos os cliques recebidos de todas as contas
-                </p>
-              </div>
+              
+              {/* Botão Auto-Refresh */}
+              <button
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={`flex items-center gap-3 px-6 py-4 rounded-xl font-bold transition-all duration-200 shadow-lg ${
+                  autoRefresh
+                    ? 'bg-green-500/20 text-green-300 border-2 border-green-500/40 hover:bg-green-500/30'
+                    : 'bg-gray-500/20 text-gray-300 border-2 border-gray-500/40 hover:bg-gray-500/30'
+                }`}
+              >
+                <span className="text-2xl">{autoRefresh ? '🔄' : '⏸️'}</span>
+                <div className="text-left">
+                  <div className="text-lg">{autoRefresh ? 'Auto-Atualizar' : 'Atualizar Manual'}</div>
+                  <div className="text-xs opacity-70">{autoRefresh ? 'A cada 10s' : 'Clique para ativar'}</div>
+                </div>
+              </button>
             </div>
           </div>
 
