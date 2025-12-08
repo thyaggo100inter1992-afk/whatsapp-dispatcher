@@ -940,6 +940,108 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// Excluir registros duplicados (mantém apenas o mais recente de cada CPF/CNPJ)
+router.delete('/duplicadas', async (req: Request, res: Response) => {
+  try {
+    console.log('🔍 Iniciando busca por registros duplicados...');
+    
+    const tenantId = (req as any).tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Tenant não identificado'
+      });
+    }
+
+    // 1. Identificar documentos duplicados deste tenant
+    const duplicadosQuery = `
+      SELECT documento, COUNT(*) as total
+      FROM base_dados_completa
+      WHERE tenant_id = $1
+      GROUP BY documento
+      HAVING COUNT(*) > 1
+    `;
+    
+    const duplicados = await pool.query(duplicadosQuery, [tenantId]);
+    const documentosDuplicados = duplicados.rows.map(r => r.documento);
+    
+    console.log(`📊 Encontrados ${documentosDuplicados.length} documento(s) com duplicatas`);
+    
+    if (documentosDuplicados.length === 0) {
+      return res.json({
+        success: true,
+        message: 'Nenhum registro duplicado encontrado!',
+        excluidos: 0,
+        mantidos: 0,
+        documentos_processados: 0
+      });
+    }
+
+    // 2. Para cada documento duplicado, manter apenas o mais recente e excluir os antigos
+    let totalExcluidos = 0;
+    let totalMantidos = 0;
+    
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      for (const documento of documentosDuplicados) {
+        // Buscar todos os registros deste documento (ordenar por data de adição, mais recente primeiro)
+        const registrosQuery = `
+          SELECT id, data_adicao
+          FROM base_dados_completa
+          WHERE documento = $1 AND tenant_id = $2
+          ORDER BY data_adicao DESC
+        `;
+        
+        const registros = await client.query(registrosQuery, [documento, tenantId]);
+        
+        if (registros.rows.length > 1) {
+          // Manter o primeiro (mais recente), excluir os demais
+          const maisRecente = registros.rows[0];
+          const paraExcluir = registros.rows.slice(1).map(r => r.id);
+          
+          console.log(`   📄 ${documento}: mantendo ID ${maisRecente.id}, excluindo ${paraExcluir.length} duplicata(s)`);
+          
+          // Excluir os antigos
+          await client.query(
+            'DELETE FROM base_dados_completa WHERE id = ANY($1)',
+            [paraExcluir]
+          );
+          
+          totalExcluidos += paraExcluir.length;
+          totalMantidos += 1;
+        }
+      }
+      
+      await client.query('COMMIT');
+      
+      console.log(`✅ Processo concluído: ${totalExcluidos} excluídos, ${totalMantidos} mantidos`);
+      
+      res.json({
+        success: true,
+        message: `Registros duplicados excluídos com sucesso!`,
+        excluidos: totalExcluidos,
+        mantidos: totalMantidos,
+        documentos_processados: documentosDuplicados.length
+      });
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+  } catch (error: any) {
+    console.error('❌ Erro ao excluir duplicadas:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro ao excluir registros duplicados: ' + error.message
+    });
+  }
+});
+
 // IMPORTANTE: Rota /excluir-tudo DEVE vir ANTES de /:id
 // Excluir TODA a base de dados
 router.delete('/excluir-tudo', async (req: Request, res: Response) => {

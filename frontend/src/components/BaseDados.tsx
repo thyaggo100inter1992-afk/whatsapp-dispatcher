@@ -1118,6 +1118,36 @@ export default function BaseDados() {
     link.click();
   };
 
+  // Excluir registros duplicados (mantém apenas o mais recente de cada CPF/CNPJ)
+  const handleExcluirDuplicadas = async () => {
+    if (!confirm('⚠️ ATENÇÃO!\n\nEsta ação irá:\n\n1. Identificar todos os CPF/CNPJ duplicados\n2. Manter apenas o registro MAIS RECENTE de cada documento\n3. EXCLUIR permanentemente os registros mais antigos\n\nEsta ação NÃO PODE SER DESFEITA!\n\nDeseja continuar?')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      showNotification('🔄 Identificando duplicadas...', 'info');
+      
+      const response = await api.delete('/base-dados/duplicadas');
+      
+      if (response.data.success) {
+        showNotification(
+          `✅ ${response.data.excluidos} registro(s) duplicado(s) excluído(s)!\n` +
+          `📊 ${response.data.mantidos} registro(s) mantido(s) (mais recentes)\n` +
+          `🎯 ${response.data.documentos_processados} documento(s) único(s) encontrado(s)`,
+          'success'
+        );
+        await loadRegistros(true);
+        await loadEstatisticas();
+      }
+    } catch (error: any) {
+      console.error('Erro ao excluir duplicadas:', error);
+      showNotification(error.response?.data?.error || 'Erro ao excluir registros duplicados', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadRegistros();
     loadEstatisticas();
@@ -1209,6 +1239,13 @@ export default function BaseDados() {
           className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2"
         >
           <FaUpload /> Importar
+        </button>
+        
+        <button
+          onClick={handleExcluirDuplicadas}
+          className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2"
+        >
+          <FaTrash /> Excluir Duplicadas
         </button>
         
         {estadoSelecionados.size > 0 && (
