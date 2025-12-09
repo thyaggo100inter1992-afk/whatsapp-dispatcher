@@ -37,6 +37,7 @@ export default function HistoricoTemplates() {
   const [endDate, setEndDate] = useState('');
   const [filterAccount, setFilterAccount] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterCategory, setFilterCategory] = useState('all'); // Novo filtro de categoria
   const [searchTerm, setSearchTerm] = useState('');
   
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -77,7 +78,7 @@ export default function HistoricoTemplates() {
 
   useEffect(() => {
     applyFilters();
-  }, [templates, filterPeriod, startDate, endDate, filterAccount, filterStatus, searchTerm]);
+  }, [templates, filterPeriod, startDate, endDate, filterAccount, filterStatus, filterCategory, searchTerm]);
 
   const loadAccounts = async () => {
     try {
@@ -215,6 +216,14 @@ export default function HistoricoTemplates() {
         }
         
         return status === filter;
+      });
+    }
+
+    // Filtro por categoria (MARKETING ou UTILITY)
+    if (filterCategory !== 'all') {
+      filtered = filtered.filter(t => {
+        const category = t.category?.toUpperCase() || '';
+        return category === filterCategory.toUpperCase();
       });
     }
 
@@ -571,6 +580,20 @@ export default function HistoricoTemplates() {
                 <option value="queued">Na Fila</option>
               </select>
             </div>
+
+            {/* Filtro por categoria */}
+            <div>
+              <label className="text-white font-bold text-sm mb-2 block">📂 Categoria:</label>
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all"
+              >
+                <option value="all">Todas</option>
+                <option value="MARKETING">Marketing</option>
+                <option value="UTILITY">Utilitário</option>
+              </select>
+            </div>
           </div>
 
           {/* Datas personalizadas */}
@@ -612,6 +635,7 @@ export default function HistoricoTemplates() {
                 setFilterPeriod('30days');
                 setFilterAccount('all');
                 setFilterStatus('all');
+                setFilterCategory('all');
                 setStartDate('');
                 setEndDate('');
               }}
@@ -623,7 +647,7 @@ export default function HistoricoTemplates() {
         </div>
 
         {/* ESTATÍSTICAS */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
           <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 border-2 border-blue-500/40 rounded-xl p-6">
             <div className="text-blue-300 text-sm font-bold mb-2">TOTAL</div>
             <div className="text-white text-4xl font-black">{filteredTemplates.length}</div>
@@ -657,6 +681,22 @@ export default function HistoricoTemplates() {
                 t.status === 'rejected' || 
                 t.status === 'error' || 
                 t.status === 'failed'
+              ).length}
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 border-2 border-purple-500/40 rounded-xl p-6">
+            <div className="text-purple-300 text-sm font-bold mb-2">MARKETING</div>
+            <div className="text-white text-4xl font-black">
+              {filteredTemplates.filter(t => 
+                t.category?.toUpperCase() === 'MARKETING'
+              ).length}
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-cyan-500/20 to-cyan-600/20 border-2 border-cyan-500/40 rounded-xl p-6">
+            <div className="text-cyan-300 text-sm font-bold mb-2">UTILITÁRIO</div>
+            <div className="text-white text-4xl font-black">
+              {filteredTemplates.filter(t => 
+                t.category?.toUpperCase() === 'UTILITY'
               ).length}
             </div>
           </div>
