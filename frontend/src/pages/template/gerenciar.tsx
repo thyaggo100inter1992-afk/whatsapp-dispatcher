@@ -37,6 +37,7 @@ export default function GerenciarTemplates() {
   const [filteredTemplates, setFilteredTemplates] = useState<Template[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [excludeQuery, setExcludeQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'MARKETING' | 'UTILITY'>('all'); // Novo filtro
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   
@@ -92,8 +93,13 @@ export default function GerenciarTemplates() {
       });
     }
 
+    // Filtro por categoria
+    if (categoryFilter !== 'all') {
+      filtered = filtered.filter(t => t.category.toUpperCase() === categoryFilter);
+    }
+
     setFilteredTemplates(filtered);
-  }, [searchQuery, excludeQuery, templates]);
+  }, [searchQuery, excludeQuery, categoryFilter, templates]);
 
   const loadAccounts = async () => {
     try {
@@ -503,7 +509,7 @@ export default function GerenciarTemplates() {
 
           {/* FILTROS DE BUSCA */}
           <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-white/10 rounded-2xl p-8 shadow-xl space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-3 gap-6">
               <div>
                 <label className="block text-xl font-black mb-4 text-white flex items-center gap-2">
                   <span className="text-2xl">🔍</span>
@@ -543,9 +549,28 @@ export default function GerenciarTemplates() {
                   Digite palavras para EXCLUIR dos resultados (separe por vírgula)
                 </p>
               </div>
+
+              <div>
+                <label className="block text-xl font-black mb-4 text-white flex items-center gap-2">
+                  <span className="text-2xl">📂</span>
+                  Categoria
+                </label>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value as 'all' | 'MARKETING' | 'UTILITY')}
+                  className="w-full px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-purple-500 focus:ring-4 focus:ring-purple-500/30 transition-all"
+                >
+                  <option value="all">Todas</option>
+                  <option value="MARKETING">Marketing</option>
+                  <option value="UTILITY">Utilitário</option>
+                </select>
+                <p className="text-sm text-white/60 mt-2 font-medium">
+                  Filtrar por tipo de template
+                </p>
+              </div>
             </div>
 
-            {(searchQuery || excludeQuery) && (
+            {(searchQuery || excludeQuery || categoryFilter !== 'all') && (
               <div className="p-6 bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-2 border-blue-500/30 rounded-2xl">
                 <div className="text-blue-300 text-xl font-black mb-3">📋 Filtro Ativo:</div>
                 <div className="text-white/80 text-base space-y-2">
@@ -559,6 +584,12 @@ export default function GerenciarTemplates() {
                     <div className="flex items-center gap-2">
                       <span className="text-2xl">❌</span>
                       <strong>Excluindo:</strong> templates que contêm "{excludeQuery}"
+                    </div>
+                  )}
+                  {categoryFilter !== 'all' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">📂</span>
+                      <strong>Categoria:</strong> {categoryFilter === 'MARKETING' ? 'Marketing' : 'Utilitário'}
                     </div>
                   )}
                   <div className="mt-4 pt-4 border-t border-white/20 text-white/70 font-bold">
@@ -630,9 +661,9 @@ export default function GerenciarTemplates() {
             <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-white/10 rounded-2xl p-20 text-center shadow-xl">
               <div className="text-6xl mb-6">📭</div>
               <p className="text-2xl text-white/70 font-medium mb-4">
-                {searchQuery || excludeQuery ? 'Nenhum template encontrado' : 'Nenhum template disponível'}
+                {searchQuery || excludeQuery || categoryFilter !== 'all' ? 'Nenhum template encontrado' : 'Nenhum template disponível'}
               </p>
-              {!searchQuery && !excludeQuery && (
+              {!searchQuery && !excludeQuery && categoryFilter === 'all' && (
                 <button
                   onClick={() => router.push('/template/criar')}
                   className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white text-lg font-bold rounded-xl transition-all duration-200 shadow-lg shadow-primary-500/40 hover:shadow-primary-500/60 transform hover:scale-105"
