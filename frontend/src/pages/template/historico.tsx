@@ -316,29 +316,44 @@ export default function HistoricoTemplates() {
   };
 
   const handleDelete = async (template: TemplateHistory) => {
-    const confirmationMessage = `Tem certeza que deseja excluir o template "${template.template_name}" também lá na Meta?`;
+    // Se o template tem erro ou falhou, não precisa tentar excluir na Meta
+    const hasError = template.status === 'error' || template.status === 'failed' || template.operation_type === 'DELETE';
+    
+    let confirmationMessage = '';
+    if (hasError) {
+      confirmationMessage = `Tem certeza que deseja remover o template "${template.template_name}" do histórico?\n\n⚠️ Este template já falhou ou foi deletado, será removido apenas do histórico local.`;
+    } else {
+      confirmationMessage = `Tem certeza que deseja excluir o template "${template.template_name}" também lá na Meta?`;
+    }
+    
     if (!confirm(confirmationMessage)) return;
 
     try {
-      // Tentar excluir na Meta
-      try {
-        const response = await api.delete(`/templates/${template.account_id}/${template.template_name}`, {
-          data: { useQueue: true }
-        });
+      // Se não tem erro, tentar excluir na Meta primeiro
+      if (!hasError) {
+        try {
+          const response = await api.delete(`/templates/${template.account_id}/${template.template_name}`, {
+            data: { useQueue: true }
+          });
 
-        if (response.data?.queueId) {
-          toast.success('Template enviado para a fila de exclusão. Aguarde o processamento.');
-        } else {
-          toast.success('Template excluído com sucesso!');
+          if (response.data?.queueId) {
+            toast.success('Template enviado para a fila de exclusão. Aguarde o processamento.');
+          } else {
+            toast.success('Template excluído com sucesso!');
+          }
+        } catch (deleteError: any) {
+          console.error('Erro ao excluir template na Meta:', deleteError);
+          const backendError = deleteError.response?.data?.error || 'Erro ao excluir template na Meta (mas continuará removendo do histórico)';
+          toast.warning(backendError);
         }
-      } catch (deleteError: any) {
-        console.error('Erro ao excluir template na Meta:', deleteError);
-        const backendError = deleteError.response?.data?.error || 'Erro ao excluir template na Meta';
-        toast.error(backendError);
+      } else {
+        console.log('⚠️ Template com erro/falha, pulando exclusão na Meta e removendo apenas do histórico');
       }
 
       // Independentemente do resultado, remover do histórico
+      console.log(`🗑️ Removendo template ${template.id} do histórico...`);
       await api.delete(`/templates/history/${template.id}`);
+      console.log(`✅ Template ${template.id} removido do histórico com sucesso`);
 
       // Atualizar lista localmente
       setTemplates(prev =>
@@ -347,6 +362,8 @@ export default function HistoricoTemplates() {
       setFilteredTemplates(prev =>
         prev.filter(item => item.id !== template.id)
       );
+      
+      toast.success('Template removido do histórico com sucesso!');
     } catch (error: any) {
       console.error('Erro ao remover template do histórico:', error);
       toast.error(error.response?.data?.error || 'Erro ao remover registro do histórico');
