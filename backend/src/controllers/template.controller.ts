@@ -290,7 +290,7 @@ export class TemplateController {
             accountPhone: account.phone_number,
             templateName: templateData.name,
             templateData: queueTemplateData,
-            tenantId: (req as any).tenantId,
+            tenantId: (req as any).tenant?.id,
           });
 
           queueIds.push(queueId);
@@ -419,7 +419,7 @@ export class TemplateController {
                   JSON.stringify(templateData.components),
                   false, // has_media - será atualizado depois se necessário
                   null,  // media_type
-                  (req as any).tenantId
+                  (req as any).tenant?.id
                 ]
               );
               console.log('   ✅ Template salvo no banco de dados local');
@@ -521,7 +521,7 @@ export class TemplateController {
     try {
       const { accountId, templateName } = req.params;
       const { useQueue = true } = req.body;
-      const tenantId = (req as any).tenant?.id || (req as any).tenantId;
+      const tenantId = (req as any).tenant?.id;
 
       console.log(`\n🗑️ ===== DELETANDO TEMPLATE =====`);
       console.log('   Conta ID:', accountId);
@@ -668,7 +668,7 @@ export class TemplateController {
                 JSON.stringify(template.components),
                 hasMedia,
                 mediaType,
-                (req as any).tenantId
+                (req as any).tenant?.id
               ]
             );
 
@@ -701,7 +701,7 @@ export class TemplateController {
   async getHistory(req: Request, res: Response) {
     try {
       console.log('\n📋 ===== BUSCANDO HISTÓRICO DE TEMPLATES =====');
-      console.log('   Tenant ID:', (req as any).tenantId || 1);
+      console.log('   Tenant ID:', (req as any).tenant?.id);
       
       // Usar query direta ao invés de tenantQuery
       const { query } = await import('../database/connection');
@@ -735,7 +735,7 @@ export class TemplateController {
         WHERE rh.rn = 1
           AND COALESCE(rh.status, '') <> 'DELETED'
         ORDER BY rh.created_at DESC`,
-        [(req as any).tenantId || 1]
+        [(req as any).tenant?.id]
       );
 
       // Processar dados para adicionar informações de proxy
@@ -749,7 +749,7 @@ export class TemplateController {
           if (row.proxy_id) {
             const proxyResult = await query(
               `SELECT host, type FROM proxies WHERE id = $1 AND tenant_id = $2`,
-              [row.proxy_id, (req as any).tenantId || 1]
+              [row.proxy_id, (req as any).tenant?.id]
             );
             
             if (proxyResult.rows.length > 0) {
@@ -820,7 +820,7 @@ export class TemplateController {
           AND (tqh.tenant_id = $1 OR tqh.tenant_id IS NULL)
           AND wa.access_token IS NOT NULL
         LIMIT 50`,
-        [(req as any).tenantId || 1]
+        [(req as any).tenant?.id]
       );
 
       console.log(`📊 Encontrados ${pendingTemplates.rows.length} templates pendentes para atualizar`);
@@ -938,12 +938,13 @@ export class TemplateController {
   async deleteHistory(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const requestTenantId = (req as any).tenantId || (req as any).tenant?.id || 1;
-      const isMaster = (req as any).user?.is_master || false;
+      const requestTenantId = (req as any).tenant?.id;
+      const isMaster = (req as any).user?.role === 'super_admin' || false;
       
       console.log(`\n🗑️ ===== EXCLUINDO REGISTRO DO HISTÓRICO =====`);
       console.log(`   ID: ${id}`);
       console.log(`   Request Tenant ID: ${requestTenantId}`);
+      console.log(`   User Role: ${(req as any).user?.role}`);
       console.log(`   É Master/Admin: ${isMaster}`);
 
       const { query } = await import('../database/connection');
