@@ -567,6 +567,16 @@ class CampaignWorker {
   }
 
   private async processCampaign(campaign: Campaign) {
+    console.log(`\n🔍 ===== DEBUG PROCESSAMENTO DE CAMPANHA =====`);
+    console.log(`   📊 Campanha ID: ${campaign.id}`);
+    console.log(`   📛 Nome: ${campaign.name}`);
+    console.log(`   📈 Status: ${campaign.status}`);
+    console.log(`   📞 Total Contatos (total_contacts): ${campaign.total_contacts}`);
+    console.log(`   ✅ Enviados (sent_count): ${campaign.sent_count}`);
+    console.log(`   📊 Pendentes: ${campaign.total_contacts - campaign.sent_count}`);
+    console.log(`   🔢 Comparação: sent_count (${campaign.sent_count}) >= total_contacts (${campaign.total_contacts}) ? ${campaign.sent_count >= campaign.total_contacts ? 'SIM - SERÁ MARCADA COMO CONCLUÍDA!' : 'NÃO - CONTINUARÁ PROCESSANDO'}`);
+    console.log(`==============================================\n`);
+    
     // Buscar templates da campanha (APENAS ATIVOS e com CONTA ATIVA)
     const templatesResult = await query(
       `SELECT 

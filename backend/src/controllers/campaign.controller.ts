@@ -67,17 +67,22 @@ export class CampaignController {
       console.log('✅ Campanha criada com ID:', campaign.id);
 
       // Criar/atualizar contatos em massa com tenant_id
+      console.log(`\n📞 ===== CRIANDO CONTATOS =====`);
+      console.log(`   📊 Total de contatos recebidos: ${contacts.length}`);
       const createdContacts = await ContactModel.createBulk(contacts, tenantId);
-      console.log(`✅ ${createdContacts.length} contatos criados/atualizados`);
+      console.log(`   ✅ Contatos criados/atualizados: ${createdContacts.length}`);
 
       // Associar contatos à campanha
+      let associatedCount = 0;
       for (const contact of createdContacts) {
-        await tenantQuery(req, 
-          'INSERT INTO campaign_contacts (campaign_id, contact_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+        const result = await tenantQuery(req, 
+          'INSERT INTO campaign_contacts (campaign_id, contact_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id',
           [campaign.id, contact.id]
         );
+        if (result.rows.length > 0) associatedCount++;
       }
-      console.log('✅ Contatos associados à campanha');
+      console.log(`   ✅ Contatos associados à campanha: ${associatedCount}`);
+      console.log(`===============================\n`);
 
       // Criar registros de templates da campanha
       const campaignTemplates = [];
