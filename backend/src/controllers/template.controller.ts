@@ -938,22 +938,49 @@ export class TemplateController {
   async deleteHistory(req: Request, res: Response) {
     try {
       const { id } = req.params;
+      const tenantId = (req as any).tenantId || 1;
       
       console.log(`\n🗑️ ===== EXCLUINDO REGISTRO DO HISTÓRICO =====`);
       console.log(`   ID: ${id}`);
+      console.log(`   Tenant ID: ${tenantId}`);
+      console.log(`   ID Type: ${typeof id}`);
+      console.log(`   ID Parsed: ${parseInt(id)}`);
 
       const { query } = await import('../database/connection');
+      
+      // Primeiro, verificar se o registro existe
+      const checkResult = await query(
+        `SELECT id, tenant_id, template_name, status FROM template_queue_history WHERE id = $1`,
+        [parseInt(id)]
+      );
+
+      console.log(`   📊 Registro encontrado no banco:`, checkResult.rows.length > 0 ? checkResult.rows[0] : 'NENHUM');
+
+      if (checkResult.rows.length === 0) {
+        console.log(`   ❌ Registro ${id} não existe no banco de dados`);
+        return res.status(404).json({
+          success: false,
+          error: `Registro ${id} não encontrado no banco de dados`,
+        });
+      }
+
+      const registro = checkResult.rows[0];
+      console.log(`   📋 Registro: ID=${registro.id}, Tenant=${registro.tenant_id}, Template=${registro.template_name}, Status=${registro.status}`);
+
+      // Tentar deletar
       const result = await query(
         `DELETE FROM template_queue_history 
          WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL)
          RETURNING *`,
-        [parseInt(id), (req as any).tenantId || 1]
+        [parseInt(id), tenantId]
       );
 
       if (result.rows.length === 0) {
+        console.log(`   ⚠️ Registro existe mas não pode ser deletado (tenant_id não corresponde)`);
+        console.log(`   ⚠️ Registro Tenant ID: ${registro.tenant_id}, Request Tenant ID: ${tenantId}`);
         return res.status(404).json({
           success: false,
-          error: 'Registro não encontrado',
+          error: `Registro não encontrado ou não pertence ao seu tenant (ID=${id}, Tenant Registro=${registro.tenant_id}, Tenant Request=${tenantId})`,
         });
       }
 

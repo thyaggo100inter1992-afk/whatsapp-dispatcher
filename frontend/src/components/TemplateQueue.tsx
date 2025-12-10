@@ -293,6 +293,8 @@ export const TemplateQueue: React.FC<TemplateQueueProps> = ({ onClose, toast: ex
     if (!confirmed) return;
 
     setRetrying(true);
+    console.log(`🗑️ Iniciando limpeza de ${failures.length} templates com erro...`);
+    
     try {
       // Deletar cada template do histórico
       let successCount = 0;
@@ -300,13 +302,18 @@ export const TemplateQueue: React.FC<TemplateQueueProps> = ({ onClose, toast: ex
 
       for (const failure of failures) {
         try {
-          await api.delete(`/templates/history/${failure.id}`);
+          console.log(`🗑️ Deletando template ${failure.template_name} (ID: ${failure.id})...`);
+          const response = await api.delete(`/templates/history/${failure.id}`);
+          console.log(`✅ Template ${failure.template_name} deletado com sucesso:`, response.data);
           successCount++;
         } catch (error: any) {
-          console.error(`Erro ao remover template ${failure.template_name} do histórico:`, error);
+          console.error(`❌ Erro ao remover template ${failure.template_name} (ID: ${failure.id}) do histórico:`, error);
+          console.error('   Detalhes do erro:', error.response?.data);
           errorCount++;
         }
       }
+
+      console.log(`📊 Resultado: ${successCount} sucesso, ${errorCount} erros`);
 
       if (successCount > 0) {
         if (externalToast) {
@@ -321,6 +328,7 @@ export const TemplateQueue: React.FC<TemplateQueueProps> = ({ onClose, toast: ex
         }
       }
     } catch (error: any) {
+      console.error('❌ Erro geral ao limpar histórico:', error);
       if (externalToast) {
         externalToast.error('Erro: ' + error.message);
       }
