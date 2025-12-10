@@ -18,6 +18,26 @@ const controller = new CampaignController();
  * Rotas de Campanhas
  */
 
+// DEBUG: Check campaign data (SEM AUTENTICAÇÃO para debug)
+router.get('/debug/:id', async (req, res) => {
+  try {
+    const { query } = require('../database/connection');
+    const campaignId = req.params.id;
+    
+    const campaign = await query('SELECT * FROM campaigns WHERE id = $1', [campaignId]);
+    const contacts = await query('SELECT COUNT(*) as total FROM campaign_contacts WHERE campaign_id = $1', [campaignId]);
+    const templates = await query('SELECT COUNT(*) as total FROM campaign_templates WHERE campaign_id = $1', [campaignId]);
+    
+    res.json({
+      campaign: campaign.rows[0] || null,
+      contactsAssociated: parseInt(contacts.rows[0]?.total || 0),
+      templatesAssociated: parseInt(templates.rows[0]?.total || 0)
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Baixar template de contatos (Excel) - Público
 router.get('/template/contacts', (req, res) => controller.downloadContactsTemplate(req, res));
 
