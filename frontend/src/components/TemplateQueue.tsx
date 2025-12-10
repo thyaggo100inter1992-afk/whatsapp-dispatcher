@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaClock, FaCheckCircle, FaTimesCircle, FaSpinner, FaCog, FaList, FaRedo, FaEdit, FaExclamationTriangle } from 'react-icons/fa';
+import { FaClock, FaCheckCircle, FaTimesCircle, FaSpinner, FaCog, FaList, FaRedo, FaEdit, FaExclamationTriangle, FaTrash } from 'react-icons/fa';
 import { useConfirm } from '@/hooks/useConfirm';
 import api from '@/services/api';
 
@@ -281,6 +281,54 @@ export const TemplateQueue: React.FC<TemplateQueueProps> = ({ onClose, toast: ex
     }
   };
 
+  const clearAllFailures = async () => {
+    const confirmed = await confirm({
+      title: '🗑️ Limpar Templates com Erro',
+      message: `Tem certeza que deseja REMOVER PERMANENTEMENTE os ${failures.length} templates que falharam do histórico?\n\n⚠️ ATENÇÃO: Esta ação não pode ser desfeita!\n\n💡 Se esses templates falharam, provavelmente eles NÃO foram criados no WhatsApp, então é seguro removê-los do histórico.`,
+      type: 'danger',
+      confirmText: `Sim, Limpar ${failures.length}`,
+      cancelText: 'Cancelar'
+    });
+    
+    if (!confirmed) return;
+
+    setRetrying(true);
+    try {
+      // Deletar cada template do histórico
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const failure of failures) {
+        try {
+          await api.delete(`/templates/history/${failure.id}`);
+          successCount++;
+        } catch (error: any) {
+          console.error(`Erro ao remover template ${failure.template_name} do histórico:`, error);
+          errorCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        if (externalToast) {
+          externalToast.success(`✅ ${successCount} template(s) com erro removido(s) do histórico!`);
+        }
+        fetchFailures(); // Atualizar a lista
+      }
+      
+      if (errorCount > 0) {
+        if (externalToast) {
+          externalToast.error(`❌ Erro ao remover ${errorCount} template(s)`);
+        }
+      }
+    } catch (error: any) {
+      if (externalToast) {
+        externalToast.error('Erro: ' + error.message);
+      }
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   if (!queueStatus) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -459,14 +507,24 @@ export const TemplateQueue: React.FC<TemplateQueueProps> = ({ onClose, toast: ex
                 {showFailures ? 'Ocultar' : 'Mostrar'}
               </button>
               {failures.length > 0 && (
-                <button
-                  onClick={retryAllFailures}
-                  disabled={retrying}
-                  className="btn btn-primary text-sm"
-                >
-                  <FaRedo className="mr-1" />
-                  Re-tentar Todos
-                </button>
+                <>
+                  <button
+                    onClick={retryAllFailures}
+                    disabled={retrying}
+                    className="btn btn-primary text-sm"
+                  >
+                    <FaRedo className="mr-1" />
+                    Re-tentar Todos
+                  </button>
+                  <button
+                    onClick={clearAllFailures}
+                    disabled={retrying}
+                    className="btn bg-red-600 hover:bg-red-700 text-white border-red-500 text-sm"
+                  >
+                    <FaTrash className="mr-1" />
+                    Limpar Histórico
+                  </button>
+                </>
               )}
             </div>
           </div>
