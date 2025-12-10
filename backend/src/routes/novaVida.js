@@ -1179,11 +1179,18 @@ router.post('/verificar-lista', async (req, res) => {
       return res.status(400).json({ error: 'Lista de CPFs é obrigatória' });
     }
 
+    // 🔒 OBTER TENANT_ID
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      return res.status(401).json({ error: 'Tenant não identificado' });
+    }
+
     console.log('\n');
     console.log('═══════════════════════════════════════════════════════');
     console.log('🔍 BACKEND - VERIFICAR LISTA DE CPFs');
     console.log('═══════════════════════════════════════════════════════');
     console.log(`📥 Total de CPFs recebidos: ${cpfs.length}`);
+    console.log(`🏢 Tenant ID: ${tenantId}`);
 
     // Formatar E NORMALIZAR CPFs (remover caracteres especiais + adicionar zeros)
     const cpfsFormatados = cpfs.map((cpf, index) => {
@@ -1204,8 +1211,8 @@ router.post('/verificar-lista', async (req, res) => {
 
     console.log('\n🔎 Buscando na base de dados...');
 
-    // Buscar na base de dados
-    const placeholders = cpfsUnicos.map((_, i) => `$${i + 1}`).join(',');
+    // Buscar na base de dados (FILTRANDO POR TENANT_ID)
+    const placeholders = cpfsUnicos.map((_, i) => `$${i + 2}`).join(',');
     
     const result = await pool.query(
       `SELECT DISTINCT ON (documento)
@@ -1225,9 +1232,9 @@ router.post('/verificar-lista', async (req, res) => {
         observacoes,
         tags
       FROM base_dados_completa
-      WHERE documento IN (${placeholders})
+      WHERE tenant_id = $1 AND documento IN (${placeholders})
       ORDER BY documento, data_adicao DESC`,
-      cpfsUnicos
+      [tenantId, ...cpfsUnicos]
     );
 
     const encontrados = result.rows;
