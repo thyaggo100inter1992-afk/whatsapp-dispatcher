@@ -41,3 +41,4 @@ PGPASSWORD='Tg130992*' psql -h localhost -U whatsapp_user -d whatsapp_dispatcher
 
 
 
+

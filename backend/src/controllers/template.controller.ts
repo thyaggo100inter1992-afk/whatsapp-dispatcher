@@ -730,12 +730,11 @@ export class TemplateController {
            wa.name AS account_name,
            wa.phone_number,
            wa.proxy_id
-         FROM ranked_history rh
-         LEFT JOIN whatsapp_accounts wa ON rh.whatsapp_account_id = wa.id
-         WHERE rh.rn = 1
-           AND COALESCE(rh.status, '') <> 'DELETED'
-         ORDER BY rh.created_at DESC
-         LIMIT 500`,
+        FROM ranked_history rh
+        LEFT JOIN whatsapp_accounts wa ON rh.whatsapp_account_id = wa.id
+        WHERE rh.rn = 1
+          AND COALESCE(rh.status, '') <> 'DELETED'
+        ORDER BY rh.created_at DESC`,
         [(req as any).tenantId || 1]
       );
 

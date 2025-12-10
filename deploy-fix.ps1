@@ -30,3 +30,4 @@ $plinkPath = "$env:USERPROFILE\plink.exe"
 Write-Host "`n=== DEPLOY CONCLUIDO ===" -ForegroundColor Green
 
 
+

@@ -475,8 +475,8 @@ export default function CriarCampanha() {
     
     // SÓ remover caracteres não numéricos se for NÚMERO DE TELEFONE
     if (isPhoneNumber) {
-      let cleaned = value.replace(/[^\d+]/g, '');
-      return cleaned;
+    let cleaned = value.replace(/[^\d+]/g, '');
+    return cleaned;
     }
     
     // Para variáveis de texto, retornar como está (sem modificar!)
@@ -2370,9 +2370,9 @@ export default function CriarCampanha() {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm text-white/70 mb-1">Mínimo</label>
-                        <input
-                          type="number"
-                          className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
+                    <input
+                      type="number"
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
                           min="5"
                           value={intervalSecondsMin}
                           onChange={(e) => {
@@ -2392,7 +2392,7 @@ export default function CriarCampanha() {
                           min={intervalSecondsMin}
                           value={intervalSecondsMax}
                           onChange={(e) => setIntervalSecondsMax(e.target.value)}
-                        />
+                    />
                       </div>
                     </div>
                     <p className="text-sm text-white/60 mt-2">
