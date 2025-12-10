@@ -133,8 +133,12 @@ export default function CriarCampanhaQR() {
 
   const loadTemplates = async () => {
     try {
+      console.log('\n📋 ===== CARREGANDO TEMPLATES QR =====');
       const response = await api.get('/qr-templates');
+      console.log(`✅ API retornou ${response.data.data?.length || 0} templates`);
+      console.log('📋 Templates recebidos:', response.data.data?.map((t: any) => ({ id: t.id, name: t.name, type: t.type })));
       setTemplates(response.data.data);
+      console.log('=====================================\n');
       
       // 🔤 Detectar variáveis dos templates selecionados
       updateTemplateVariables();
@@ -268,7 +272,16 @@ export default function CriarCampanhaQR() {
 
   // Filtrar templates
   const getFilteredTemplates = () => {
-    return templates.filter(template => {
+    console.log('\n🔍 ===== FILTRANDO TEMPLATES =====');
+    console.log(`   Templates totais: ${templates.length}`);
+    console.log(`   Filtros ativos:`);
+    console.log(`     - searchTemplate: "${searchTemplate}"`);
+    console.log(`     - excludeTemplate: "${excludeTemplate}"`);
+    console.log(`     - onlyWithMedia: ${onlyWithMedia}`);
+    console.log(`     - categoryFilter: "${categoryFilter}"`);
+    console.log(`     - variablesFilter: "${variablesFilter}"`);
+    
+    const filtered = templates.filter(template => {
       // Filtro de busca
       if (searchTemplate && !template.name.toLowerCase().includes(searchTemplate.toLowerCase())) {
         return false;
@@ -305,6 +318,12 @@ export default function CriarCampanhaQR() {
 
       return true;
     });
+    
+    console.log(`   ✅ Templates após filtros: ${filtered.length}`);
+    console.log(`   Templates exibidos:`, filtered.map(t => ({ id: t.id, name: t.name })));
+    console.log('==================================\n');
+    
+    return filtered;
   };
 
   // 🔤 Mapear automaticamente colunas CSV → variáveis (ignorando case)
