@@ -266,48 +266,91 @@ export default function HistoricoTemplates() {
       return;
     }
 
-    const confirmationMessage = `Tem certeza que deseja excluir ${selectedTemplates.size} template(s) selecionado(s)?\n\nEsta ação irá excluí-los também na Meta.`;
+    const selectedArray = Array.from(selectedTemplates);
+    const templatesToDelete = templates.filter(t => selectedArray.includes(t.id));
+    
+    // Verificar quantos têm erro
+    const templatesWithError = templatesToDelete.filter(t => 
+      t.status === 'error' || t.status === 'failed' || t.type === 'DELETE'
+    );
+    const templatesOk = templatesToDelete.filter(t => 
+      !(t.status === 'error' || t.status === 'failed' || t.type === 'DELETE')
+    );
+
+    let confirmationMessage = '';
+    if (templatesWithError.length === templatesToDelete.length) {
+      // Todos têm erro
+      confirmationMessage = `Tem certeza que deseja remover ${selectedTemplates.size} template(s) com erro do histórico?\n\n⚠️ Estes templates já falharam ou foram deletados, serão removidos apenas do histórico local.`;
+    } else if (templatesWithError.length > 0) {
+      // Alguns têm erro
+      confirmationMessage = `Tem certeza que deseja processar ${selectedTemplates.size} template(s)?\n\n${templatesOk.length} serão excluídos na Meta\n${templatesWithError.length} serão removidos apenas do histórico (já falharam)`;
+    } else {
+      // Nenhum tem erro
+      confirmationMessage = `Tem certeza que deseja excluir ${selectedTemplates.size} template(s) selecionado(s)?\n\nEsta ação irá excluí-los também na Meta.`;
+    }
+    
     if (!confirm(confirmationMessage)) return;
 
     try {
-      const selectedArray = Array.from(selectedTemplates);
-      const templatesToDelete = templates.filter(t => selectedArray.includes(t.id));
-
       let successCount = 0;
       let errorCount = 0;
+      let removedFromHistory = 0;
 
-      // Excluir cada template
+      // Processar cada template
       for (const template of templatesToDelete) {
-        try {
-          const response = await api.delete(`/templates/${template.account_id}/${template.template_name}`, {
-            data: { useQueue: true }
-          });
-
-          if (response.data?.queueId || response.data?.success) {
-            successCount++;
+        const hasError = template.status === 'error' || template.status === 'failed' || template.type === 'DELETE';
+        
+        // Se não tem erro, tentar excluir na Meta primeiro
+        if (!hasError) {
+          try {
+            await api.delete(`/templates/${template.account_id}/${template.template_name}`, {
+              data: { useQueue: true }
+            });
+            console.log(`✅ Template ${template.template_name} enviado para exclusão na Meta`);
+          } catch (error: any) {
+            console.error(`⚠️ Erro ao excluir template ${template.template_name} na Meta:`, error);
+            errorCount++;
           }
+        } else {
+          console.log(`⚠️ Template ${template.template_name} com erro, pulando exclusão na Meta`);
+        }
+
+        // Independentemente do resultado, remover do histórico
+        try {
+          await api.delete(`/templates/history/${template.id}`);
+          console.log(`✅ Template ${template.template_name} removido do histórico`);
+          removedFromHistory++;
+          successCount++;
         } catch (error: any) {
-          console.error(`Erro ao excluir template ${template.template_name}:`, error);
+          console.error(`❌ Erro ao remover template ${template.template_name} do histórico:`, error);
           errorCount++;
         }
       }
 
       // Mostrar resultado
       if (successCount > 0) {
-        toast.success(`${successCount} template(s) enviado(s) para exclusão!`);
+        toast.success(`✅ ${successCount} template(s) removido(s) com sucesso!`);
       }
       if (errorCount > 0) {
-        toast.error(`Erro ao excluir ${errorCount} template(s)`);
+        toast.error(`❌ Erro ao processar ${errorCount} template(s)`);
       }
 
-      // Limpar seleção e recarregar
+      // Atualizar lista localmente (remover os deletados)
+      const deletedIds = templatesToDelete
+        .filter(t => removedFromHistory > 0) // Se conseguiu remover pelo menos 1
+        .map(t => t.id);
+      
+      setTemplates(prev => prev.filter(item => !deletedIds.includes(item.id)));
+      setFilteredTemplates(prev => prev.filter(item => !deletedIds.includes(item.id)));
+
+      // Limpar seleção
       setSelectedTemplates(new Set());
       setSelectAll(false);
       
-      // Aguardar 2 segundos e recarregar
+      // Recarregar lista completa após 1 segundo
       setTimeout(() => {
         loadTemplates();
-      }, 2000);
+      }, 1000);
 
     } catch (error: any) {
       console.error('Erro ao excluir templates:', error);
