@@ -71,6 +71,9 @@ export class ContactModel {
       );
     });
 
+    console.log(`\n🔍 [ContactModel] INSERTING ${uniqueContacts.length} contacts with tenant_id: ${tenantId}`);
+    console.log(`🔍 [ContactModel] First 3 phone numbers: ${uniqueContacts.slice(0, 3).map(c => c.phone_number).join(', ')}`);
+    
     const result = await queryWithTenantId(
       tenantId,
       `INSERT INTO contacts (phone_number, name, variables, tenant_id)
@@ -82,6 +85,17 @@ export class ContactModel {
        RETURNING *`,
       values
     );
+    
+    console.log(`✅ [ContactModel] INSERT completed. Rows returned: ${result.rows.length}`);
+    if (result.rows.length > 0) {
+      console.log(`✅ [ContactModel] Sample returned contacts:`);
+      result.rows.slice(0, 3).forEach((c, i) => {
+        console.log(`   [${i+1}] ID: ${c.id}, Phone: ${c.phone_number}, Tenant: ${c.tenant_id}`);
+      });
+    } else {
+      console.log(`⚠️  [ContactModel] NO ROWS RETURNED FROM INSERT! This might cause the campaign to have 0 messages!`);
+    }
+    
     return result.rows;
   }
 
