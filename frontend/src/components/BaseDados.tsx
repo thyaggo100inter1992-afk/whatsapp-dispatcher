@@ -38,6 +38,33 @@ interface Filtros {
   data_fim: string;
 }
 
+/**
+ * 🔧 NORMALIZA CPF/CNPJ ADICIONANDO ZEROS À ESQUERDA
+ * CPF: 11 dígitos
+ * CNPJ: 14 dígitos
+ */
+function normalizarDocumento(documento: string): string {
+  if (!documento) return documento;
+  
+  // Remove tudo que não é número
+  const apenasNumeros = String(documento).replace(/\D/g, '');
+  
+  if (apenasNumeros.length === 0) return apenasNumeros;
+  
+  // Se tem até 11 dígitos, considera CPF → completa com zeros até 11
+  if (apenasNumeros.length <= 11) {
+    return apenasNumeros.padStart(11, '0');
+  }
+  
+  // Se tem 12-14 dígitos, considera CNPJ → completa com zeros até 14
+  if (apenasNumeros.length <= 14) {
+    return apenasNumeros.padStart(14, '0');
+  }
+  
+  // Se tem mais de 14, retorna como está
+  return apenasNumeros;
+}
+
 export default function BaseDados() {
   const [registros, setRegistros] = useState<Registro[]>([]);
   const [loading, setLoading] = useState(false);
@@ -239,10 +266,13 @@ export default function BaseDados() {
         if (apenasNumeros.length === 11) {
           // 11 dígitos: Pode ser CPF OU Telefone - BUSCA NOS DOIS!
           try {
-            console.log('📄 Buscando por CPF:', apenasNumeros);
+            // 🔧 NORMALIZAR CPF para busca (adicionar zeros)
+            const cpfNormalizado = normalizarDocumento(apenasNumeros);
+            console.log('📄 Buscando por CPF:', apenasNumeros, '→ Normalizado:', cpfNormalizado);
+            
             // Busca por CPF
             const respCpf = await api.get('/base-dados/buscar', {
-              params: { cpf_cnpj: apenasNumeros }
+              params: { cpf_cnpj: cpfNormalizado }
             });
             resultados = respCpf.data.registros || [];
             console.log('📄 Resultados CPF:', resultados.length);
@@ -260,18 +290,36 @@ export default function BaseDados() {
             console.error('Erro na busca dupla:', error);
           }
         } else if (apenasNumeros.length <= 10) {
-          // Até 10 dígitos: Telefone (parcial ou completo sem DDD)
-          console.log('📱 Buscando telefone parcial:', apenasNumeros);
-          const response = await api.get('/base-dados/buscar', {
-            params: { telefone: apenasNumeros }
-          });
-          resultados = response.data.registros || [];
-          console.log('📱 Resultados:', resultados.length);
+          // Até 10 dígitos: Pode ser CPF incompleto ou Telefone
+          // Tentar CPF normalizado primeiro
+          const cpfNormalizado = normalizarDocumento(apenasNumeros);
+          console.log('📄 Tentando buscar como CPF:', apenasNumeros, '→ Normalizado:', cpfNormalizado);
+          
+          try {
+            const respCpf = await api.get('/base-dados/buscar', {
+              params: { cpf_cnpj: cpfNormalizado }
+            });
+            resultados = respCpf.data.registros || [];
+            console.log('📄 Resultados CPF:', resultados.length);
+          } catch (error) {
+            console.log('Não é CPF, tentando telefone...');
+          }
+          
+          // Se não encontrou como CPF, busca como telefone
+          if (resultados.length === 0) {
+            console.log('📱 Buscando como telefone:', apenasNumeros);
+            const response = await api.get('/base-dados/buscar', {
+              params: { telefone: apenasNumeros }
+            });
+            resultados = response.data.registros || [];
+            console.log('📱 Resultados:', resultados.length);
+          }
         } else {
           // 12+ dígitos: CPF/CNPJ
-          console.log('📄 Buscando CPF/CNPJ:', apenasNumeros);
+          const documentoNormalizado = normalizarDocumento(apenasNumeros);
+          console.log('📄 Buscando CPF/CNPJ:', apenasNumeros, '→ Normalizado:', documentoNormalizado);
           const response = await api.get('/base-dados/buscar', {
-            params: { cpf_cnpj: apenasNumeros }
+            params: { cpf_cnpj: documentoNormalizado }
           });
           resultados = response.data.registros || [];
           console.log('📄 Resultados:', resultados.length);

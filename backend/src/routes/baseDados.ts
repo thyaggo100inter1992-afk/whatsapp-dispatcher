@@ -196,11 +196,13 @@ router.get('/buscar', async (req: Request, res: Response) => {
     let params: any[] = [tenantId];
     let paramIndex = 2; // Começa em 2 pois $1 é o tenant_id
 
-    // Filtro por documento (remove caracteres especiais)
+    // Filtro por documento (remove caracteres especiais E NORMALIZA)
     if (cpf_cnpj) {
       const documentoNumeros = String(cpf_cnpj).replace(/\D/g, '');
+      const documentoNormalizado = normalizarDocumento(documentoNumeros);
+      console.log(`🔍 [Busca] CPF/CNPJ: ${documentoNumeros} → Normalizado: ${documentoNormalizado}`);
       whereConditions.push(`documento LIKE $${paramIndex}`);
-      params.push(`%${documentoNumeros}%`);
+      params.push(`%${documentoNormalizado}%`);
       paramIndex++;
     }
 
@@ -1129,8 +1131,10 @@ router.get('/ids', async (req: Request, res: Response) => {
     // Aplicar TODOS os mesmos filtros da rota /buscar
     if (cpf_cnpj) {
       const documentoNumeros = String(cpf_cnpj).replace(/\D/g, '');
+      const documentoNormalizado = normalizarDocumento(documentoNumeros);
+      console.log(`🔍 [IDs] CPF/CNPJ: ${documentoNumeros} → Normalizado: ${documentoNormalizado}`);
       whereConditions.push(`documento LIKE $${paramIndex}`);
-      params.push(`%${documentoNumeros}%`);
+      params.push(`%${documentoNormalizado}%`);
       paramIndex++;
     }
 
