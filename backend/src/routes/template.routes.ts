@@ -34,6 +34,7 @@ router.post('/sync-all', (req, res) => controller.syncAllAccounts(req, res));
 // Histórico de templates (DEVE VIR ANTES de /:accountId para não capturar "history" como ID)
 router.get('/history', (req, res) => controller.getHistory(req, res));
 router.post('/history/update-statuses', (req, res) => controller.updateTemplateStatuses(req, res));
+router.delete('/history/clear-failed', (req, res) => controller.clearFailedHistory(req, res));
 router.delete('/history/:id', (req, res) => controller.deleteHistory(req, res));
 
 // Listar templates de uma conta

@@ -565,6 +565,33 @@ export default function HistoricoTemplates() {
                 <FaSync className={loading || refreshing ? 'animate-spin' : ''} />
                 Atualizar Agora
               </button>
+
+              <button
+                onClick={async () => {
+                  if (!confirm('⚠️ ATENÇÃO: Isso irá remover TODOS os templates com erro/failed do histórico.\n\nEstes templates nunca foram criados no WhatsApp, então é seguro removê-los.\n\nDeseja continuar?')) {
+                    return;
+                  }
+                  
+                  try {
+                    setLoading(true);
+                    const response = await api.delete('/templates/history/clear-failed');
+                    if (response.data?.success) {
+                      toast.success(`✅ ${response.data.deleted} template(s) com erro removido(s)!`);
+                      await loadTemplatesLight(); // Recarregar lista
+                    }
+                  } catch (error: any) {
+                    console.error('Erro ao limpar templates com erro:', error);
+                    toast.error('Erro ao limpar templates com erro');
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                disabled={loading || refreshing}
+                className="px-6 py-4 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-lg font-bold rounded-xl transition-all duration-200 shadow-lg shadow-red-500/40 flex items-center gap-3 disabled:opacity-50"
+              >
+                <FaTrash />
+                Limpar Todos com Erro
+              </button>
             </div>
           </div>
         </div>

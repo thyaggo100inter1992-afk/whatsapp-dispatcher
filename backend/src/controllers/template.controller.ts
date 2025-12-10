@@ -933,6 +933,56 @@ export class TemplateController {
   }
 
   /**
+   * Limpar TODOS os templates com erro/failed do histórico
+   */
+  async clearFailedHistory(req: Request, res: Response) {
+    try {
+      const requestTenantId = (req as any).tenant?.id;
+      
+      console.log(`\n🗑️ ===== LIMPANDO TODOS OS TEMPLATES COM ERRO =====`);
+      console.log(`   Tenant ID: ${requestTenantId}`);
+
+      const { query } = await import('../database/connection');
+      
+      // Deletar TODOS os templates com status failed ou error
+      const result = await query(
+        `DELETE FROM template_queue_history 
+         WHERE tenant_id = $1 
+         AND (status = 'failed' OR status = 'error')
+         RETURNING id, template_name, status`,
+        [requestTenantId]
+      );
+
+      const deletedCount = result.rows.length;
+      console.log(`   ✅ ${deletedCount} templates com erro deletados`);
+
+      if (deletedCount > 0) {
+        console.log('   📋 Templates deletados:');
+        result.rows.forEach((row, index) => {
+          if (index < 5) { // Mostrar apenas os primeiros 5 no log
+            console.log(`      ${index + 1}. ${row.template_name} (${row.status})`);
+          }
+        });
+        if (deletedCount > 5) {
+          console.log(`      ... e mais ${deletedCount - 5} templates`);
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `${deletedCount} template(s) com erro removido(s) do histórico`,
+        deleted: deletedCount,
+      });
+    } catch (error: any) {
+      console.error('❌ Erro ao limpar templates com erro:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+
+  /**
    * Excluir registro do histórico
    */
   async deleteHistory(req: Request, res: Response) {
