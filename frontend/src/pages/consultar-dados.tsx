@@ -76,6 +76,11 @@ export default function ConsultarDados() {
     found: any[];
     notFound: string[];
   } | null>(null);
+  const [verificationStats, setVerificationStats] = useState<{
+    totalRecebido: number;
+    duplicatasRemovidas: number;
+    totalUnico: number;
+  } | null>(null);
   const [verifyingCpfs, setVerifyingCpfs] = useState(false);
   const [hygienizing, setHygienizing] = useState(false);
   const [reverifyingWhatsapp, setReverifyingWhatsapp] = useState(false);
@@ -871,6 +876,7 @@ export default function ConsultarDados() {
     
     // Limpar resultados anteriores
     setVerificationResults(null);
+    setVerificationStats(null);
     setAllHygienizedData([]);
     
     try {
@@ -954,6 +960,7 @@ export default function ConsultarDados() {
     
     // Limpar dados de higienização anterior
     setAllHygienizedData([]);
+    setVerificationStats(null);
     
     try {
       // PASSO 1: Verificar Lista de Restrição
@@ -988,27 +995,40 @@ export default function ConsultarDados() {
       console.log('🌐 Enviando CPFs permitidos para verificação:', { cpfs: cpfsPermitidos });
       const response = await api.post('/novavida/verificar-lista', { cpfs: cpfsPermitidos });
       
+      const stats = response.data.estatisticas || {};
+      
       setVerificationResults({
         found: response.data.encontrados || [],
         notFound: response.data.naoEncontrados || []
       });
       
-      const stats = response.data.estatisticas || {};
-      const duplicatasMsg = stats.duplicatasRemovidas > 0 
-        ? ` (${stats.duplicatasRemovidas} duplicata(s) removida(s))` 
-        : '';
+      setVerificationStats({
+        totalRecebido: stats.totalRecebido || cpfs.length,
+        duplicatasRemovidas: stats.duplicatasRemovidas || 0,
+        totalUnico: stats.totalUnico || cpfs.length
+      });
       
-      const restricaoMsg = cpfsBloqueados.length > 0 
-        ? ` (${cpfsBloqueados.length} bloqueado(s) pela Lista de Restrição)` 
-        : '';
+      let mensagem = `✅ Verificação concluída!\n\n`;
+      mensagem += `📊 CPFs no arquivo: ${stats.totalRecebido || cpfs.length}\n`;
       
-      const mensagem = `✅ Verificação concluída!
-        
-📊 Base enviada: ${stats.totalRecebido || cpfs.length} CPF(s)${duplicatasMsg}${restricaoMsg}
-📋 CPFs únicos analisados: ${stats.totalUnico || cpfs.length}
-
-✅ ${response.data.encontrados?.length || 0} cadastrado(s)
-❌ ${response.data.naoEncontrados?.length || 0} não cadastrado(s)`;
+      if (stats.duplicatasRemovidas > 0) {
+        mensagem += `⚠️ ATENÇÃO: ${stats.duplicatasRemovidas} CPF(s) DUPLICADO(S) NO ARQUIVO foram removidos!\n`;
+        mensagem += `(Você colou/enviou o mesmo CPF várias vezes)\n\n`;
+      }
+      
+      if (cpfsBloqueados.length > 0) {
+        mensagem += `🚫 ${cpfsBloqueados.length} CPF(s) bloqueado(s) pela Lista de Restrição\n\n`;
+      }
+      
+      mensagem += `📋 CPFs únicos analisados: ${stats.totalUnico || cpfs.length}\n\n`;
+      mensagem += `✅ ${response.data.encontrados?.length || 0} cadastrado(s) no banco\n`;
+      mensagem += `❌ ${response.data.naoEncontrados?.length || 0} não cadastrado(s)\n\n`;
+      
+      if (stats.duplicatasRemovidas > 0) {
+        mensagem += `💡 DICA: Se você clicou em "Excluir Duplicadas" na aba Base de Dados,\n`;
+        mensagem += `as duplicatas DO BANCO já foram removidas.\n`;
+        mensagem += `As ${stats.duplicatasRemovidas} duplicatas acima são do ARQUIVO que você enviou agora.`;
+      }
       
       showNotification(mensagem, 'success');
     } catch (error: any) {
@@ -2631,6 +2651,7 @@ export default function ConsultarDados() {
                     onClick={() => {
                       setVerificationCpfs('');
                       setVerificationResults(null);
+                      setVerificationStats(null);
                       setAllHygienizedData([]);
                       setVerificationFile(null);
                       showNotification('✅ Tudo limpo! Pronto para nova verificação', 'success');
@@ -2648,6 +2669,34 @@ export default function ConsultarDados() {
             {/* Resultados da verificação */}
             {verificationResults && (
               <div className="mt-8 space-y-6">
+                {/* Alerta de duplicatas no arquivo */}
+                {verificationStats && verificationStats.duplicatasRemovidas > 0 && (
+                  <div className="bg-yellow-500/10 border-2 border-yellow-500/50 rounded-xl p-6">
+                    <div className="flex items-start gap-4">
+                      <FaInfoCircle className="text-4xl text-yellow-400 flex-shrink-0 mt-1" />
+                      <div>
+                        <h3 className="text-xl font-bold text-yellow-300 mb-2">
+                          ⚠️ CPFs Duplicados no Arquivo Enviado
+                        </h3>
+                        <p className="text-white/90 mb-3">
+                          Foram encontrados e removidos <strong className="text-yellow-300">{verificationStats.duplicatasRemovidas} CPF(s) duplicado(s)</strong> no arquivo que você enviou agora (você colou/enviou o mesmo CPF várias vezes).
+                        </p>
+                        <div className="bg-yellow-500/20 rounded-lg p-4 border border-yellow-500/30">
+                          <p className="text-white/80 text-sm font-bold mb-2">📊 Contagem:</p>
+                          <ul className="text-white/70 text-sm space-y-1">
+                            <li>• CPFs no arquivo: <strong>{verificationStats.totalRecebido}</strong></li>
+                            <li>• Duplicatas removidas: <strong className="text-yellow-300">-{verificationStats.duplicatasRemovidas}</strong></li>
+                            <li>• CPFs únicos: <strong className="text-green-300">{verificationStats.totalUnico}</strong></li>
+                          </ul>
+                        </div>
+                        <p className="text-white/60 text-sm mt-3">
+                          💡 <strong>IMPORTANTE:</strong> Isso é diferente de duplicatas NO BANCO DE DADOS. Se você clicou em "Excluir Duplicadas" na aba Base de Dados, as duplicatas do banco já foram removidas. As duplicatas acima são apenas do arquivo atual.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Estatísticas */}
                 <div className="grid grid-cols-3 gap-6">
                   <div className="bg-blue-500/10 border-2 border-blue-500/50 rounded-xl p-6">
