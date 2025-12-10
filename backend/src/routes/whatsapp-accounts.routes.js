@@ -71,6 +71,9 @@ router.get('/', (req, res) => controller.findAll(req, res));
 // Buscar contas ativas
 router.get('/active', (req, res) => controller.findActive(req, res));
 
+// Buscar status e estatísticas de todas as contas
+router.get('/status', (req, res) => controller.getAccountsStatus(req, res));
+
 // Testar conexão com credenciais (sem salvar)
 router.post('/test-connection', (req, res) => controller.testConnection(req, res));
 

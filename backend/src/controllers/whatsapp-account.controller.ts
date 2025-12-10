@@ -954,6 +954,149 @@ export class WhatsAppAccountController {
       res.status(500).json({ success: false, error: error.message });
     }
   }
+
+  async getAccountsStatus(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      console.log(`\n📊 ===== BUSCANDO STATUS DAS CONTAS (Tenant ${tenantId}) =====`);
+
+      // Buscar todas as contas do tenant
+      const accounts = await WhatsAppAccountModel.findAll(tenantId);
+      
+      const accountsStatus = await Promise.all(accounts.map(async (account: any) => {
+        try {
+          // 1. Buscar mensagens enviadas hoje
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          
+          const messagesResult = await tenantQuery(
+            req,
+            `SELECT COUNT(*) as total 
+             FROM campaign_messages 
+             WHERE whatsapp_account_id = $1 
+             AND created_at >= $2
+             AND status IN ('sent', 'delivered', 'read')`,
+            [account.id, today]
+          );
+          const messagesToday = parseInt(messagesResult.rows[0]?.total || '0');
+
+          // 2. Buscar quality rating (da Meta ou do cache no banco)
+          let qualityScore = account.quality_rating || 'UNKNOWN';
+          let apiConnected = false;
+          let apiLastCheck = null;
+
+          try {
+            // Tentar buscar quality rating da Meta
+            let config: AxiosRequestConfig = {
+              params: { fields: 'quality_rating' },
+              headers: { 'Authorization': `Bearer ${account.access_token}` },
+              timeout: 5000
+            };
+
+            const proxyConfig = await getProxyConfigFromAccount(account.id, tenantId);
+            if (proxyConfig) {
+              config = applyProxyToRequest(config, proxyConfig, account.name);
+            }
+
+            const response = await axios.get(
+              `https://graph.facebook.com/v18.0/${account.phone_number_id}`,
+              config
+            );
+
+            qualityScore = response.data.quality_rating || 'UNKNOWN';
+            apiConnected = true;
+            apiLastCheck = new Date().toISOString();
+
+            // Atualizar cache no banco
+            await tenantQuery(
+              req,
+              'UPDATE whatsapp_accounts SET quality_rating = $1 WHERE id = $2',
+              [qualityScore, account.id]
+            );
+          } catch (error) {
+            console.error(`❌ Erro ao buscar quality rating da conta ${account.id}:`, error);
+            apiConnected = false;
+          }
+
+          // 3. Buscar status do webhook
+          const webhookResult = await tenantQuery(
+            req,
+            `SELECT 
+               COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '1 hour') as recent_events,
+               MAX(created_at) as last_event
+             FROM webhook_events 
+             WHERE account_id = $1`,
+            [account.id]
+          );
+          
+          const recentEvents = parseInt(webhookResult.rows[0]?.recent_events || '0');
+          const webhookActive = recentEvents > 0;
+          const webhookLastReceived = webhookResult.rows[0]?.last_event || null;
+
+          // 4. Buscar último erro
+          const errorResult = await tenantQuery(
+            req,
+            `SELECT error_message, created_at 
+             FROM campaign_messages 
+             WHERE whatsapp_account_id = $1 
+             AND status = 'failed' 
+             AND error_message IS NOT NULL 
+             ORDER BY created_at DESC 
+             LIMIT 1`,
+            [account.id]
+          );
+          
+          const lastError = errorResult.rows[0]?.error_message || null;
+          const lastErrorAt = errorResult.rows[0]?.created_at || null;
+
+          return {
+            id: account.id,
+            name: account.name,
+            phone_number: account.phone_number,
+            is_active: account.is_active,
+            messages_sent_today: messagesToday,
+            quality_score: qualityScore,
+            api_connected: apiConnected,
+            api_last_check: apiLastCheck,
+            webhook_active: webhookActive,
+            webhook_last_received: webhookLastReceived,
+            last_error: lastError,
+            last_error_at: lastErrorAt
+          };
+        } catch (error: any) {
+          console.error(`❌ Erro ao processar conta ${account.id}:`, error);
+          return {
+            id: account.id,
+            name: account.name,
+            phone_number: account.phone_number,
+            is_active: account.is_active,
+            messages_sent_today: 0,
+            quality_score: 'UNKNOWN',
+            api_connected: false,
+            api_last_check: null,
+            webhook_active: false,
+            webhook_last_received: null,
+            last_error: error.message,
+            last_error_at: new Date().toISOString()
+          };
+        }
+      }));
+
+      console.log(`✅ Status de ${accountsStatus.length} conta(s) processado(s)`);
+      
+      res.json({ 
+        success: true, 
+        accounts: accountsStatus 
+      });
+    } catch (error: any) {
+      console.error('❌ Erro ao buscar status das contas:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
 }
 
 export const whatsAppAccountController = new WhatsAppAccountController();
