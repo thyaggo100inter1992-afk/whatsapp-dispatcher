@@ -1042,6 +1042,169 @@ router.delete('/duplicadas', async (req: Request, res: Response) => {
   }
 });
 
+// Rota para buscar TODOS os IDs (respeitando filtros)
+router.get('/ids', async (req: Request, res: Response) => {
+  try {
+    const {
+      cpf_cnpj,
+      nome,
+      telefone,
+      email,
+      cidade,
+      uf,
+      whatsapp,
+      tipo_documento,
+      tipo_origem,
+      data_inicio,
+      data_fim
+    } = req.query;
+
+    const tenantId = (req as any).tenant?.id;
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tenant não identificado'
+      });
+    }
+
+    let whereConditions: string[] = [`tenant_id = $1`];
+    let params: any[] = [tenantId];
+    let paramIndex = 2;
+
+    // Aplicar TODOS os mesmos filtros da rota /buscar
+    if (cpf_cnpj) {
+      const documentoNumeros = String(cpf_cnpj).replace(/\D/g, '');
+      whereConditions.push(`documento LIKE $${paramIndex}`);
+      params.push(`%${documentoNumeros}%`);
+      paramIndex++;
+    }
+
+    if (nome) {
+      whereConditions.push(`nome ILIKE $${paramIndex}`);
+      params.push(`%${nome}%`);
+      paramIndex++;
+    }
+
+    if (telefone) {
+      const telefoneNumeros = String(telefone).replace(/\D/g, '');
+      
+      if (telefoneNumeros.length === 11) {
+        const ddd = telefoneNumeros.substring(0, 2);
+        const numero = telefoneNumeros.substring(2);
+        const numeroSem9 = numero.substring(1);
+        
+        whereConditions.push(`(
+          EXISTS (
+            SELECT 1 FROM jsonb_array_elements(telefones) AS t
+            WHERE t->>'ddd' = $${paramIndex} AND (
+              t->>'telefone' = $${paramIndex + 1} OR
+              t->>'telefone' = $${paramIndex + 2}
+            )
+          ) OR
+          telefones::text ~ $${paramIndex + 3} OR
+          telefones::text ~ $${paramIndex + 4} OR
+          telefones::text ~ $${paramIndex + 5} OR
+          telefones::text ~ $${paramIndex + 6}
+        )`);
+        params.push(ddd, numero, numeroSem9, telefoneNumeros, `55${telefoneNumeros}`, `${ddd}${numeroSem9}`, `55${ddd}${numeroSem9}`);
+        paramIndex += 7;
+      } else if (telefoneNumeros.length === 10) {
+        const ddd = telefoneNumeros.substring(0, 2);
+        const numero = telefoneNumeros.substring(2);
+        const numeroComNove = `9${numero}`;
+        
+        whereConditions.push(`(
+          EXISTS (
+            SELECT 1 FROM jsonb_array_elements(telefones) AS t
+            WHERE t->>'ddd' = $${paramIndex} AND (
+              t->>'telefone' = $${paramIndex + 1} OR
+              t->>'telefone' = $${paramIndex + 2}
+            )
+          ) OR
+          telefones::text ~ $${paramIndex + 3} OR
+          telefones::text ~ $${paramIndex + 4} OR
+          telefones::text ~ $${paramIndex + 5} OR
+          telefones::text ~ $${paramIndex + 6}
+        )`);
+        params.push(ddd, numero, numeroComNove, telefoneNumeros, `55${telefoneNumeros}`, `${ddd}${numeroComNove}`, `55${ddd}${numeroComNove}`);
+        paramIndex += 7;
+      } else {
+        whereConditions.push(`telefones::text ~ $${paramIndex}`);
+        params.push(telefoneNumeros);
+        paramIndex++;
+      }
+    }
+
+    if (email) {
+      whereConditions.push(`emails::text ILIKE $${paramIndex}`);
+      params.push(`%${email}%`);
+      paramIndex++;
+    }
+
+    if (cidade) {
+      whereConditions.push(`enderecos::text ILIKE $${paramIndex}`);
+      params.push(`%${cidade}%`);
+      paramIndex++;
+    }
+
+    if (uf) {
+      whereConditions.push(`enderecos::text ILIKE $${paramIndex}`);
+      params.push(`%${uf}%`);
+      paramIndex++;
+    }
+
+    if (whatsapp && whatsapp !== 'todos') {
+      if (whatsapp === 'sim') {
+        whereConditions.push('whatsapp_verificado = true');
+      } else if (whatsapp === 'nao') {
+        whereConditions.push('whatsapp_verificado = false');
+      }
+    }
+
+    if (tipo_documento && tipo_documento !== 'todos') {
+      whereConditions.push(`tipo_documento = $${paramIndex}`);
+      params.push(tipo_documento);
+      paramIndex++;
+    }
+
+    if (tipo_origem && tipo_origem !== 'todos') {
+      whereConditions.push(`tipo_origem = $${paramIndex}`);
+      params.push(tipo_origem);
+      paramIndex++;
+    }
+
+    if (data_inicio && data_fim) {
+      whereConditions.push(`data_adicao BETWEEN $${paramIndex} AND $${paramIndex + 1}`);
+      params.push(data_inicio, data_fim);
+      paramIndex += 2;
+    }
+
+    const query = `
+      SELECT id
+      FROM base_dados_completa
+      WHERE ${whereConditions.join(' AND ')}
+      ORDER BY data_adicao DESC
+    `;
+
+    console.log('📋 Buscando todos os IDs com filtros...');
+    const result = await pool.query(query, params);
+    const ids = result.rows.map(r => r.id);
+
+    console.log(`✅ Retornando ${ids.length} IDs`);
+    res.json({
+      success: true,
+      ids,
+      total: ids.length
+    });
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar IDs:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro ao buscar IDs: ' + error.message
+    });
+  }
+});
+
 // IMPORTANTE: Rota /excluir-tudo DEVE vir ANTES de /:id
 // Excluir TODA a base de dados
 router.delete('/excluir-tudo', async (req: Request, res: Response) => {

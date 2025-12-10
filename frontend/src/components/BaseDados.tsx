@@ -370,6 +370,31 @@ export default function BaseDados() {
     setMostrarFiltros(false);
   };
 
+  // Buscar TODOS os IDs respeitando os filtros
+  const handleSelecionarTodos = async () => {
+    try {
+      setLoading(true);
+      showNotification('🔄 Buscando todos os registros...', 'info');
+      
+      const response = await api.get('/base-dados/ids', {
+        params: {
+          ...filtros
+        }
+      });
+
+      if (response.data.success) {
+        const todosIds = new Set(response.data.ids);
+        setEstadoSelecionados(todosIds);
+        showNotification(`✅ ${todosIds.size} registro(s) selecionado(s)!`, 'success');
+      }
+    } catch (error: any) {
+      console.error('Erro ao buscar todos os IDs:', error);
+      showNotification('Erro ao selecionar todos os registros', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Limpar filtros
   const handleLimparFiltros = () => {
     setFiltros({
@@ -1120,7 +1145,7 @@ export default function BaseDados() {
 
   // Excluir registros duplicados (mantém apenas o mais recente de cada CPF/CNPJ)
   const handleExcluirDuplicadas = async () => {
-    if (!confirm('⚠️ ATENÇÃO!\n\nEsta ação irá:\n\n1. Identificar todos os CPF/CNPJ duplicados\n2. Manter apenas o registro MAIS RECENTE de cada documento\n3. EXCLUIR permanentemente os registros mais antigos\n\nEsta ação NÃO PODE SER DESFEITA!\n\nDeseja continuar?')) {
+    if (!confirm('⚠️ ATENÇÃO!\n\nEsta ação irá processar TODA A BASE DE DADOS:\n\n1. Identificar TODOS os CPF/CNPJ duplicados (não apenas a página atual)\n2. Manter apenas o registro MAIS RECENTE de cada documento\n3. EXCLUIR permanentemente os registros mais antigos\n\n📊 Total de registros a processar: ' + total + '\n\nEsta ação NÃO PODE SER DESFEITA!\n\nDeseja continuar?')) {
       return;
     }
 
@@ -1421,18 +1446,47 @@ export default function BaseDados() {
           </h3>
           
           {registros.length > 0 && (
-            <button
-              onClick={() => {
-                if (estadoSelecionados.size === registros.length) {
-                  setEstadoSelecionados(new Set());
-                } else {
-                  setEstadoSelecionados(new Set(registros.map(r => r.id)));
-                }
-              }}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-all"
-            >
-              {estadoSelecionados.size === registros.length ? '❌ Desmarcar Todos' : '☑️ Selecionar Todos'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (estadoSelecionados.size === registros.length) {
+                    setEstadoSelecionados(new Set());
+                  } else {
+                    setEstadoSelecionados(new Set(registros.map(r => r.id)));
+                  }
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-all"
+                disabled={loading}
+              >
+                {estadoSelecionados.size === registros.length ? '❌ Desmarcar Página' : '☑️ Selecionar Página'}
+              </button>
+              
+              <button
+                onClick={handleSelecionarTodos}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center gap-2"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <FaSpinner className="animate-spin" />
+                    Buscando...
+                  </>
+                ) : (
+                  <>
+                    ✅ Selecionar TODOS ({total})
+                  </>
+                )}
+              </button>
+
+              {estadoSelecionados.size > 0 && (
+                <button
+                  onClick={() => setEstadoSelecionados(new Set())}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-all"
+                >
+                  ❌ Desmarcar Todos ({estadoSelecionados.size})
+                </button>
+              )}
+            </div>
           )}
         </div>
 
