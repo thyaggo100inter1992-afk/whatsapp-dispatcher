@@ -915,6 +915,23 @@ export default function ConsultarDados() {
   };
 
   // Verificar CPFs na base
+  // Função para normalizar CPF/CNPJ adicionando zeros à esquerda
+  const normalizarDocumento = (doc: string): string => {
+    const apenasNumeros = String(doc).replace(/\D/g, '');
+    if (apenasNumeros.length === 0) return apenasNumeros;
+    
+    if (apenasNumeros.length === 11) {
+      return apenasNumeros; // CPF já com 11 dígitos
+    } else if (apenasNumeros.length < 11) {
+      return apenasNumeros.padStart(11, '0'); // CPF com menos de 11, adiciona zeros
+    } else if (apenasNumeros.length === 14) {
+      return apenasNumeros; // CNPJ já com 14 dígitos
+    } else if (apenasNumeros.length < 14 && apenasNumeros.length > 11) {
+      return apenasNumeros.padStart(14, '0'); // CNPJ com menos de 14, adiciona zeros
+    }
+    return apenasNumeros; // Retorna como está se não for CPF/CNPJ padrão
+  };
+
   const handleVerifyCpfs = async () => {
     console.log('🔍 INICIANDO VERIFICAÇÃO DE CPFs');
     console.log('📋 Texto original:', verificationCpfs);
@@ -923,22 +940,18 @@ export default function ConsultarDados() {
       .split('\n')
       .map((line, index) => {
         const original = line.trim();
-        let cpf = original.replace(/\D/g, '');
+        let apenasNumeros = original.replace(/\D/g, '');
         
-        console.log(`  [${index + 1}] Original: "${original}" → Números: "${cpf}" (${cpf.length} dígitos)`);
+        console.log(`  [${index + 1}] Original: "${original}" → Números: "${apenasNumeros}" (${apenasNumeros.length} dígitos)`);
         
-        // Corrigir CPFs/CNPJs que perderam zero à esquerda
-        if (cpf.length === 10) {
-          // CPF com 10 dígitos = falta 1 zero à esquerda
-          cpf = '0' + cpf;
-          console.log(`     🔧 CPF corrigido: ${original} → ${cpf}`);
-        } else if (cpf.length === 13) {
-          // CNPJ com 13 dígitos = falta 1 zero à esquerda
-          cpf = '0' + cpf;
-          console.log(`     🔧 CNPJ corrigido: ${original} → ${cpf}`);
+        // 🔧 NORMALIZAR: Adicionar zeros à esquerda
+        const normalizado = normalizarDocumento(apenasNumeros);
+        
+        if (normalizado !== apenasNumeros) {
+          console.log(`     ✅ Normalizado: "${apenasNumeros}" → "${normalizado}" (${normalizado.length} dígitos)`);
         }
         
-        return cpf;
+        return normalizado;
       })
       .filter((cpf, index) => {
         const valido = cpf.length === 11 || cpf.length === 14;
