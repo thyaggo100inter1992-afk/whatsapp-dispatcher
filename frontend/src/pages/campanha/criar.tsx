@@ -123,11 +123,26 @@ export default function CriarCampanha() {
     try {
       for (const accountId of accountIds) {
         if (!availableTemplates[accountId]) {
+          console.log(`\n📋 ===== CARREGANDO TEMPLATES (API OFICIAL) =====`);
+          console.log(`   Conta ID: ${accountId}`);
+          
           const response = await whatsappAccountsAPI.getTemplates(accountId);
+          
           if (response.data.success) {
+            const allTemplates = response.data.templates || [];
+            const approvedTemplates = allTemplates.filter((t: Template) => t.status === 'APPROVED');
+            
+            console.log(`   ✅ Templates recebidos do backend: ${allTemplates.length}`);
+            console.log(`   ✅ Templates APPROVED: ${approvedTemplates.length}`);
+            console.log(`   Status:`, allTemplates.reduce((acc: any, t: Template) => {
+              acc[t.status] = (acc[t.status] || 0) + 1;
+              return acc;
+            }, {}));
+            console.log(`================================================\n`);
+            
             setAvailableTemplates(prev => ({
               ...prev,
-              [accountId]: response.data.templates.filter((t: Template) => t.status === 'APPROVED')
+              [accountId]: approvedTemplates
             }));
           }
         }

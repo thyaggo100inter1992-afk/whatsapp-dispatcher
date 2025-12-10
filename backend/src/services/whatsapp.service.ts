@@ -173,7 +173,7 @@ export class WhatsAppService {
           Authorization: `Bearer ${accessToken}`,
         },
         params: {
-          limit: 100,
+          limit: 1000, // ✅ AUMENTADO: Máximo permitido pela API do WhatsApp
         },
       };
 
@@ -190,6 +190,16 @@ export class WhatsAppService {
         `${this.baseUrl}/${businessAccountId}/message_templates`,
         requestConfig
       );
+
+      console.log(`\n📋 ===== TEMPLATES CARREGADOS DA META =====`);
+      console.log(`   Conta: ${accountName || 'N/A'} (ID: ${accountId || 'N/A'})`);
+      console.log(`   Business Account ID: ${businessAccountId}`);
+      console.log(`   ✅ Total de templates recebidos: ${response.data.data?.length || 0}`);
+      console.log(`   Status dos templates:`, response.data.data?.reduce((acc: any, t: any) => {
+        acc[t.status] = (acc[t.status] || 0) + 1;
+        return acc;
+      }, {}));
+      console.log(`============================================\n`);
 
       return {
         success: true,
