@@ -92,6 +92,7 @@ export default function ConsultarDados() {
   const [verifyWhatsappCheck, setVerifyWhatsappCheck] = useState(false);
   const [whatsappColumnChoice, setWhatsappColumnChoice] = useState<'first' | 'second' | 'third' | 'all'>('first');
   const [hygienizationDelay, setHygienizationDelay] = useState(2);
+  const [hygienizationBatchSize, setHygienizationBatchSize] = useState(20); // CPFs processados simultaneamente
   const [showWhatsappOptions, setShowWhatsappOptions] = useState(false);
   const [allHygienizedData, setAllHygienizedData] = useState<any[]>([]);
 
@@ -1091,59 +1092,94 @@ export default function ConsultarDados() {
     let cpfsSemCredito = 0;
     let limiteAtingido = false;
     
+    // 🚀 PROCESSAMENTO EM PARALELO - Quantidade configurável
+    const BATCH_SIZE = hygienizationBatchSize;
+    let processedCount = 0;
+    
     try {
-      for (let i = 0; i < cpfsToHygienize.length; i++) {
-        const cpf = cpfsToHygienize[i];
+      console.log(`🚀 Iniciando higienização PARALELA de ${cpfsToHygienize.length} CPFs (${BATCH_SIZE} por vez)`);
+      
+      // Dividir em lotes
+      for (let batchStart = 0; batchStart < cpfsToHygienize.length; batchStart += BATCH_SIZE) {
+        if (limiteAtingido) break; // Se atingiu limite, parar
         
-        try {
-          // Consultar na API
-          const response = await api.post('/novavida/consultar', {
-            documento: cpf,
-            verificarWhatsapp: verifyWhatsappCheck,
-            whatsappColumn: verifyWhatsappCheck ? whatsappColumnChoice : undefined
-          });
-          
-          if (response.data.success && response.data.dados) {
-            hygienizedData.push(response.data.dados);
+        const batch = cpfsToHygienize.slice(batchStart, batchStart + BATCH_SIZE);
+        console.log(`📦 Processando lote ${Math.floor(batchStart / BATCH_SIZE) + 1} com ${batch.length} CPFs...`);
+        
+        // Processar todos os CPFs do lote em PARALELO
+        const batchPromises = batch.map(async (cpf) => {
+          try {
+            const response = await api.post('/novavida/consultar', {
+              documento: cpf,
+              verificarWhatsapp: verifyWhatsappCheck,
+              whatsappColumn: verifyWhatsappCheck ? whatsappColumnChoice : undefined
+            });
+            
+            if (response.data.success && response.data.dados) {
+              return { success: true, data: response.data.dados, cpf };
+            }
+            return { success: false, cpf, error: 'Sem dados' };
+          } catch (error: any) {
+            // Verificar se é bloqueio por lista de restrição
+            if (error.response?.status === 403 && error.response?.data?.bloqueado) {
+              return { success: false, cpf, blocked: true };
+            } 
+            // Verificar se é falta de crédito
+            else if (
+              error.response?.status === 403 && 
+              (error.response?.data?.message?.includes('Limite') || 
+               error.response?.data?.message?.includes('crédito') ||
+               error.response?.data?.message?.includes('consultas'))
+            ) {
+              return { success: false, cpf, noCredit: true, message: error.response?.data?.message };
+            }
+            return { success: false, cpf, error: error.message };
           }
+        });
+        
+        // Aguardar TODOS do lote finalizarem
+        const batchResults = await Promise.all(batchPromises);
+        
+        // Processar resultados do lote
+        for (const result of batchResults) {
+          processedCount++;
           
-          setHygienizationProgress({
-            total: cpfsToHygienize.length,
-            current: i + 1,
-            remaining: cpfsToHygienize.length - (i + 1)
-          });
-          
-          // Delay entre consultas
-          if (i < cpfsToHygienize.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, hygienizationDelay * 1000));
-          }
-        } catch (error: any) {
-          // Verificar se é bloqueio por lista de restrição
-          if (error.response?.status === 403 && error.response?.data?.bloqueado) {
-            console.log(`🚫 CPF ${cpf} está na Lista de Restrição`);
+          if (result.success && result.data) {
+            hygienizedData.push(result.data);
+          } else if (result.blocked) {
+            console.log(`🚫 CPF ${result.cpf} está na Lista de Restrição`);
             cpfsBloqueados++;
-          } 
-          // Verificar se é falta de crédito (limite atingido)
-          else if (
-            error.response?.status === 403 && 
-            (error.response?.data?.message?.includes('Limite') || 
-             error.response?.data?.message?.includes('crédito') ||
-             error.response?.data?.message?.includes('consultas'))
-          ) {
-            console.log(`❌ CPF ${cpf} não consultado: ${error.response?.data?.message}`);
+          } else if (result.noCredit) {
+            console.log(`❌ CPF ${result.cpf} não consultado: ${result.message}`);
             cpfsSemCredito++;
             limiteAtingido = true;
-            
-            // Contar os CPFs restantes como não consultados
-            cpfsSemCredito += (cpfsToHygienize.length - 1 - i);
-            
-            // Parar o loop, não há mais crédito
-            break;
-          } else {
-            console.error(`Erro ao higienizar CPF ${cpf}:`, error);
+          } else if (result.error) {
+            console.error(`Erro ao higienizar CPF ${result.cpf}:`, result.error);
           }
+          
+          // Atualizar progresso
+          setHygienizationProgress({
+            total: cpfsToHygienize.length,
+            current: processedCount,
+            remaining: cpfsToHygienize.length - processedCount
+          });
+        }
+        
+        // Se atingiu limite de crédito neste lote, contar os restantes
+        if (limiteAtingido) {
+          const remainingCpfs = cpfsToHygienize.length - processedCount;
+          cpfsSemCredito += remainingCpfs;
+          console.log(`⚠️ Limite atingido. ${remainingCpfs} CPFs não serão consultados.`);
+          break;
+        }
+        
+        // Pequeno delay entre lotes (opcional, pode reduzir ou remover)
+        if (batchStart + BATCH_SIZE < cpfsToHygienize.length && hygienizationDelay > 0) {
+          await new Promise(resolve => setTimeout(resolve, hygienizationDelay * 100)); // 10x mais rápido que antes
         }
       }
+      
+      console.log(`✅ Higienização paralela concluída! ${hygienizedData.length} CPFs consultados.`);
       
       setAllHygienizedData(hygienizedData);
       
@@ -2752,21 +2788,41 @@ export default function ConsultarDados() {
                       ⚙️ Configurações de Higienização
                     </h3>
 
-                    <div className="grid grid-cols-2 gap-6">
+                    <div className="grid grid-cols-3 gap-6">
                       <div>
                         <label className="block text-white font-bold mb-2">
-                          🕐 Delay entre consultas (segundos)
+                          🚀 Velocidade de Processamento
+                        </label>
+                        <select
+                          value={hygienizationBatchSize}
+                          onChange={(e) => setHygienizationBatchSize(Number(e.target.value))}
+                          className="w-full bg-dark-700 border-2 border-white/20 rounded-xl px-4 py-3 text-white text-lg focus:outline-none focus:border-blue-500"
+                        >
+                          <option value={10}>🐌 Normal (10 CPFs/vez)</option>
+                          <option value={20}>⚡ Rápida (20 CPFs/vez)</option>
+                          <option value={50}>🚀 Muito Rápida (50 CPFs/vez)</option>
+                          <option value={100}>💨 Super Rápida (100 CPFs/vez)</option>
+                        </select>
+                        <p className="text-white/60 text-sm mt-1">
+                          ✨ Quanto maior, mais rápido! (Recomendado: 20-50)
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-white font-bold mb-2">
+                          🕐 Delay entre LOTES (ms)
                         </label>
                         <input
                           type="number"
                           value={hygienizationDelay}
                           onChange={(e) => setHygienizationDelay(Number(e.target.value))}
-                          min="1"
+                          min="0"
                           max="10"
+                          step="0.1"
                           className="w-full bg-dark-700 border-2 border-white/20 rounded-xl px-4 py-3 text-white text-lg focus:outline-none focus:border-blue-500"
                         />
                         <p className="text-white/60 text-sm mt-1">
-                          ⚠️ Recomendado: 2-3 segundos para evitar sobrecarga
+                          ⚡ 0 = Máxima velocidade (recomendado para API)
                         </p>
                       </div>
 
