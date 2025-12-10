@@ -1029,7 +1029,7 @@ export class WhatsAppAccountController {
                COUNT(*) FILTER (WHERE processed_at >= NOW() - INTERVAL '1 hour') as recent_events,
                MAX(processed_at) as last_event
              FROM webhook_logs 
-             WHERE whatsapp_account_id = $1 AND request_type = 'webhook'`,
+             WHERE whatsapp_account_id = $1 AND request_type = 'notification'`,
             [account.id]
           );
           
