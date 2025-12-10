@@ -1071,6 +1071,169 @@ export class TemplateController {
       });
     }
   }
+
+  /**
+   * Renomear múltiplos templates em massa
+   */
+  async bulkRenameTemplates(req: Request, res: Response) {
+    try {
+      const { accountId, templates, renameType, value } = req.body;
+      
+      console.log(`\n🔄 ===== RENOMEAÇÃO EM MASSA =====`);
+      console.log(`   Account ID: ${accountId}`);
+      console.log(`   Templates: ${templates?.length || 0}`);
+      console.log(`   Tipo: ${renameType}`);
+      console.log(`   Valor: ${value}`);
+
+      if (!accountId || !templates || !Array.isArray(templates) || templates.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'accountId e templates (array) são obrigatórios',
+        });
+      }
+
+      if (!renameType || !value) {
+        return res.status(400).json({
+          success: false,
+          error: 'renameType e value são obrigatórios',
+        });
+      }
+
+      // Validar tipo de renomeação
+      const validTypes = ['prefix', 'suffix', 'replace'];
+      if (!validTypes.includes(renameType)) {
+        return res.status(400).json({
+          success: false,
+          error: 'renameType deve ser: prefix, suffix ou replace',
+        });
+      }
+
+      // Para replace, precisamos de oldText e newText
+      let oldText = '';
+      let newText = '';
+      if (renameType === 'replace') {
+        if (!value.oldText || !value.newText) {
+          return res.status(400).json({
+            success: false,
+            error: 'Para replace, value deve conter oldText e newText',
+          });
+        }
+        oldText = value.oldText;
+        newText = value.newText;
+      }
+
+      const results = [];
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Processar cada template
+      for (const templateName of templates) {
+        try {
+          console.log(`\n📝 Processando template: ${templateName}`);
+          
+          // Calcular novo nome
+          let newName = templateName;
+          
+          if (renameType === 'prefix') {
+            newName = `${value}${templateName}`;
+          } else if (renameType === 'suffix') {
+            newName = `${templateName}${value}`;
+          } else if (renameType === 'replace') {
+            newName = templateName.replace(new RegExp(oldText, 'g'), newText);
+          }
+
+          console.log(`   Nome atual: ${templateName}`);
+          console.log(`   Nome novo: ${newName}`);
+
+          // Se o nome não mudou, pular
+          if (newName === templateName) {
+            console.log(`   ⚠️ Nome não foi alterado, pulando...`);
+            results.push({
+              originalName: templateName,
+              newName: newName,
+              success: false,
+              error: 'Nome não foi alterado',
+            });
+            continue;
+          }
+
+          // Buscar template original da Meta
+          const originalTemplate = await whatsappService.getTemplate(accountId, templateName);
+          
+          if (!originalTemplate || !originalTemplate.components) {
+            console.log(`   ❌ Template não encontrado na Meta`);
+            errorCount++;
+            results.push({
+              originalName: templateName,
+              newName: newName,
+              success: false,
+              error: 'Template não encontrado na Meta',
+            });
+            continue;
+          }
+
+          // Criar cópia do template com novo nome na fila
+          console.log(`   🔄 Adicionando template à fila com novo nome...`);
+          
+          const queueResult = await templateQueueService.addCreateTemplate({
+            whatsappAccountId: accountId,
+            name: newName,
+            category: originalTemplate.category,
+            language: originalTemplate.language,
+            components: originalTemplate.components,
+            tenantId: (req as any).tenant?.id,
+          });
+
+          if (queueResult) {
+            console.log(`   ✅ Template adicionado à fila com ID: ${queueResult.id}`);
+            successCount++;
+            results.push({
+              originalName: templateName,
+              newName: newName,
+              success: true,
+              queueId: queueResult.id,
+            });
+          } else {
+            console.log(`   ❌ Erro ao adicionar à fila`);
+            errorCount++;
+            results.push({
+              originalName: templateName,
+              newName: newName,
+              success: false,
+              error: 'Erro ao adicionar à fila',
+            });
+          }
+        } catch (error: any) {
+          console.error(`   ❌ Erro ao processar template ${templateName}:`, error);
+          errorCount++;
+          results.push({
+            originalName: templateName,
+            newName: templateName,
+            success: false,
+            error: error.message,
+          });
+        }
+      }
+
+      console.log(`\n✅ Renomeação em massa concluída!`);
+      console.log(`   Sucesso: ${successCount}`);
+      console.log(`   Erros: ${errorCount}`);
+
+      res.json({
+        success: true,
+        message: `${successCount} template(s) renomeado(s) com sucesso, ${errorCount} erro(s)`,
+        results: results,
+        successCount: successCount,
+        errorCount: errorCount,
+      });
+    } catch (error: any) {
+      console.error('❌ Erro na renomeação em massa:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
 }
 
 export const templateController = new TemplateController();

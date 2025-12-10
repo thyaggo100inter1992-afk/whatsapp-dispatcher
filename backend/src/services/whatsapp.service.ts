@@ -208,6 +208,51 @@ export class WhatsAppService {
   }
 
   /**
+   * Buscar um template específico pelo nome
+   */
+  async getTemplate(accountId: number, templateName: string) {
+    try {
+      // Buscar credenciais da conta
+      const { query } = await import('../database/connection');
+      const result = await query(
+        `SELECT wa.access_token, wa.business_account_id, wa.name, wa.tenant_id
+         FROM whatsapp_accounts wa
+         WHERE wa.id = $1`,
+        [accountId]
+      );
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      const account = result.rows[0];
+      
+      // Buscar todos os templates
+      const templatesResult = await this.getTemplates(
+        account.access_token,
+        account.business_account_id,
+        accountId,
+        account.name,
+        account.tenant_id
+      );
+
+      if (!templatesResult.success || !templatesResult.templates) {
+        return null;
+      }
+
+      // Encontrar o template específico
+      const template = templatesResult.templates.find(
+        (t: any) => t.name === templateName
+      );
+
+      return template || null;
+    } catch (error: any) {
+      console.error(`Error fetching template ${templateName}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Upload usando Resumable Upload API (retorna handle 4::xxx)
    * Usado quando há App ID configurado
    */

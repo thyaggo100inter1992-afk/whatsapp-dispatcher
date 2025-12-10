@@ -65,6 +65,14 @@ export default function GerenciarTemplates() {
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
+  // Estados para renomeação em massa
+  const [bulkRenameModalOpen, setBulkRenameModalOpen] = useState(false);
+  const [bulkRenaming, setBulkRenaming] = useState(false);
+  const [renameType, setRenameType] = useState<'prefix' | 'suffix' | 'replace'>('prefix');
+  const [renameValue, setRenameValue] = useState('');
+  const [replaceOldText, setReplaceOldText] = useState('');
+  const [replaceNewText, setReplaceNewText] = useState('');
+
   useEffect(() => {
     loadAccounts();
   }, []);
@@ -398,6 +406,73 @@ export default function GerenciarTemplates() {
     }
   };
 
+  const handleBulkRename = () => {
+    if (selectedTemplateNames.length === 0) {
+      toast.warning('Selecione pelo menos um template');
+      return;
+    }
+    setRenameType('prefix');
+    setRenameValue('');
+    setReplaceOldText('');
+    setReplaceNewText('');
+    setBulkRenameModalOpen(true);
+  };
+
+  const executeBulkRename = async () => {
+    if (selectedTemplateNames.length === 0 || !selectedAccountId) return;
+
+    // Validar campos
+    if (renameType === 'replace') {
+      if (!replaceOldText.trim() || !replaceNewText.trim()) {
+        toast.error('Preencha o texto antigo e o novo para substituir');
+        return;
+      }
+    } else {
+      if (!renameValue.trim()) {
+        toast.error('Preencha o valor para adicionar');
+        return;
+      }
+    }
+
+    setBulkRenaming(true);
+    
+    try {
+      const value = renameType === 'replace' 
+        ? { oldText: replaceOldText, newText: replaceNewText }
+        : renameValue;
+
+      const response = await api.post('/templates/bulk-rename', {
+        accountId: selectedAccountId,
+        templates: selectedTemplateNames,
+        renameType: renameType,
+        value: value,
+      });
+
+      const data = response.data;
+      
+      if (data.success) {
+        if (data.errorCount > 0) {
+          toast.warning(`Renomeação concluída! Sucesso: ${data.successCount} | Erros: ${data.errorCount}`);
+        } else {
+          toast.success(`✅ ${data.successCount} template(s) adicionado(s) à fila de criação com novo nome!`);
+        }
+        
+        setBulkRenameModalOpen(false);
+        clearSelection();
+        
+        if (selectedAccountId) {
+          loadTemplates(selectedAccountId);
+        }
+      } else {
+        toast.error('Erro ao renomear templates: ' + data.error);
+      }
+    } catch (error: any) {
+      toast.error('Erro ao renomear templates: ' + error.message);
+    } finally {
+      setBulkRenaming(false);
+    }
+  };
+
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
 
   if (loading && templates.length === 0) {
@@ -630,6 +705,13 @@ export default function GerenciarTemplates() {
                     >
                       <FaCopy className="text-xl" />
                       Copiar
+                    </button>
+                    <button
+                      onClick={handleBulkRename}
+                      className="flex items-center gap-3 px-6 py-4 bg-green-500/20 hover:bg-green-500/30 text-green-300 border-2 border-green-500/40 rounded-xl font-bold transition-all duration-200"
+                    >
+                      <FaEdit className="text-xl" />
+                      Editar Nome
                     </button>
                     <button
                       onClick={handleBulkDelete}
@@ -969,6 +1051,182 @@ export default function GerenciarTemplates() {
                   <>
                     <FaTrash />
                     Deletar {selectedTemplateNames.length}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Renomeação em Massa */}
+      {bulkRenameModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 border-2 border-green-500/40 rounded-2xl max-w-2xl w-full shadow-2xl p-8">
+            <h2 className="text-3xl font-black text-white mb-6 flex items-center gap-3">
+              <span className="text-4xl">✏️</span>
+              Editar Nome de {selectedTemplateNames.length} Template(s)
+            </h2>
+
+            <div className="mb-8 space-y-6">
+              <div className="p-6 bg-gradient-to-br from-green-500/20 to-green-600/10 border-2 border-green-500/30 rounded-2xl">
+                <div className="font-black text-green-300 text-xl mb-4 flex items-center gap-2">
+                  <span className="text-2xl">📝</span>
+                  Como Renomear?
+                </div>
+                
+                <div className="space-y-4">
+                  {/* Opção 1: Adicionar Prefixo */}
+                  <label className="flex items-center gap-3 p-4 bg-dark-700/60 rounded-xl border-2 border-white/10 hover:border-green-500/40 cursor-pointer transition-all">
+                    <input
+                      type="radio"
+                      name="renameType"
+                      value="prefix"
+                      checked={renameType === 'prefix'}
+                      onChange={(e) => setRenameType(e.target.value as 'prefix')}
+                      className="w-5 h-5 text-green-500"
+                    />
+                    <div className="flex-1">
+                      <div className="text-white font-bold mb-1">➕ Adicionar Prefixo</div>
+                      <div className="text-white/60 text-sm">Adiciona um texto no INÍCIO do nome</div>
+                      <div className="text-green-300 text-xs mt-1 font-mono">Ex: "novo_" + template → novo_template</div>
+                    </div>
+                  </label>
+
+                  {/* Opção 2: Adicionar Sufixo */}
+                  <label className="flex items-center gap-3 p-4 bg-dark-700/60 rounded-xl border-2 border-white/10 hover:border-green-500/40 cursor-pointer transition-all">
+                    <input
+                      type="radio"
+                      name="renameType"
+                      value="suffix"
+                      checked={renameType === 'suffix'}
+                      onChange={(e) => setRenameType(e.target.value as 'suffix')}
+                      className="w-5 h-5 text-green-500"
+                    />
+                    <div className="flex-1">
+                      <div className="text-white font-bold mb-1">➕ Adicionar Sufixo</div>
+                      <div className="text-white/60 text-sm">Adiciona um texto no FINAL do nome</div>
+                      <div className="text-green-300 text-xs mt-1 font-mono">Ex: template + "_v2" → template_v2</div>
+                    </div>
+                  </label>
+
+                  {/* Opção 3: Encontrar e Substituir */}
+                  <label className="flex items-center gap-3 p-4 bg-dark-700/60 rounded-xl border-2 border-white/10 hover:border-green-500/40 cursor-pointer transition-all">
+                    <input
+                      type="radio"
+                      name="renameType"
+                      value="replace"
+                      checked={renameType === 'replace'}
+                      onChange={(e) => setRenameType(e.target.value as 'replace')}
+                      className="w-5 h-5 text-green-500"
+                    />
+                    <div className="flex-1">
+                      <div className="text-white font-bold mb-1">🔄 Encontrar e Substituir</div>
+                      <div className="text-white/60 text-sm">Substitui um texto por outro</div>
+                      <div className="text-green-300 text-xs mt-1 font-mono">Ex: "old" → "new" em old_template → new_template</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Campos de entrada baseados no tipo */}
+              <div className="space-y-4">
+                {renameType !== 'replace' ? (
+                  <div>
+                    <label className="block text-white font-bold mb-2">
+                      {renameType === 'prefix' ? '➕ Prefixo a adicionar:' : '➕ Sufixo a adicionar:'}
+                    </label>
+                    <input
+                      type="text"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      placeholder={renameType === 'prefix' ? 'Ex: novo_' : 'Ex: _v2'}
+                      className="w-full px-4 py-3 bg-dark-700 border-2 border-white/20 rounded-xl text-white focus:border-green-500 focus:ring-4 focus:ring-green-500/30 transition-all"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-white font-bold mb-2">
+                        🔍 Texto a encontrar:
+                      </label>
+                      <input
+                        type="text"
+                        value={replaceOldText}
+                        onChange={(e) => setReplaceOldText(e.target.value)}
+                        placeholder="Ex: old"
+                        className="w-full px-4 py-3 bg-dark-700 border-2 border-white/20 rounded-xl text-white focus:border-green-500 focus:ring-4 focus:ring-green-500/30 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-white font-bold mb-2">
+                        ✨ Substituir por:
+                      </label>
+                      <input
+                        type="text"
+                        value={replaceNewText}
+                        onChange={(e) => setReplaceNewText(e.target.value)}
+                        placeholder="Ex: new"
+                        className="w-full px-4 py-3 bg-dark-700 border-2 border-white/20 rounded-xl text-white focus:border-green-500 focus:ring-4 focus:ring-green-500/30 transition-all"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Preview dos templates selecionados */}
+              <div className="p-6 bg-dark-700/60 rounded-xl border-2 border-white/10">
+                <div className="font-bold text-white mb-3 flex items-center gap-2">
+                  <span className="text-lg">📋</span>
+                  Templates Selecionados ({selectedTemplateNames.length})
+                </div>
+                <div className="text-white/70 text-sm space-y-1 max-h-32 overflow-y-auto pr-2">
+                  {selectedTemplateNames.slice(0, 5).map((name, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span>•</span>
+                      <span className="font-mono">{name}</span>
+                    </div>
+                  ))}
+                  {selectedTemplateNames.length > 5 && (
+                    <div className="text-white/50 italic">
+                      ... e mais {selectedTemplateNames.length - 5} templates
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Aviso importante */}
+              <div className="p-4 bg-yellow-500/10 border-2 border-yellow-500/30 rounded-xl">
+                <div className="font-bold text-yellow-300 mb-2 flex items-center gap-2">
+                  <span className="text-lg">⚠️</span>
+                  Atenção!
+                </div>
+                <div className="text-yellow-200/80 text-sm">
+                  Os templates serão <strong>clonados</strong> com o novo nome e adicionados à fila de criação. 
+                  Os templates originais permanecerão intactos.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <button
+                onClick={() => setBulkRenameModalOpen(false)}
+                className="flex-1 px-6 py-4 bg-dark-700 hover:bg-dark-600 text-white text-lg font-bold rounded-xl transition-all duration-200 border-2 border-white/20"
+                disabled={bulkRenaming}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={executeBulkRename}
+                disabled={bulkRenaming}
+                className="flex-1 px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-lg font-bold rounded-xl transition-all duration-200 shadow-lg shadow-green-500/40 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {bulkRenaming ? (
+                  'Renomeando...'
+                ) : (
+                  <>
+                    <FaEdit />
+                    Renomear {selectedTemplateNames.length}
                   </>
                 )}
               </button>
