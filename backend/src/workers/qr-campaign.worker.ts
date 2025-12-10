@@ -937,10 +937,22 @@ class QrCampaignWorker {
 
       // ✅ VERIFICAR DELAY: Aguardar intervalo desde o último envio válido
       const currentIntervalSecondsBeforeSend = campaign.schedule_config?.interval_seconds || 5;
+      
+      console.log(`\n🔍 ===== DEBUG DELAY =====`);
+      console.log(`   schedule_config completo:`, JSON.stringify(campaign.schedule_config, null, 2));
+      console.log(`   interval_seconds configurado: ${campaign.schedule_config?.interval_seconds}`);
+      console.log(`   Valor final usado: ${currentIntervalSecondsBeforeSend}s`);
+      console.log(`   Último envio: ${lastValidSendTime ? new Date(lastValidSendTime).toLocaleTimeString('pt-BR') : 'PRIMEIRO ENVIO'}`);
+      console.log(`===========================\n`);
+      
       if (lastValidSendTime !== null) {
         const elapsedMs = Date.now() - lastValidSendTime;
         const requiredMs = currentIntervalSecondsBeforeSend * 1000;
         const remainingMs = requiredMs - elapsedMs;
+        
+        console.log(`⏱️ Tempo decorrido desde último envio: ${(elapsedMs / 1000).toFixed(1)}s`);
+        console.log(`⏱️ Tempo necessário: ${(requiredMs / 1000).toFixed(1)}s`);
+        console.log(`⏱️ Tempo restante a aguardar: ${(remainingMs / 1000).toFixed(1)}s`);
         
         if (remainingMs > 0) {
           console.log(`⏳ [QR Worker] Aguardando ${(remainingMs / 1000).toFixed(1)}s para respeitar intervalo de ${currentIntervalSecondsBeforeSend}s...`);

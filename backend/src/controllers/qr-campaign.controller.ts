@@ -163,6 +163,13 @@ export class QrCampaignController {
       }
 
       // Criar campanha (tenant_id já foi validado no início)
+      console.log(`\n📋 ===== CRIANDO CAMPANHA QR =====`);
+      console.log(`   Nome: ${name}`);
+      console.log(`   Tenant ID: ${tenantId}`);
+      console.log(`   Schedule Config recebido:`, JSON.stringify(schedule_config, null, 2));
+      console.log(`   Pause Config recebido:`, JSON.stringify(pause_config, null, 2));
+      console.log(`===================================\n`);
+      
       const campaign = await QrCampaignModel.create({
         name,
         tenant_id: tenantId, // ✅ ADICIONAR TENANT_ID
@@ -181,6 +188,7 @@ export class QrCampaignController {
       });
 
       console.log('✅ Campanha QR criada com ID:', campaign.id);
+      console.log('✅ Schedule Config salvo:', JSON.stringify(campaign.schedule_config, null, 2));
 
       // Validar contatos
       if (!contacts || contacts.length === 0) {
