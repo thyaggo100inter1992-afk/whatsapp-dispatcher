@@ -43,8 +43,5 @@ router.get('/:accountId', (req, res) => controller.listByAccount(req, res));
 // Deletar template
 router.delete('/:accountId/:templateName', (req, res) => controller.deleteTemplate(req, res));
 
-// Renomear múltiplos templates em massa
-router.post('/bulk-rename', (req, res) => controller.bulkRenameTemplates(req, res));
-
 export default router;
 
