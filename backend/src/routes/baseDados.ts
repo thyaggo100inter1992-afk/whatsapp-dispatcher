@@ -9,6 +9,42 @@ const router = Router();
 // Aplicar verificação de funcionalidade em TODAS as rotas
 router.use(checkDatabase);
 
+/**
+ * 🔧 NORMALIZA CPF/CNPJ ADICIONANDO ZEROS À ESQUERDA
+ * CPF: 11 dígitos
+ * CNPJ: 14 dígitos
+ */
+function normalizarDocumento(documento: string): string {
+  if (!documento) return documento;
+  
+  // Remove tudo que não é número
+  const apenasNumeros = String(documento).replace(/\D/g, '');
+  
+  if (apenasNumeros.length === 0) return apenasNumeros;
+  
+  // Se tem até 11 dígitos, considera CPF → completa com zeros até 11
+  if (apenasNumeros.length <= 11) {
+    const normalizado = apenasNumeros.padStart(11, '0');
+    if (apenasNumeros !== normalizado) {
+      console.log(`📝 CPF normalizado: ${apenasNumeros} → ${normalizado}`);
+    }
+    return normalizado;
+  }
+  
+  // Se tem 12-14 dígitos, considera CNPJ → completa com zeros até 14
+  if (apenasNumeros.length <= 14) {
+    const normalizado = apenasNumeros.padStart(14, '0');
+    if (apenasNumeros !== normalizado) {
+      console.log(`📝 CNPJ normalizado: ${apenasNumeros} → ${normalizado}`);
+    }
+    return normalizado;
+  }
+  
+  // Se tem mais de 14, retorna como está (erro/inválido)
+  console.warn(`⚠️ Documento com tamanho inválido (${apenasNumeros.length} dígitos): ${apenasNumeros}`);
+  return apenasNumeros;
+}
+
 // ========== ENDPOINT DE TESTE - REMOVER DEPOIS ==========
 router.get('/teste-busca-telefone/:telefone', async (req: Request, res: Response) => {
   try {
@@ -427,7 +463,7 @@ router.get('/buscar', async (req: Request, res: Response) => {
 // Adicionar registro manualmente COM verificação automática de WhatsApp
 router.post('/adicionar', async (req: Request, res: Response) => {
   try {
-    const {
+    let {
       tipo_documento,
       documento,
       nome,
@@ -447,6 +483,13 @@ router.post('/adicionar', async (req: Request, res: Response) => {
         success: false,
         message: 'Campos obrigatórios: tipo_documento, documento, nome'
       });
+    }
+
+    // 🔧 NORMALIZAR DOCUMENTO (adicionar zeros à esquerda)
+    const documentoOriginal = documento;
+    documento = normalizarDocumento(documento);
+    if (documentoOriginal !== documento) {
+      console.log(`📝 [/adicionar] Documento normalizado: ${documentoOriginal} → ${documento}`);
     }
 
     // Verificar WhatsApp automaticamente se houver telefones E instâncias disponíveis
@@ -644,7 +687,12 @@ router.post('/importar', checkContactLimit, async (req: Request, res: Response) 
       console.log(`📦 Processando lote ${batchIndex + 1}/${totalBatches} (${batch.length} registros)...`);
 
       // 🚀 OTIMIZAÇÃO: Buscar todos os documentos existentes do lote de uma vez
-      const documentosLote = batch.map(r => r.documento).filter(Boolean);
+      // 🔧 Normalizar TODOS os documentos antes de buscar
+      const documentosLote = batch
+        .map(r => r.documento)
+        .filter(Boolean)
+        .map(doc => normalizarDocumento(doc));
+      
       const existentesResult = await pool.query(
         `SELECT documento, telefones, emails, enderecos FROM base_dados_completa 
          WHERE documento = ANY($1) AND tenant_id = $2`,
@@ -663,7 +711,7 @@ router.post('/importar', checkContactLimit, async (req: Request, res: Response) 
 
       for (const registro of batch) {
         try {
-          const { 
+          let { 
             tipo_documento, 
             documento, 
             nome,
@@ -676,6 +724,13 @@ router.post('/importar', checkContactLimit, async (req: Request, res: Response) 
           if (!documento || !nome) {
             erros.push({ documento, erro: 'Documento e nome são obrigatórios' });
             continue;
+          }
+
+          // 🔧 NORMALIZAR DOCUMENTO (adicionar zeros à esquerda)
+          const documentoOriginal = documento;
+          documento = normalizarDocumento(documento);
+          if (documentoOriginal !== documento) {
+            console.log(`📝 [/importar lote ${batchIndex + 1}] Documento normalizado: ${documentoOriginal} → ${documento}`);
           }
 
           const existente = existentesMap.get(documento);

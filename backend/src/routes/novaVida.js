@@ -16,6 +16,42 @@ router.use(checkNovaVida);
 // Importar helper de credenciais UAZAP
 const { getTenantUazapCredentials } = require('../helpers/uaz-credentials.helper');
 
+/**
+ * 🔧 NORMALIZA CPF/CNPJ ADICIONANDO ZEROS À ESQUERDA
+ * CPF: 11 dígitos
+ * CNPJ: 14 dígitos
+ */
+function normalizarDocumento(documento) {
+  if (!documento) return documento;
+  
+  // Remove tudo que não é número
+  const apenasNumeros = String(documento).replace(/\D/g, '');
+  
+  if (apenasNumeros.length === 0) return apenasNumeros;
+  
+  // Se tem até 11 dígitos, considera CPF → completa com zeros até 11
+  if (apenasNumeros.length <= 11) {
+    const normalizado = apenasNumeros.padStart(11, '0');
+    if (apenasNumeros !== normalizado) {
+      console.log(`📝 CPF normalizado: ${apenasNumeros} → ${normalizado}`);
+    }
+    return normalizado;
+  }
+  
+  // Se tem 12-14 dígitos, considera CNPJ → completa com zeros até 14
+  if (apenasNumeros.length <= 14) {
+    const normalizado = apenasNumeros.padStart(14, '0');
+    if (apenasNumeros !== normalizado) {
+      console.log(`📝 CNPJ normalizado: ${apenasNumeros} → ${normalizado}`);
+    }
+    return normalizado;
+  }
+  
+  // Se tem mais de 14, retorna como está (erro/inválido)
+  console.warn(`⚠️ Documento com tamanho inválido (${apenasNumeros.length} dígitos): ${apenasNumeros}`);
+  return apenasNumeros;
+}
+
 // ============================================
 // VERIFICAR SE CPF ESTÁ NA LISTA DE RESTRIÇÃO
 // ============================================
@@ -127,7 +163,12 @@ function mergeArraysNovaVida(existentes, novos, campoChave) {
 async function salvarNaBaseDados(tipo_origem, tipo_documento, documento, dados, tenantId) {
   try {
     console.log(`\n🔵 [salvarNaBaseDados] INICIANDO...`);
-    console.log(`   📋 Documento: ${documento}`);
+    console.log(`   📋 Documento ORIGINAL: ${documento}`);
+    
+    // 🔧 NORMALIZAR DOCUMENTO (adicionar zeros à esquerda)
+    documento = normalizarDocumento(documento);
+    console.log(`   📋 Documento NORMALIZADO: ${documento}`);
+    
     console.log(`   🏢 Tenant ID: ${tenantId}`);
     console.log(`   📂 Tipo Origem: ${tipo_origem}`);
     console.log(`   📄 Tipo Documento: ${tipo_documento}`);
@@ -1144,11 +1185,12 @@ router.post('/verificar-lista', async (req, res) => {
     console.log('═══════════════════════════════════════════════════════');
     console.log(`📥 Total de CPFs recebidos: ${cpfs.length}`);
 
-    // Formatar CPFs (remover caracteres especiais)
+    // Formatar E NORMALIZAR CPFs (remover caracteres especiais + adicionar zeros)
     const cpfsFormatados = cpfs.map((cpf, index) => {
-      const formatado = String(cpf).replace(/\D/g, '');
-      console.log(`  [${index + 1}] "${cpf}" → "${formatado}" (${formatado.length} dígitos)`);
-      return formatado;
+      const apenasNumeros = String(cpf).replace(/\D/g, '');
+      const normalizado = normalizarDocumento(apenasNumeros);
+      console.log(`  [${index + 1}] "${cpf}" → "${apenasNumeros}" → "${normalizado}" (${normalizado.length} dígitos)`);
+      return normalizado;
     });
 
     // 🔧 REMOVER DUPLICATAS DOS CPFs ENVIADOS
