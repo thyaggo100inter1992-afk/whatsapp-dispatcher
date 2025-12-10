@@ -95,14 +95,15 @@ export class CampaignController {
             templateId = templateResult.rows[0].id;
           } else {
             // Criar o template no banco se não existir
+            const tenantId = (req as any).tenant?.id;
             const newTemplateResult = await tenantQuery(req, 
-              `INSERT INTO templates (whatsapp_account_id, template_name, status, has_media, media_type)
-               VALUES ($1, $2, 'APPROVED', $3, $4)
+              `INSERT INTO templates (whatsapp_account_id, template_name, status, has_media, media_type, tenant_id)
+               VALUES ($1, $2, 'APPROVED', $3, $4, $5)
                RETURNING id`,
-              [template.whatsapp_account_id, template.template_name, !!template.media_url, template.media_type]
+              [template.whatsapp_account_id, template.template_name, !!template.media_url, template.media_type, tenantId]
             );
             templateId = newTemplateResult.rows[0].id;
-            console.log(`✅ Template "${template.template_name}" criado no banco com ID: ${templateId}`);
+            console.log(`✅ Template "${template.template_name}" criado no banco com ID: ${templateId} (Tenant: ${tenantId})`);
           }
         }
         
