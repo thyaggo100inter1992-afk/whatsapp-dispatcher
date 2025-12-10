@@ -27,7 +27,7 @@ async function main() {
           name,
           phone_number,
           tenant_id,
-          ativo,
+          is_active,
           created_at
         FROM whatsapp_accounts
         WHERE phone_number LIKE '%' || $1 || '%'
@@ -42,7 +42,7 @@ async function main() {
           console.log(`   ID: ${row.id}`);
           console.log(`   Nome: ${row.name}`);
           console.log(`   Tenant ID: ${row.tenant_id || 'NULL'}`);
-          console.log(`   Ativo: ${row.ativo}`);
+          console.log(`   Ativo: ${row.is_active}`);
           console.log(`   Criado em: ${row.created_at}`);
           console.log('');
         });
