@@ -47,6 +47,13 @@ export class CampaignController {
       }
 
       // Criar campanha
+      console.log(`\n🚀 ===== CRIANDO CAMPANHA =====`);
+      console.log(`   📛 Nome: ${name}`);
+      console.log(`   📊 Total de contatos recebidos do frontend: ${contacts.length}`);
+      console.log(`   📅 Agendada: ${scheduled_at ? 'Sim' : 'Não'}`);
+      console.log(`   👤 Tenant ID: ${tenantId}`);
+      console.log(`   👤 User ID: ${(req as any).user?.id || 'N/A'}`);
+      
       const campaign = await CampaignModel.create({
         name,
         status: scheduled_at ? 'scheduled' : 'pending',
@@ -64,7 +71,10 @@ export class CampaignController {
         button_clicks_count: 0,
       });
 
-      console.log('✅ Campanha criada com ID:', campaign.id);
+      console.log(`✅ Campanha criada com ID: ${campaign.id}`);
+      console.log(`   Status inicial: ${campaign.status}`);
+      console.log(`   total_contacts definido: ${campaign.total_contacts}`);
+      console.log(`===============================\n`);
 
       // Criar/atualizar contatos em massa com tenant_id
       console.log(`\n📞 ===== CRIANDO CONTATOS =====`);
@@ -73,15 +83,32 @@ export class CampaignController {
       console.log(`   ✅ Contatos criados/atualizados: ${createdContacts.length}`);
 
       // Associar contatos à campanha
+      console.log(`\n📎 ===== ASSOCIANDO CONTATOS À CAMPANHA =====`);
       let associatedCount = 0;
+      let skippedCount = 0;
       for (const contact of createdContacts) {
         const result = await tenantQuery(req, 
           'INSERT INTO campaign_contacts (campaign_id, contact_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id',
           [campaign.id, contact.id]
         );
-        if (result.rows.length > 0) associatedCount++;
+        if (result.rows.length > 0) {
+          associatedCount++;
+        } else {
+          skippedCount++;
+        }
       }
       console.log(`   ✅ Contatos associados à campanha: ${associatedCount}`);
+      console.log(`   ⏭️  Contatos já associados (pulados): ${skippedCount}`);
+      console.log(`   📊 Total processado: ${associatedCount + skippedCount}`);
+      
+      if (associatedCount === 0) {
+        console.log(`\n⚠️  ========================================`);
+        console.log(`⚠️  AVISO CRÍTICO: NENHUM CONTATO FOI ASSOCIADO!`);
+        console.log(`⚠️  A campanha pode ser marcada como concluída imediatamente!`);
+        console.log(`⚠️  Verifique se há algum problema com os contatos.`);
+        console.log(`⚠️  ========================================\n`);
+      }
+      
       console.log(`===============================\n`);
 
       // Criar registros de templates da campanha

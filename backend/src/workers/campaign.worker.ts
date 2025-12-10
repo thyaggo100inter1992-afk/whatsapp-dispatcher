@@ -599,7 +599,13 @@ class CampaignWorker {
     const templates: CampaignTemplate[] = templatesResult.rows;
 
     if (templates.length === 0) {
-      console.log(`⚠️ Campanha ${campaign.id} sem templates`);
+      console.log(`\n🚨 ===== CAMPANHA SEM TEMPLATES ATIVOS =====`);
+      console.log(`   📊 Campanha ID: ${campaign.id}`);
+      console.log(`   📛 Nome: ${campaign.name}`);
+      console.log(`   👤 Tenant ID: ${campaign.tenant_id}`);
+      console.log(`   ❌ Nenhum template ativo encontrado!`);
+      console.log(`   ⚠️  Marcando campanha como concluída...`);
+      console.log(`============================================\n`);
       await this.updateCampaignStatus(campaign.id, 'completed', campaign.tenant_id);
       return;
     }
@@ -646,9 +652,32 @@ class CampaignWorker {
     console.log(`   Total de templates: ${templates.length}`);
     console.log(`   Já enviadas: ${campaign.sent_count}/${totalMessages}`);
     console.log(`   Faltam: ${totalMessages - campaign.sent_count}`);
+    
+    // 🔍 VERIFICAR QUANTOS CONTATOS ESTÃO REALMENTE ASSOCIADOS
+    const contactCountResult = await queryWithTenantId(
+      campaign.tenant_id,
+      `SELECT COUNT(*) as total FROM campaign_contacts WHERE campaign_id = $1`,
+      [campaign.id]
+    );
+    const actualContactCount = parseInt(contactCountResult.rows[0]?.total || '0');
+    console.log(`📊 CONTATOS ASSOCIADOS: ${actualContactCount}`);
+    console.log(`📊 TOTAL_CONTACTS DA CAMPANHA: ${campaign.total_contacts}`);
+    if (actualContactCount !== campaign.total_contacts) {
+      console.log(`⚠️  ATENÇÃO: Há discrepância entre total_contacts (${campaign.total_contacts}) e contatos associados (${actualContactCount})!`);
+    }
 
     // Verificar se todas as mensagens foram enviadas
     if (campaign.sent_count >= totalMessages) {
+      console.log(`\n🔍 ===== DEBUG CONCLUSÃO DE CAMPANHA =====`);
+      console.log(`   📊 Campanha ID: ${campaign.id}`);
+      console.log(`   📛 Nome: ${campaign.name}`);
+      console.log(`   ✅ sent_count: ${campaign.sent_count}`);
+      console.log(`   📞 total_contacts: ${totalMessages}`);
+      console.log(`   🔢 Contatos realmente associados: ${actualContactCount}`);
+      console.log(`   📊 Comparação: ${campaign.sent_count} >= ${totalMessages} = ${campaign.sent_count >= totalMessages}`);
+      console.log(`   ⚠️  Se sent_count for 0, a campanha pode ter sido marcada como concluída prematuramente!`);
+      console.log(`============================================\n`);
+      
       console.log(`✅ Campanha ${campaign.id} CONCLUÍDA!`);
       console.log(`   ✅ Todas as ${totalMessages} mensagens foram enviadas!`);
       
