@@ -703,6 +703,13 @@ export default function Configuracoes() {
                   Criar Template
                 </button>
                 <button
+                  onClick={() => router.push('/api-status')}
+                  className="flex items-center gap-3 px-6 py-4 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border-2 border-cyan-500/40 rounded-xl font-bold transition-all duration-200 shadow-lg hover:shadow-cyan-500/30"
+                >
+                  <FaCog className="text-xl animate-spin-slow" />
+                  Status das Contas
+                </button>
+                <button
                   onClick={() => setShowForm(!showForm)}
                   className={`flex items-center gap-3 px-8 py-4 rounded-xl font-bold transition-all duration-200 shadow-lg ${
                     showForm 
