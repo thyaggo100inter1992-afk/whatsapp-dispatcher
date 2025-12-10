@@ -7,7 +7,7 @@ import {
   FaMapMarkerAlt, FaChartLine, FaUsers, FaPause, FaPlay,
   FaTimes, FaClock, FaCheckCircle, FaTimesCircle, FaSpinner, FaWhatsapp,
   FaDatabase, FaPlus, FaFilter, FaTrash, FaEdit, FaBan, FaShoppingCart, FaCopy,
-  FaGift, FaFire, FaStar, FaBolt, FaInfoCircle
+  FaGift, FaFire, FaStar, FaBolt, FaInfoCircle, FaList
 } from 'react-icons/fa';
 import api from '@/services/api';
 import * as XLSX from 'xlsx';
@@ -993,9 +993,22 @@ export default function ConsultarDados() {
         notFound: response.data.naoEncontrados || []
       });
       
-      const mensagem = cpfsBloqueados.length > 0
-        ? `✅ Verificação concluída! ${response.data.encontrados?.length || 0} cadastrados, ${response.data.naoEncontrados?.length || 0} não cadastrados (${cpfsBloqueados.length} bloqueados pela Lista de Restrição)`
-        : `✅ Verificação concluída! ${response.data.encontrados?.length || 0} cadastrados, ${response.data.naoEncontrados?.length || 0} não cadastrados`;
+      const stats = response.data.estatisticas || {};
+      const duplicatasMsg = stats.duplicatasRemovidas > 0 
+        ? ` (${stats.duplicatasRemovidas} duplicata(s) removida(s))` 
+        : '';
+      
+      const restricaoMsg = cpfsBloqueados.length > 0 
+        ? ` (${cpfsBloqueados.length} bloqueado(s) pela Lista de Restrição)` 
+        : '';
+      
+      const mensagem = `✅ Verificação concluída!
+        
+📊 Base enviada: ${stats.totalRecebido || cpfs.length} CPF(s)${duplicatasMsg}${restricaoMsg}
+📋 CPFs únicos analisados: ${stats.totalUnico || cpfs.length}
+
+✅ ${response.data.encontrados?.length || 0} cadastrado(s)
+❌ ${response.data.naoEncontrados?.length || 0} não cadastrado(s)`;
       
       showNotification(mensagem, 'success');
     } catch (error: any) {
@@ -2636,7 +2649,19 @@ export default function ConsultarDados() {
             {verificationResults && (
               <div className="mt-8 space-y-6">
                 {/* Estatísticas */}
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-3 gap-6">
+                  <div className="bg-blue-500/10 border-2 border-blue-500/50 rounded-xl p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-blue-300 text-sm font-bold mb-1">📋 TOTAL (ÚNICOS)</p>
+                        <p className="text-white text-4xl font-black">
+                          {verificationResults.found.length + verificationResults.notFound.length}
+                        </p>
+                      </div>
+                      <FaList className="text-6xl text-blue-400/30" />
+                    </div>
+                  </div>
+
                   <div className="bg-green-500/10 border-2 border-green-500/50 rounded-xl p-6">
                     <div className="flex items-center justify-between">
                       <div>

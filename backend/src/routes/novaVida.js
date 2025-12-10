@@ -1143,7 +1143,6 @@ router.post('/verificar-lista', async (req, res) => {
     console.log('🔍 BACKEND - VERIFICAR LISTA DE CPFs');
     console.log('═══════════════════════════════════════════════════════');
     console.log(`📥 Total de CPFs recebidos: ${cpfs.length}`);
-    console.log('📋 CPFs recebidos:', cpfs);
 
     // Formatar CPFs (remover caracteres especiais)
     const cpfsFormatados = cpfs.map((cpf, index) => {
@@ -1152,13 +1151,22 @@ router.post('/verificar-lista', async (req, res) => {
       return formatado;
     });
 
+    // 🔧 REMOVER DUPLICATAS DOS CPFs ENVIADOS
+    const cpfsUnicos = [...new Set(cpfsFormatados)];
+    const duplicatasRemovidas = cpfsFormatados.length - cpfsUnicos.length;
+    
+    if (duplicatasRemovidas > 0) {
+      console.log(`\n⚠️ ATENÇÃO: ${duplicatasRemovidas} CPF(s) duplicado(s) removido(s) da lista`);
+      console.log(`📊 Total original: ${cpfsFormatados.length} → CPFs únicos: ${cpfsUnicos.length}`);
+    }
+
     console.log('\n🔎 Buscando na base de dados...');
 
     // Buscar na base de dados
-    const placeholders = cpfsFormatados.map((_, i) => `$${i + 1}`).join(',');
+    const placeholders = cpfsUnicos.map((_, i) => `$${i + 1}`).join(',');
     
     const result = await pool.query(
-      `SELECT 
+      `SELECT DISTINCT ON (documento)
         id,
         tipo_documento,
         documento,
@@ -1175,15 +1183,17 @@ router.post('/verificar-lista', async (req, res) => {
         observacoes,
         tags
       FROM base_dados_completa
-      WHERE documento IN (${placeholders})`,
-      cpfsFormatados
+      WHERE documento IN (${placeholders})
+      ORDER BY documento, data_adicao DESC`,
+      cpfsUnicos
     );
 
     const encontrados = result.rows;
     const cpfsEncontrados = encontrados.map(reg => reg.documento);
-    const naoEncontrados = cpfsFormatados.filter(cpf => !cpfsEncontrados.includes(cpf));
+    const naoEncontrados = cpfsUnicos.filter(cpf => !cpfsEncontrados.includes(cpf));
 
     console.log('\n📊 RESULTADO DA VERIFICAÇÃO:');
+    console.log(`📋 CPFs únicos analisados: ${cpfsUnicos.length}`);
     console.log(`✅ Encontrados na base: ${encontrados.length}`);
     if (encontrados.length > 0) {
       encontrados.forEach((reg, i) => {
@@ -1197,13 +1207,23 @@ router.post('/verificar-lista', async (req, res) => {
         console.log(`  [${i + 1}] CPF: ${cpf}`);
       });
     }
+    
+    // Validação matemática
+    const totalValidacao = encontrados.length + naoEncontrados.length;
+    console.log(`\n🔢 VALIDAÇÃO: ${encontrados.length} + ${naoEncontrados.length} = ${totalValidacao}`);
+    console.log(`✅ Total de CPFs únicos: ${cpfsUnicos.length}`);
+    if (totalValidacao !== cpfsUnicos.length) {
+      console.log(`⚠️ ALERTA: Soma não bate! ${totalValidacao} ≠ ${cpfsUnicos.length}`);
+    }
     console.log('═══════════════════════════════════════════════════════\n');
 
     res.json({
       encontrados,
       naoEncontrados,
       estatisticas: {
-        total: cpfs.length,
+        totalRecebido: cpfs.length,
+        duplicatasRemovidas: duplicatasRemovidas,
+        totalUnico: cpfsUnicos.length,
         encontrados: encontrados.length,
         naoEncontrados: naoEncontrados.length
       }
