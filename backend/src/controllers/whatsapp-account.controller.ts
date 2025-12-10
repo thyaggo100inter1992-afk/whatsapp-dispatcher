@@ -976,9 +976,9 @@ export class WhatsAppAccountController {
           const messagesResult = await tenantQuery(
             req,
             `SELECT COUNT(*) as total 
-             FROM campaign_messages 
+             FROM messages 
              WHERE whatsapp_account_id = $1 
-             AND created_at >= $2
+             AND sent_at >= $2
              AND status IN ('sent', 'delivered', 'read')`,
             [account.id, today]
           );
@@ -1026,10 +1026,10 @@ export class WhatsAppAccountController {
           const webhookResult = await tenantQuery(
             req,
             `SELECT 
-               COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '1 hour') as recent_events,
-               MAX(created_at) as last_event
-             FROM webhook_events 
-             WHERE account_id = $1`,
+               COUNT(*) FILTER (WHERE processed_at >= NOW() - INTERVAL '1 hour') as recent_events,
+               MAX(processed_at) as last_event
+             FROM webhook_logs 
+             WHERE whatsapp_account_id = $1 AND request_type = 'webhook'`,
             [account.id]
           );
           
@@ -1040,18 +1040,18 @@ export class WhatsAppAccountController {
           // 4. Buscar último erro
           const errorResult = await tenantQuery(
             req,
-            `SELECT error_message, created_at 
-             FROM campaign_messages 
+            `SELECT error_message, sent_at 
+             FROM messages 
              WHERE whatsapp_account_id = $1 
              AND status = 'failed' 
              AND error_message IS NOT NULL 
-             ORDER BY created_at DESC 
+             ORDER BY sent_at DESC 
              LIMIT 1`,
             [account.id]
           );
           
           const lastError = errorResult.rows[0]?.error_message || null;
-          const lastErrorAt = errorResult.rows[0]?.created_at || null;
+          const lastErrorAt = errorResult.rows[0]?.sent_at || null;
 
           return {
             id: account.id,
