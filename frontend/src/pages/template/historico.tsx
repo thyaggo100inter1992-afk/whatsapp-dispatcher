@@ -317,7 +317,7 @@ export default function HistoricoTemplates() {
 
   const handleDelete = async (template: TemplateHistory) => {
     // Se o template tem erro ou falhou, não precisa tentar excluir na Meta
-    const hasError = template.status === 'error' || template.status === 'failed' || template.operation_type === 'DELETE';
+    const hasError = template.status === 'error' || template.status === 'failed' || template.type === 'DELETE';
     
     let confirmationMessage = '';
     if (hasError) {
