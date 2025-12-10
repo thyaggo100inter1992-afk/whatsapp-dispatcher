@@ -938,13 +938,13 @@ export class TemplateController {
   async deleteHistory(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const tenantId = (req as any).tenantId || 1;
+      const requestTenantId = (req as any).tenantId || (req as any).tenant?.id || 1;
+      const isMaster = (req as any).user?.is_master || false;
       
       console.log(`\n🗑️ ===== EXCLUINDO REGISTRO DO HISTÓRICO =====`);
       console.log(`   ID: ${id}`);
-      console.log(`   Tenant ID: ${tenantId}`);
-      console.log(`   ID Type: ${typeof id}`);
-      console.log(`   ID Parsed: ${parseInt(id)}`);
+      console.log(`   Request Tenant ID: ${requestTenantId}`);
+      console.log(`   É Master/Admin: ${isMaster}`);
 
       const { query } = await import('../database/connection');
       
@@ -967,20 +967,42 @@ export class TemplateController {
       const registro = checkResult.rows[0];
       console.log(`   📋 Registro: ID=${registro.id}, Tenant=${registro.tenant_id}, Template=${registro.template_name}, Status=${registro.status}`);
 
-      // Tentar deletar
+      // 🔓 PERMITIR DELEÇÃO SEM VALIDAÇÃO DE TENANT SE:
+      // 1. Usuário é Master/Admin (pode deletar tudo)
+      // 2. Template tem status 'failed' (nunca foi criado no WhatsApp, é seguro deletar)
+      const canDeleteWithoutTenantCheck = isMaster || registro.status === 'failed';
+
+      if (canDeleteWithoutTenantCheck) {
+        console.log(`   🔓 Deleção permitida sem verificação de tenant (Master=${isMaster}, Status=${registro.status})`);
+        
+        // Deletar sem verificar tenant_id
+        const result = await query(
+          `DELETE FROM template_queue_history WHERE id = $1 RETURNING *`,
+          [parseInt(id)]
+        );
+
+        console.log(`   ✅ Registro excluído com sucesso (sem validação de tenant)`);
+
+        return res.json({
+          success: true,
+          message: 'Registro excluído com sucesso',
+        });
+      }
+
+      // Se não for master nem failed, verificar tenant_id normalmente
       const result = await query(
         `DELETE FROM template_queue_history 
          WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL)
          RETURNING *`,
-        [parseInt(id), tenantId]
+        [parseInt(id), requestTenantId]
       );
 
       if (result.rows.length === 0) {
         console.log(`   ⚠️ Registro existe mas não pode ser deletado (tenant_id não corresponde)`);
-        console.log(`   ⚠️ Registro Tenant ID: ${registro.tenant_id}, Request Tenant ID: ${tenantId}`);
+        console.log(`   ⚠️ Registro Tenant ID: ${registro.tenant_id}, Request Tenant ID: ${requestTenantId}`);
         return res.status(404).json({
           success: false,
-          error: `Registro não encontrado ou não pertence ao seu tenant (ID=${id}, Tenant Registro=${registro.tenant_id}, Tenant Request=${tenantId})`,
+          error: `Registro não encontrado ou não pertence ao seu tenant (ID=${id}, Tenant Registro=${registro.tenant_id}, Tenant Request=${requestTenantId})`,
         });
       }
 
