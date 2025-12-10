@@ -1172,19 +1172,43 @@ export class TemplateController {
             continue;
           }
 
+          // Buscar informações da conta
+          const { query } = await import('../database/connection');
+          const accountResult = await query(
+            `SELECT phone_number FROM whatsapp_accounts WHERE id = $1`,
+            [accountId]
+          );
+
+          if (accountResult.rows.length === 0) {
+            console.log(`   ❌ Conta não encontrada`);
+            errorCount++;
+            results.push({
+              originalName: templateName,
+              newName: newName,
+              success: false,
+              error: 'Conta não encontrada',
+            });
+            continue;
+          }
+
+          const accountPhone = accountResult.rows[0].phone_number;
+
           // Criar cópia do template com novo nome na fila
           console.log(`   🔄 Adicionando template à fila com novo nome...`);
           
-          const queueResult = await templateQueueService.addCreateTemplate({
-            whatsappAccountId: accountId,
-            name: newName,
-            category: originalTemplate.category,
-            language: originalTemplate.language,
-            components: originalTemplate.components,
+          const queueResult = templateQueueService.addCreateTemplate({
+            accountId: accountId,
+            accountPhone: accountPhone,
+            templateName: newName,
+            templateData: {
+              category: originalTemplate.category,
+              language: originalTemplate.language,
+              components: originalTemplate.components,
+            },
             tenantId: (req as any).tenant?.id,
           });
 
-          if (queueResult) {
+          if (queueResult && queueResult.id) {
             console.log(`   ✅ Template adicionado à fila com ID: ${queueResult.id}`);
             successCount++;
             results.push({
