@@ -44,6 +44,7 @@ export default function ConsultarDados() {
   // Consulta em massa
   const [bulkDocs, setBulkDocs] = useState('');
   const [delaySeconds, setDelaySeconds] = useState(0);
+  const [bulkBatchSize, setBulkBatchSize] = useState(20); // CPFs processados simultaneamente
   const [verifyWhatsapp, setVerifyWhatsapp] = useState(true); // Ativo por padrão
   const [whatsappDelay, setWhatsappDelay] = useState(3); // 3 segundos por padrão (proteção contra banimento)
   const [loadingBulk, setLoadingBulk] = useState(false);
@@ -422,6 +423,7 @@ export default function ConsultarDados() {
       const response = await api.post('/novavida/jobs', {
         documentos: docs,
         delaySeconds,
+        batchSize: bulkBatchSize, // 🚀 Velocidade de processamento paralelo
         verifyWhatsapp, // Nova opção
         whatsappDelay   // Nova opção
       });
@@ -2149,20 +2151,54 @@ export default function ConsultarDados() {
                   />
                 </div>
                 
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xl font-bold mb-3 text-white">
-                      Delay entre consultas (segundos)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={delaySeconds}
-                      onChange={(e) => setDelaySeconds(parseInt(e.target.value) || 0)}
-                      className="w-full px-6 py-4 text-xl bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/30 transition-all"
-                      disabled={loadingBulk}
-                    />
+                {/* 🚀 CONTROLES DE VELOCIDADE */}
+                <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 border-2 border-blue-500/30 rounded-xl p-6 space-y-4">
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    ⚡ Configurações de Velocidade
+                  </h3>
+                  
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-lg font-bold mb-2 text-white">
+                        🚀 Velocidade de Processamento
+                      </label>
+                      <select
+                        value={bulkBatchSize}
+                        onChange={(e) => setBulkBatchSize(Number(e.target.value))}
+                        className="w-full px-4 py-3 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/30 transition-all"
+                        disabled={loadingBulk}
+                      >
+                        <option value={10}>🐌 Normal (10 CPFs/vez)</option>
+                        <option value={20}>⚡ Rápida (20 CPFs/vez)</option>
+                        <option value={50}>🚀 Muito Rápida (50 CPFs/vez)</option>
+                        <option value={100}>💨 Super Rápida (100 CPFs/vez)</option>
+                      </select>
+                      <p className="text-sm text-white/60 mt-1">
+                        ✨ Processa múltiplos CPFs simultaneamente
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-lg font-bold mb-2 text-white">
+                        🕐 Delay entre LOTES (segundos)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={delaySeconds}
+                        onChange={(e) => setDelaySeconds(parseFloat(e.target.value) || 0)}
+                        className="w-full px-4 py-3 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/30 transition-all"
+                        disabled={loadingBulk}
+                      />
+                      <p className="text-sm text-white/60 mt-1">
+                        ⚡ 0 = Máxima velocidade (recomendado)
+                      </p>
+                    </div>
                   </div>
+                </div>
+                
+                <div className="grid md:grid-cols-1 gap-4">
                   
                   <div>
                     <label className="block text-xl font-bold mb-3 text-white">

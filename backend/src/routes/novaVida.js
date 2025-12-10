@@ -658,6 +658,7 @@ router.post('/jobs', checkNovaVidaLimit, async (req, res) => {
     const { 
       documentos, 
       delaySeconds = 0,
+      batchSize = 20,              // 🚀 Velocidade de processamento paralelo
       verifyWhatsapp = true,      // Nova opção
       whatsappDelay = 3            // Nova opção (3 segundos por padrão)
     } = req.body;
@@ -665,6 +666,7 @@ router.post('/jobs', checkNovaVidaLimit, async (req, res) => {
     console.log(`📦 Body recebido:`, {
       documentos: documentos?.length,
       delaySeconds,
+      batchSize,
       verifyWhatsapp,
       whatsappDelay
     });
@@ -800,10 +802,10 @@ router.post('/jobs', checkNovaVidaLimit, async (req, res) => {
 
     const tenantId = req.tenant?.id;
     const result = await pool.query(
-      `INSERT INTO novavida_jobs (user_identifier, documentos, delay_seconds, progress_total, status, verify_whatsapp, whatsapp_delay, tenant_id, is_consulta_avulsa)
-       VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8)
+      `INSERT INTO novavida_jobs (user_identifier, documentos, delay_seconds, batch_size, progress_total, status, verify_whatsapp, whatsapp_delay, tenant_id, is_consulta_avulsa)
+       VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9)
        RETURNING id`,
-      [userIdentifier, documentosPermitidos, delaySeconds, documentosPermitidos.length, verifyWhatsapp, whatsappDelay, tenantId, isConsultaAvulsa]
+      [userIdentifier, documentosPermitidos, delaySeconds, batchSize, documentosPermitidos.length, verifyWhatsapp, whatsappDelay, tenantId, isConsultaAvulsa]
     );
 
     const jobId = result.rows[0].id;
@@ -1029,119 +1031,160 @@ async function processJob(jobId) {
       }
     }
 
-    // Processar documentos a partir do índice atual
-    for (let i = startIndex; i < documentos.length; i++) {
-      // Verificar se foi pausado ou cancelado
+    // 🚀 PROCESSAMENTO EM PARALELO - 20 documentos por vez
+    const BATCH_SIZE = job.batch_size || 20;
+    console.log(`🚀 Iniciando processamento PARALELO de ${documentos.length - startIndex} documentos (${BATCH_SIZE} por vez)`);
+    
+    // Processar documentos a partir do índice atual em LOTES
+    for (let batchStart = startIndex; batchStart < documentos.length; batchStart += BATCH_SIZE) {
+      // Verificar se foi pausado ou cancelado ANTES do lote
       const statusCheck = await pool.query(
         `SELECT status FROM novavida_jobs WHERE id = $1`,
         [jobId]
       );
 
       if (statusCheck.rows[0].status === 'paused') {
-        console.log(`⏸️ Job ${jobId} pausado no documento ${i + 1}/${documentos.length}`);
+        console.log(`⏸️ Job ${jobId} pausado no lote iniciando em ${batchStart + 1}/${documentos.length}`);
         return;
       }
 
       if (statusCheck.rows[0].status === 'cancelled') {
-        console.log(`❌ Job ${jobId} cancelado no documento ${i + 1}/${documentos.length}`);
+        console.log(`❌ Job ${jobId} cancelado no lote iniciando em ${batchStart + 1}/${documentos.length}`);
         return;
       }
 
-      const documento = documentos[i];
-      console.log(`📄 Processando documento ${i + 1}/${documentos.length}: ${documento}`);
-
-      // Consultar documento
-      const resultado = await novaVidaService.consultarDocumento(documento);
-
-      // 📱 VERIFICAR WHATSAPP DOS TELEFONES (se ativado)
-      if (resultado.success && job.verify_whatsapp && resultado.dados?.TELEFONES && instances.length > 0 && uazService) {
-        console.log(`\n✅ VERIFICANDO WHATSAPP - Documento ${documento}`);
+      const batch = documentos.slice(batchStart, batchStart + BATCH_SIZE);
+      console.log(`📦 Processando lote ${Math.floor(batchStart / BATCH_SIZE) + 1} com ${batch.length} documentos (${batchStart + 1}-${batchStart + batch.length}/${documentos.length})...`);
+      
+      // 🚀 Processar TODOS os documentos do lote em PARALELO
+      const batchPromises = batch.map(async (documento, batchIdx) => {
+        const i = batchStart + batchIdx;
         
         try {
-          const telefones = resultado.dados.TELEFONES || [];
-          const whatsappDelay = job.whatsapp_delay || 3;
+          console.log(`📄 [${i + 1}/${documentos.length}] Processando: ${documento}`);
           
-          for (let telIdx = 0; telIdx < telefones.length; telIdx++) {
-            const telefone = telefones[telIdx];
-            
-            // 🔄 Selecionar próxima instância (round-robin GLOBAL)
-            const selectedInstance = instances[globalInstanceIndex % instances.length];
-            globalInstanceIndex++;
-            
-            // Construir número completo
-            const ddd = telefone.DDD || '';
-            const numero = telefone.TELEFONE || '';
-            const numeroCompleto = `55${ddd}${numero}`;
-            
-            console.log(`🔍 [${selectedInstance.name}] Verificando: ${numeroCompleto} (índice global: ${globalInstanceIndex})`);
+          // Consultar documento
+          const resultado = await novaVidaService.consultarDocumento(documento);
+
+          // 📱 VERIFICAR WHATSAPP DOS TELEFONES (se ativado)
+          if (resultado.success && job.verify_whatsapp && resultado.dados?.TELEFONES && instances.length > 0 && uazService) {
+            console.log(`\n✅ VERIFICANDO WHATSAPP - Documento ${documento}`);
             
             try {
-              const whatsappCheck = await uazService.checkNumber(selectedInstance.instance_token, numeroCompleto);
+              const telefones = resultado.dados.TELEFONES || [];
+              const whatsappDelay = job.whatsapp_delay || 3;
               
-              telefone.WHATSAPP_VERIFIED = true;
-              telefone.HAS_WHATSAPP = whatsappCheck.exists;
-              telefone.VERIFIED_BY = selectedInstance.name;
+              for (let telIdx = 0; telIdx < telefones.length; telIdx++) {
+                const telefone = telefones[telIdx];
+                
+                // 🔄 Selecionar próxima instância (round-robin GLOBAL)
+                const selectedInstance = instances[globalInstanceIndex % instances.length];
+                globalInstanceIndex++;
+                
+                // Construir número completo
+                const ddd = telefone.DDD || '';
+                const numero = telefone.TELEFONE || '';
+                const numeroCompleto = `55${ddd}${numero}`;
+                
+                console.log(`🔍 [${selectedInstance.name}] Verificando: ${numeroCompleto} (índice global: ${globalInstanceIndex})`);
+                
+                try {
+                  const whatsappCheck = await uazService.checkNumber(selectedInstance.instance_token, numeroCompleto);
+                  
+                  telefone.WHATSAPP_VERIFIED = true;
+                  telefone.HAS_WHATSAPP = whatsappCheck.exists;
+                  telefone.VERIFIED_BY = selectedInstance.name;
+                  
+                  console.log(`   ${whatsappCheck.exists ? '✅' : '❌'} ${numeroCompleto} (via ${selectedInstance.name})`);
+                } catch (error) {
+                  console.error(`   ❌ Erro ao verificar ${numeroCompleto}:`, error.message);
+                  telefone.WHATSAPP_VERIFIED = false;
+                }
+                
+                // Delay entre verificações (proteção anti-ban)
+                if (telIdx < telefones.length - 1 && whatsappDelay > 0) {
+                  console.log(`   ⏳ Aguardando ${whatsappDelay}s antes da próxima verificação...`);
+                  await new Promise(resolve => setTimeout(resolve, whatsappDelay * 1000));
+                }
+              }
               
-              console.log(`   ${whatsappCheck.exists ? '✅' : '❌'} ${numeroCompleto} (via ${selectedInstance.name})`);
+              console.log(`✅ Verificação de WhatsApp concluída para documento ${documento}!`);
             } catch (error) {
-              console.error(`   ❌ Erro ao verificar ${numeroCompleto}:`, error.message);
-              telefone.WHATSAPP_VERIFIED = false;
+              console.error(`❌ Erro ao verificar WhatsApp para documento ${documento}:`, error.message);
             }
-            
-            // Delay entre verificações (proteção anti-ban)
-            if (telIdx < telefones.length - 1 && whatsappDelay > 0) {
-              console.log(`   ⏳ Aguardando ${whatsappDelay}s antes da próxima verificação...`);
-              await new Promise(resolve => setTimeout(resolve, whatsappDelay * 1000));
+          } else if (resultado.success && job.verify_whatsapp && instances.length === 0) {
+            console.log(`⚠️ Sem instâncias ativas - pulando verificação WhatsApp para ${documento}`);
+          }
+
+          // Salvar no histórico se sucesso COM tenant_id
+          if (resultado.success) {
+            const isConsultaAvulsa = job.is_consulta_avulsa || false;
+            await pool.query(
+              `INSERT INTO novavida_consultas (tipo_documento, documento, resultado, user_identifier, tenant_id, is_consulta_avulsa, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+              [resultado.tipo, resultado.documento, JSON.stringify(resultado.dados), job.user_identifier, job.tenant_id, isConsultaAvulsa]
+            );
+
+            // Salvar na base de dados completa
+            console.log('💾 Salvando na base de dados completa...');
+            const salvoResult = await salvarNaBaseDados('consulta_massa', resultado.tipo, resultado.documento, resultado.dados, job.tenant_id);
+            if (salvoResult && !salvoResult.success) {
+              console.error('⚠️ A consulta foi realizada mas NÃO foi salva na base de dados!');
+              console.error('⚠️ Erro:', salvoResult.error);
             }
           }
-          
-          console.log(`✅ Verificação de WhatsApp concluída para documento ${documento}!`);
+
+          // Retornar resultado para ser adicionado ao array
+          return {
+            index: i,
+            result: {
+              documento: resultado.documento,
+              tipo: resultado.tipo,
+              success: resultado.success,
+              erro: resultado.erro || null,
+              dados: resultado.dados
+            }
+          };
         } catch (error) {
-          console.error(`❌ Erro ao verificar WhatsApp para documento ${documento}:`, error.message);
+          console.error(`❌ Erro ao processar documento ${documento}:`, error);
+          return {
+            index: i,
+            result: {
+              documento: documento,
+              tipo: 'ERRO',
+              success: false,
+              erro: error.message,
+              dados: null
+            }
+          };
         }
-      } else if (resultado.success && job.verify_whatsapp && instances.length === 0) {
-        console.log(`⚠️ Sem instâncias ativas - pulando verificação WhatsApp para ${documento}`);
-      }
-
-      // Salvar no histórico se sucesso COM tenant_id
-      if (resultado.success) {
-        const isConsultaAvulsa = job.is_consulta_avulsa || false;
-        await pool.query(
-          `INSERT INTO novavida_consultas (tipo_documento, documento, resultado, user_identifier, tenant_id, is_consulta_avulsa, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [resultado.tipo, resultado.documento, JSON.stringify(resultado.dados), job.user_identifier, job.tenant_id, isConsultaAvulsa]
-        );
-
-        // Salvar na base de dados completa
-        console.log('💾 Salvando na base de dados completa...');
-        const salvoResult = await salvarNaBaseDados('consulta_massa', resultado.tipo, resultado.documento, resultado.dados, job.tenant_id);
-        if (salvoResult && !salvoResult.success) {
-          console.error('⚠️ A consulta foi realizada mas NÃO foi salva na base de dados!');
-          console.error('⚠️ Erro:', salvoResult.error);
-        }
-      }
-
-      // Adicionar resultado
-      results.push({
-        documento: resultado.documento,
-        tipo: resultado.tipo,
-        success: resultado.success,
-        erro: resultado.erro || null,
-        dados: resultado.dados
       });
-
-      // Atualizar progresso no banco
+      
+      // Aguardar TODOS do lote finalizarem
+      const batchResults = await Promise.all(batchPromises);
+      
+      // Adicionar todos os resultados ao array principal
+      for (const item of batchResults) {
+        if (item && item.result) {
+          results.push(item.result);
+        }
+      }
+      
+      // Atualizar progresso no banco APÓS o lote completo
       await pool.query(
         `UPDATE novavida_jobs 
          SET progress_current = $1, results = $2, updated_at = NOW() 
          WHERE id = $3`,
-        [i + 1, JSON.stringify(results), jobId]
+        [batchStart + batch.length, JSON.stringify(results), jobId]
       );
-
-      // Delay entre consultas (exceto na última)
-      if (i < documentos.length - 1 && delaySeconds > 0) {
-        console.log(`⏳ Aguardando ${delaySeconds}s...`);
-        await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
+      
+      console.log(`✅ Lote concluído! Progresso: ${batchStart + batch.length}/${documentos.length}`);
+      
+      // Delay entre LOTES (muito menor que o delay individual anterior)
+      if (batchStart + BATCH_SIZE < documentos.length && delaySeconds > 0) {
+        const batchDelay = Math.max(0.1, delaySeconds * 0.1); // 10% do delay original
+        console.log(`⏳ Aguardando ${batchDelay}s antes do próximo lote...`);
+        await new Promise(resolve => setTimeout(resolve, batchDelay * 1000));
       }
     }
 
