@@ -383,7 +383,7 @@ export default function BaseDados() {
       });
 
       if (response.data.success) {
-        const todosIds = new Set(response.data.ids);
+        const todosIds = new Set<number>(response.data.ids as number[]);
         setEstadoSelecionados(todosIds);
         showNotification(`✅ ${todosIds.size} registro(s) selecionado(s)!`, 'success');
       }
