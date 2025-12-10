@@ -1196,7 +1196,7 @@ export class TemplateController {
           // Criar cópia do template com novo nome na fila
           console.log(`   🔄 Adicionando template à fila com novo nome...`);
           
-          const queueResult = templateQueueService.addCreateTemplate({
+          const queueId = templateQueueService.addCreateTemplate({
             accountId: accountId,
             accountPhone: accountPhone,
             templateName: newName,
@@ -1208,14 +1208,14 @@ export class TemplateController {
             tenantId: (req as any).tenant?.id,
           });
 
-          if (queueResult && queueResult.id) {
-            console.log(`   ✅ Template adicionado à fila com ID: ${queueResult.id}`);
+          if (queueId) {
+            console.log(`   ✅ Template adicionado à fila com ID: ${queueId}`);
             successCount++;
             results.push({
               originalName: templateName,
               newName: newName,
               success: true,
-              queueId: queueResult.id,
+              queueId: queueId,
             });
           } else {
             console.log(`   ❌ Erro ao adicionar à fila`);
