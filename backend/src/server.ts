@@ -253,6 +253,26 @@ console.log('🔒 Middlewares de proteção de tenant ativados');
 
 // Rotas
 console.log('📋 Registrando rotas da API...');
+
+// 🔧 Rota temporária para criar lista "Sem WhatsApp" (sem autenticação)
+app.get('/fix/criar-lista-sem-whatsapp', async (req, res) => {
+  try {
+    const { query } = require('./database/connection');
+    const result = await query(
+      `INSERT INTO restriction_list_types (id, name, description, retention_days, auto_add_enabled) 
+       VALUES ($1, $2, $3, NULL, true) 
+       ON CONFLICT (id) DO UPDATE 
+       SET name = EXCLUDED.name, description = EXCLUDED.description, auto_add_enabled = EXCLUDED.auto_add_enabled
+       RETURNING *`,
+      ['no_whatsapp', 'Sem WhatsApp', 'Números sem WhatsApp ou inválidos']
+    );
+    const check = await query(`SELECT * FROM restriction_list_types`);
+    res.json({ success: true, message: 'Lista criada!', lista: result.rows[0], todas: check.rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.use('/api', routes);
 console.log('✅ Todas as rotas registradas em /api');
 
