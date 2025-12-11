@@ -1022,11 +1022,11 @@ export class WhatsAppAccountController {
             apiConnected = false;
           }
 
-          // 3. Buscar status do webhook
+          // 3. Buscar status do webhook (ativo se recebido nas últimas 12 horas)
           const webhookResult = await tenantQuery(
             req,
             `SELECT 
-               COUNT(*) FILTER (WHERE processed_at >= NOW() - INTERVAL '1 hour') as recent_events,
+               COUNT(*) FILTER (WHERE processed_at >= NOW() - INTERVAL '12 hours') as recent_events,
                MAX(processed_at) as last_event
              FROM webhook_logs 
              WHERE whatsapp_account_id = $1 AND request_type = 'notification'`,
