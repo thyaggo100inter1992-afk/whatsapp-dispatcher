@@ -969,18 +969,15 @@ export class WhatsAppAccountController {
       
       const accountsStatus = await Promise.all(accounts.map(async (account: any) => {
         try {
-          // 1. Buscar mensagens enviadas hoje
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          
+          // 1. Buscar mensagens enviadas hoje (usando timezone do banco de dados)
           const messagesResult = await tenantQuery(
             req,
             `SELECT COUNT(*) as total 
              FROM messages 
              WHERE whatsapp_account_id = $1 
-             AND sent_at >= $2
+             AND sent_at >= CURRENT_DATE
              AND status IN ('sent', 'delivered', 'read')`,
-            [account.id, today]
+            [account.id]
           );
           const messagesToday = parseInt(messagesResult.rows[0]?.total || '0');
 
