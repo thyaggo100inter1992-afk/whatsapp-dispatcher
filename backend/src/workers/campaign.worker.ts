@@ -87,6 +87,7 @@ interface CampaignTemplate {
   media_type: string | null;
   order_index: number;
   template_name: string;
+  template_language: string | null; // Idioma do template (pt_BR, en, es, etc)
   access_token: string;
   phone_number_id: string;
   account_id: number;
@@ -582,6 +583,7 @@ class CampaignWorker {
       `SELECT 
         ct.*,
         t.template_name,
+        t.language as template_language,
         w.access_token,
         w.phone_number_id,
         w.id as account_id,
@@ -1212,8 +1214,12 @@ class CampaignWorker {
     }
 
     // Enviar mensagem via WhatsApp API
+    // 🌐 Usar o idioma correto do template (padrão: pt_BR se não especificado)
+    const templateLanguage = template.template_language || 'pt_BR';
+    
     console.log('📋 Preparando envio:');
     console.log('   Template:', template.template_name);
+    console.log('   🌐 Idioma:', templateLanguage);
     console.log('   Número original:', contact.phone_number);
     console.log('   Variáveis:', variableValues);
     console.log('   Mídia:', finalMediaUrl ? 'Sim (' + finalMediaType + ')' : 'Não');
@@ -1223,6 +1229,7 @@ class CampaignWorker {
       phoneNumberId: template.phone_number_id,
       to: whatsappService.formatPhoneNumber(contact.phone_number),  // ← FORMATAR NÚMERO!
       templateName: template.template_name,
+      languageCode: templateLanguage, // 🌐 USAR IDIOMA CORRETO DO TEMPLATE!
       variableValues, // Agora é um array
       mediaUrl: finalMediaUrl || undefined,
       mediaType: finalMediaType || undefined,
