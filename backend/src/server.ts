@@ -277,15 +277,15 @@ app.get('/fix/criar-lista-sem-whatsapp', async (req, res) => {
 app.get('/fix/debug-qr-campaigns', async (req, res) => {
   try {
     const { query } = require('./database/connection');
+    // Buscar todas as campanhas QR recentes (últimas 20)
     const campaigns = await query(
       `SELECT id, name, status, total_contacts, sent_count, failed_count, tenant_id, 
               created_at, scheduled_at
        FROM qr_campaigns 
-       WHERE status IN ('pending', 'running', 'scheduled', 'paused')
        ORDER BY id DESC 
-       LIMIT 10`
+       LIMIT 20`
     );
-    res.json({ success: true, campaigns: campaigns.rows });
+    res.json({ success: true, total: campaigns.rows.length, campaigns: campaigns.rows });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
