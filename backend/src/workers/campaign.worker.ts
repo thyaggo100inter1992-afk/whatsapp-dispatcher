@@ -944,6 +944,14 @@ class CampaignWorker {
           [campaign.id, campaign.tenant_id]
         );
 
+        // 📵 ADICIONAR AUTOMATICAMENTE À LISTA "SEM WHATSAPP" se o erro indicar número inválido
+        await this.checkAndAddToNoWhatsAppList(
+          contact.phone_number,
+          template.whatsapp_account_id,
+          campaign.tenant_id,
+          error.message
+        );
+
         // Incrementar contador de falhas consecutivas
         const updateFailureResult = await query(
           `UPDATE campaign_templates 
@@ -1500,6 +1508,67 @@ class CampaignWorker {
         listNames: 'Erro na verificação - Bloqueado por segurança',
         types: ['error']
       };
+    }
+  }
+
+  /**
+   * 📵 VERIFICAR E ADICIONAR À LISTA "SEM WHATSAPP" SE NECESSÁRIO
+   * Detecta erros de número inválido/sem WhatsApp e adiciona automaticamente à lista de restrição
+   */
+  private async checkAndAddToNoWhatsAppList(
+    phoneNumber: string,
+    whatsappAccountId: number,
+    tenantId: number,
+    errorMessage: string
+  ): Promise<void> {
+    try {
+      // Lista de mensagens de erro que indicam número sem WhatsApp ou inválido
+      const noWhatsAppErrors = [
+        'does not have an active whatsapp account',
+        'phone number not registered',
+        'invalid phone number',
+        'não tem whatsapp',
+        'número inválido',
+        'recipient phone number not registered',
+        'phone number is not a whatsapp user',
+        'invalid phone_number',
+        'user is not registered',
+        'invalid recipient',
+        'no whatsapp account'
+      ];
+
+      const errorLower = errorMessage.toLowerCase();
+      const isNoWhatsApp = noWhatsAppErrors.some(err => errorLower.includes(err));
+
+      if (!isNoWhatsApp) {
+        return; // Não é erro de número sem WhatsApp
+      }
+
+      console.log('');
+      console.log('📵 ═══════════════════════════════════════════════════');
+      console.log('📵 NÚMERO SEM WHATSAPP DETECTADO');
+      console.log('📵 ═══════════════════════════════════════════════════');
+      console.log(`   Número: ${phoneNumber}`);
+      console.log(`   Conta: ${whatsappAccountId}`);
+      console.log(`   Erro: ${errorMessage}`);
+      console.log(`   Adicionando automaticamente à lista "Sem WhatsApp"...`);
+
+      // Adicionar à lista de restrição
+      await query(
+        `INSERT INTO restriction_list_entries 
+         (list_type, whatsapp_account_id, phone_number, added_method, notes, added_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (list_type, whatsapp_account_id, phone_number) DO NOTHING`,
+        ['no_whatsapp', whatsappAccountId, phoneNumber, 'auto_campaign', `Erro: ${errorMessage.substring(0, 200)}`]
+      );
+
+      console.log('   ✅ Número adicionado à lista "Sem WhatsApp"');
+      console.log('   ℹ️  Este número não receberá mais tentativas de envio');
+      console.log('═══════════════════════════════════════════════════\n');
+
+    } catch (error: any) {
+      console.error('❌ Erro ao adicionar número à lista "Sem WhatsApp":', error.message);
+      // Não interrompe o fluxo - é apenas um registro adicional
     }
   }
 }
