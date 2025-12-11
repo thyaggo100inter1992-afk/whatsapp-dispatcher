@@ -59,7 +59,24 @@ export default function ApiStatus() {
 
     try {
       const response = await api.get('/whatsapp-accounts/status');
-      setAccounts(response.data.accounts || []);
+      const accountsData = response.data.accounts || [];
+      
+      // Ordenar contas: primeiro as com problemas, depois por mensagens enviadas
+      const sortedAccounts = accountsData.sort((a: AccountStatus, b: AccountStatus) => {
+        // Verificar se tem problemas
+        const aHasProblems = !a.api_connected || ['RED', 'YELLOW', 'FLAGGED'].includes(a.quality_score);
+        const bHasProblems = !b.api_connected || ['RED', 'YELLOW', 'FLAGGED'].includes(b.quality_score);
+        
+        // Se apenas A tem problemas, A vem primeiro
+        if (aHasProblems && !bHasProblems) return -1;
+        // Se apenas B tem problemas, B vem primeiro
+        if (!aHasProblems && bHasProblems) return 1;
+        
+        // Se ambos têm ou não têm problemas, ordenar por mensagens enviadas (maior → menor)
+        return b.messages_sent_today - a.messages_sent_today;
+      });
+      
+      setAccounts(sortedAccounts);
     } catch (error) {
       console.error('Erro ao carregar status das contas:', error);
     } finally {
@@ -113,6 +130,10 @@ export default function ApiStatus() {
     if (diffMins < 60) return `Há ${diffMins} min`;
     if (diffHours < 24) return `Há ${diffHours}h`;
     return `Há ${diffDays}d`;
+  };
+
+  const hasProblems = (account: AccountStatus) => {
+    return !account.api_connected || ['RED', 'YELLOW', 'FLAGGED'].includes(account.quality_score);
   };
 
   if (loading) {
@@ -219,15 +240,34 @@ export default function ApiStatus() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-8">
-              {accounts.map((account) => (
-                <div
-                  key={account.id}
-                  className="relative group"
-                >
-                  {/* Card com efeito de brilho */}
-                  <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-2xl opacity-20 group-hover:opacity-40 blur transition duration-300"></div>
-                  
-                  <div className="relative bg-gradient-to-br from-dark-800 to-dark-900 border border-white/10 rounded-2xl p-6 shadow-2xl hover:shadow-cyan-500/20 transition-all duration-300">
+              {accounts.map((account) => {
+                const accountHasProblems = hasProblems(account);
+                
+                return (
+                  <div
+                    key={account.id}
+                    className="relative group"
+                  >
+                    {/* Card com efeito de brilho - VERMELHO se tiver problemas */}
+                    <div className={`absolute -inset-0.5 rounded-2xl blur transition duration-300 ${
+                      accountHasProblems 
+                        ? 'bg-gradient-to-r from-red-500 to-orange-500 opacity-60 group-hover:opacity-80 animate-pulse' 
+                        : 'bg-gradient-to-r from-cyan-500 to-blue-500 opacity-20 group-hover:opacity-40'
+                    }`}></div>
+                    
+                    {/* Badge de Alerta */}
+                    {accountHasProblems && (
+                      <div className="absolute -top-3 -right-3 z-10 bg-red-500 text-white px-4 py-2 rounded-full font-black text-xs shadow-lg shadow-red-500/50 animate-pulse flex items-center gap-2">
+                        <span className="text-lg">⚠️</span>
+                        ALERTA
+                      </div>
+                    )}
+                    
+                    <div className={`relative bg-gradient-to-br from-dark-800 to-dark-900 rounded-2xl p-6 shadow-2xl transition-all duration-300 ${
+                      accountHasProblems 
+                        ? 'border-2 border-red-500 hover:shadow-red-500/30' 
+                        : 'border border-white/10 hover:shadow-cyan-500/20'
+                    }`}>
                     {/* HEADER - Nome e Status */}
                     <div className="mb-6">
                       <div className="flex items-start justify-between mb-3">
@@ -318,7 +358,8 @@ export default function ApiStatus() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
