@@ -970,6 +970,8 @@ export class WhatsAppAccountController {
       const accountsStatus = await Promise.all(accounts.map(async (account: any) => {
         try {
           // 1. Buscar mensagens enviadas hoje (usando timezone do banco de dados)
+          console.log(`\n📊 Buscando mensagens para conta ${account.id} (${account.name})...`);
+          
           const messagesResult = await tenantQuery(
             req,
             `SELECT COUNT(*) as total 
@@ -980,6 +982,16 @@ export class WhatsAppAccountController {
             [account.id]
           );
           const messagesToday = parseInt(messagesResult.rows[0]?.total || '0');
+          
+          console.log(`   ✅ Mensagens hoje: ${messagesToday}`);
+          
+          // Debug: verificar total de mensagens dessa conta (qualquer data)
+          const totalMessagesResult = await tenantQuery(
+            req,
+            `SELECT COUNT(*) as total FROM messages WHERE whatsapp_account_id = $1`,
+            [account.id]
+          );
+          console.log(`   📊 Total de mensagens (histórico): ${totalMessagesResult.rows[0]?.total || '0'}`);
 
           // 2. Buscar quality rating (da Meta ou do cache no banco)
           let qualityScore = account.quality_rating || 'UNKNOWN';
