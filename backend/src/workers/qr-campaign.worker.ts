@@ -1100,6 +1100,20 @@ class QrCampaignWorker {
           [campaign.id]
         );
         
+        // 📵 ADICIONAR À LISTA DE RESTRIÇÃO "SEM WHATSAPP"
+        try {
+          await query(
+            `INSERT INTO restriction_list_entries 
+             (list_type, whatsapp_account_id, phone_number, added_method, notes, tenant_id, added_at)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW())
+             ON CONFLICT (list_type, whatsapp_account_id, phone_number, tenant_id) DO NOTHING`,
+            ['no_whatsapp', template.instance_id, contact.phone_number, 'auto_qr_campaign', 'Verificação pré-envio: número não possui WhatsApp', campaign.tenant_id]
+          );
+          console.log(`✅ [QR Worker] Número ${contact.phone_number} adicionado à lista "Sem WhatsApp"`);
+        } catch (listError: any) {
+          console.error(`⚠️ [QR Worker] Erro ao adicionar à lista "Sem WhatsApp":`, listError.message);
+        }
+        
         console.log(`📊 [QR Worker] Número marcado como "sem WhatsApp" (não foi enviado)`);
         
         // ⭐ NÃO aguardar intervalo após número sem WhatsApp - continuar imediatamente
@@ -1305,6 +1319,20 @@ class QrCampaignWorker {
              WHERE id = $1`,
             [campaign.id]
           );
+
+          // 📵 ADICIONAR À LISTA DE RESTRIÇÃO "SEM WHATSAPP"
+          try {
+            await query(
+              `INSERT INTO restriction_list_entries 
+               (list_type, whatsapp_account_id, phone_number, added_method, notes, tenant_id, added_at)
+               VALUES ($1, $2, $3, $4, $5, $6, NOW())
+               ON CONFLICT (list_type, whatsapp_account_id, phone_number, tenant_id) DO NOTHING`,
+              ['no_whatsapp', template.instance_id, contact.phone_number, 'auto_qr_campaign', `Erro no envio: ${errorMessage.substring(0, 200)}`, campaign.tenant_id]
+            );
+            console.log(`✅ [QR Worker] Número ${contact.phone_number} adicionado à lista "Sem WhatsApp"`);
+          } catch (listError: any) {
+            console.error(`⚠️ [QR Worker] Erro ao adicionar à lista "Sem WhatsApp":`, listError.message);
+          }
 
           console.log(`📵 [QR Worker] Número sem WhatsApp: ${contact.phone_number}`);
         } else if (isDisconnected) {

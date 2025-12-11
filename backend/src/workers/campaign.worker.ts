@@ -1560,13 +1560,13 @@ class CampaignWorker {
       console.log(`   Erro: ${errorMessage}`);
       console.log(`   Adicionando automaticamente à lista "Sem WhatsApp"...`);
 
-      // Adicionar à lista de restrição
+      // Adicionar à lista de restrição (COM TENANT_ID!)
       await query(
         `INSERT INTO restriction_list_entries 
-         (list_type, whatsapp_account_id, phone_number, added_method, notes, added_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
-         ON CONFLICT (list_type, whatsapp_account_id, phone_number) DO NOTHING`,
-        ['no_whatsapp', whatsappAccountId, phoneNumber, 'auto_campaign', `Erro: ${errorMessage.substring(0, 200)}`]
+         (list_type, whatsapp_account_id, phone_number, added_method, notes, tenant_id, added_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         ON CONFLICT (list_type, whatsapp_account_id, phone_number, tenant_id) DO NOTHING`,
+        ['no_whatsapp', whatsappAccountId, phoneNumber, 'auto_campaign', `Erro: ${errorMessage.substring(0, 200)}`, tenantId]
       );
 
       console.log('   ✅ Número adicionado à lista "Sem WhatsApp"');
