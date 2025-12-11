@@ -338,6 +338,20 @@ async function startServer() {
       process.exit(1);
     }
 
+    // 📵 Garantir que a lista "Sem WhatsApp" existe no banco
+    try {
+      const { query } = require('./database/connection');
+      await query(
+        `INSERT INTO restriction_list_types (id, name, description, retention_days, auto_add_enabled) 
+         VALUES ($1, $2, $3, NULL, true) 
+         ON CONFLICT (id) DO NOTHING`,
+        ['no_whatsapp', 'Sem WhatsApp', 'Números sem WhatsApp ou inválidos']
+      );
+      console.log('✅ Lista "Sem WhatsApp" verificada/criada');
+    } catch (error: any) {
+      console.log('⚠️ Aviso ao verificar lista "Sem WhatsApp":', error.message);
+    }
+
     // Configurar Cloudinary (opcional)
     if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
       try {
