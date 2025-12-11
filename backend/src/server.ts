@@ -273,6 +273,44 @@ app.get('/fix/criar-lista-sem-whatsapp', async (req, res) => {
   }
 });
 
+// 🔧 Debug de campanhas QR
+app.get('/fix/debug-qr-campaigns', async (req, res) => {
+  try {
+    const { query } = require('./database/connection');
+    const campaigns = await query(
+      `SELECT id, name, status, total_contacts, sent_count, failed_count, tenant_id, 
+              created_at, scheduled_at
+       FROM qr_campaigns 
+       WHERE status IN ('pending', 'running', 'scheduled', 'paused')
+       ORDER BY id DESC 
+       LIMIT 10`
+    );
+    res.json({ success: true, campaigns: campaigns.rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🔧 Forçar campanha QR para "completed" ou reiniciar
+app.get('/fix/qr-campaign/:id/:action', async (req, res) => {
+  try {
+    const { query } = require('./database/connection');
+    const { id, action } = req.params;
+    
+    if (action === 'complete') {
+      await query('UPDATE qr_campaigns SET status = $1 WHERE id = $2', ['completed', id]);
+      res.json({ success: true, message: `Campanha ${id} marcada como concluída` });
+    } else if (action === 'restart') {
+      await query('UPDATE qr_campaigns SET status = $1 WHERE id = $2', ['pending', id]);
+      res.json({ success: true, message: `Campanha ${id} reiniciada como pendente` });
+    } else {
+      res.json({ success: false, error: 'Ação inválida. Use: complete ou restart' });
+    }
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.use('/api', routes);
 console.log('✅ Todas as rotas registradas em /api');
 
