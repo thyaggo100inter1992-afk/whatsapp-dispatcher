@@ -1037,22 +1037,6 @@ export class WhatsAppAccountController {
           const webhookActive = recentEvents > 0;
           const webhookLastReceived = webhookResult.rows[0]?.last_event || null;
 
-          // 4. Buscar último erro
-          const errorResult = await tenantQuery(
-            req,
-            `SELECT error_message, sent_at 
-             FROM messages 
-             WHERE whatsapp_account_id = $1 
-             AND status = 'failed' 
-             AND error_message IS NOT NULL 
-             ORDER BY sent_at DESC 
-             LIMIT 1`,
-            [account.id]
-          );
-          
-          const lastError = errorResult.rows[0]?.error_message || null;
-          const lastErrorAt = errorResult.rows[0]?.sent_at || null;
-
           return {
             id: account.id,
             name: account.name,
@@ -1063,9 +1047,7 @@ export class WhatsAppAccountController {
             api_connected: apiConnected,
             api_last_check: apiLastCheck,
             webhook_active: webhookActive,
-            webhook_last_received: webhookLastReceived,
-            last_error: lastError,
-            last_error_at: lastErrorAt
+            webhook_last_received: webhookLastReceived
           };
         } catch (error: any) {
           console.error(`❌ Erro ao processar conta ${account.id}:`, error);
@@ -1079,9 +1061,7 @@ export class WhatsAppAccountController {
             api_connected: false,
             api_last_check: null,
             webhook_active: false,
-            webhook_last_received: null,
-            last_error: error.message,
-            last_error_at: new Date().toISOString()
+            webhook_last_received: null
           };
         }
       }));
