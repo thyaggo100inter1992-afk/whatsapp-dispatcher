@@ -630,21 +630,23 @@ class QrCampaignWorker {
         await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', campaign.tenant_id.toString()]);
       }
       
-      // 1️⃣ BUSCAR TODAS AS INSTÂNCIAS CONECTADAS DO TENANT (não apenas da campanha)
+      // 1️⃣ BUSCAR APENAS AS INSTÂNCIAS ESCOLHIDAS PARA ESTA CAMPANHA (que estão conectadas)
       const instancesResult = await client.query(
-        `SELECT i.id as instance_id, i.instance_token, i.name as instance_name, i.is_connected,
+        `SELECT DISTINCT i.id as instance_id, i.instance_token, i.name as instance_name, i.is_connected,
          p.host as proxy_host, p.port as proxy_port, 
          p.username as proxy_username, p.password as proxy_password
-         FROM uaz_instances i
+         FROM qr_campaign_templates ct
+         JOIN uaz_instances i ON ct.instance_id = i.id
          LEFT JOIN proxies p ON i.proxy_id = p.id
-         WHERE i.tenant_id = $1
+         WHERE ct.campaign_id = $1
+         AND ct.is_active = true
          AND i.is_connected = true
          AND i.is_active = true
          ORDER BY i.id`,
-        [campaign.tenant_id]
+        [campaign.id]
       );
       connectedInstances = instancesResult.rows;
-      console.log(`📱 [QR Worker] Instâncias conectadas do tenant ${campaign.tenant_id}: ${connectedInstances.length}`);
+      console.log(`📱 [QR Worker] Instâncias DA CAMPANHA ${campaign.id} que estão conectadas: ${connectedInstances.length}`);
       
       if (connectedInstances.length === 0) {
         console.log(`⚠️  [QR Worker] Nenhuma instância conectada para campanha ${campaign.id}`);
