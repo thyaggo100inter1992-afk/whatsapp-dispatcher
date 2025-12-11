@@ -993,15 +993,16 @@ export class WhatsAppAccountController {
           );
           console.log(`   📊 Total de mensagens (histórico): ${totalMessagesResult.rows[0]?.total || '0'}`);
 
-          // 2. Buscar quality rating (da Meta ou do cache no banco)
+          // 2. Buscar quality rating e foto de perfil (da Meta ou do cache no banco)
           let qualityScore = account.quality_rating || 'UNKNOWN';
           let apiConnected = false;
           let apiLastCheck = null;
+          let profilePictureUrl = null;
 
           try {
-            // Tentar buscar quality rating da Meta
+            // Tentar buscar quality rating e profile picture da Meta
             let config: AxiosRequestConfig = {
-              params: { fields: 'quality_rating' },
+              params: { fields: 'quality_rating,profile_picture_url' },
               headers: { 'Authorization': `Bearer ${account.access_token}` },
               timeout: 5000
             };
@@ -1017,8 +1018,11 @@ export class WhatsAppAccountController {
             );
 
             qualityScore = response.data.quality_rating || 'UNKNOWN';
+            profilePictureUrl = response.data.profile_picture_url || null;
             apiConnected = true;
             apiLastCheck = new Date().toISOString();
+
+            console.log(`   📸 Foto de perfil: ${profilePictureUrl ? 'Encontrada' : 'Não disponível'}`);
 
             // Atualizar cache no banco
             await tenantQuery(
@@ -1056,7 +1060,8 @@ export class WhatsAppAccountController {
             api_connected: apiConnected,
             api_last_check: apiLastCheck,
             webhook_active: webhookActive,
-            webhook_last_received: webhookLastReceived
+            webhook_last_received: webhookLastReceived,
+            profile_picture_url: profilePictureUrl
           };
         } catch (error: any) {
           console.error(`❌ Erro ao processar conta ${account.id}:`, error);
@@ -1070,7 +1075,8 @@ export class WhatsAppAccountController {
             api_connected: false,
             api_last_check: null,
             webhook_active: false,
-            webhook_last_received: null
+            webhook_last_received: null,
+            profile_picture_url: null
           };
         }
       }));
