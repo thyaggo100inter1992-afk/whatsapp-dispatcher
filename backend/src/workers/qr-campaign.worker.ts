@@ -339,7 +339,9 @@ interface Contact {
 
 class QrCampaignWorker {
   private isRunning = false;
-  private currentCampaignId: number | null = null;
+  // ✅ CORRIGIDO: Controle por TENANT, não global!
+  // Cada tenant pode ter UMA campanha sendo processada simultaneamente
+  private currentCampaignByTenant: Map<number, number> = new Map();
   private pauseState: Map<number, { startedAt: Date; durationMinutes: number }> = new Map();
   private autoPausedCampaigns: Set<number> = new Set();
 
@@ -372,11 +374,7 @@ class QrCampaignWorker {
 
     // Processar campanhas a cada 5 segundos
     setInterval(async () => {
-      if (this.currentCampaignId) {
-        console.log(`⏳ [QR Worker] Ainda processando campanha ${this.currentCampaignId}, aguardando...`);
-        return;
-      }
-
+      // ✅ NÃO BLOQUEAR GLOBALMENTE - Cada tenant pode ter sua campanha rodando
       try {
         await this.processCampaigns();
       } catch (error) {
@@ -440,6 +438,15 @@ class QrCampaignWorker {
       }
 
       for (const campaign of allCampaigns) {
+        const tenantId = campaign.tenant_id;
+        
+        // ✅ VERIFICAR SE ESTE TENANT JÁ TEM UMA CAMPANHA SENDO PROCESSADA
+        if (this.currentCampaignByTenant.has(tenantId)) {
+          const currentCampaign = this.currentCampaignByTenant.get(tenantId);
+          console.log(`⏳ [QR Worker] Tenant ${tenantId} já está processando campanha ${currentCampaign}, pulando campanha ${campaign.id}...`);
+          continue; // Pular para o próximo, NÃO bloquear outros tenants!
+        }
+        
         console.log(`\n🔎 [QR Worker] Verificando campanha ${campaign.id} (${campaign.name})...`);
         console.log(`   📊 Status: ${campaign.status}`);
         console.log(`   📅 Agendada para: ${campaign.scheduled_at}`);
@@ -452,19 +459,30 @@ class QrCampaignWorker {
 
         console.log(`   ✅ shouldProcessCampaign retornou TRUE - processando!`);
         
-        // Processar campanha
-        this.currentCampaignId = campaign.id;
+        // ✅ MARCAR ESTE TENANT COMO OCUPADO (não bloqueia outros tenants)
+        this.currentCampaignByTenant.set(tenantId, campaign.id);
         
-        try {
-          await this.processCampaign(campaign);
-        } catch (error) {
-          console.error(`❌ Erro ao processar campanha QR ${campaign.id}:`, error);
-        } finally {
-          this.currentCampaignId = null;
-        }
+        // ✅ PROCESSAR EM PARALELO - Não aguardar, permitir que outros tenants processem
+        this.processCampaignAsync(campaign, tenantId);
       }
     } catch (error) {
       console.error('❌ [QR Worker] Erro geral:', error);
+    }
+  }
+
+  /**
+   * ✅ NOVO: Processa campanha de forma assíncrona
+   * Não bloqueia outros tenants
+   */
+  private async processCampaignAsync(campaign: QrCampaign, tenantId: number): Promise<void> {
+    try {
+      await this.processCampaign(campaign);
+    } catch (error) {
+      console.error(`❌ Erro ao processar campanha QR ${campaign.id} do Tenant ${tenantId}:`, error);
+    } finally {
+      // ✅ LIBERAR O TENANT para processar outra campanha
+      this.currentCampaignByTenant.delete(tenantId);
+      console.log(`🔓 [QR Worker] Tenant ${tenantId} liberado (campanha ${campaign.id} finalizada)`);
     }
   }
 
