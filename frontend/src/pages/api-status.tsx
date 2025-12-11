@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { 
-  FaArrowLeft, FaCheckCircle, FaTimesCircle, FaExclamationTriangle,
+  FaArrowLeft, FaCheckCircle, FaTimesCircle,
   FaWhatsapp, FaEnvelope, FaClock, FaChartLine, FaSync, FaShieldAlt
 } from 'react-icons/fa';
 import api from '@/services/api';
@@ -26,10 +26,6 @@ interface AccountStatus {
   // Webhook
   webhook_active: boolean;
   webhook_last_received: string | null;
-  
-  // Último erro
-  last_error: string | null;
-  last_error_at: string | null;
 }
 
 export default function ApiStatus() {
@@ -320,24 +316,6 @@ export default function ApiStatus() {
                         </span>
                       </div>
                     </div>
-
-                    {/* ÚLTIMO ERRO */}
-                    {account.last_error && (
-                      <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
-                        <div className="flex items-start gap-3">
-                          <FaExclamationTriangle className="text-red-400 flex-shrink-0 mt-0.5 text-lg" />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs text-red-400 font-bold mb-2 flex items-center justify-between">
-                              <span>ÚLTIMO ERRO</span>
-                              <span className="text-red-400/60">{formatRelativeTime(account.last_error_at)}</span>
-                            </div>
-                            <div className="text-xs text-red-300/70 break-words leading-relaxed">
-                              {account.last_error}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               ))}
