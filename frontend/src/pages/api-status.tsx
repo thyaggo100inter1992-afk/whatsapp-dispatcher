@@ -222,117 +222,123 @@ export default function ApiStatus() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-8">
               {accounts.map((account) => (
                 <div
                   key={account.id}
-                  className="bg-dark-800/60 backdrop-blur-xl border-2 border-white/10 rounded-2xl p-6 hover:border-cyan-500/40 transition-all duration-200 shadow-xl hover:shadow-cyan-500/20"
+                  className="relative group"
                 >
-                  {/* HEADER DO CARD */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
-                        account.is_active ? 'bg-green-400 animate-pulse' : 'bg-gray-500'
-                      }`} />
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-bold text-white truncate">
-                          {account.name}
-                        </h3>
-                        <p className="text-sm text-white/60 truncate">
-                          {account.phone_number}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* QUALIDADE DA CONTA */}
-                  <div className={`border-2 rounded-xl p-4 mb-4 ${getQualityColor(account.quality_score)}`}>
-                    <div className="text-xs font-bold mb-1 opacity-70">QUALIDADE</div>
-                    <div className="text-lg font-black">
-                      {getQualityText(account.quality_score)}
-                    </div>
-                  </div>
-
-                  {/* MENSAGENS ENVIADAS HOJE */}
-                  <div className="bg-blue-500/10 border-2 border-blue-500/40 rounded-xl p-4 mb-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-xs text-blue-300 font-bold mb-1">MENSAGENS HOJE</div>
-                        <div className="text-2xl font-black text-blue-400">
-                          {account.messages_sent_today}
+                  {/* Card com efeito de brilho */}
+                  <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-2xl opacity-20 group-hover:opacity-40 blur transition duration-300"></div>
+                  
+                  <div className="relative bg-gradient-to-br from-dark-800 to-dark-900 border border-white/10 rounded-2xl p-6 shadow-2xl hover:shadow-cyan-500/20 transition-all duration-300">
+                    {/* HEADER - Nome e Status */}
+                    <div className="mb-6">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <FaWhatsapp className="text-3xl text-green-400 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-xl font-black text-white truncate mb-1">
+                              {account.name}
+                            </h3>
+                            <p className="text-sm text-cyan-300 font-mono truncate">
+                              {account.phone_number}
+                            </p>
+                          </div>
                         </div>
+                        <div className={`w-4 h-4 rounded-full flex-shrink-0 ${
+                          account.is_active ? 'bg-green-400 shadow-lg shadow-green-400/50 animate-pulse' : 'bg-gray-500'
+                        }`} />
                       </div>
-                      <FaEnvelope className="text-3xl text-blue-400 opacity-50" />
-                    </div>
-                  </div>
 
-                  {/* STATUS DA API */}
-                  <div className="space-y-3 mb-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-white/60">Status da API:</span>
-                      <div className="flex items-center gap-2">
+                      {/* Status da API - Inline */}
+                      <div className="flex items-center gap-2 px-3 py-2 bg-dark-700/60 rounded-lg border border-white/5">
                         {account.api_connected ? (
                           <>
-                            <FaCheckCircle className="text-green-400" />
-                            <span className="text-sm font-bold text-green-400">Conectada</span>
+                            <FaCheckCircle className="text-green-400 text-sm" />
+                            <span className="text-xs font-bold text-green-400">API Conectada</span>
                           </>
                         ) : (
                           <>
-                            <FaTimesCircle className="text-red-400" />
-                            <span className="text-sm font-bold text-red-400">Desconectada</span>
+                            <FaTimesCircle className="text-red-400 text-sm" />
+                            <span className="text-xs font-bold text-red-400">API Desconectada</span>
                           </>
+                        )}
+                        {account.api_last_check && (
+                          <span className="text-xs text-white/30 ml-auto">
+                            {formatRelativeTime(account.api_last_check)}
+                          </span>
                         )}
                       </div>
                     </div>
 
-                    {account.api_last_check && (
-                      <div className="text-xs text-white/40">
-                        Última verificação: {formatRelativeTime(account.api_last_check)}
+                    {/* GRID 2 COLUNAS - Qualidade e Mensagens */}
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                      {/* QUALIDADE */}
+                      <div className={`border-2 rounded-xl p-4 ${getQualityColor(account.quality_score)}`}>
+                        <div className="text-xs font-bold mb-2 opacity-70">QUALIDADE</div>
+                        <div className="text-base font-black leading-tight">
+                          {getQualityText(account.quality_score)}
+                        </div>
+                      </div>
+
+                      {/* MENSAGENS HOJE */}
+                      <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 border-2 border-blue-500/40 rounded-xl p-4">
+                        <div className="text-xs text-blue-300 font-bold mb-2">HOJE</div>
+                        <div className="text-3xl font-black text-blue-400 leading-none">
+                          {account.messages_sent_today}
+                        </div>
+                        <div className="text-xs text-blue-300/60 mt-1">mensagens</div>
+                      </div>
+                    </div>
+
+                    {/* WEBHOOK - Destaque */}
+                    <div className={`mb-6 rounded-xl p-4 border-2 transition-all ${
+                      account.webhook_active 
+                        ? 'bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-green-500/40' 
+                        : 'bg-red-500/5 border-red-500/30'
+                    }`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-3 h-3 rounded-full ${
+                            account.webhook_active ? 'bg-green-400 shadow-lg shadow-green-400/50 animate-pulse' : 'bg-red-400'
+                          }`} />
+                          <span className="text-sm font-black text-white">WEBHOOK</span>
+                        </div>
+                        <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                          account.webhook_active 
+                            ? 'bg-green-400/20 text-green-300' 
+                            : 'bg-red-400/20 text-red-300'
+                        }`}>
+                          {account.webhook_active ? 'ATIVO' : 'INATIVO'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-white/50">
+                        <FaClock className="flex-shrink-0" />
+                        <span className="truncate">
+                          Último: {formatRelativeTime(account.webhook_last_received)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* ÚLTIMO ERRO */}
+                    {account.last_error && (
+                      <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
+                        <div className="flex items-start gap-3">
+                          <FaExclamationTriangle className="text-red-400 flex-shrink-0 mt-0.5 text-lg" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs text-red-400 font-bold mb-2 flex items-center justify-between">
+                              <span>ÚLTIMO ERRO</span>
+                              <span className="text-red-400/60">{formatRelativeTime(account.last_error_at)}</span>
+                            </div>
+                            <div className="text-xs text-red-300/70 break-words leading-relaxed">
+                              {account.last_error}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
-
-                  {/* STATUS DO WEBHOOK */}
-                  <div className="bg-dark-700/60 border-2 border-white/10 rounded-xl p-4 mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-white/60 font-bold">WEBHOOK:</span>
-                      <div className="flex items-center gap-2">
-                        {account.webhook_active ? (
-                          <>
-                            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-                            <span className="text-xs font-bold text-green-400">ATIVO</span>
-                          </>
-                        ) : (
-                          <>
-                            <div className="w-2 h-2 bg-red-400 rounded-full" />
-                            <span className="text-xs font-bold text-red-400">INATIVO</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-white/40">
-                      <FaClock />
-                      <span>Último recebido: {formatRelativeTime(account.webhook_last_received)}</span>
-                    </div>
-                  </div>
-
-                  {/* ÚLTIMO ERRO */}
-                  {account.last_error && (
-                    <div className="bg-red-500/10 border-2 border-red-500/40 rounded-xl p-4">
-                      <div className="flex items-start gap-2">
-                        <FaExclamationTriangle className="text-red-400 flex-shrink-0 mt-1" />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs text-red-300 font-bold mb-1">ÚLTIMO ERRO:</div>
-                          <div className="text-xs text-red-300/80 break-words">
-                            {account.last_error}
-                          </div>
-                          <div className="text-xs text-red-300/60 mt-2">
-                            {formatDateTime(account.last_error_at)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
