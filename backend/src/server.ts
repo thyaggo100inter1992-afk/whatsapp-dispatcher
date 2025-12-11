@@ -277,15 +277,40 @@ app.get('/fix/criar-lista-sem-whatsapp', async (req, res) => {
 app.get('/fix/debug-qr-campaigns', async (req, res) => {
   try {
     const { query } = require('./database/connection');
-    // Buscar todas as campanhas QR recentes (últimas 20)
-    const campaigns = await query(
-      `SELECT id, name, status, total_contacts, sent_count, failed_count, tenant_id, 
-              created_at, scheduled_at
-       FROM qr_campaigns 
-       ORDER BY id DESC 
-       LIMIT 20`
-    );
-    res.json({ success: true, total: campaigns.rows.length, campaigns: campaigns.rows });
+    
+    // Primeiro verificar quais tabelas existem
+    const tables = await query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+        AND (table_name LIKE '%qr%' OR table_name LIKE '%campaign%')
+      ORDER BY table_name
+    `);
+    
+    // Tentar buscar de qr_campaigns
+    let qrCampaigns: any[] = [];
+    try {
+      const result = await query(`SELECT * FROM qr_campaigns ORDER BY id DESC LIMIT 20`);
+      qrCampaigns = result.rows;
+    } catch (e: any) {
+      console.log('Erro ao buscar qr_campaigns:', e.message);
+    }
+
+    // Buscar campanhas normais
+    let campaigns: any[] = [];
+    try {
+      const result = await query(`SELECT id, name, status, campaign_type, tenant_id FROM campaigns ORDER BY id DESC LIMIT 20`);
+      campaigns = result.rows;
+    } catch (e: any) {
+      console.log('Erro ao buscar campaigns:', e.message);
+    }
+
+    res.json({ 
+      success: true, 
+      tables: tables.rows.map((t: any) => t.table_name),
+      qr_campaigns: qrCampaigns,
+      campaigns: campaigns
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
