@@ -141,6 +141,7 @@ export default function ListasRestricao() {
         do_not_disturb: { total: global_totals.do_not_disturb || 0, added_today: 0 },
         blocked: { total: global_totals.blocked || 0, added_today: 0 },
         not_interested: { total: global_totals.not_interested || 0, added_today: 0 },
+        no_whatsapp: { total: global_totals.no_whatsapp || 0, added_today: 0 },
       });
     } catch (error) {
       console.error('Erro ao carregar estatísticas:', error);
@@ -504,7 +505,7 @@ export default function ListasRestricao() {
               Selecione a Lista
             </h2>
             <div className="grid grid-cols-3 gap-6">
-              {(['do_not_disturb', 'blocked', 'not_interested'] as const).map((tab) => {
+              {(['do_not_disturb', 'blocked', 'not_interested', 'no_whatsapp'] as const).map((tab) => {
                 const config = listConfig[tab];
                 const isActive = activeTab === tab;
                 return (
