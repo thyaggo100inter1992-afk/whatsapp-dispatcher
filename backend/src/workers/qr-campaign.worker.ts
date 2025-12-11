@@ -615,9 +615,13 @@ class QrCampaignWorker {
     // ✅ VERIFICAR E REATIVAR INSTÂNCIAS QUE RECONECTARAM
     await this.checkAndReactivateInstances(campaign.id);
     
-    // ✅ Buscar APENAS templates/instâncias ATIVOS E CONECTADOS COM RLS
+    // ✅ NOVA LÓGICA: Buscar instâncias E templates SEPARADAMENTE
+    // No QR Connect, qualquer instância pode usar qualquer template!
     const client = await pool.connect();
     let templatesResult;
+    let connectedInstances: any[] = [];
+    let campaignTemplates: any[] = [];
+    
     try {
       await client.query('BEGIN');
       
@@ -626,13 +630,34 @@ class QrCampaignWorker {
         await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', campaign.tenant_id.toString()]);
       }
       
-      templatesResult = await client.query(
-        `SELECT ct.*, i.instance_token, i.name as instance_name, i.is_connected,
-         t.name as template_name, t.type as template_type,
+      // 1️⃣ BUSCAR TODAS AS INSTÂNCIAS CONECTADAS DO TENANT (não apenas da campanha)
+      const instancesResult = await client.query(
+        `SELECT i.id as instance_id, i.instance_token, i.name as instance_name, i.is_connected,
+         p.host as proxy_host, p.port as proxy_port, 
+         p.username as proxy_username, p.password as proxy_password
+         FROM uaz_instances i
+         LEFT JOIN proxies p ON i.proxy_id = p.id
+         WHERE i.tenant_id = $1
+         AND i.is_connected = true
+         AND i.is_active = true
+         ORDER BY i.id`,
+        [campaign.tenant_id]
+      );
+      connectedInstances = instancesResult.rows;
+      console.log(`📱 [QR Worker] Instâncias conectadas do tenant ${campaign.tenant_id}: ${connectedInstances.length}`);
+      
+      if (connectedInstances.length === 0) {
+        console.log(`⚠️  [QR Worker] Nenhuma instância conectada para campanha ${campaign.id}`);
+        await client.query('COMMIT');
+        return;
+      }
+      
+      // 2️⃣ BUSCAR TODOS OS TEMPLATES DA CAMPANHA (independente de instância)
+      const templatesOnlyResult = await client.query(
+        `SELECT DISTINCT ct.qr_template_id, ct.order_index, ct.is_active,
+         t.id as template_id, t.name as template_name, t.type as template_type,
          t.text_content, t.list_config, t.buttons_config, t.carousel_config,
          t.poll_config, t.combined_blocks, t.variables_map,
-         p.host as proxy_host, p.port as proxy_port, 
-         p.username as proxy_username, p.password as proxy_password,
          json_agg(json_build_object(
            'media_type', m.media_type,
            'url', m.url,
@@ -640,18 +665,45 @@ class QrCampaignWorker {
            'caption', m.caption
          )) FILTER (WHERE m.id IS NOT NULL) as media_files
          FROM qr_campaign_templates ct
-         LEFT JOIN uaz_instances i ON ct.instance_id = i.id
          LEFT JOIN qr_templates t ON ct.qr_template_id = t.id
          LEFT JOIN qr_template_media m ON t.id = m.template_id
-         LEFT JOIN proxies p ON i.proxy_id = p.id
          WHERE ct.campaign_id = $1 
          AND ct.is_active = true
-         AND i.is_connected = true  -- ✅ SÓ INSTÂNCIAS CONECTADAS
-         AND i.is_active = true     -- ✅ SÓ INSTÂNCIAS ATIVAS (não pausadas)
-         GROUP BY ct.id, i.id, t.id, p.id
+         GROUP BY ct.qr_template_id, ct.order_index, ct.is_active, t.id
          ORDER BY ct.order_index`,
         [campaign.id]
       );
+      campaignTemplates = templatesOnlyResult.rows;
+      console.log(`📝 [QR Worker] Templates da campanha ${campaign.id}: ${campaignTemplates.length}`);
+      
+      if (campaignTemplates.length === 0) {
+        console.log(`⚠️  [QR Worker] Nenhum template configurado para campanha ${campaign.id}`);
+        await client.query('COMMIT');
+        return;
+      }
+      
+      // 3️⃣ CRIAR COMBINAÇÕES: Cada instância pode usar cada template
+      // Isso permite que QUALQUER instância use QUALQUER template
+      const allCombinations: any[] = [];
+      for (const instance of connectedInstances) {
+        for (const template of campaignTemplates) {
+          allCombinations.push({
+            ...template,
+            instance_id: instance.instance_id,
+            instance_token: instance.instance_token,
+            instance_name: instance.instance_name,
+            is_connected: instance.is_connected,
+            proxy_host: instance.proxy_host,
+            proxy_port: instance.proxy_port,
+            proxy_username: instance.proxy_username,
+            proxy_password: instance.proxy_password,
+          });
+        }
+      }
+      
+      console.log(`🔄 [QR Worker] Combinações possíveis (instância x template): ${allCombinations.length}`);
+      
+      templatesResult = { rows: allCombinations };
       
       await client.query('COMMIT');
     } catch (error) {
@@ -662,7 +714,7 @@ class QrCampaignWorker {
     }
 
     if (templatesResult.rows.length === 0) {
-      console.log(`⚠️  [QR Worker] Nenhum template ativo para campanha ${campaign.id}`);
+      console.log(`⚠️  [QR Worker] Nenhuma combinação instância/template disponível para campanha ${campaign.id}`);
       return;
     }
 
