@@ -26,6 +26,9 @@ interface AccountStatus {
   // Webhook
   webhook_active: boolean;
   webhook_last_received: string | null;
+  
+  // Foto de perfil
+  profile_picture_url: string | null;
 }
 
 export default function ApiStatus() {
@@ -272,7 +275,21 @@ export default function ApiStatus() {
                     <div className="mb-6">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <FaWhatsapp className="text-3xl text-green-400 flex-shrink-0" />
+                          {/* Foto de Perfil ou Ícone WhatsApp */}
+                          {account.profile_picture_url ? (
+                            <img 
+                              src={account.profile_picture_url} 
+                              alt={account.name}
+                              className="w-14 h-14 rounded-full object-cover border-2 border-green-400/50 shadow-lg flex-shrink-0"
+                              onError={(e) => {
+                                // Fallback para ícone se a imagem falhar
+                                e.currentTarget.style.display = 'none';
+                                e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                              }}
+                            />
+                          ) : null}
+                          <FaWhatsapp className={`text-3xl text-green-400 flex-shrink-0 ${account.profile_picture_url ? 'hidden' : ''}`} />
+                          
                           <div className="flex-1 min-w-0">
                             <h3 className="text-xl font-black text-white truncate mb-1">
                               {account.name}
