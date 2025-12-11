@@ -9,7 +9,7 @@ import { FaFileExcel, FaPlus, FaTrash, FaCog, FaBan, FaUserSlash, FaThumbsDown, 
 
 interface RestrictionEntry {
   id: number;
-  list_type: 'do_not_disturb' | 'blocked' | 'not_interested';
+  list_type: 'do_not_disturb' | 'blocked' | 'not_interested' | 'no_whatsapp';
   list_name: string;
   phone_number: string;
   phone_number_alt: string | null;
@@ -50,9 +50,10 @@ export default function ListasRestricao() {
     do_not_disturb: { total: 0, added_today: 0 },
     blocked: { total: 0, added_today: 0 },
     not_interested: { total: 0, added_today: 0 },
+    no_whatsapp: { total: 0, added_today: 0 },
   });
 
-  const [activeTab, setActiveTab] = useState<'do_not_disturb' | 'blocked' | 'not_interested'>('blocked');
+  const [activeTab, setActiveTab] = useState<'do_not_disturb' | 'blocked' | 'not_interested' | 'no_whatsapp'>('blocked');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAccount, setSelectedAccount] = useState<string>('');
   
@@ -92,6 +93,13 @@ export default function ListasRestricao() {
       borderColor: 'border-slate-500',
       icon: '⛔',
       description: 'Contatos sem interesse por 7 dias'
+    },
+    no_whatsapp: {
+      name: 'SEM WHATSAPP',
+      color: 'from-red-600 to-red-700',
+      borderColor: 'border-red-500',
+      icon: '📵',
+      description: 'Números sem WhatsApp ou inválidos (adicionados automaticamente)'
     }
   };
 
