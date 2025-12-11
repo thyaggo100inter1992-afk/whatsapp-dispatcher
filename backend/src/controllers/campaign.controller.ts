@@ -47,6 +47,92 @@ export class CampaignController {
       }
 
       // Criar campanha
+      // 🚨 VERIFICAR LISTA DE RESTRIÇÃO **ANTES** DE CRIAR A CAMPANHA
+      console.log('═══════════════════════════════════════════════════════');
+      console.log('🔍 VERIFICANDO LISTA DE RESTRIÇÃO (INCLUI "SEM WHATSAPP")');
+      console.log('═══════════════════════════════════════════════════════');
+      console.log(`   📋 Total de contatos: ${contacts.length}`);
+      console.log(`   🏢 Tenant ID: ${tenantId}`);
+      
+      try {
+        const { RestrictionListController } = require('./restriction-list.controller');
+        const restrictionController = new RestrictionListController();
+        
+        // Extrair números dos contatos
+        const phoneNumbers = contacts.map((c: any) => c.phone || c.phone_number);
+        console.log(`   📞 Números para verificar: ${phoneNumbers.length}`);
+        
+        // Extrair IDs das contas WhatsApp dos templates
+        const whatsappAccountIds = templates.map((t: any) => t.whatsapp_account_id);
+        
+        // Criar request fake para o controller
+        const fakeReq: any = {
+          body: {
+            phone_numbers: phoneNumbers,
+            whatsapp_account_ids: whatsappAccountIds,
+          },
+          tenant: { id: tenantId },
+        };
+        
+        let restrictionResult: any = null;
+        const fakeRes: any = {
+          json: (data: any) => {
+            restrictionResult = data;
+          },
+          status: () => fakeRes,
+        };
+        
+        await restrictionController.checkBulk(fakeReq, fakeRes);
+        
+        if (restrictionResult && restrictionResult.restricted_count > 0) {
+          console.log('🚫 ═══════════════════════════════════════════════════');
+          console.log(`🚫 ${restrictionResult.restricted_count} NÚMERO(S) BLOQUEADO(S)!`);
+          console.log('🚫 ═══════════════════════════════════════════════════');
+          
+          const blockedNumbers = restrictionResult.restricted_details.map((d: any) => ({
+            numero: d.phone_number_found,
+            listas: d.list_names.join(', ')
+          }));
+          
+          blockedNumbers.forEach((bn: any, i: number) => {
+            console.log(`   ${i+1}. ${bn.numero} → Bloqueado em: ${bn.listas}`);
+          });
+          
+          console.log('   ❌ CRIAÇÃO DE CAMPANHA CANCELADA!');
+          console.log('═══════════════════════════════════════════════════\n');
+          
+          // Retornar erro 403 com detalhes
+          return res.status(403).json({
+            success: false,
+            error: `${restrictionResult.restricted_count} número(s) bloqueado(s) na Lista de Restrição`,
+            restricted: true,
+            blocked_count: restrictionResult.restricted_count,
+            blocked_numbers: blockedNumbers,
+            details: restrictionResult.restricted_details
+          });
+        }
+        
+        console.log('✅ ═══════════════════════════════════════════════════');
+        console.log('✅ TODOS OS NÚMEROS ESTÃO LIVRES');
+        console.log('✅ ═══════════════════════════════════════════════════');
+        console.log(`   📞 ${phoneNumbers.length} números verificados`);
+        console.log(`   ✅ PROSSEGUINDO COM CRIAÇÃO DA CAMPANHA...`);
+        console.log('═══════════════════════════════════════════════════\n');
+      } catch (error: any) {
+        console.error('❌ ═══════════════════════════════════════════════════');
+        console.error('❌ ERRO AO VERIFICAR LISTA DE RESTRIÇÃO!');
+        console.error('❌ ═══════════════════════════════════════════════════');
+        console.error('   Erro:', error.message);
+        console.error('═══════════════════════════════════════════════════\n');
+        
+        // ⚠️ SE DER ERRO NA VERIFICAÇÃO, BLOQUEAR POR SEGURANÇA
+        return res.status(500).json({
+          success: false,
+          error: `Erro ao verificar lista de restrição: ${error.message}`,
+          security_block: true,
+        });
+      }
+
       console.log(`\n🚀 ===== CRIANDO CAMPANHA =====`);
       console.log(`   📛 Nome: ${name}`);
       console.log(`   📊 Total de contatos recebidos do frontend: ${contacts.length}`);
