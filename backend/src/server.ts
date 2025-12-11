@@ -336,6 +336,53 @@ app.get('/fix/qr-campaign/:id/:action', async (req, res) => {
   }
 });
 
+// 🔧 Diagnóstico de criação de campanha QR
+app.get('/fix/test-qr-create', async (req, res) => {
+  try {
+    const { query, pool } = require('./database/connection');
+    
+    console.log('🧪 Testando criação de campanha QR...');
+    
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Testar set_config (RLS)
+      await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', '1']);
+      console.log('✅ set_config funcionou');
+      
+      // Testar INSERT
+      const result = await client.query(
+        `INSERT INTO qr_campaigns 
+         (name, tenant_id, status, total_contacts)
+         VALUES ($1, $2, $3, $4)
+         RETURNING *`,
+        ['TEST-CAMPANHA-DELETAR', 1, 'pending', 0]
+      );
+      console.log('✅ INSERT funcionou, ID:', result.rows[0]?.id);
+      
+      // Fazer rollback (não salvar)
+      await client.query('ROLLBACK');
+      console.log('✅ ROLLBACK feito');
+      
+      res.json({ 
+        success: true, 
+        message: 'Teste de criação passou!',
+        test_id: result.rows[0]?.id
+      });
+    } catch (innerError: any) {
+      await client.query('ROLLBACK');
+      console.error('❌ Erro no teste:', innerError.message);
+      res.status(500).json({ success: false, error: innerError.message, stack: innerError.stack });
+    } finally {
+      client.release();
+    }
+  } catch (error: any) {
+    console.error('❌ Erro geral:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.use('/api', routes);
 console.log('✅ Todas as rotas registradas em /api');
 
