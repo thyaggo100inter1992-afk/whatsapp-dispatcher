@@ -1357,8 +1357,33 @@ class QrCampaignWorker {
       } else {
         // Verificar se é erro de "não tem WhatsApp"
         const errorMessage = sendResult.error || '';
-        const isNoWhatsApp = errorMessage.toLowerCase().includes('not on whatsapp') || 
-                            errorMessage.toLowerCase().includes('is not a whatsapp user');
+        const errorLower = errorMessage.toLowerCase();
+        
+        // ✅ Lista COMPLETA de erros que indicam número sem WhatsApp
+        const noWhatsAppErrors = [
+          'not on whatsapp',
+          'is not a whatsapp user',
+          'does not have an active whatsapp account',
+          'phone number not registered',
+          'invalid phone number',
+          'não tem whatsapp',
+          'número inválido',
+          'recipient phone number not registered',
+          'phone number is not a whatsapp user',
+          'invalid phone_number',
+          'user is not registered',
+          'invalid recipient',
+          'no whatsapp account',
+          'numero inexistente',
+          'number does not exist',
+          'message undeliverable',
+          'code: 131026',
+          '131026',
+          'not a valid whatsapp account',
+          'incapable of receiving this message',
+        ];
+        
+        const isNoWhatsApp = noWhatsAppErrors.some(err => errorLower.includes(err));
         
         // ✅ VERIFICAR SE É ERRO DE INSTÂNCIA DESCONECTADA
         const isDisconnected = errorMessage.toLowerCase().includes('not connected') ||
@@ -2371,55 +2396,42 @@ class QrCampaignWorker {
     errorMessage: string
   ): Promise<void> {
     try {
-      // Lista de mensagens de erro que indicam número sem WhatsApp ou inválido
-      const noWhatsAppErrors = [
-        'does not have an active whatsapp account',
-        'phone number not registered',
-        'invalid phone number',
-        'não tem whatsapp',
-        'número inválido',
-        'recipient phone number not registered',
-        'phone number is not a whatsapp user',
-        'invalid phone_number',
-        'user is not registered',
-        'invalid recipient',
-        'no whatsapp account',
-        'numero inexistente',
-        'number does not exist'
-      ];
-
-      const errorLower = errorMessage.toLowerCase();
-      const isNoWhatsApp = noWhatsAppErrors.some(err => errorLower.includes(err));
-
-      if (!isNoWhatsApp) {
-        return; // Não é erro de número sem WhatsApp
-      }
+      // ✅ Já foi verificado que é erro de "sem WhatsApp" antes de chamar esta função
+      // Adicionar diretamente à lista de restrição
 
       console.log('');
       console.log('📵 ═══════════════════════════════════════════════════');
       console.log('📵 NÚMERO SEM WHATSAPP DETECTADO (QR)');
       console.log('📵 ═══════════════════════════════════════════════════');
-      console.log(`   Número: ${phoneNumber}`);
-      console.log(`   Instância: ${instanceId}`);
-      console.log(`   Erro: ${errorMessage}`);
-      console.log(`   Adicionando automaticamente à lista "Sem WhatsApp"...`);
+      console.log(`   📞 Número: ${phoneNumber}`);
+      console.log(`   📱 Instância: ${instanceId}`);
+      console.log(`   🏢 Tenant: ${tenantId}`);
+      console.log(`   ❌ Erro: ${errorMessage.substring(0, 100)}`);
+      console.log(`   ➡️  Adicionando automaticamente à lista "Sem WhatsApp"...`);
 
-      // Adicionar à lista de restrição
-      // NOTA: Para QR, usamos whatsapp_account_id = NULL ou criamos uma entrada genérica
-      await query(
+      // Adicionar à lista de restrição (COM TENANT_ID!)
+      const result = await query(
         `INSERT INTO restriction_list_entries 
-         (list_type, whatsapp_account_id, phone_number, added_method, notes, added_at)
-         VALUES ($1, NULL, $2, $3, $4, NOW())
-         ON CONFLICT (list_type, whatsapp_account_id, phone_number) DO NOTHING`,
-        ['no_whatsapp', phoneNumber, 'auto_qr_campaign', `QR Instance ${instanceId} - Erro: ${errorMessage.substring(0, 200)}`]
+         (list_type, whatsapp_account_id, phone_number, added_method, notes, tenant_id, added_at)
+         VALUES ($1, NULL, $2, $3, $4, $5, NOW())
+         ON CONFLICT (list_type, phone_number, tenant_id) WHERE whatsapp_account_id IS NULL DO UPDATE SET
+           notes = EXCLUDED.notes,
+           added_at = NOW()
+         RETURNING id`,
+        ['no_whatsapp', phoneNumber, 'auto_qr_campaign', `QR Instance ${instanceId} - Erro: ${errorMessage.substring(0, 200)}`, tenantId]
       );
 
-      console.log('   ✅ Número adicionado à lista "Sem WhatsApp"');
+      if (result.rows.length > 0) {
+        console.log(`   ✅ Número adicionado/atualizado na lista "Sem WhatsApp" (ID: ${result.rows[0].id})`);
+      } else {
+        console.log('   ⚠️ Número já estava na lista');
+      }
       console.log('   ℹ️  Este número não receberá mais tentativas de envio');
       console.log('═══════════════════════════════════════════════════\n');
 
     } catch (error: any) {
       console.error('❌ Erro ao adicionar número à lista "Sem WhatsApp":', error.message);
+      console.error('   Stack:', error.stack);
       // Não interrompe o fluxo - é apenas um registro adicional
     }
   }
