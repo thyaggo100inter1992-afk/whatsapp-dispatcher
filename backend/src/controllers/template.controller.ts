@@ -143,6 +143,32 @@ export class TemplateController {
   }
 
   /**
+   * Cancelar fila de templates pendentes
+   */
+  async cancelQueue(req: Request, res: Response) {
+    try {
+      console.log('\n🛑 Cancelando fila de templates...');
+
+      const result = templateQueueService.cancelQueue();
+
+      console.log(`✅ ${result.cancelled} item(s) cancelado(s)`);
+
+      res.json({
+        success: true,
+        cancelled: result.cancelled,
+        remaining: result.remaining,
+        message: `${result.cancelled} template(s) removido(s) da fila`,
+      });
+    } catch (error: any) {
+      console.error('❌ Erro ao cancelar fila:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+
+  /**
    * Criar template em múltiplas contas (COM FILA)
    */
   async createInMultipleAccounts(req: Request, res: Response) {
