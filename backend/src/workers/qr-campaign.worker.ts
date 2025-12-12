@@ -851,8 +851,28 @@ class QrCampaignWorker {
     const pauseAfter = campaign.pause_config?.pause_after || 0;
     const pauseDuration = campaign.pause_config?.pause_duration_minutes || 30;
 
-    // ✅ CONTROLE DE DELAY: Manter timestamp do último envio válido
+    // ✅ CONTROLE DE DELAY: Buscar timestamp do último envio do BANCO DE DADOS
+    // Isso garante que o delay seja respeitado mesmo entre execuções do worker!
     let lastValidSendTime: number | null = null;
+    
+    try {
+      const lastSendResult = await query(
+        `SELECT MAX(created_at) as last_send 
+         FROM qr_campaign_messages 
+         WHERE campaign_id = $1 
+         AND status IN ('sent', 'delivered', 'read')`,
+        [campaign.id]
+      );
+      
+      if (lastSendResult.rows[0]?.last_send) {
+        lastValidSendTime = new Date(lastSendResult.rows[0].last_send).getTime();
+        console.log(`📅 [QR Worker] Último envio encontrado no banco: ${new Date(lastValidSendTime).toLocaleTimeString('pt-BR')}`);
+      } else {
+        console.log(`📅 [QR Worker] Nenhum envio anterior encontrado - primeira mensagem`);
+      }
+    } catch (error) {
+      console.error('⚠️ Erro ao buscar último envio:', error);
+    }
 
     // ENVIAR MENSAGENS SEQUENCIALMENTE COM DELAY
     for (let index = 0; index < contacts.length; index++) {
