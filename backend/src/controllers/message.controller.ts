@@ -371,6 +371,13 @@ export class MessageController {
 
   async findAll(req: Request, res: Response) {
     try {
+      // 🔒 OBRIGATÓRIO: Verificar tenant_id para evitar vazamento de dados
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        console.error('❌ [SEGURANÇA] Tentativa de acesso sem tenant_id!');
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
       const limit = parseInt(req.query.limit as string) || 100;
       const offset = parseInt(req.query.offset as string) || 0;
       const campaign_id = req.query.campaign_id ? parseInt(req.query.campaign_id as string) : null;
@@ -378,12 +385,15 @@ export class MessageController {
       const date_end = req.query.date_end as string;
       const user_id = req.query.user_id ? parseInt(req.query.user_id as string) : null;
 
+      console.log(`📋 [Mensagens] Listando para tenant ${tenantId} (limit: ${limit}, offset: ${offset})`);
+
       if (campaign_id) {
         // Buscar mensagens de uma campanha específica
         const messages = await MessageModel.findByCampaign(campaign_id, limit, offset);
         return res.json({ success: true, data: messages });
       } else {
         // Buscar TODAS as mensagens com informações completas
+        // 🔒 FILTRAR POR TENANT_ID
         let query_text = `
           SELECT 
             m.*,
@@ -395,11 +405,11 @@ export class MessageController {
           LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id
           LEFT JOIN campaigns c ON m.campaign_id = c.id
           LEFT JOIN tenant_users tu ON m.user_id = tu.id
-          WHERE 1=1
+          WHERE m.tenant_id = $1
         `;
         
-        let query_params: any[] = [];
-        let paramIndex = 1;
+        let query_params: any[] = [tenantId];
+        let paramIndex = 2;
 
         // Filtro por data de início
         if (date_start) {
@@ -425,10 +435,10 @@ export class MessageController {
         query_text += ` ORDER BY m.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         query_params.push(limit, offset);
 
-        // Buscar total de mensagens com os mesmos filtros
-        let countQuery = `SELECT COUNT(*) as total FROM messages m WHERE 1=1`;
-        let countParams: any[] = [];
-        let countIndex = 1;
+        // 🔒 Buscar total de mensagens com os mesmos filtros (incluindo tenant_id)
+        let countQuery = `SELECT COUNT(*) as total FROM messages m WHERE m.tenant_id = $1`;
+        let countParams: any[] = [tenantId];
+        let countIndex = 2;
 
         if (date_start) {
           countQuery += ` AND m.created_at >= $${countIndex}::date`;
@@ -457,6 +467,8 @@ export class MessageController {
         const result = await import('../database/connection').then(({ query }) =>
           query(query_text, query_params)
         );
+
+        console.log(`   ✅ Encontradas ${result.rows.length} mensagens (total: ${total})`);
 
         return res.json({ 
           success: true, 
