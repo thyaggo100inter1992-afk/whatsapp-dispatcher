@@ -933,26 +933,59 @@ class CampaignWorker {
       } catch (error: any) {
         console.error(`❌ Erro ao enviar para ${contact.phone_number}:`, error.message);
 
-        // Registrar erro no banco
+        // 📵 VERIFICAR SE É ERRO DE "SEM WHATSAPP"
+        const noWhatsappErrors = [
+          'does not have an active whatsapp account',
+          'phone number not registered',
+          'invalid phone number',
+          'não tem whatsapp',
+          'número inválido',
+          'recipient phone number not registered',
+          'phone number is not a whatsapp user',
+          'invalid phone_number',
+          'user is not registered',
+          'invalid recipient',
+          'no whatsapp account',
+          'numero inexistente',
+          'number does not exist',
+        ];
+
+        const errorLower = error.message.toLowerCase();
+        const isNoWhatsAppError = noWhatsappErrors.some(err => errorLower.includes(err));
+        const messageStatus = isNoWhatsAppError ? 'no_whatsapp' : 'failed';
+
+        console.log(`📊 Status da mensagem: ${messageStatus} ${isNoWhatsAppError ? '📵' : '❌'}`);
+
+        // Registrar erro no banco com status correto
         await query(
           `INSERT INTO messages 
            (campaign_id, contact_id, whatsapp_account_id, phone_number, template_name, status, error_message, sent_at, tenant_id, user_id)
-           VALUES ($1, $2, $3, $4, $5, 'failed', $6, NOW(), $7, $8)`,
-          [campaign.id, contact.id, template.whatsapp_account_id, contact.phone_number, template.template_name, error.message, campaign.tenant_id, campaign.user_id || null]
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9)`,
+          [campaign.id, contact.id, template.whatsapp_account_id, contact.phone_number, template.template_name, messageStatus, error.message, campaign.tenant_id, campaign.user_id || null]
         );
 
-        await query(
-          'UPDATE campaigns SET failed_count = failed_count + 1 WHERE id = $1 AND tenant_id = $2',
-          [campaign.id, campaign.tenant_id]
-        );
+        // Atualizar contadores da campanha
+        if (isNoWhatsAppError) {
+          await query(
+            'UPDATE campaigns SET failed_count = failed_count + 1, no_whatsapp_count = no_whatsapp_count + 1 WHERE id = $1 AND tenant_id = $2',
+            [campaign.id, campaign.tenant_id]
+          );
+        } else {
+          await query(
+            'UPDATE campaigns SET failed_count = failed_count + 1 WHERE id = $1 AND tenant_id = $2',
+            [campaign.id, campaign.tenant_id]
+          );
+        }
 
         // 📵 ADICIONAR AUTOMATICAMENTE À LISTA "SEM WHATSAPP" se o erro indicar número inválido
-        await this.checkAndAddToNoWhatsAppList(
-          contact.phone_number,
-          template.whatsapp_account_id,
-          campaign.tenant_id,
-          error.message
-        );
+        if (isNoWhatsAppError) {
+          await this.checkAndAddToNoWhatsAppList(
+            contact.phone_number,
+            template.whatsapp_account_id,
+            campaign.tenant_id,
+            error.message
+          );
+        }
 
         // Incrementar contador de falhas consecutivas
         const updateFailureResult = await query(
