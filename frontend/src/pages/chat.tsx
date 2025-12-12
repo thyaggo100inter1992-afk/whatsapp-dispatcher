@@ -506,8 +506,9 @@ export default function Chat() {
 
   const loadConversations = async () => {
     try {
+      // 🔧 Aumentado limite para carregar mais conversas (era 100)
       const response = await api.get('/conversations', {
-        params: { filter, search: searchTerm, limit: 100 }
+        params: { filter, search: searchTerm, limit: 5000 }
       });
       setConversations(response.data.data || []);
       setLoading(false);
@@ -634,9 +635,22 @@ export default function Chat() {
     );
   };
 
-  // Selecionar todas as conversas visíveis
-  const selectAllConversations = () => {
-    setSelectedConversationIds(conversations.map(c => c.id));
+  // Selecionar TODAS as conversas do filtro atual (busca todos os IDs)
+  const selectAllConversations = async () => {
+    try {
+      // Buscar TODOS os IDs (limite alto para pegar tudo)
+      const response = await api.get('/conversations', {
+        params: { filter, search: searchTerm, limit: 50000 }
+      });
+      const allConversations = response.data.data || [];
+      setConversations(allConversations); // Atualizar a lista também
+      setSelectedConversationIds(allConversations.map((c: any) => c.id));
+      console.log(`✅ Selecionadas ${allConversations.length} conversas`);
+    } catch (error) {
+      console.error('Erro ao selecionar todas:', error);
+      // Fallback: selecionar apenas as visíveis
+      setSelectedConversationIds(conversations.map(c => c.id));
+    }
   };
 
   // Desselecionar todas
