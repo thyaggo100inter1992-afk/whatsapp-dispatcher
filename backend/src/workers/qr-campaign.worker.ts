@@ -589,6 +589,20 @@ class QrCampaignWorker {
 
   private async processCampaign(campaign: QrCampaign) {
     console.log(`📋 [QR Worker] Processando campanha: ${campaign.name} (ID: ${campaign.id})`);
+    
+    // 🐛 DEBUG: Verificar configurações de delay
+    console.log('🔧 ═══════════════════════════════════════════════════');
+    console.log('🔧 CONFIGURAÇÕES DA CAMPANHA:');
+    console.log('🔧 ═══════════════════════════════════════════════════');
+    console.log(`   📋 schedule_config RAW:`, campaign.schedule_config);
+    console.log(`   📋 schedule_config tipo:`, typeof campaign.schedule_config);
+    console.log(`   ⏱️  interval_seconds:`, campaign.schedule_config?.interval_seconds);
+    console.log(`   🕐 work_start_time:`, campaign.schedule_config?.work_start_time);
+    console.log(`   🕐 work_end_time:`, campaign.schedule_config?.work_end_time);
+    console.log(`   ⏸️  pause_config RAW:`, campaign.pause_config);
+    console.log(`   ⏸️  pause_after:`, campaign.pause_config?.pause_after);
+    console.log(`   ⏸️  pause_duration_minutes:`, campaign.pause_config?.pause_duration_minutes);
+    console.log('═══════════════════════════════════════════════════\n');
 
     // ✅ Atualizar status para running COM RLS
     if (campaign.status === 'pending' || campaign.status === 'scheduled') {
@@ -1011,31 +1025,49 @@ class QrCampaignWorker {
       console.log('═══════════════════════════════════════════════════\n');
 
       // ✅ VERIFICAR DELAY: Aguardar intervalo desde o último envio válido
-      const currentIntervalSecondsBeforeSend = campaign.schedule_config?.interval_seconds || 5;
+      // 🔧 CORREÇÃO: Garantir que o interval_seconds seja um número válido
+      let intervalFromConfig = campaign.schedule_config?.interval_seconds;
       
-      console.log(`\n🔍 ===== DEBUG DELAY =====`);
-      console.log(`   schedule_config completo:`, JSON.stringify(campaign.schedule_config, null, 2));
-      console.log(`   interval_seconds configurado: ${campaign.schedule_config?.interval_seconds}`);
-      console.log(`   Valor final usado: ${currentIntervalSecondsBeforeSend}s`);
-      console.log(`   Último envio: ${lastValidSendTime ? new Date(lastValidSendTime).toLocaleTimeString('pt-BR') : 'PRIMEIRO ENVIO'}`);
-      console.log(`===========================\n`);
+      // Se for string (pode vir assim do banco em alguns casos), converter para número
+      if (typeof intervalFromConfig === 'string') {
+        intervalFromConfig = parseInt(intervalFromConfig, 10);
+      }
+      
+      // Valor padrão de 5 segundos apenas se não tiver configuração
+      const currentIntervalSecondsBeforeSend = (intervalFromConfig && intervalFromConfig > 0) ? intervalFromConfig : 5;
+      
+      console.log('');
+      console.log('⏱️ ═══════════════════════════════════════════════════');
+      console.log('⏱️ CONFIGURAÇÃO DE DELAY:');
+      console.log('⏱️ ═══════════════════════════════════════════════════');
+      console.log(`   📋 schedule_config:`, JSON.stringify(campaign.schedule_config));
+      console.log(`   🔢 interval_seconds do config: ${campaign.schedule_config?.interval_seconds} (tipo: ${typeof campaign.schedule_config?.interval_seconds})`);
+      console.log(`   ✅ Valor FINAL a usar: ${currentIntervalSecondsBeforeSend} segundos`);
+      console.log(`   ⏰ Último envio: ${lastValidSendTime ? new Date(lastValidSendTime).toLocaleTimeString('pt-BR') : 'PRIMEIRO ENVIO (sem delay)'}`);
+      console.log('═══════════════════════════════════════════════════');
+      console.log('');
       
       if (lastValidSendTime !== null) {
         const elapsedMs = Date.now() - lastValidSendTime;
         const requiredMs = currentIntervalSecondsBeforeSend * 1000;
         const remainingMs = requiredMs - elapsedMs;
         
-        console.log(`⏱️ Tempo decorrido desde último envio: ${(elapsedMs / 1000).toFixed(1)}s`);
-        console.log(`⏱️ Tempo necessário: ${(requiredMs / 1000).toFixed(1)}s`);
-        console.log(`⏱️ Tempo restante a aguardar: ${(remainingMs / 1000).toFixed(1)}s`);
+        console.log(`⏱️ Tempo decorrido: ${(elapsedMs / 1000).toFixed(1)}s | Necessário: ${(requiredMs / 1000).toFixed(1)}s | Restante: ${Math.max(0, remainingMs / 1000).toFixed(1)}s`);
         
         if (remainingMs > 0) {
-          console.log(`⏳ [QR Worker] Aguardando ${(remainingMs / 1000).toFixed(1)}s para respeitar intervalo de ${currentIntervalSecondsBeforeSend}s...`);
+          console.log(`🚨 ⏳ AGUARDANDO ${(remainingMs / 1000).toFixed(0)} SEGUNDOS para respeitar intervalo de ${currentIntervalSecondsBeforeSend}s...`);
           
-          // ✅ DURANTE O DELAY, VERIFICAR A CADA SEGUNDO SE CAMPANHA FOI PAUSADA
+          // ✅ DURANTE O DELAY, VERIFICAR A CADA 5 SEGUNDOS SE CAMPANHA FOI PAUSADA
           const remainingSeconds = Math.ceil(remainingMs / 1000);
-          for (let sec = 0; sec < remainingSeconds; sec++) {
-            await this.sleep(1000);
+          let waited = 0;
+          while (waited < remainingSeconds) {
+            const sleepTime = Math.min(5, remainingSeconds - waited); // A cada 5 segundos (ou menos no final)
+            await this.sleep(sleepTime * 1000);
+            waited += sleepTime;
+            
+            if (waited < remainingSeconds) {
+              console.log(`   ⏳ ${remainingSeconds - waited}s restantes...`);
+            }
             
             const statusDuringDelay = await getCampaignStatus(campaign.id, campaign.tenant_id);
             if (statusDuringDelay === 'paused' || statusDuringDelay === 'cancelled') {
@@ -1043,7 +1075,12 @@ class QrCampaignWorker {
               return;
             }
           }
+          console.log(`✅ Delay de ${currentIntervalSecondsBeforeSend}s concluído!`);
+        } else {
+          console.log(`✅ Delay já cumprido (tempo decorrido: ${(elapsedMs / 1000).toFixed(1)}s >= ${currentIntervalSecondsBeforeSend}s)`);
         }
+      } else {
+        console.log(`ℹ️ Primeiro envio - sem delay`);
       }
       
       // 📱 VERIFICAR SE O NÚMERO TEM WHATSAPP ANTES DE ENVIAR
