@@ -655,8 +655,9 @@ class QrCampaignWorker {
       }
       
       // 2️⃣ BUSCAR TODOS OS TEMPLATES DA CAMPANHA (independente de instância)
+      // ⚠️ CORREÇÃO: Incluir TODOS os campos selecionados no GROUP BY para evitar erro JSON
       const templatesOnlyResult = await client.query(
-        `SELECT DISTINCT ct.qr_template_id, ct.order_index, ct.is_active,
+        `SELECT ct.qr_template_id, ct.order_index, ct.is_active,
          t.id as template_id, t.name as template_name, t.type as template_type,
          t.text_content, t.list_config, t.buttons_config, t.carousel_config,
          t.poll_config, t.combined_blocks, t.variables_map,
@@ -671,7 +672,10 @@ class QrCampaignWorker {
          LEFT JOIN qr_template_media m ON t.id = m.template_id
          WHERE ct.campaign_id = $1 
          AND ct.is_active = true
-         GROUP BY ct.qr_template_id, ct.order_index, ct.is_active, t.id
+         GROUP BY ct.qr_template_id, ct.order_index, ct.is_active, 
+                  t.id, t.name, t.type, t.text_content, t.list_config, 
+                  t.buttons_config, t.carousel_config, t.poll_config, 
+                  t.combined_blocks, t.variables_map
          ORDER BY ct.order_index`,
         [campaign.id]
       );
