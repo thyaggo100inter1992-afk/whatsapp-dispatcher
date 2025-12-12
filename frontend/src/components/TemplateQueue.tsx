@@ -58,6 +58,7 @@ export const TemplateQueue: React.FC<TemplateQueueProps> = ({ onClose, toast: ex
   const [editingFailure, setEditingFailure] = useState<number | null>(null);
   const [newTemplateName, setNewTemplateName] = useState('');
   const [retrying, setRetrying] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const hasPermissionRef = useRef(true);
   const intervalIdRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -281,6 +282,40 @@ export const TemplateQueue: React.FC<TemplateQueueProps> = ({ onClose, toast: ex
     }
   };
 
+  const cancelQueue = async () => {
+    const confirmed = await confirm({
+      title: '🛑 Cancelar Fila de Templates',
+      message: `Tem certeza que deseja CANCELAR a criação de ${queueStatus?.pending || 0} templates pendentes?\n\n⚠️ Os templates que já estão sendo processados serão concluídos.\n\n❌ Os templates pendentes serão removidos da fila.`,
+      type: 'danger',
+      confirmText: `Sim, Cancelar ${queueStatus?.pending || 0} Templates`,
+      cancelText: 'Voltar'
+    });
+    
+    if (!confirmed) return;
+
+    setCancelling(true);
+    try {
+      const response = await api.post('/templates/queue/cancel');
+      const data = response.data;
+      if (data.success) {
+        if (externalToast) {
+          externalToast.success(`✅ ${data.cancelled} template(s) removido(s) da fila!`);
+        }
+        fetchQueueStatus();
+      } else {
+        if (externalToast) {
+          externalToast.error('Erro ao cancelar fila: ' + data.error);
+        }
+      }
+    } catch (error: any) {
+      if (externalToast) {
+        externalToast.error('Erro: ' + error.message);
+      }
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const clearAllFailures = async () => {
     const confirmed = await confirm({
       title: '🗑️ Limpar Templates com Erro',
@@ -353,11 +388,33 @@ export const TemplateQueue: React.FC<TemplateQueueProps> = ({ onClose, toast: ex
           <FaList className="mr-3 text-blue-400" />
           Fila de Templates
         </h2>
-        {onClose && (
-          <button onClick={onClose} className="btn btn-secondary">
-            Fechar
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Botão Cancelar Fila */}
+          {queueStatus.pending > 0 && (
+            <button
+              onClick={cancelQueue}
+              disabled={cancelling}
+              className="btn bg-red-600 hover:bg-red-700 text-white border-red-500 flex items-center gap-2"
+            >
+              {cancelling ? (
+                <>
+                  <FaSpinner className="animate-spin" />
+                  Cancelando...
+                </>
+              ) : (
+                <>
+                  <FaTimesCircle />
+                  Cancelar Fila ({queueStatus.pending})
+                </>
+              )}
+            </button>
+          )}
+          {onClose && (
+            <button onClick={onClose} className="btn btn-secondary">
+              Fechar
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Status Summary */}
