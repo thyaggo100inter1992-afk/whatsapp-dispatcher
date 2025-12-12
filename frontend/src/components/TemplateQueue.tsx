@@ -516,14 +516,14 @@ export const TemplateQueue: React.FC<TemplateQueueProps> = ({ onClose, toast: ex
               </button>
               {failures.length > 0 && (
                 <>
-                  <button
-                    onClick={retryAllFailures}
-                    disabled={retrying}
-                    className="btn btn-primary text-sm"
-                  >
-                    <FaRedo className="mr-1" />
-                    Re-tentar Todos
-                  </button>
+                <button
+                  onClick={retryAllFailures}
+                  disabled={retrying}
+                  className="btn btn-primary text-sm"
+                >
+                  <FaRedo className="mr-1" />
+                  Re-tentar Todos
+                </button>
                   <button
                     onClick={clearAllFailures}
                     disabled={retrying}

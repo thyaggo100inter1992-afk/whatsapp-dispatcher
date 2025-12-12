@@ -38,6 +38,7 @@ export default function EnviarMensagemImediataV2() {
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [excludeQuery, setExcludeQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL'); // ALL, MARKETING, UTILITY, AUTHENTICATION
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState('');
   const [loading, setLoading] = useState(false);
@@ -57,7 +58,7 @@ export default function EnviarMensagemImediataV2() {
 
   useEffect(() => {
     filterTemplates();
-  }, [templates, searchQuery, excludeQuery]);
+  }, [templates, searchQuery, excludeQuery, categoryFilter]);
 
   const loadAccounts = async () => {
     try {
@@ -93,6 +94,11 @@ export default function EnviarMensagemImediataV2() {
 
   const filterTemplates = () => {
     let filtered = [...templates];
+
+    // Filtro por categoria
+    if (categoryFilter !== 'ALL') {
+      filtered = filtered.filter(t => t.category === categoryFilter);
+    }
 
     if (searchQuery.trim()) {
       filtered = filtered.filter(t => 
@@ -880,25 +886,79 @@ export default function EnviarMensagemImediataV2() {
                 </div>
 
                 {/* Filtros */}
-                <div className="grid md:grid-cols-2 gap-4 mb-6">
+                <div className="space-y-4 mb-6">
+                  {/* Filtro por Categoria */}
                   <div>
-                    <input
-                      type="text"
-                      className="w-full px-4 py-3 text-base bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
-                      placeholder="🔍 Buscar template..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
+                    <label className="block text-sm font-bold text-white/70 mb-2">📂 Filtrar por Categoria:</label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCategoryFilter('ALL')}
+                        className={`px-4 py-2 text-sm font-bold rounded-lg border-2 transition-all duration-200 ${
+                          categoryFilter === 'ALL'
+                            ? 'bg-primary-500 text-white border-primary-500 shadow-lg shadow-primary-500/30'
+                            : 'bg-dark-700/50 text-white/70 border-white/20 hover:border-primary-500/50 hover:text-white'
+                        }`}
+                      >
+                        📋 Todas ({templates.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCategoryFilter('MARKETING')}
+                        className={`px-4 py-2 text-sm font-bold rounded-lg border-2 transition-all duration-200 ${
+                          categoryFilter === 'MARKETING'
+                            ? 'bg-purple-500 text-white border-purple-500 shadow-lg shadow-purple-500/30'
+                            : 'bg-purple-500/10 text-purple-300 border-purple-500/30 hover:border-purple-500 hover:bg-purple-500/20'
+                        }`}
+                      >
+                        📢 Marketing ({templates.filter(t => t.category === 'MARKETING').length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCategoryFilter('UTILITY')}
+                        className={`px-4 py-2 text-sm font-bold rounded-lg border-2 transition-all duration-200 ${
+                          categoryFilter === 'UTILITY'
+                            ? 'bg-blue-500 text-white border-blue-500 shadow-lg shadow-blue-500/30'
+                            : 'bg-blue-500/10 text-blue-300 border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/20'
+                        }`}
+                      >
+                        🔧 Utilitário ({templates.filter(t => t.category === 'UTILITY').length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCategoryFilter('AUTHENTICATION')}
+                        className={`px-4 py-2 text-sm font-bold rounded-lg border-2 transition-all duration-200 ${
+                          categoryFilter === 'AUTHENTICATION'
+                            ? 'bg-green-500 text-white border-green-500 shadow-lg shadow-green-500/30'
+                            : 'bg-green-500/10 text-green-300 border-green-500/30 hover:border-green-500 hover:bg-green-500/20'
+                        }`}
+                      >
+                        🔐 Autenticação ({templates.filter(t => t.category === 'AUTHENTICATION').length})
+                      </button>
+                    </div>
                   </div>
 
-                  <div>
-                    <input
-                      type="text"
-                      className="w-full px-4 py-3 text-base bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-red-500 focus:ring-2 focus:ring-red-500/30 transition-all"
-                      placeholder="❌ Excluir que contenham..."
-                      value={excludeQuery}
-                      onChange={(e) => setExcludeQuery(e.target.value)}
-                    />
+                  {/* Busca e Exclusão */}
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <input
+                        type="text"
+                        className="w-full px-4 py-3 text-base bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
+                        placeholder="🔍 Buscar template..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <input
+                        type="text"
+                        className="w-full px-4 py-3 text-base bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-red-500 focus:ring-2 focus:ring-red-500/30 transition-all"
+                        placeholder="❌ Excluir que contenham..."
+                        value={excludeQuery}
+                        onChange={(e) => setExcludeQuery(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
 
