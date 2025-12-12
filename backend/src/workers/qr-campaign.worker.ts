@@ -655,27 +655,26 @@ class QrCampaignWorker {
       }
       
       // 2️⃣ BUSCAR TODOS OS TEMPLATES DA CAMPANHA (independente de instância)
-      // ⚠️ CORREÇÃO: Incluir TODOS os campos selecionados no GROUP BY para evitar erro JSON
+      // ⚠️ CORREÇÃO: Usar subquery para media_files para evitar GROUP BY com JSON
       const templatesOnlyResult = await client.query(
         `SELECT ct.qr_template_id, ct.order_index, ct.is_active,
          t.id as template_id, t.name as template_name, t.type as template_type,
          t.text_content, t.list_config, t.buttons_config, t.carousel_config,
          t.poll_config, t.combined_blocks, t.variables_map,
-         json_agg(json_build_object(
-           'media_type', m.media_type,
-           'url', m.url,
-           'file_path', m.file_path,
-           'caption', m.caption
-         )) FILTER (WHERE m.id IS NOT NULL) as media_files
+         (
+           SELECT json_agg(json_build_object(
+             'media_type', m.media_type,
+             'url', m.url,
+             'file_path', m.file_path,
+             'caption', m.caption
+           ))
+           FROM qr_template_media m 
+           WHERE m.template_id = t.id
+         ) as media_files
          FROM qr_campaign_templates ct
          LEFT JOIN qr_templates t ON ct.qr_template_id = t.id
-         LEFT JOIN qr_template_media m ON t.id = m.template_id
          WHERE ct.campaign_id = $1 
          AND ct.is_active = true
-         GROUP BY ct.qr_template_id, ct.order_index, ct.is_active, 
-                  t.id, t.name, t.type, t.text_content, t.list_config, 
-                  t.buttons_config, t.carousel_config, t.poll_config, 
-                  t.combined_blocks, t.variables_map
          ORDER BY ct.order_index`,
         [campaign.id]
       );
