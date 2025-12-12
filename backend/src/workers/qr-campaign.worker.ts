@@ -856,19 +856,25 @@ class QrCampaignWorker {
     let lastValidSendTime: number | null = null;
     
     try {
-      const lastSendResult = await query(
+      // ✅ CORREÇÃO CRÍTICA: Buscar SEM filtro de status para garantir que encontre o último envio
+      // A query anterior falhava porque RLS ou status não batia
+      const lastSendResult = await queryWithRLS(
+        campaign.tenant_id,
         `SELECT MAX(created_at) as last_send 
          FROM qr_campaign_messages 
-         WHERE campaign_id = $1 
-         AND status IN ('sent', 'delivered', 'read')`,
+         WHERE campaign_id = $1`,
         [campaign.id]
       );
       
+      console.log(`📅 [QR Worker] Query resultado:`, JSON.stringify(lastSendResult.rows[0]));
+      
       if (lastSendResult.rows[0]?.last_send) {
         lastValidSendTime = new Date(lastSendResult.rows[0].last_send).getTime();
-        console.log(`📅 [QR Worker] Último envio encontrado no banco: ${new Date(lastValidSendTime).toLocaleTimeString('pt-BR')}`);
+        const agora = Date.now();
+        const diffSegundos = Math.round((agora - lastValidSendTime) / 1000);
+        console.log(`📅 [QR Worker] ✅ Último envio encontrado: ${new Date(lastValidSendTime).toLocaleTimeString('pt-BR')} (há ${diffSegundos}s)`);
       } else {
-        console.log(`📅 [QR Worker] Nenhum envio anterior encontrado - primeira mensagem`);
+        console.log(`📅 [QR Worker] ⚠️ Nenhum envio anterior encontrado - primeira mensagem da campanha`);
       }
     } catch (error) {
       console.error('⚠️ Erro ao buscar último envio:', error);
