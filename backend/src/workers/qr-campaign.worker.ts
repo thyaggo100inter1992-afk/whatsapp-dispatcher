@@ -344,6 +344,10 @@ class QrCampaignWorker {
   private currentCampaignByTenant: Map<number, number> = new Map();
   private pauseState: Map<number, { startedAt: Date; durationMinutes: number }> = new Map();
   private autoPausedCampaigns: Set<number> = new Set();
+  // ✅ Controle de última verificação proativa de instâncias (por campanha)
+  // Evita verificar em cada ciclo - verifica a cada 60 segundos
+  private lastInstancesCheck: Map<number, Date> = new Map();
+  private INSTANCES_CHECK_INTERVAL_MS = 60000; // 60 segundos
 
   getPauseState(campaignId: number): { remainingSeconds: number } | null {
     const pauseInfo = this.pauseState.get(campaignId);
@@ -652,6 +656,16 @@ class QrCampaignWorker {
 
     // ✅ VERIFICAR E REATIVAR INSTÂNCIAS QUE RECONECTARAM
     await this.checkAndReactivateInstances(campaign.id);
+    
+    // ✅ VERIFICAÇÃO PROATIVA: Verificar status REAL das instâncias na API UAZ
+    // Isso detecta instâncias que desconectaram mas o banco não foi atualizado
+    // Verifica a cada 60 segundos para não sobrecarregar a API
+    const lastCheck = this.lastInstancesCheck.get(campaign.id);
+    const now = new Date();
+    if (!lastCheck || (now.getTime() - lastCheck.getTime()) >= this.INSTANCES_CHECK_INTERVAL_MS) {
+      await this.verifyAndUpdateInstancesStatus(campaign.id, campaign.tenant_id);
+      this.lastInstancesCheck.set(campaign.id, now);
+    }
     
     // ✅ NOVA LÓGICA: Buscar instâncias E templates SEPARADAMENTE
     // No QR Connect, qualquer instância pode usar qualquer template!
@@ -2151,6 +2165,119 @@ class QrCampaignWorker {
   }
 
   /**
+   * ✅ VERIFICAÇÃO PROATIVA: Verifica status REAL das instâncias na API UAZ
+   * Detecta instâncias que desconectaram mas o banco não foi atualizado
+   * (ex: desconexão não enviou webhook, usuário desligou celular, etc)
+   */
+  private async verifyAndUpdateInstancesStatus(campaignId: number, tenantId?: number) {
+    try {
+      // Buscar instâncias marcadas como "conectadas" no banco para esta campanha
+      const instancesToCheck = await query(
+        `SELECT DISTINCT i.id, i.instance_token, i.name, i.is_connected,
+         p.host as proxy_host, p.port as proxy_port, 
+         p.username as proxy_username, p.password as proxy_password
+         FROM qr_campaign_templates ct
+         JOIN uaz_instances i ON ct.instance_id = i.id
+         LEFT JOIN proxies p ON i.proxy_id = p.id
+         WHERE ct.campaign_id = $1
+         AND ct.is_active = true
+         AND i.is_connected = true
+         AND i.is_active = true`,
+        [campaignId]
+      );
+
+      if (instancesToCheck.rows.length === 0) {
+        return;
+      }
+
+      console.log('');
+      console.log('🔍 ═══════════════════════════════════════════');
+      console.log(`🔍  VERIFICAÇÃO PROATIVA DE STATUS DAS INSTÂNCIAS`);
+      console.log(`🔍  Campanha ID: ${campaignId}`);
+      console.log(`🔍  Instâncias a verificar: ${instancesToCheck.rows.length}`);
+      console.log('🔍 ═══════════════════════════════════════════');
+
+      // Buscar credenciais do tenant para verificar na API UAZ
+      const credentials = await getTenantUazapCredentials(tenantId || 1);
+      const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
+
+      let disconnectedCount = 0;
+
+      for (const instance of instancesToCheck.rows) {
+        try {
+          // Configurar proxy se necessário
+          const proxyConfig = instance.proxy_host ? {
+            host: instance.proxy_host,
+            port: instance.proxy_port,
+            username: instance.proxy_username,
+            password: instance.proxy_password
+          } : null;
+
+          // Verificar status REAL na API UAZ
+          const statusResult = await uazService.getStatus(instance.instance_token, proxyConfig);
+
+          // Se não conseguiu verificar ou está desconectado
+          const isActuallyConnected = statusResult.success && statusResult.connected === true;
+
+          if (!isActuallyConnected) {
+            console.log(`⚠️  [QR Worker] INSTÂNCIA DESCONECTADA DETECTADA: "${instance.name}" (ID: ${instance.id})`);
+            console.log(`   📡 Resposta da API: ${statusResult.success ? 'Desconectado' : statusResult.error || 'Erro de verificação'}`);
+
+            // Atualizar banco de dados - marcar como desconectada
+            await query(
+              `UPDATE uaz_instances 
+               SET is_connected = false, 
+                   status = 'disconnected',
+                   updated_at = NOW()
+               WHERE id = $1`,
+              [instance.id]
+            );
+
+            // Desativar da campanha
+            await this.deactivateInstanceFromCampaign(campaignId, instance.id, instance.name);
+
+            disconnectedCount++;
+          } else {
+            console.log(`✅  [QR Worker] Instância "${instance.name}" verificada: CONECTADA`);
+          }
+        } catch (error: any) {
+          console.error(`❌  [QR Worker] Erro ao verificar instância "${instance.name}":`, error.message);
+          
+          // Em caso de erro de conexão/timeout, considerar como desconectada
+          if (error.message?.includes('timeout') || error.message?.includes('ECONNREFUSED') || error.message?.includes('ENOTFOUND')) {
+            console.log(`⚠️  [QR Worker] Instância "${instance.name}" inacessível - desativando da campanha`);
+            
+            await query(
+              `UPDATE uaz_instances 
+               SET is_connected = false, 
+                   status = 'disconnected',
+                   updated_at = NOW()
+               WHERE id = $1`,
+              [instance.id]
+            );
+
+            await this.deactivateInstanceFromCampaign(campaignId, instance.id, instance.name);
+            disconnectedCount++;
+          }
+        }
+      }
+
+      if (disconnectedCount > 0) {
+        console.log('');
+        console.log('⚠️ ═══════════════════════════════════════════');
+        console.log(`⚠️  ${disconnectedCount} INSTÂNCIA(S) DESCONECTADA(S) REMOVIDA(S) DA CAMPANHA`);
+        console.log('⚠️  Campanha continuará com as instâncias conectadas');
+        console.log('⚠️ ═══════════════════════════════════════════');
+        console.log('');
+      }
+
+      console.log('');
+    } catch (error) {
+      console.error('❌ Erro na verificação proativa de instâncias:', error);
+    }
+  }
+
+  /**
    * ⚠️ Desativar instância da campanha quando desconectar
    */
   private async deactivateInstanceFromCampaign(campaignId: number, instanceId: number, instanceName: string) {
@@ -2204,6 +2331,7 @@ class QrCampaignWorker {
       
       this.autoPausedCampaigns.delete(campaignId);
       this.pauseState.delete(campaignId);
+      this.lastInstancesCheck.delete(campaignId);
       
       console.log(`✅ [QR Worker] Campanha ${campaignId} concluída!`);
     } catch (error) {
