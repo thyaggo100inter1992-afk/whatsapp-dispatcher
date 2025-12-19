@@ -195,6 +195,7 @@ export interface AllListsOverview {
     do_not_disturb: number;
     blocked: number;
     not_interested: number;
+    no_whatsapp: number;
   };
 }
 

@@ -1783,6 +1783,7 @@ export class RestrictionListController {
         do_not_disturb: 0,
         blocked: 0,
         not_interested: 0,
+        no_whatsapp: 0,
       };
 
       globalResult.rows.forEach((row) => {
@@ -1791,12 +1792,13 @@ export class RestrictionListController {
         }
       });
 
-      const response: AllListsOverview = {
+      const response: any = {
         accounts: Array.from(accountsMap.values()),
         global_totals: {
           do_not_disturb: global_totals.do_not_disturb || 0,
           blocked: global_totals.blocked || 0,
           not_interested: global_totals.not_interested || 0,
+          no_whatsapp: global_totals.no_whatsapp || 0,
         },
       };
 
