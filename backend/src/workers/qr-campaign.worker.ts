@@ -1205,13 +1205,15 @@ class QrCampaignWorker {
         );
         
         // 📵 ADICIONAR À LISTA DE RESTRIÇÃO "SEM WHATSAPP"
+        // ⚠️ Para campanhas QR, usamos whatsapp_account_id = NULL (restrição global)
+        // Isso porque uaz_instances não são whatsapp_accounts da API Oficial
         try {
           await query(
             `INSERT INTO restriction_list_entries 
              (list_type, whatsapp_account_id, phone_number, added_method, notes, tenant_id, added_at)
-             VALUES ($1, $2, $3, $4, $5, $6, NOW())
-             ON CONFLICT (list_type, whatsapp_account_id, phone_number, tenant_id) DO NOTHING`,
-            ['no_whatsapp', template.instance_id, contact.phone_number, 'auto_qr_campaign', 'Verificação pré-envio: número não possui WhatsApp', campaign.tenant_id]
+             VALUES ($1, NULL, $2, $3, $4, $5, NOW())
+             ON CONFLICT (list_type, phone_number, tenant_id) WHERE whatsapp_account_id IS NULL DO NOTHING`,
+            ['no_whatsapp', contact.phone_number, 'auto_qr_campaign', 'Verificação pré-envio: número não possui WhatsApp', campaign.tenant_id]
           );
           console.log(`✅ [QR Worker] Número ${contact.phone_number} adicionado à lista "Sem WhatsApp"`);
         } catch (listError: any) {
@@ -1450,13 +1452,14 @@ class QrCampaignWorker {
           );
 
           // 📵 ADICIONAR À LISTA DE RESTRIÇÃO "SEM WHATSAPP"
+          // ⚠️ Para campanhas QR, usamos whatsapp_account_id = NULL (restrição global)
           try {
             await query(
               `INSERT INTO restriction_list_entries 
                (list_type, whatsapp_account_id, phone_number, added_method, notes, tenant_id, added_at)
-               VALUES ($1, $2, $3, $4, $5, $6, NOW())
-               ON CONFLICT (list_type, whatsapp_account_id, phone_number, tenant_id) DO NOTHING`,
-              ['no_whatsapp', template.instance_id, contact.phone_number, 'auto_qr_campaign', `Erro no envio: ${errorMessage.substring(0, 200)}`, campaign.tenant_id]
+               VALUES ($1, NULL, $2, $3, $4, $5, NOW())
+               ON CONFLICT (list_type, phone_number, tenant_id) WHERE whatsapp_account_id IS NULL DO NOTHING`,
+              ['no_whatsapp', contact.phone_number, 'auto_qr_campaign', `Erro no envio: ${errorMessage.substring(0, 200)}`, campaign.tenant_id]
             );
             console.log(`✅ [QR Worker] Número ${contact.phone_number} adicionado à lista "Sem WhatsApp"`);
           } catch (listError: any) {
