@@ -303,13 +303,39 @@ class CampaignWorker {
 
       const isHealthy = whatsappHealthService.isHealthy(health);
 
-      // ⭐ NOVO: Health Check APENAS INFORMATIVO
-      // NÃO desativa contas - apenas loga o status
+      // ✅ ATIVO: Desativa contas com qualidade baixa (YELLOW ou RED)
       if (!isHealthy) {
         const reason = whatsappHealthService.getUnhealthyReason(health);
-        console.log(`⚠️ [INFO] Conta ${whatsapp_account_id} com health não ideal: ${reason}`);
-        console.log(`   🔄 Mas continuará ativa - apenas erros reais de envio desativam contas`);
-        // NÃO desativa a conta
+        console.log('');
+        console.log('🚨 ═══════════════════════════════════════════════════');
+        console.log(`🚨 CONTA COM QUALIDADE BAIXA DETECTADA!`);
+        console.log(`🚨 Conta: ${account_name || whatsapp_account_id}`);
+        console.log(`🚨 Motivo: ${reason}`);
+        console.log(`🚨 Quality Rating: ${health.quality_rating}`);
+        console.log(`🚨 AÇÃO: Removendo da campanha automaticamente`);
+        console.log('🚨 ═══════════════════════════════════════════════════');
+        console.log('');
+
+        // Buscar todas as campanhas que usam esta conta e desativá-la
+        const campaignsResult = await query(
+          `SELECT DISTINCT campaign_id FROM campaign_templates 
+           WHERE whatsapp_account_id = $1 AND is_active = true`,
+          [whatsapp_account_id]
+        );
+
+        for (const row of campaignsResult.rows) {
+          await query(
+            `UPDATE campaign_templates 
+             SET is_active = false, 
+                 removed_at = NOW(), 
+                 last_error = $1
+             WHERE campaign_id = $2 AND whatsapp_account_id = $3`,
+            [`Qualidade ${health.quality_rating}: ${reason}`, row.campaign_id, whatsapp_account_id]
+          );
+          console.log(`   ⚠️ Conta ${whatsapp_account_id} desativada da campanha ${row.campaign_id}`);
+        }
+        
+        console.log(`🔄 Conta será reativada automaticamente quando a qualidade melhorar (GREEN)`);
       } else {
         console.log(`✅ Conta ${whatsapp_account_id} com health OK (${health.quality_rating})`);
       }
