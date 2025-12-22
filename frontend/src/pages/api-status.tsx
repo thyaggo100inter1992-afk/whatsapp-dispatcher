@@ -40,6 +40,7 @@ export default function ApiStatus() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [hideDisconnected, setHideDisconnected] = useState(false);
 
   useEffect(() => {
     loadAccountsStatus();
@@ -191,7 +192,19 @@ export default function ApiStatus() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
+                {/* Ocultar Desconectadas */}
+                <button
+                  onClick={() => setHideDisconnected(!hideDisconnected)}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
+                    hideDisconnected
+                      ? 'bg-purple-500/20 border-2 border-purple-500/40 text-purple-300'
+                      : 'bg-dark-700 border-2 border-white/20 text-white/70'
+                  }`}
+                >
+                  {hideDisconnected ? '👁️ Mostrar Todas' : '🙈 Ocultar Desconectadas'}
+                </button>
+
                 <button
                   onClick={() => setAutoRefresh(!autoRefresh)}
                   className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
@@ -255,7 +268,14 @@ export default function ApiStatus() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-8">
-              {accounts.map((account) => {
+              {accounts
+                .filter(account => {
+                  if (!hideDisconnected) return true;
+                  // Ocultar contas com problemas de conexão
+                  const isDisconnected = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'].includes(account.account_status) || !account.api_connected;
+                  return !isDisconnected;
+                })
+                .map((account) => {
                 const accountHasProblems = hasProblems(account);
                 
                 return (
