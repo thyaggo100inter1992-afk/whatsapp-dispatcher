@@ -5,6 +5,7 @@ export interface PhoneNumberHealth {
   phone_number_id: string;
   quality_rating: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN';
   code_verification_status: 'VERIFIED' | 'UNVERIFIED' | 'EXPIRED' | 'UNKNOWN';
+  status: 'CONNECTED' | 'DISCONNECTED' | 'FLAGGED' | 'RESTRICTED' | 'BANNED' | 'UNKNOWN';
   display_phone_number?: string;
   verified_name?: string;
   platform_type?: string;
@@ -22,7 +23,7 @@ class WhatsAppHealthService {
     try {
       let requestConfig: AxiosRequestConfig = {
         params: {
-          fields: 'quality_rating,code_verification_status,display_phone_number,verified_name,platform_type,throughput',
+          fields: 'quality_rating,code_verification_status,status,display_phone_number,verified_name,platform_type,throughput',
         },
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -48,6 +49,7 @@ class WhatsAppHealthService {
         phone_number_id: phoneNumberId,
         quality_rating: response.data.quality_rating || 'UNKNOWN',
         code_verification_status: response.data.code_verification_status || 'UNKNOWN',
+        status: response.data.status || 'UNKNOWN',
         display_phone_number: response.data.display_phone_number,
         verified_name: response.data.verified_name,
         platform_type: response.data.platform_type,
@@ -64,38 +66,58 @@ class WhatsAppHealthService {
         phone_number_id: phoneNumberId,
         quality_rating: 'UNKNOWN',
         code_verification_status: 'UNKNOWN',
+        status: 'UNKNOWN',
       };
     }
   }
 
   /**
    * Verifica se a conta está saudável para enviar mensagens
-   * IMPORTANTE: UNKNOWN não é considerado problema - só remove se tiver certeza (YELLOW/RED)
+   * IMPORTANTE: UNKNOWN não é considerado problema - só remove se tiver certeza
    */
   isHealthy(health: PhoneNumberHealth): boolean {
-    // Considera saudável se:
-    // - Quality é GREEN ou UNKNOWN (UNKNOWN = não temos certeza, então não remove)
-    // - Verification é qualquer coisa menos UNVERIFIED
+    // Status que indicam problema definitivo
+    const badStatus = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'].includes(health.status);
     const badQuality = health.quality_rating === 'YELLOW' || health.quality_rating === 'RED';
     const unverified = health.code_verification_status === 'UNVERIFIED';
 
-    // Só é NÃO saudável se temos CERTEZA do problema (não em caso de UNKNOWN)
-    return !badQuality && !unverified;
+    // Só é NÃO saudável se temos CERTEZA do problema
+    return !badStatus && !badQuality && !unverified;
   }
 
   /**
    * Verifica se deve remover a conta da campanha
-   * Só remove quando temos CERTEZA do problema (YELLOW ou RED), não quando é UNKNOWN
+   * Remove quando: BANNED, FLAGGED, RESTRICTED, DISCONNECTED, YELLOW ou RED
    */
   shouldRemoveFromCampaign(health: PhoneNumberHealth): boolean {
-    // Só remove se a qualidade é definitivamente ruim
-    return health.quality_rating === 'YELLOW' || health.quality_rating === 'RED';
+    // Status que SEMPRE devem remover
+    const badStatus = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'].includes(health.status);
+    
+    // Qualidade ruim também remove
+    const badQuality = health.quality_rating === 'YELLOW' || health.quality_rating === 'RED';
+    
+    return badStatus || badQuality;
   }
 
   /**
    * Retorna o motivo pelo qual a conta não está saudável
    */
   getUnhealthyReason(health: PhoneNumberHealth): string {
+    // Primeiro verificar status da conta (mais crítico)
+    if (health.status === 'BANNED') {
+      return 'CONTA BANIDA pelo WhatsApp';
+    }
+    if (health.status === 'FLAGGED') {
+      return 'Conta SINALIZADA por violações';
+    }
+    if (health.status === 'RESTRICTED') {
+      return 'Conta RESTRITA pelo WhatsApp';
+    }
+    if (health.status === 'DISCONNECTED') {
+      return 'Conta DESCONECTADA';
+    }
+    
+    // Depois verificar qualidade
     if (health.quality_rating === 'YELLOW') {
       return 'Qualidade YELLOW (atenção necessária)';
     }
@@ -105,7 +127,8 @@ class WhatsAppHealthService {
     if (health.code_verification_status === 'UNVERIFIED') {
       return 'Conta não verificada';
     }
-    // Não considerar UNKNOWN como erro - apenas informativo
+    
+    // Status OK
     return 'Status temporariamente indisponível';
   }
 
