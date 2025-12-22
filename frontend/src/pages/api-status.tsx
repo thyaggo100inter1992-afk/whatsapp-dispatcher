@@ -19,6 +19,9 @@ interface AccountStatus {
   // Qualidade da conta
   quality_score: 'GREEN' | 'YELLOW' | 'RED' | 'FLAGGED' | 'UNKNOWN';
   
+  // Status da conta na Meta (CONNECTED, DISCONNECTED, FLAGGED, RESTRICTED, BANNED)
+  account_status: 'CONNECTED' | 'DISCONNECTED' | 'FLAGGED' | 'RESTRICTED' | 'BANNED' | 'UNKNOWN';
+  
   // Status da API
   api_connected: boolean;
   api_last_check: string | null;
@@ -66,9 +69,16 @@ export default function ApiStatus() {
       
       // Ordenar contas: primeiro as com problemas, depois por mensagens enviadas
       const sortedAccounts = accountsData.sort((a: AccountStatus, b: AccountStatus) => {
-        // Verificar se tem problemas
-        const aHasProblems = !a.api_connected || ['RED', 'YELLOW', 'FLAGGED'].includes(a.quality_score);
-        const bHasProblems = !b.api_connected || ['RED', 'YELLOW', 'FLAGGED'].includes(b.quality_score);
+        // Verificar se tem problemas (incluindo status da conta)
+        const badStatuses = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'];
+        const aHasProblems = badStatuses.includes(a.account_status) || !a.api_connected || ['RED', 'YELLOW', 'FLAGGED'].includes(a.quality_score);
+        const bHasProblems = badStatuses.includes(b.account_status) || !b.api_connected || ['RED', 'YELLOW', 'FLAGGED'].includes(b.quality_score);
+        
+        // Contas banidas/flagged vêm primeiro
+        const aBanned = a.account_status === 'BANNED';
+        const bBanned = b.account_status === 'BANNED';
+        if (aBanned && !bBanned) return -1;
+        if (!aBanned && bBanned) return 1;
         
         // Se apenas A tem problemas, A vem primeiro
         if (aHasProblems && !bHasProblems) return -1;
@@ -136,7 +146,9 @@ export default function ApiStatus() {
   };
 
   const hasProblems = (account: AccountStatus) => {
-    return !account.api_connected || ['RED', 'YELLOW', 'FLAGGED'].includes(account.quality_score);
+    const badStatus = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'].includes(account.account_status);
+    const badQuality = ['RED', 'YELLOW', 'FLAGGED'].includes(account.quality_score);
+    return badStatus || badQuality || !account.api_connected;
   };
 
   if (loading) {
@@ -306,15 +318,35 @@ export default function ApiStatus() {
 
                       {/* Status da API - Inline */}
                       <div className="flex items-center gap-2 px-3 py-2 bg-dark-700/60 rounded-lg border border-white/5">
-                        {account.api_connected ? (
+                        {account.account_status === 'BANNED' ? (
+                          <>
+                            <FaTimesCircle className="text-red-500 text-sm" />
+                            <span className="text-xs font-bold text-red-500">🚫 BANIDA</span>
+                          </>
+                        ) : account.account_status === 'FLAGGED' ? (
+                          <>
+                            <FaTimesCircle className="text-orange-500 text-sm" />
+                            <span className="text-xs font-bold text-orange-500">⚠️ Sinalizada</span>
+                          </>
+                        ) : account.account_status === 'RESTRICTED' ? (
+                          <>
+                            <FaTimesCircle className="text-yellow-500 text-sm" />
+                            <span className="text-xs font-bold text-yellow-500">🔒 Restrita</span>
+                          </>
+                        ) : account.account_status === 'DISCONNECTED' ? (
+                          <>
+                            <FaTimesCircle className="text-red-400 text-sm" />
+                            <span className="text-xs font-bold text-red-400">Desconectada</span>
+                          </>
+                        ) : account.api_connected ? (
                           <>
                             <FaCheckCircle className="text-green-400 text-sm" />
                             <span className="text-xs font-bold text-green-400">API Conectada</span>
                           </>
                         ) : (
                           <>
-                            <FaTimesCircle className="text-red-400 text-sm" />
-                            <span className="text-xs font-bold text-red-400">API Desconectada</span>
+                            <FaTimesCircle className="text-gray-400 text-sm" />
+                            <span className="text-xs font-bold text-gray-400">Verificando...</span>
                           </>
                         )}
                         {account.api_last_check && (

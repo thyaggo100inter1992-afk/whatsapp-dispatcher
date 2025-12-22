@@ -993,16 +993,17 @@ export class WhatsAppAccountController {
           );
           console.log(`   📊 Total de mensagens (histórico): ${totalMessagesResult.rows[0]?.total || '0'}`);
 
-          // 2. Buscar quality rating e foto de perfil (da Meta ou do cache no banco)
+          // 2. Buscar quality rating e status da conta (da Meta ou do cache no banco)
           let qualityScore = account.quality_rating || 'UNKNOWN';
+          let accountStatus = 'UNKNOWN'; // CONNECTED, DISCONNECTED, FLAGGED, RESTRICTED, BANNED
           let apiConnected = false;
           let apiLastCheck = null;
           let profilePictureUrl = null;
 
           try {
-            // Tentar buscar quality rating da Meta (profile_picture_url foi removido pois não existe mais nesse endpoint)
+            // Buscar quality rating E status da conta da Meta
             let config: AxiosRequestConfig = {
-              params: { fields: 'quality_rating' },
+              params: { fields: 'quality_rating,status' },
               headers: { 'Authorization': `Bearer ${account.access_token}` },
               timeout: 5000
             };
@@ -1018,10 +1019,11 @@ export class WhatsAppAccountController {
             );
 
             qualityScore = response.data.quality_rating || 'UNKNOWN';
-            apiConnected = true;
+            accountStatus = response.data.status || 'UNKNOWN';
+            apiConnected = accountStatus === 'CONNECTED';
             apiLastCheck = new Date().toISOString();
 
-            console.log(`   ✅ Quality rating: ${qualityScore}`);
+            console.log(`   ✅ Quality: ${qualityScore}, Status: ${accountStatus}`);
 
             // Atualizar cache no banco
             await tenantQuery(
@@ -1056,6 +1058,7 @@ export class WhatsAppAccountController {
             is_active: account.is_active,
             messages_sent_today: messagesToday,
             quality_score: qualityScore,
+            account_status: accountStatus, // CONNECTED, DISCONNECTED, FLAGGED, RESTRICTED, BANNED
             api_connected: apiConnected,
             api_last_check: apiLastCheck,
             webhook_active: webhookActive,
@@ -1071,6 +1074,7 @@ export class WhatsAppAccountController {
             is_active: account.is_active,
             messages_sent_today: 0,
             quality_score: 'UNKNOWN',
+            account_status: 'UNKNOWN',
             api_connected: false,
             api_last_check: null,
             webhook_active: false,
