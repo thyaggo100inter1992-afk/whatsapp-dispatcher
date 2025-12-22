@@ -1000,9 +1000,9 @@ export class WhatsAppAccountController {
           let profilePictureUrl = null;
 
           try {
-            // Tentar buscar quality rating e profile picture da Meta
+            // Tentar buscar quality rating da Meta (profile_picture_url foi removido pois não existe mais nesse endpoint)
             let config: AxiosRequestConfig = {
-              params: { fields: 'quality_rating,profile_picture_url' },
+              params: { fields: 'quality_rating' },
               headers: { 'Authorization': `Bearer ${account.access_token}` },
               timeout: 5000
             };
@@ -1018,11 +1018,10 @@ export class WhatsAppAccountController {
             );
 
             qualityScore = response.data.quality_rating || 'UNKNOWN';
-            profilePictureUrl = response.data.profile_picture_url || null;
             apiConnected = true;
             apiLastCheck = new Date().toISOString();
 
-            console.log(`   📸 Foto de perfil: ${profilePictureUrl ? 'Encontrada' : 'Não disponível'}`);
+            console.log(`   ✅ Quality rating: ${qualityScore}`);
 
             // Atualizar cache no banco
             await tenantQuery(
