@@ -226,3 +226,12 @@ Para diagnóstico, tire screenshots de:
 
 
 
+
+
+
+
+
+
+
+
+

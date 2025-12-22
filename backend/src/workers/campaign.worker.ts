@@ -1066,21 +1066,29 @@ class CampaignWorker {
             console.log('🚫 ═══════════════════════════════════════════════════');
             console.log('');
 
-            // Desativar APENAS este template específico (não a conta toda)
+            // Desativar TODAS as entradas deste template (pelo nome) em todas as contas
+            // Porque se o template tem erro, ele vai falhar em QUALQUER conta que o use
             await query(
-              `UPDATE campaign_templates 
+              `UPDATE campaign_templates ct
                SET is_active = false, 
                    removed_at = NOW(), 
                    last_error = $1
-               WHERE campaign_id = $2 AND template_id = $3`,
-              [`Template removido: ${templateFailCount} falhas - ${error.message.substring(0, 200)}`, campaign.id, template.template_id]
+               FROM templates t
+               WHERE ct.campaign_id = $2 
+                 AND ct.template_id = t.id 
+                 AND t.template_name = $3
+                 AND ct.is_active = true`,
+              [`Template removido: ${templateFailCount} falhas - ${error.message.substring(0, 200)}`, campaign.id, template.template_name]
             );
 
-            // Verificar quantos templates ativos restam
+            console.log(`🗑️ Todas as entradas do template "${template.template_name}" foram desativadas`);
+
+            // Verificar quantos templates ativos restam (por nome único)
             const activeTemplatesResult = await query(
-              `SELECT COUNT(DISTINCT template_id) as active_count
-               FROM campaign_templates
-               WHERE campaign_id = $1 AND is_active = true`,
+              `SELECT COUNT(DISTINCT t.template_name) as active_count
+               FROM campaign_templates ct
+               JOIN templates t ON ct.template_id = t.id
+               WHERE ct.campaign_id = $1 AND ct.is_active = true`,
               [campaign.id]
             );
 

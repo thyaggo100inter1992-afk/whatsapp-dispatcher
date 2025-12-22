@@ -56,3 +56,12 @@ sudo -u postgres psql whatsapp_dispatcher -c "ALTER TABLE webhook_logs DISABLE R
 
 
 
+
+
+
+
+
+
+
+
+

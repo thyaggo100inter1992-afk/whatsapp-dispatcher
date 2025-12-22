@@ -24,7 +24,6 @@ router.get('/queue/status', (req, res) => controller.getQueueStatus(req, res));
 router.get('/queue/failures', (req, res) => controller.getRecentFailures(req, res));
 router.post('/queue/retry/:id', (req, res) => controller.retryFailedItem(req, res));
 router.post('/queue/retry-all', (req, res) => controller.retryAllFailures(req, res));
-router.post('/queue/cancel', (req, res) => controller.cancelQueue(req, res));
 
 // Criar template em múltiplas contas
 router.post('/create-multiple', checkTemplateLimit, (req, res) => controller.createInMultipleAccounts(req, res));

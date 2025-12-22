@@ -1000,9 +1000,9 @@ export class WhatsAppAccountController {
           let profilePictureUrl = null;
 
           try {
-            // Tentar buscar quality rating da Meta
+            // Tentar buscar quality rating e profile picture da Meta
             let config: AxiosRequestConfig = {
-              params: { fields: 'quality_rating' },
+              params: { fields: 'quality_rating,profile_picture_url' },
               headers: { 'Authorization': `Bearer ${account.access_token}` },
               timeout: 5000
             };
@@ -1018,8 +1018,11 @@ export class WhatsAppAccountController {
             );
 
             qualityScore = response.data.quality_rating || 'UNKNOWN';
+            profilePictureUrl = response.data.profile_picture_url || null;
             apiConnected = true;
             apiLastCheck = new Date().toISOString();
+
+            console.log(`   📸 Foto de perfil: ${profilePictureUrl ? 'Encontrada' : 'Não disponível'}`);
 
             // Atualizar cache no banco
             await tenantQuery(
@@ -1027,30 +1030,6 @@ export class WhatsAppAccountController {
               'UPDATE whatsapp_accounts SET quality_rating = $1 WHERE id = $2',
               [qualityScore, account.id]
             );
-
-            // Buscar foto de perfil separadamente (endpoint diferente)
-            try {
-              const profileConfig: AxiosRequestConfig = {
-                params: { fields: 'profile_picture_url' },
-                headers: { 'Authorization': `Bearer ${account.access_token}` },
-                timeout: 5000
-              };
-              
-              if (proxyConfig) {
-                Object.assign(profileConfig, applyProxyToRequest(profileConfig, proxyConfig, account.name));
-              }
-
-              const profileResponse = await axios.get(
-                `https://graph.facebook.com/v18.0/${account.phone_number_id}/whatsapp_business_profile`,
-                profileConfig
-              );
-
-              profilePictureUrl = profileResponse.data?.data?.[0]?.profile_picture_url || null;
-              console.log(`   📸 Foto de perfil: ${profilePictureUrl ? 'Encontrada' : 'Não disponível'}`);
-            } catch (profileError) {
-              console.log(`   ℹ️  Foto de perfil não disponível para conta ${account.id}`);
-              profilePictureUrl = null;
-            }
           } catch (error) {
             console.error(`❌ Erro ao buscar quality rating da conta ${account.id}:`, error);
             apiConnected = false;

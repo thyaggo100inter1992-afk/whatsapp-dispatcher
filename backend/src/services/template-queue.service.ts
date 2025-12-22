@@ -615,26 +615,6 @@ class TemplateQueueService extends EventEmitter {
     };
   }
 
-  // Cancelar todos os itens pendentes da fila
-  cancelQueue(): { cancelled: number; remaining: number } {
-    const pendingItems = this.queue.filter(item => item.status === 'pending');
-    const cancelledCount = pendingItems.length;
-    
-    // Remover todos os itens pendentes da fila
-    this.queue = this.queue.filter(item => item.status !== 'pending');
-    
-    console.log(`🛑 Fila cancelada!`);
-    console.log(`   ❌ ${cancelledCount} item(ns) pendente(s) removido(s)`);
-    console.log(`   ⏳ ${this.queue.length} item(ns) ainda em processamento`);
-    
-    this.emit('queueUpdated', this.getQueueStatus());
-    
-    return {
-      cancelled: cancelledCount,
-      remaining: this.queue.length,
-    };
-  }
-
   // Sleep helper
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
