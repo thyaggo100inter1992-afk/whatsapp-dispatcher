@@ -70,16 +70,26 @@ class WhatsAppHealthService {
 
   /**
    * Verifica se a conta está saudável para enviar mensagens
+   * IMPORTANTE: UNKNOWN não é considerado problema - só remove se tiver certeza (YELLOW/RED)
    */
   isHealthy(health: PhoneNumberHealth): boolean {
-    // Só é saudável se:
-    // - Quality é GREEN (não YELLOW ou RED)
-    // - Verificação não é UNVERIFIED (VERIFIED ou EXPIRED está OK)
-    const healthyQuality = health.quality_rating === 'GREEN';
-    const isVerified = health.code_verification_status !== 'UNVERIFIED' && 
-                       health.code_verification_status !== 'UNKNOWN';
+    // Considera saudável se:
+    // - Quality é GREEN ou UNKNOWN (UNKNOWN = não temos certeza, então não remove)
+    // - Verification é qualquer coisa menos UNVERIFIED
+    const badQuality = health.quality_rating === 'YELLOW' || health.quality_rating === 'RED';
+    const unverified = health.code_verification_status === 'UNVERIFIED';
 
-    return healthyQuality && isVerified;
+    // Só é NÃO saudável se temos CERTEZA do problema (não em caso de UNKNOWN)
+    return !badQuality && !unverified;
+  }
+
+  /**
+   * Verifica se deve remover a conta da campanha
+   * Só remove quando temos CERTEZA do problema (YELLOW ou RED), não quando é UNKNOWN
+   */
+  shouldRemoveFromCampaign(health: PhoneNumberHealth): boolean {
+    // Só remove se a qualidade é definitivamente ruim
+    return health.quality_rating === 'YELLOW' || health.quality_rating === 'RED';
   }
 
   /**
@@ -95,10 +105,8 @@ class WhatsAppHealthService {
     if (health.code_verification_status === 'UNVERIFIED') {
       return 'Conta não verificada';
     }
-    if (health.code_verification_status === 'UNKNOWN') {
-      return 'Status de verificação desconhecido';
-    }
-    return 'Status desconhecido';
+    // Não considerar UNKNOWN como erro - apenas informativo
+    return 'Status temporariamente indisponível';
   }
 
   /**

@@ -302,9 +302,11 @@ class CampaignWorker {
       );
 
       const isHealthy = whatsappHealthService.isHealthy(health);
+      const shouldRemove = whatsappHealthService.shouldRemoveFromCampaign(health);
 
-      // ✅ ATIVO: Desativa contas com qualidade baixa (YELLOW ou RED)
-      if (!isHealthy) {
+      // ✅ ATIVO: Desativa contas APENAS com qualidade baixa CONFIRMADA (YELLOW ou RED)
+      // NÃO remove contas quando o status é UNKNOWN (pode ser temporário)
+      if (shouldRemove) {
         const reason = whatsappHealthService.getUnhealthyReason(health);
         console.log('');
         console.log('🚨 ═══════════════════════════════════════════════════');
