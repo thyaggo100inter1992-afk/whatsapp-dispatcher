@@ -1021,6 +1021,88 @@ class CampaignWorker {
           );
         }
 
+        // ✅ NOVO: Verificar se é ERRO DE TEMPLATE (não erro de conta ou de número)
+        // Esses erros indicam problema com o template em si
+        const templateErrors = [
+          '#131009',  // Parameter value is not valid
+          '131009',
+          '#132000',  // Number of parameters does not match
+          '132000',
+          '#132001',  // Template name does not exist
+          '132001',
+          'template name does not exist',
+          'parameter value is not valid',
+          'number of parameters does not match',
+          'template not found',
+          'invalid template',
+        ];
+
+        const isTemplateError = templateErrors.some(err => errorLower.includes(err.toLowerCase()));
+
+        if (isTemplateError) {
+          // Contar quantas vezes este template específico já falhou nesta campanha
+          const templateFailures = await query(
+            `SELECT COUNT(*) as fail_count FROM messages 
+             WHERE campaign_id = $1 
+             AND template_name = $2 
+             AND status = 'failed'
+             AND error_message ILIKE ANY($3)`,
+            [campaign.id, template.template_name, templateErrors.map(e => `%${e}%`)]
+          );
+
+          const templateFailCount = parseInt(templateFailures.rows[0]?.fail_count || '0');
+
+          console.log(`📋 Template "${template.template_name}" falhou ${templateFailCount} vez(es) com erro de template`);
+
+          // Se o template falhar 3 ou mais vezes com erro de template, desativar
+          if (templateFailCount >= 3) {
+            console.log('');
+            console.log('🚫 ═══════════════════════════════════════════════════');
+            console.log(`🚫 REMOÇÃO AUTOMÁTICA DE TEMPLATE COM ERRO`);
+            console.log(`🚫 Template: ${template.template_name}`);
+            console.log(`🚫 Erro: ${error.message.substring(0, 100)}`);
+            console.log(`🚫 Falhas: ${templateFailCount} (limite: 3)`);
+            console.log(`🚫 AÇÃO: Desativando este template da campanha`);
+            console.log('🚫 ═══════════════════════════════════════════════════');
+            console.log('');
+
+            // Desativar APENAS este template específico (não a conta toda)
+            await query(
+              `UPDATE campaign_templates 
+               SET is_active = false, 
+                   removed_at = NOW(), 
+                   last_error = $1
+               WHERE campaign_id = $2 AND template_id = $3`,
+              [`Template removido: ${templateFailCount} falhas - ${error.message.substring(0, 200)}`, campaign.id, template.template_id]
+            );
+
+            // Verificar quantos templates ativos restam
+            const activeTemplatesResult = await query(
+              `SELECT COUNT(DISTINCT template_id) as active_count
+               FROM campaign_templates
+               WHERE campaign_id = $1 AND is_active = true`,
+              [campaign.id]
+            );
+
+            const activeTemplates = parseInt(activeTemplatesResult.rows[0]?.active_count || '0');
+
+            console.log(`✅ Template "${template.template_name}" REMOVIDO da campanha`);
+            console.log(`📊 Templates ativos restantes: ${activeTemplates}`);
+            console.log('');
+
+            // Se não houver mais templates ativos, pausar a campanha
+            if (activeTemplates === 0) {
+              console.log('⚠️ NENHUM TEMPLATE ATIVO! Pausando campanha...');
+              await query(
+                `UPDATE campaigns SET status = 'paused' WHERE id = $1 AND tenant_id = $2`,
+                [campaign.id, campaign.tenant_id]
+              );
+            }
+
+            return; // Não incrementar falhas da conta (é erro do template, não da conta)
+          }
+        }
+
         // Incrementar contador de falhas consecutivas
         const updateFailureResult = await query(
           `UPDATE campaign_templates 
