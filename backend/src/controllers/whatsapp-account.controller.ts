@@ -998,7 +998,7 @@ export class WhatsAppAccountController {
           let accountStatus = 'UNKNOWN'; // CONNECTED, DISCONNECTED, FLAGGED, RESTRICTED, BANNED
           let apiConnected = false;
           let apiLastCheck = null;
-          let profilePictureUrl = null;
+          let profilePictureUrl = account.profile_picture_url || null; // Buscar do cache primeiro
 
           try {
             // Buscar quality rating E status da conta da Meta
@@ -1031,6 +1031,42 @@ export class WhatsAppAccountController {
               'UPDATE whatsapp_accounts SET quality_rating = $1 WHERE id = $2',
               [qualityScore, account.id]
             );
+            
+            // Tentar buscar foto de perfil da API (se não tiver em cache)
+            if (!profilePictureUrl) {
+              try {
+                let profileConfig: AxiosRequestConfig = {
+                  params: { fields: 'profile_picture_url' },
+                  headers: { 'Authorization': `Bearer ${account.access_token}` },
+                  timeout: 3000
+                };
+                
+                if (proxyConfig) {
+                  profileConfig = applyProxyToRequest(profileConfig, proxyConfig, account.name);
+                }
+                
+                const profileResponse = await axios.get(
+                  `https://graph.facebook.com/v18.0/${account.phone_number_id}/whatsapp_business_profile`,
+                  profileConfig
+                );
+                
+                profilePictureUrl = profileResponse.data.data[0]?.profile_picture_url || null;
+                
+                // Salvar no cache
+                if (profilePictureUrl) {
+                  await tenantQuery(
+                    req,
+                    'UPDATE whatsapp_accounts SET profile_picture_url = $1 WHERE id = $2',
+                    [profilePictureUrl, account.id]
+                  );
+                  console.log(`   📸 Foto de perfil salva em cache`);
+                }
+              } catch (photoError) {
+                console.log(`   ⚠️ Não foi possível buscar foto de perfil da conta ${account.id}`);
+              }
+            } else {
+              console.log(`   📸 Usando foto de perfil do cache`);
+            }
           } catch (error) {
             console.error(`❌ Erro ao buscar quality rating da conta ${account.id}:`, error);
             apiConnected = false;
