@@ -47,6 +47,10 @@ export default function Configuracoes() {
     lastEventAt?: string;
   }}>({});
   
+  // 🔄 CARREGAMENTO PROGRESSIVO
+  const [accountsDetails, setAccountsDetails] = useState<{[key: number]: any}>({});
+  const [loadingDetails, setLoadingDetails] = useState<{[key: number]: boolean}>({});
+  
   // 🔍 BUSCA E FILTROS
   const [searchTerm, setSearchTerm] = useState('');
   const [filterWebhook, setFilterWebhook] = useState<'all' | 'active' | 'inactive'>('all');
@@ -432,11 +436,61 @@ export default function Configuracoes() {
       setWebhookStatuses(webhookStatusMap);
       
       console.log(`✅ ${basicAccounts.length} conta(s) carregada(s) rapidamente!`);
+      
+      // 🔄 CARREGAMENTO PROGRESSIVO: Buscar detalhes em background
+      console.log('🔄 Iniciando carregamento progressivo de detalhes...');
+      loadAccountsDetailsProgressively(basicAccounts);
+      
     } catch (error) {
       console.error('Erro ao carregar contas:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // 🔄 Função para carregar detalhes progressivamente em background
+  const loadAccountsDetailsProgressively = async (basicAccounts: any[]) => {
+    // Carregar detalhes de cada conta sequencialmente para não sobrecarregar
+    for (const account of basicAccounts) {
+      try {
+        // Marcar como carregando
+        setLoadingDetails(prev => ({ ...prev, [account.id]: true }));
+        
+        // Buscar detalhes da conta
+        const detailsResponse = await api.get(`/whatsapp-accounts/${account.id}/details`);
+        
+        if (detailsResponse.data.success) {
+          const details = detailsResponse.data.data;
+          
+          // Atualizar detalhes da conta
+          setAccountsDetails(prev => ({
+            ...prev,
+            [account.id]: {
+              whatsapp_profile_picture: details.whatsapp_profile_picture,
+              whatsapp_display_name: details.whatsapp_display_name,
+              quality_rating: details.quality_rating,
+              stats_utility: details.stats_utility,
+              stats_marketing: details.stats_marketing,
+              total_cost: details.total_cost,
+              cost_utility: details.cost_utility,
+              cost_marketing: details.cost_marketing
+            }
+          }));
+          
+          console.log(`✅ Detalhes carregados para conta ${account.name} (${account.id})`);
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao carregar detalhes da conta ${account.id}:`, error);
+      } finally {
+        // Marcar como não carregando mais
+        setLoadingDetails(prev => ({ ...prev, [account.id]: false }));
+      }
+      
+      // Pequeno delay entre requisições para não sobrecarregar (300ms)
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    console.log('✅ Carregamento progressivo concluído!');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1124,36 +1178,58 @@ export default function Configuracoes() {
                         </button>
                       </div>
 
-                      {/* Foto de Perfil MUITO MAIOR E REDONDA */}
-                      {(account as any).whatsapp_profile_picture ? (
-                        <img 
-                          src={(account as any).whatsapp_profile_picture} 
-                          alt="Perfil WhatsApp"
-                          className={`w-40 h-40 rounded-full object-cover border-4 border-primary-500/50 shadow-2xl flex-shrink-0 ring-4 ring-primary-500/20 transition-all ${
+                      {/* Foto de Perfil MUITO MAIOR E REDONDA - COM CARREGAMENTO PROGRESSIVO */}
+                      {(() => {
+                        const details = accountsDetails[account.id];
+                        const isLoadingPhoto = loadingDetails[account.id];
+                        const profilePicture = details?.whatsapp_profile_picture || (account as any).whatsapp_profile_picture;
+                        
+                        if (profilePicture) {
+                          return (
+                            <img 
+                              src={profilePicture} 
+                              alt="Perfil WhatsApp"
+                              className={`w-40 h-40 rounded-full object-cover border-4 border-primary-500/50 shadow-2xl flex-shrink-0 ring-4 ring-primary-500/20 transition-all ${
+                                !account.is_active ? 'grayscale opacity-50' : ''
+                              }`}
+                            />
+                          );
+                        }
+                        
+                        return (
+                          <div className={`w-40 h-40 rounded-full bg-gradient-to-br from-primary-500/30 to-primary-600/30 border-4 border-primary-500/50 flex items-center justify-center shadow-2xl flex-shrink-0 ring-4 ring-primary-500/20 transition-all relative ${
                             !account.is_active ? 'grayscale opacity-50' : ''
-                          }`}
-                        />
-                      ) : (
-                        <div className={`w-40 h-40 rounded-full bg-gradient-to-br from-primary-500/30 to-primary-600/30 border-4 border-primary-500/50 flex items-center justify-center shadow-2xl flex-shrink-0 ring-4 ring-primary-500/20 transition-all ${
-                          !account.is_active ? 'grayscale opacity-50' : ''
-                        }`}>
-                          <FaWhatsapp className="text-7xl text-primary-300" />
-                        </div>
-                      )}
+                          }`}>
+                            {isLoadingPhoto ? (
+                              <FaSpinner className="text-5xl text-primary-300 animate-spin" />
+                            ) : (
+                              <FaWhatsapp className="text-7xl text-primary-300" />
+                            )}
+                            {isLoadingPhoto && (
+                              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-primary-500/90 px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap">
+                                Carregando...
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       
                       {/* Nome - MUITO ESPAÇO */}
                       <div className="flex flex-col gap-4 flex-1 min-w-0 py-2">
                         {/* Nome do WhatsApp Business - GRANDE E COM ESPAÇO */}
                         <div>
                           <h3 className="text-4xl font-black text-white break-words leading-tight">
-                            {(account as any).whatsapp_display_name || account.name}
+                            {accountsDetails[account.id]?.whatsapp_display_name || (account as any).whatsapp_display_name || account.name}
                           </h3>
                           {/* Nome customizado do sistema (se diferente) */}
-                          {(account as any).whatsapp_display_name && (account as any).whatsapp_display_name !== account.name && (
-                            <p className="text-sm text-white/50 break-words mt-2">
-                              Nome no sistema: {account.name}
-                            </p>
-                          )}
+                          {(() => {
+                            const displayName = accountsDetails[account.id]?.whatsapp_display_name || (account as any).whatsapp_display_name;
+                            return displayName && displayName !== account.name && (
+                              <p className="text-sm text-white/50 break-words mt-2">
+                                Nome no sistema: {account.name}
+                              </p>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -1265,109 +1341,161 @@ export default function Configuracoes() {
                       </h4>
                       
                       <div className="space-y-4">
-                        {/* Mensagem de carregamento rápido */}
-                        <div className="bg-primary-500/10 border border-primary-500/30 rounded-xl p-4 mb-4">
-                          <div className="flex items-start gap-3">
-                            <span className="text-2xl">⚡</span>
-                            <div>
-                              <p className="text-white text-sm font-bold mb-1">
-                                Carregamento Rápido Ativado
-                              </p>
-                              <p className="text-white/60 text-xs">
-                                Clique em <strong className="text-primary-300">"Configurar"</strong> para ver estatísticas detalhadas, custos e análises completas da conta.
-                              </p>
+                        {/* Mensagem de carregamento progressivo */}
+                        {loadingDetails[account.id] ? (
+                          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mb-4">
+                            <div className="flex items-center gap-3">
+                              <FaSpinner className="text-2xl text-blue-400 animate-spin" />
+                              <div>
+                                <p className="text-white text-sm font-bold mb-1">
+                                  🔄 Atualizando Informações
+                                </p>
+                                <p className="text-white/60 text-xs">
+                                  Buscando foto, quality rating e estatísticas atualizadas...
+                                </p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        
-                        {/* Qualidade da Conta (se disponível em cache) */}
-                        {(account as any).quality_rating ? (
-                          <div className={`rounded-xl p-4 border-2 shadow-lg hover:scale-105 transition-transform duration-200 ${
-                            (account as any).quality_rating === 'GREEN' 
-                              ? 'bg-gradient-to-br from-green-500/20 to-green-600/10 border-green-500/40'
-                              : (account as any).quality_rating === 'YELLOW'
-                              ? 'bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 border-yellow-500/40'
-                              : (account as any).quality_rating === 'RED'
-                              ? 'bg-gradient-to-br from-orange-500/20 to-orange-600/10 border-orange-500/40'
-                              : 'bg-gradient-to-br from-red-500/20 to-red-600/10 border-red-500/40'
-                          }`}>
-                            <div className="flex items-center justify-between">
-                              <div className="flex-1">
-                                <div className={`text-xs font-bold mb-2 ${
-                                  (account as any).quality_rating === 'GREEN' 
-                                    ? 'text-green-300'
-                                    : (account as any).quality_rating === 'YELLOW'
-                                    ? 'text-yellow-300'
-                                    : (account as any).quality_rating === 'RED'
-                                    ? 'text-orange-300'
-                                    : 'text-red-300'
-                                }`}>⭐ QUALIDADE (Cache)</div>
-                                <div className="text-white text-2xl font-black">
-                                  {(account as any).quality_rating === 'GREEN' && '✅ ALTA'}
-                                  {(account as any).quality_rating === 'YELLOW' && '⚠️ MÉDIA'}
-                                  {(account as any).quality_rating === 'RED' && '⚠️ BAIXA'}
-                                  {(account as any).quality_rating === 'FLAGGED' && '🚫 RESTRITA'}
-                                </div>
-                              </div>
-                              <div className={`text-5xl ${
-                                (account as any).quality_rating === 'GREEN' 
-                                  ? 'text-green-300'
-                                  : (account as any).quality_rating === 'YELLOW'
-                                  ? 'text-yellow-300'
-                                  : (account as any).quality_rating === 'RED'
-                                  ? 'text-orange-300'
-                                  : 'text-red-300'
-                              }`}>
-                                {(account as any).quality_rating === 'GREEN' && '😊'}
-                                {(account as any).quality_rating === 'YELLOW' && '😐'}
-                                {(account as any).quality_rating === 'RED' && '😟'}
-                                {(account as any).quality_rating === 'FLAGGED' && '🔴'}
+                        ) : accountsDetails[account.id] ? (
+                          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 mb-4">
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl">✅</span>
+                              <div>
+                                <p className="text-white text-sm font-bold mb-1">
+                                  Informações Atualizadas
+                                </p>
+                                <p className="text-white/60 text-xs">
+                                  Dados carregados da API do WhatsApp
+                                </p>
                               </div>
                             </div>
                           </div>
                         ) : (
-                          <div className="bg-gradient-to-br from-gray-500/20 to-gray-600/10 border-2 border-gray-500/40 rounded-xl p-4">
-                            <div className="flex items-center justify-between">
-                              <div className="flex-1">
-                                <div className="text-gray-300 text-xs font-bold mb-2">⭐ QUALIDADE</div>
-                                <div className="text-white text-xl font-black">
-                                  Não disponível
-                                </div>
-                                <p className="text-xs text-gray-400 mt-2">
-                                  Abra as configurações para atualizar
+                          <div className="bg-primary-500/10 border border-primary-500/30 rounded-xl p-4 mb-4">
+                            <div className="flex items-start gap-3">
+                              <span className="text-2xl">⚡</span>
+                              <div>
+                                <p className="text-white text-sm font-bold mb-1">
+                                  Carregamento Rápido Ativado
+                                </p>
+                                <p className="text-white/60 text-xs">
+                                  As informações estão sendo carregadas automaticamente...
                                 </p>
                               </div>
-                              <div className="text-4xl text-gray-400">❓</div>
                             </div>
                           </div>
                         )}
                         
+                        {/* Qualidade da Conta (progressivo) */}
+                        {(() => {
+                          const details = accountsDetails[account.id];
+                          const qualityRating = details?.quality_rating || (account as any).quality_rating;
+                          
+                          if (qualityRating) {
+                            return (
+                              <div className={`rounded-xl p-4 border-2 shadow-lg hover:scale-105 transition-transform duration-200 ${
+                                qualityRating === 'GREEN' 
+                                  ? 'bg-gradient-to-br from-green-500/20 to-green-600/10 border-green-500/40'
+                                  : qualityRating === 'YELLOW'
+                                  ? 'bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 border-yellow-500/40'
+                                  : qualityRating === 'RED'
+                                  ? 'bg-gradient-to-br from-orange-500/20 to-orange-600/10 border-orange-500/40'
+                                  : 'bg-gradient-to-br from-red-500/20 to-red-600/10 border-red-500/40'
+                              }`}>
+                                <div className="flex items-center justify-between">
+                                  <div className="flex-1">
+                                    <div className={`text-xs font-bold mb-2 ${
+                                      qualityRating === 'GREEN' 
+                                        ? 'text-green-300'
+                                        : qualityRating === 'YELLOW'
+                                        ? 'text-yellow-300'
+                                        : qualityRating === 'RED'
+                                        ? 'text-orange-300'
+                                        : 'text-red-300'
+                                    }`}>⭐ QUALIDADE {details?.quality_rating ? '(Atualizado)' : '(Cache)'}</div>
+                                    <div className="text-white text-2xl font-black">
+                                      {qualityRating === 'GREEN' && '✅ ALTA'}
+                                      {qualityRating === 'YELLOW' && '⚠️ MÉDIA'}
+                                      {qualityRating === 'RED' && '⚠️ BAIXA'}
+                                      {qualityRating === 'FLAGGED' && '🚫 RESTRITA'}
+                                    </div>
+                                  </div>
+                                  <div className={`text-5xl ${
+                                    qualityRating === 'GREEN' 
+                                      ? 'text-green-300'
+                                      : qualityRating === 'YELLOW'
+                                      ? 'text-yellow-300'
+                                      : qualityRating === 'RED'
+                                      ? 'text-orange-300'
+                                      : 'text-red-300'
+                                  }`}>
+                                    {qualityRating === 'GREEN' && '😊'}
+                                    {qualityRating === 'YELLOW' && '😐'}
+                                    {qualityRating === 'RED' && '😟'}
+                                    {qualityRating === 'FLAGGED' && '🔴'}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          
+                          return (
+                            <div className="bg-gradient-to-br from-gray-500/20 to-gray-600/10 border-2 border-gray-500/40 rounded-xl p-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className="text-gray-300 text-xs font-bold mb-2">⭐ QUALIDADE</div>
+                                  <div className="text-white text-xl font-black">
+                                    {loadingDetails[account.id] ? 'Carregando...' : 'Aguardando dados'}
+                                  </div>
+                                  <p className="text-xs text-gray-400 mt-2">
+                                    {loadingDetails[account.id] ? 'Buscando informações...' : 'Será carregado em breve'}
+                                  </p>
+                                </div>
+                                <div className="text-4xl text-gray-400">
+                                  {loadingDetails[account.id] ? <FaSpinner className="animate-spin" /> : '❓'}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        
                         {/* Status da API */}
                         {(() => {
-                          const hasQualityRating = (account as any).quality_rating != null && (account as any).quality_rating !== undefined;
+                          const details = accountsDetails[account.id];
+                          const qualityRating = details?.quality_rating || (account as any).quality_rating;
+                          const hasQualityRating = qualityRating != null && qualityRating !== undefined;
                           const isConnected = account.is_active && hasQualityRating;
+                          
                           return (
                             <div className={`bg-gradient-to-br ${
                               isConnected 
                                 ? 'from-green-500/20 to-emerald-600/10 border-green-500/40' 
+                                : loadingDetails[account.id]
+                                ? 'from-blue-500/20 to-blue-600/10 border-blue-500/40'
                                 : 'from-gray-500/20 to-gray-600/10 border-gray-500/40'
                             } border-2 rounded-xl p-4`}>
                               <div className="flex items-center justify-between">
                                 <div className="flex-1">
-                                  <div className={`${isConnected ? 'text-green-300' : 'text-gray-300'} text-xs font-bold mb-2`}>
+                                  <div className={`${
+                                    isConnected ? 'text-green-300' : loadingDetails[account.id] ? 'text-blue-300' : 'text-gray-300'
+                                  } text-xs font-bold mb-2`}>
                                     🔌 STATUS API
                                   </div>
                                   <div className="text-white text-xl font-black flex items-center gap-2">
                                     <span className={`w-3 h-3 rounded-full ${
                                       isConnected 
                                         ? 'bg-green-400 animate-pulse shadow-lg shadow-green-400/50' 
+                                        : loadingDetails[account.id]
+                                        ? 'bg-blue-400 animate-pulse shadow-lg shadow-blue-400/50'
                                         : 'bg-gray-400'
                                     }`}></span>
-                                    {isConnected ? 'Conectada' : 'Verificar nas configurações'}
+                                    {isConnected ? 'Conectada' : loadingDetails[account.id] ? 'Verificando...' : 'Aguardando verificação'}
                                   </div>
                                 </div>
-                                <div className={`${isConnected ? 'text-green-300' : 'text-gray-400'} text-4xl`}>
-                                  {isConnected ? '✅' : '⚙️'}
+                                <div className={`${
+                                  isConnected ? 'text-green-300' : loadingDetails[account.id] ? 'text-blue-400' : 'text-gray-400'
+                                } text-4xl`}>
+                                  {isConnected ? '✅' : loadingDetails[account.id] ? <FaSpinner className="animate-spin" /> : '⚙️'}
                                 </div>
                               </div>
                             </div>
