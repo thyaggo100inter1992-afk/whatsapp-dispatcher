@@ -402,29 +402,15 @@ export default function Configuracoes() {
 
   const loadAccounts = async () => {
     try {
+      console.log('⚡ Carregando contas - Modo Rápido (apenas dados básicos)');
       const response = await whatsappAccountsAPI.getAll();
       const basicAccounts = response.data.data;
       
-      // Buscar detalhes enriquecidos de cada conta
-      const accountsWithDetails = await Promise.all(
-        basicAccounts.map(async (account: any) => {
-          try {
-            const detailsResponse = await api.get(`/whatsapp-accounts/${account.id}/details`);
-            
-            if (detailsResponse.data.success) {
-              return detailsResponse.data.data;
-            }
-            return account;
-          } catch (error) {
-            console.error(`Erro ao buscar detalhes da conta ${account.id}:`, error);
-            return account;
-          }
-        })
-      );
+      // ✅ OTIMIZAÇÃO: Carregar apenas dados básicos (sem detalhes pesados)
+      // As estatísticas detalhadas são carregadas apenas na página de configuração individual
+      setAccounts(basicAccounts);
       
-      setAccounts(accountsWithDetails);
-      
-      // Buscar status do webhook para cada conta
+      // Buscar status do webhook para cada conta (leve e rápido)
       const webhookStatusMap: {[key: number]: {isActive: boolean; lastEventAt?: string}} = {};
       await Promise.all(
         basicAccounts.map(async (account: any) => {
@@ -444,6 +430,8 @@ export default function Configuracoes() {
         })
       );
       setWebhookStatuses(webhookStatusMap);
+      
+      console.log(`✅ ${basicAccounts.length} conta(s) carregada(s) rapidamente!`);
     } catch (error) {
       console.error('Erro ao carregar contas:', error);
     } finally {
@@ -1266,69 +1254,62 @@ export default function Configuracoes() {
                     </div>
                   </div>
 
-                  {/* Estatísticas da Conta - LAYOUT MELHORADO */}
+                  {/* Estatísticas da Conta - LAYOUT OTIMIZADO */}
                   <div className="flex-1 max-w-md">
                     <div className="bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 rounded-2xl p-6 h-full shadow-2xl">
                       <h4 className="text-white font-black text-xl mb-6 flex items-center gap-3 pb-4 border-b border-white/10">
                         <span className="text-3xl">📊</span> 
                         <span className="bg-gradient-to-r from-primary-400 to-primary-600 bg-clip-text text-transparent">
-                          Estatísticas da Conta
+                          Visão Geral
                         </span>
                       </h4>
                       
                       <div className="space-y-4">
-                        {/* Grid 2x2 para as mensagens */}
-                        <div className="grid grid-cols-2 gap-3">
-                          {/* Mensagens Utility */}
-                          <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-2 border-blue-500/30 rounded-xl p-4 hover:scale-105 transition-transform duration-200">
-                            <div className="flex flex-col h-full">
-                              <div className="text-blue-300 text-xs font-bold mb-2 flex items-center gap-1">
-                                💼 UTILITY
-                              </div>
-                              <div className="flex items-baseline gap-1 mb-1">
-                                <div className="text-white text-3xl font-black">
-                                  {(account as any).stats_utility || '0'}
-                                </div>
-                                <div className="text-blue-200 text-xs font-medium">msgs</div>
-                              </div>
-                              <div className="text-blue-300 text-base font-bold">
-                                {(account as any).cost_utility || 'R$ 0,00'}
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {/* Mensagens Marketing */}
-                          <div className="bg-gradient-to-br from-green-500/20 to-green-600/10 border-2 border-green-500/30 rounded-xl p-4 hover:scale-105 transition-transform duration-200">
-                            <div className="flex flex-col h-full">
-                              <div className="text-green-300 text-xs font-bold mb-2 flex items-center gap-1">
-                                📣 MARKETING
-                              </div>
-                              <div className="flex items-baseline gap-1 mb-1">
-                                <div className="text-white text-3xl font-black">
-                                  {(account as any).stats_marketing || '0'}
-                                </div>
-                                <div className="text-green-200 text-xs font-medium">msgs</div>
-                              </div>
-                              <div className="text-green-300 text-base font-bold">
-                                {(account as any).cost_marketing || 'R$ 0,00'}
-                              </div>
+                        {/* Mensagem de carregamento rápido */}
+                        <div className="bg-primary-500/10 border border-primary-500/30 rounded-xl p-4 mb-4">
+                          <div className="flex items-start gap-3">
+                            <span className="text-2xl">⚡</span>
+                            <div>
+                              <p className="text-white text-sm font-bold mb-1">
+                                Carregamento Rápido Ativado
+                              </p>
+                              <p className="text-white/60 text-xs">
+                                Clique em <strong className="text-primary-300">"Configurar"</strong> para ver estatísticas detalhadas, custos e análises completas da conta.
+                              </p>
                             </div>
                           </div>
                         </div>
                         
-                        {/* Qualidade da Conta */}
-                        <div className={`rounded-xl p-4 border-2 shadow-lg hover:scale-105 transition-transform duration-200 ${
-                          (account as any).quality_rating === 'GREEN' 
-                            ? 'bg-gradient-to-br from-green-500/20 to-green-600/10 border-green-500/40'
-                            : (account as any).quality_rating === 'YELLOW'
-                            ? 'bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 border-yellow-500/40'
-                            : (account as any).quality_rating === 'RED'
-                            ? 'bg-gradient-to-br from-orange-500/20 to-orange-600/10 border-orange-500/40'
-                            : 'bg-gradient-to-br from-red-500/20 to-red-600/10 border-red-500/40'
-                        }`}>
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                              <div className={`text-xs font-bold mb-2 ${
+                        {/* Qualidade da Conta (se disponível em cache) */}
+                        {(account as any).quality_rating ? (
+                          <div className={`rounded-xl p-4 border-2 shadow-lg hover:scale-105 transition-transform duration-200 ${
+                            (account as any).quality_rating === 'GREEN' 
+                              ? 'bg-gradient-to-br from-green-500/20 to-green-600/10 border-green-500/40'
+                              : (account as any).quality_rating === 'YELLOW'
+                              ? 'bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 border-yellow-500/40'
+                              : (account as any).quality_rating === 'RED'
+                              ? 'bg-gradient-to-br from-orange-500/20 to-orange-600/10 border-orange-500/40'
+                              : 'bg-gradient-to-br from-red-500/20 to-red-600/10 border-red-500/40'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className={`text-xs font-bold mb-2 ${
+                                  (account as any).quality_rating === 'GREEN' 
+                                    ? 'text-green-300'
+                                    : (account as any).quality_rating === 'YELLOW'
+                                    ? 'text-yellow-300'
+                                    : (account as any).quality_rating === 'RED'
+                                    ? 'text-orange-300'
+                                    : 'text-red-300'
+                                }`}>⭐ QUALIDADE (Cache)</div>
+                                <div className="text-white text-2xl font-black">
+                                  {(account as any).quality_rating === 'GREEN' && '✅ ALTA'}
+                                  {(account as any).quality_rating === 'YELLOW' && '⚠️ MÉDIA'}
+                                  {(account as any).quality_rating === 'RED' && '⚠️ BAIXA'}
+                                  {(account as any).quality_rating === 'FLAGGED' && '🚫 RESTRITA'}
+                                </div>
+                              </div>
+                              <div className={`text-5xl ${
                                 (account as any).quality_rating === 'GREEN' 
                                   ? 'text-green-300'
                                   : (account as any).quality_rating === 'YELLOW'
@@ -1336,32 +1317,30 @@ export default function Configuracoes() {
                                   : (account as any).quality_rating === 'RED'
                                   ? 'text-orange-300'
                                   : 'text-red-300'
-                              }`}>⭐ QUALIDADE</div>
-                              <div className="text-white text-2xl font-black">
-                                {(account as any).quality_rating === 'GREEN' && '✅ ALTA'}
-                                {(account as any).quality_rating === 'YELLOW' && '⚠️ MÉDIA'}
-                                {(account as any).quality_rating === 'RED' && '⚠️ BAIXA'}
-                                {(account as any).quality_rating === 'FLAGGED' && '🚫 RESTRITA'}
-                                {!(account as any).quality_rating && '⚪ N/A'}
+                              }`}>
+                                {(account as any).quality_rating === 'GREEN' && '😊'}
+                                {(account as any).quality_rating === 'YELLOW' && '😐'}
+                                {(account as any).quality_rating === 'RED' && '😟'}
+                                {(account as any).quality_rating === 'FLAGGED' && '🔴'}
                               </div>
                             </div>
-                            <div className={`text-5xl ${
-                              (account as any).quality_rating === 'GREEN' 
-                                ? 'text-green-300'
-                                : (account as any).quality_rating === 'YELLOW'
-                                ? 'text-yellow-300'
-                                : (account as any).quality_rating === 'RED'
-                                ? 'text-orange-300'
-                                : 'text-red-300'
-                            }`}>
-                              {(account as any).quality_rating === 'GREEN' && '😊'}
-                              {(account as any).quality_rating === 'YELLOW' && '😐'}
-                              {(account as any).quality_rating === 'RED' && '😟'}
-                              {(account as any).quality_rating === 'FLAGGED' && '🔴'}
-                              {!(account as any).quality_rating && '❓'}
+                          </div>
+                        ) : (
+                          <div className="bg-gradient-to-br from-gray-500/20 to-gray-600/10 border-2 border-gray-500/40 rounded-xl p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="text-gray-300 text-xs font-bold mb-2">⭐ QUALIDADE</div>
+                                <div className="text-white text-xl font-black">
+                                  Não disponível
+                                </div>
+                                <p className="text-xs text-gray-400 mt-2">
+                                  Abra as configurações para atualizar
+                                </p>
+                              </div>
+                              <div className="text-4xl text-gray-400">❓</div>
                             </div>
                           </div>
-                        </div>
+                        )}
                         
                         {/* Status da API */}
                         {(() => {
@@ -1371,24 +1350,24 @@ export default function Configuracoes() {
                             <div className={`bg-gradient-to-br ${
                               isConnected 
                                 ? 'from-green-500/20 to-emerald-600/10 border-green-500/40' 
-                                : 'from-red-500/20 to-orange-600/10 border-red-500/40'
+                                : 'from-gray-500/20 to-gray-600/10 border-gray-500/40'
                             } border-2 rounded-xl p-4`}>
                               <div className="flex items-center justify-between">
                                 <div className="flex-1">
-                                  <div className={`${isConnected ? 'text-green-300' : 'text-red-300'} text-xs font-bold mb-2`}>
+                                  <div className={`${isConnected ? 'text-green-300' : 'text-gray-300'} text-xs font-bold mb-2`}>
                                     🔌 STATUS API
                                   </div>
                                   <div className="text-white text-xl font-black flex items-center gap-2">
                                     <span className={`w-3 h-3 rounded-full ${
                                       isConnected 
                                         ? 'bg-green-400 animate-pulse shadow-lg shadow-green-400/50' 
-                                        : 'bg-red-400 shadow-lg shadow-red-400/50'
+                                        : 'bg-gray-400'
                                     }`}></span>
-                                    {isConnected ? 'Conectada' : 'Desconectada'}
+                                    {isConnected ? 'Conectada' : 'Verificar nas configurações'}
                                   </div>
                                 </div>
-                                <div className={`${isConnected ? 'text-green-300' : 'text-red-300'} text-4xl`}>
-                                  {isConnected ? '✅' : '❌'}
+                                <div className={`${isConnected ? 'text-green-300' : 'text-gray-400'} text-4xl`}>
+                                  {isConnected ? '✅' : '⚙️'}
                                 </div>
                               </div>
                             </div>
@@ -1437,6 +1416,18 @@ export default function Configuracoes() {
                             </div>
                           </div>
                         </div>
+                        
+                        {/* Botão de Acesso Rápido às Estatísticas Completas */}
+                        <button
+                          onClick={() => router.push(`/configuracoes/conta/${account.id}`)}
+                          className="w-full px-6 py-4 bg-gradient-to-r from-primary-500/30 to-purple-500/30 hover:from-primary-500/40 hover:to-purple-500/40 text-white border-2 border-primary-500/40 hover:border-primary-500/60 rounded-xl font-bold text-base transition-all duration-200 flex items-center justify-center gap-3 shadow-lg hover:scale-105"
+                        >
+                          <span className="text-2xl">📊</span>
+                          <div className="text-left">
+                            <div className="text-sm">Ver Estatísticas Completas</div>
+                            <div className="text-xs text-white/60">Custos, Analytics, Templates e mais</div>
+                          </div>
+                        </button>
                       </div>
                     </div>
                   </div>
