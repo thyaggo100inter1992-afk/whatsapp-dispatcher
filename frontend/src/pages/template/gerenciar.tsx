@@ -1298,10 +1298,39 @@ export default function GerenciarTemplates() {
               </div>
 
               {/* SEÇÃO: Selecionar Contas de Destino */}
-              <label className="block text-2xl font-black mb-4 text-white flex items-center gap-2">
-                <span className="text-2xl">📱</span>
-                Selecionar Contas de Destino
-              </label>
+              <div className="flex items-center justify-between mb-4">
+                <label className="block text-2xl font-black text-white flex items-center gap-2">
+                  <span className="text-2xl">📱</span>
+                  Selecionar Contas de Destino
+                </label>
+                
+                {/* Botão Selecionar Todas / Desselecionar Todas */}
+                <button
+                  onClick={() => {
+                    const availableAccounts = accounts.filter(a => a.id !== selectedAccountId);
+                    if (targetAccountIds.length === availableAccounts.length) {
+                      // Se todas estão selecionadas, desselecionar todas
+                      setTargetAccountIds([]);
+                    } else {
+                      // Selecionar todas
+                      setTargetAccountIds(availableAccounts.map(a => a.id));
+                    }
+                  }}
+                  className="px-6 py-3 bg-primary-500/20 hover:bg-primary-500/30 border-2 border-primary-500/40 hover:border-primary-500/60 text-primary-300 rounded-xl font-bold transition-all duration-200 flex items-center gap-2"
+                >
+                  {targetAccountIds.length === accounts.filter(a => a.id !== selectedAccountId).length ? (
+                    <>
+                      <FaTimes className="text-lg" />
+                      Desselecionar Todas
+                    </>
+                  ) : (
+                    <>
+                      <FaCheckSquare className="text-lg" />
+                      Selecionar Todas
+                    </>
+                  )}
+                </button>
+              </div>
               
               <div className="space-y-4 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
                 {accounts.filter(a => a.id !== selectedAccountId).map(account => (
