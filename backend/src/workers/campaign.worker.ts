@@ -986,6 +986,9 @@ class CampaignWorker {
           'not on whatsapp',
         ];
 
+        // Converter erro para lowercase para comparação
+        const errorLower = error.message.toLowerCase();
+
         // 🚨 VERIFICAR SE É ERRO DE POLÍTICA DO WHATSAPP (131008, 131047, etc)
         // Estes erros indicam que a CONTA está com problemas de política/qualidade
         const policyErrors = [
