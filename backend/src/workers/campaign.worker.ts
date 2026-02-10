@@ -986,11 +986,46 @@ class CampaignWorker {
           'not on whatsapp',
         ];
 
-        const errorLower = error.message.toLowerCase();
+        // 🚨 VERIFICAR SE É ERRO DE POLÍTICA DO WHATSAPP (131008, 131047, etc)
+        // Estes erros indicam que a CONTA está com problemas de política/qualidade
+        const policyErrors = [
+          'code: 131008', // Message not delivered to maintain healthy ecosystem
+          '131008',
+          'code: 131047', // Message failed to send because more than 24 hours have passed
+          '131047',
+          'code: 131026', // Número não está no WhatsApp (também trata como policy)
+          'maintain healthy ecosystem',
+          'ecosystem engagement',
+          'message not delivered to maintain',
+          'rate limit hit',
+          'spam detected',
+          'too many messages',
+        ];
+
+        const isPolicyError = policyErrors.some(err => errorLower.includes(err.toLowerCase()));
+
         const isNoWhatsAppError = noWhatsappErrors.some(err => errorLower.includes(err));
         const messageStatus = isNoWhatsAppError ? 'no_whatsapp' : 'failed';
 
-        console.log(`📊 Status da mensagem: ${messageStatus} ${isNoWhatsAppError ? '📵' : '❌'}`);
+        console.log('');
+        console.log('📊 ═══════════════════════════════════════════════════');
+        console.log(`📊 ANÁLISE DO ERRO`);
+        console.log('📊 ═══════════════════════════════════════════════════');
+        console.log(`   📞 Número: ${contact.phone_number}`);
+        console.log(`   ❌ Erro: ${error.message.substring(0, 150)}`);
+        console.log(`   🔍 Erro (lowercase): ${errorLower.substring(0, 100)}`);
+        console.log(`   📋 Status detectado: ${messageStatus}`);
+        console.log(`   📵 É erro de "Sem WhatsApp"? ${isNoWhatsAppError ? 'SIM' : 'NÃO'}`);
+        console.log(`   🚨 É erro de POLÍTICA (131008)? ${isPolicyError ? 'SIM ⚠️' : 'NÃO'}`);
+        
+        if (isPolicyError) {
+          console.log(`   🎯 Ação: REMOVER CONTA IMEDIATAMENTE (erro crítico de política)`);
+        } else if (isNoWhatsAppError) {
+          console.log(`   🎯 Ação: Marcar como "no_whatsapp" E adicionar à lista`);
+        } else {
+          console.log(`   🎯 Ação: Marcar como "failed" apenas`);
+        }
+        console.log('═══════════════════════════════════════════════════\n');
 
         // Registrar erro no banco com status correto
         await query(
@@ -1002,11 +1037,17 @@ class CampaignWorker {
 
         // Atualizar contadores da campanha
         if (isNoWhatsAppError) {
-          await query(
-            'UPDATE campaigns SET failed_count = failed_count + 1, no_whatsapp_count = no_whatsapp_count + 1 WHERE id = $1 AND tenant_id = $2',
+          console.log(`🔢 Atualizando contadores: failed_count+1, no_whatsapp_count+1`);
+          const updateResult = await query(
+            'UPDATE campaigns SET failed_count = failed_count + 1, no_whatsapp_count = no_whatsapp_count + 1 WHERE id = $1 AND tenant_id = $2 RETURNING failed_count, no_whatsapp_count',
             [campaign.id, campaign.tenant_id]
           );
+          
+          if (updateResult.rows.length > 0) {
+            console.log(`   ✅ Novos valores: failed_count=${updateResult.rows[0].failed_count}, no_whatsapp_count=${updateResult.rows[0].no_whatsapp_count}`);
+          }
         } else {
+          console.log(`🔢 Atualizando contadores: failed_count+1`);
           await query(
             'UPDATE campaigns SET failed_count = failed_count + 1 WHERE id = $1 AND tenant_id = $2',
             [campaign.id, campaign.tenant_id]
@@ -1015,12 +1056,115 @@ class CampaignWorker {
 
         // 📵 ADICIONAR AUTOMATICAMENTE À LISTA "SEM WHATSAPP" se o erro indicar número inválido
         if (isNoWhatsAppError) {
+          console.log(`🚀 Chamando checkAndAddToNoWhatsAppList...`);
           await this.checkAndAddToNoWhatsAppList(
             contact.phone_number,
             template.whatsapp_account_id,
             campaign.tenant_id,
             error.message
           );
+          console.log(`✅ checkAndAddToNoWhatsAppList concluída`);
+        }
+
+        // 🚨 ERRO DE POLÍTICA (131008, 131047, etc): REMOVER CONTA IMEDIATAMENTE
+        if (isPolicyError) {
+          console.log('');
+          console.log('🚨 ═══════════════════════════════════════════════════');
+          console.log(`🚨 ERRO DE POLÍTICA DO WHATSAPP DETECTADO!`);
+          console.log(`🚨 Código: ${error.message.includes('131008') ? '131008' : error.message.includes('131047') ? '131047' : 'POLICY ERROR'}`);
+          console.log(`🚨 Conta: ${template.account_name || template.whatsapp_account_id}`);
+          console.log(`🚨 Erro: ${error.message.substring(0, 200)}`);
+          console.log(`🚨 ═══════════════════════════════════════════════════`);
+          console.log(`🚨 AÇÃO IMEDIATA: Removendo conta da campanha`);
+          console.log(`🚨 MOTIVO: Erros de política indicam problemas graves que`);
+          console.log(`🚨 podem resultar em ban da conta se continuarem`);
+          console.log('🚨 ═══════════════════════════════════════════════════');
+          console.log('');
+
+          // Buscar removal_count atual
+          const countResult = await query(
+            `SELECT removal_count, removal_history, permanent_removal 
+             FROM campaign_templates 
+             WHERE campaign_id = $1 AND whatsapp_account_id = $2 
+             LIMIT 1`,
+            [campaign.id, template.whatsapp_account_id]
+          );
+
+          const currentRemovalCount = countResult.rows[0]?.removal_count || 0;
+          const currentHistory = countResult.rows[0]?.removal_history || [];
+          const isPermanent = countResult.rows[0]?.permanent_removal || false;
+
+          const newRemovalCount = currentRemovalCount + 1;
+          const isPermanentNow = newRemovalCount >= 2;
+
+          // Adicionar ao histórico
+          const history = [...currentHistory];
+          history.push({
+            timestamp: new Date().toISOString(),
+            reason: `Erro de política WhatsApp: ${error.message.substring(0, 150)}`,
+            type: 'policy_error',
+            error_code: error.message.includes('131008') ? '131008' : error.message.includes('131047') ? '131047' : 'unknown',
+            removal_number: newRemovalCount,
+            is_permanent: isPermanentNow,
+          });
+
+          console.log(`📊 Remoção #${newRemovalCount}${isPermanentNow ? ' - PERMANENTE' : ''}`);
+
+          // Desativar TODAS as entradas desta conta na campanha
+          await query(
+            `UPDATE campaign_templates 
+             SET is_active = false, 
+                 removed_at = NOW(), 
+                 removal_count = $1, 
+                 permanent_removal = $2, 
+                 removal_history = $3, 
+                 consecutive_failures = 0,
+                 last_error = $4
+             WHERE campaign_id = $5 AND whatsapp_account_id = $6`,
+            [
+              newRemovalCount,
+              isPermanentNow,
+              JSON.stringify(history),
+              `ERRO DE POLÍTICA (${error.message.includes('131008') ? '131008' : 'POLICY'}): ${error.message.substring(0, 200)}`,
+              campaign.id,
+              template.whatsapp_account_id
+            ]
+          );
+
+          console.log(`✅ Conta ${template.whatsapp_account_id} REMOVIDA da campanha ${campaign.id}`);
+
+          // Verificar quantas contas ativas restam
+          const activeCountResult = await query(
+            `SELECT COUNT(DISTINCT whatsapp_account_id) as active_count
+             FROM campaign_templates
+             WHERE campaign_id = $1 AND is_active = true`,
+            [campaign.id]
+          );
+
+          const activeCount = parseInt(activeCountResult.rows[0]?.active_count || '0');
+          console.log(`📊 Contas ativas restantes: ${activeCount}`);
+
+          if (activeCount === 0) {
+            console.log('');
+            console.log('🚨 ═══════════════════════════════════════════════════');
+            console.log('🚨 NENHUMA CONTA ATIVA RESTANTE!');
+            console.log('🚨 PAUSANDO CAMPANHA AUTOMATICAMENTE');
+            console.log('🚨 ═══════════════════════════════════════════════════');
+            console.log('');
+            await this.updateCampaignStatus(campaign.id, 'paused', campaign.tenant_id);
+            return; // Parar processamento
+          }
+
+          console.log('');
+          console.log('✅ Conta removida com sucesso. Campanha continuará com outras contas.');
+          console.log('');
+
+          // Incrementar sent_count para manter rotação
+          campaign.sent_count++;
+          
+          // NÃO incrementar falhas consecutivas (já removemos a conta)
+          // NÃO processar mais lógica de erro (já tratamos)
+          continue; // Pular para o próximo contato
         }
 
         // ✅ NOVO: Verificar se é ERRO DE TEMPLATE (não erro de conta ou de número)
@@ -1701,29 +1845,86 @@ class CampaignWorker {
       console.log(`   ❌ Erro: ${errorMessage.substring(0, 100)}`);
       console.log(`   ➡️  Adicionando automaticamente à lista "Sem WhatsApp"...`);
 
-      // Adicionar à lista de restrição (COM TENANT_ID!)
-      const result = await query(
-        `INSERT INTO restriction_list_entries 
-         (list_type, whatsapp_account_id, phone_number, added_method, notes, tenant_id, added_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())
-         ON CONFLICT (list_type, whatsapp_account_id, phone_number, tenant_id) DO UPDATE SET
-           notes = EXCLUDED.notes,
-           added_at = NOW()
-         RETURNING id`,
-        ['no_whatsapp', whatsappAccountId, phoneNumber, 'auto_campaign', `Erro: ${errorMessage.substring(0, 200)}`, tenantId]
+      // 🔍 VERIFICAR SE O NÚMERO JÁ EXISTE NA LISTA
+      const checkExisting = await query(
+        `SELECT id FROM restriction_list_entries 
+         WHERE list_type = $1 
+           AND whatsapp_account_id = $2 
+           AND phone_number = $3 
+           AND tenant_id = $4`,
+        ['no_whatsapp', whatsappAccountId, phoneNumber, tenantId]
       );
 
-      if (result.rows.length > 0) {
-        console.log(`   ✅ Número adicionado/atualizado na lista "Sem WhatsApp" (ID: ${result.rows[0].id})`);
+      if (checkExisting.rows.length > 0) {
+        console.log(`   ℹ️  Número já estava na lista (ID: ${checkExisting.rows[0].id})`);
+        console.log(`   🔄 Atualizando notes...`);
+        
+        // Apenas atualizar as notas
+        await query(
+          `UPDATE restriction_list_entries 
+           SET notes = $1, updated_at = NOW()
+           WHERE id = $2`,
+          [`Erro: ${errorMessage.substring(0, 200)}`, checkExisting.rows[0].id]
+        );
+        
+        console.log(`   ✅ Notes atualizadas!`);
       } else {
-        console.log('   ⚠️ Número já estava na lista');
+        console.log(`   ➕ Número NÃO está na lista, adicionando...`);
+        
+        // Tentar inserir
+        try {
+          const result = await query(
+            `INSERT INTO restriction_list_entries 
+             (list_type, whatsapp_account_id, phone_number, added_method, notes, tenant_id, added_at)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW())
+             RETURNING id`,
+            ['no_whatsapp', whatsappAccountId, phoneNumber, 'auto_campaign', `Erro: ${errorMessage.substring(0, 200)}`, tenantId]
+          );
+
+          if (result.rows.length > 0) {
+            console.log(`   ✅ Número adicionado à lista "Sem WhatsApp" (ID: ${result.rows[0].id})`);
+          }
+        } catch (insertError: any) {
+          // Se der erro de duplicata (constraint), ignorar
+          if (insertError.message.includes('duplicate') || insertError.message.includes('unique')) {
+            console.log(`   ℹ️  Número já foi adicionado por outro processo (race condition)`);
+          } else {
+            // Outro tipo de erro - logar e continuar
+            console.error(`   ⚠️  Erro ao inserir (${insertError.code}): ${insertError.message}`);
+            
+            // 🔥 FALLBACK: Tentar inserir SEM tenant_id se a coluna não existir
+            if (insertError.message.includes('column "tenant_id"') || insertError.message.includes('does not exist')) {
+              console.log(`   🔄 Tentando inserir SEM tenant_id (fallback)...`);
+              try {
+                const fallbackResult = await query(
+                  `INSERT INTO restriction_list_entries 
+                   (list_type, whatsapp_account_id, phone_number, added_method, notes, added_at)
+                   VALUES ($1, $2, $3, $4, $5, NOW())
+                   ON CONFLICT (list_type, whatsapp_account_id, phone_number) DO UPDATE SET
+                     notes = EXCLUDED.notes,
+                     updated_at = NOW()
+                   RETURNING id`,
+                  ['no_whatsapp', whatsappAccountId, phoneNumber, 'auto_campaign', `Erro: ${errorMessage.substring(0, 200)}`]
+                );
+                
+                if (fallbackResult.rows.length > 0) {
+                  console.log(`   ✅ Número adicionado via fallback (ID: ${fallbackResult.rows[0].id})`);
+                }
+              } catch (fallbackError: any) {
+                console.error(`   ❌ Fallback também falhou: ${fallbackError.message}`);
+              }
+            }
+          }
+        }
       }
+      
       console.log('   ℹ️  Este número não receberá mais tentativas de envio');
       console.log('═══════════════════════════════════════════════════\n');
 
     } catch (error: any) {
       console.error('❌ Erro ao adicionar número à lista "Sem WhatsApp":', error.message);
       console.error('   Stack:', error.stack);
+      console.error('   Code:', error.code);
       // Não interrompe o fluxo - é apenas um registro adicional
     }
   }
