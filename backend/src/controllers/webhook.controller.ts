@@ -426,33 +426,82 @@ export class WebhookController {
               console.log('   ✅ Incrementado read (pulou delivered)');
             }
           }
-        } else if (newStatus === 'failed' && oldStatus !== 'failed') {
+        } else if (newStatus === 'failed' && oldStatus !== 'failed' && oldStatus !== 'no_whatsapp') {
           const errorCode = status.errors?.[0]?.code || 'unknown';
           const errorTitle = status.errors?.[0]?.title || 'Unknown error';
           const errorMessage = status.errors?.[0]?.message || 'No details';
+          const fullErrorMsg = `${errorTitle}: ${errorMessage} (Code: ${errorCode})`;
 
           console.log('   ❌ FALHA NA ENTREGA:');
           console.log('      Código:', errorCode);
           console.log('      Título:', errorTitle);
           console.log('      Mensagem:', errorMessage);
 
+          // Verificar se é erro de número sem WhatsApp (código 131026 = Message undeliverable)
+          const noWhatsappCodes = [131026, 131047];
+          const isNoWhatsApp = noWhatsappCodes.includes(Number(errorCode)) ||
+            errorTitle.toLowerCase().includes('undeliverable') ||
+            errorMessage.toLowerCase().includes('undeliverable') ||
+            String(errorCode) === '131026';
+
+          const finalStatus = isNoWhatsApp ? 'no_whatsapp' : 'failed';
+
           await queryNoTenant(
             `UPDATE messages 
-             SET status = 'failed', 
-                 error_message = $2,
+             SET status = $2, 
+                 error_message = $3,
                  failed_at = NOW()
              WHERE whatsapp_message_id = $1`,
-            [messageId, `${errorTitle}: ${errorMessage} (Code: ${errorCode})`]
+            [messageId, finalStatus, fullErrorMsg]
           );
-          console.log('   ✅ Status atualizado: failed');
+          console.log(`   ✅ Status atualizado: ${finalStatus}`);
 
-          // Atualizar contador da campanha (SOMENTE se mudou de status)
+          // Atualizar contadores da campanha
           if (message.campaign_id) {
-            await queryNoTenant(
-              'UPDATE campaigns SET failed_count = failed_count + 1 WHERE id = $1',
-              [message.campaign_id]
-            );
-            console.log('   ✅ Contador de falhas atualizado!');
+            if (isNoWhatsApp) {
+              await queryNoTenant(
+                'UPDATE campaigns SET failed_count = failed_count + 1, no_whatsapp_count = no_whatsapp_count + 1 WHERE id = $1',
+                [message.campaign_id]
+              );
+              console.log('   ✅ Contadores atualizados: failed_count+1, no_whatsapp_count+1');
+
+              // Adicionar automaticamente à lista de restrição "Sem WhatsApp"
+              if (message.phone_number && message.whatsapp_account_id && message.tenant_id) {
+                try {
+                  const phoneNumber = message.phone_number;
+                  const whatsappAccountId = message.whatsapp_account_id;
+                  const tenantId = message.tenant_id;
+
+                  const checkExisting = await queryNoTenant(
+                    `SELECT id FROM restriction_list_entries 
+                     WHERE list_type = 'no_whatsapp' 
+                       AND phone_number = $1 
+                       AND tenant_id = $2`,
+                    [phoneNumber, tenantId]
+                  );
+
+                  if (checkExisting.rows.length === 0) {
+                    await queryNoTenant(
+                      `INSERT INTO restriction_list_entries 
+                       (list_type, whatsapp_account_id, phone_number, added_method, notes, tenant_id, added_at)
+                       VALUES ('no_whatsapp', $1, $2, 'auto_webhook', $3, $4, NOW())`,
+                      [whatsappAccountId, phoneNumber, `Webhook: ${fullErrorMsg.substring(0, 200)}`, tenantId]
+                    );
+                    console.log(`   📵 Número ${phoneNumber} adicionado à lista Sem WhatsApp (via webhook)`);
+                  } else {
+                    console.log(`   ℹ️ Número ${phoneNumber} já estava na lista Sem WhatsApp`);
+                  }
+                } catch (listErr: any) {
+                  console.error('   ⚠️ Erro ao adicionar à lista Sem WhatsApp:', listErr.message);
+                }
+              }
+            } else {
+              await queryNoTenant(
+                'UPDATE campaigns SET failed_count = failed_count + 1 WHERE id = $1',
+                [message.campaign_id]
+              );
+              console.log('   ✅ Contador de falhas atualizado!');
+            }
           }
         } else if (newStatus === oldStatus) {
           console.log('   ℹ️ Status duplicado ignorado:', newStatus, '(já era', oldStatus + ')');

@@ -137,14 +137,16 @@ export class MessageModel {
       `SELECT COUNT(*) as no_whatsapp_count
        FROM messages
        WHERE campaign_id = $1 
-       AND status = 'failed' 
        AND (
-         error_message ILIKE '%not registered%' 
-         OR error_message ILIKE '%no whatsapp%'
-         OR error_message ILIKE '%invalid phone%'
-         OR error_message ILIKE '%not a whatsapp user%'
-         OR error_message ILIKE '%131026%'
-         OR error_message ILIKE '%undeliverable%'
+         status = 'no_whatsapp'
+         OR (status = 'failed' AND (
+           error_message ILIKE '%not registered%' 
+           OR error_message ILIKE '%no whatsapp%'
+           OR error_message ILIKE '%invalid phone%'
+           OR error_message ILIKE '%not a whatsapp user%'
+           OR error_message ILIKE '%131026%'
+           OR error_message ILIKE '%undeliverable%'
+         ))
        )`,
       [campaign_id]
     );
