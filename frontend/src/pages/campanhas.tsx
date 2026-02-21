@@ -50,7 +50,8 @@ export default function Campanhas() {
     scheduled_at: '',
     work_start_time: '08:00',
     work_end_time: '20:00',
-    interval_seconds: '5',
+    interval_seconds_min: '5',
+    interval_seconds_max: '10',
     pause_after: '100',
     pause_duration_minutes: '30',
   });
@@ -289,12 +290,17 @@ export default function Campanhas() {
     const scheduleConfig = campaign.schedule_config || {};
     const pauseConfig = campaign.pause_config || {};
     
+    // Suporte tanto ao formato antigo (interval_seconds) quanto ao novo (min/max)
+    const intervalMin = scheduleConfig.interval_seconds_min || scheduleConfig.interval_seconds || 5;
+    const intervalMax = scheduleConfig.interval_seconds_max || scheduleConfig.interval_seconds || 10;
+
     setEditForm({
       name: campaign.name,
       scheduled_at: campaign.scheduled_at ? campaign.scheduled_at.split('T')[0] + 'T' + campaign.scheduled_at.split('T')[1].substring(0, 5) : '',
       work_start_time: scheduleConfig.work_start_time || '08:00',
       work_end_time: scheduleConfig.work_end_time || '20:00',
-      interval_seconds: String(scheduleConfig.interval_seconds || 5),
+      interval_seconds_min: String(intervalMin),
+      interval_seconds_max: String(intervalMax),
       pause_after: String(pauseConfig.pause_after || 100),
       pause_duration_minutes: String(pauseConfig.pause_duration_minutes || 30),
     });
@@ -314,7 +320,8 @@ export default function Campanhas() {
         schedule_config: {
           work_start_time: editForm.work_start_time,
           work_end_time: editForm.work_end_time,
-          interval_seconds: parseInt(editForm.interval_seconds),
+          interval_seconds_min: parseInt(editForm.interval_seconds_min),
+          interval_seconds_max: parseInt(editForm.interval_seconds_max),
         },
         pause_config: {
           pause_after: parseInt(editForm.pause_after),
@@ -703,13 +710,38 @@ export default function Campanhas() {
 
                 <div>
                   <label className="block text-lg font-bold mb-3 text-white">Intervalo entre envios (segundos)</label>
-                  <input
-                    type="number"
-                    className="w-full px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all"
-                    min="1"
-                    value={editForm.interval_seconds}
-                    onChange={(e) => setEditForm({ ...editForm, interval_seconds: e.target.value })}
-                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-white/70 mb-2">Mínimo</label>
+                      <input
+                        type="number"
+                        className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
+                        min="1"
+                        value={editForm.interval_seconds_min}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditForm({
+                            ...editForm,
+                            interval_seconds_min: val,
+                            interval_seconds_max: parseInt(val) > parseInt(editForm.interval_seconds_max) ? val : editForm.interval_seconds_max,
+                          });
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-white/70 mb-2">Máximo</label>
+                      <input
+                        type="number"
+                        className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
+                        min={editForm.interval_seconds_min}
+                        value={editForm.interval_seconds_max}
+                        onChange={(e) => setEditForm({ ...editForm, interval_seconds_max: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-sm text-white/60 mt-2">
+                    ⏱️ Aguardar entre {editForm.interval_seconds_min}s e {editForm.interval_seconds_max}s (aleatório) entre cada mensagem
+                  </p>
                 </div>
 
                 <div>
