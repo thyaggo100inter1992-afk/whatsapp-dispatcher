@@ -63,6 +63,7 @@ export default function CriarCampanha() {
   const [searchQuery, setSearchQuery] = useState('');
   const [excludeQuery, setExcludeQuery] = useState('');
   const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [loadingAccountIds, setLoadingAccountIds] = useState<Set<number>>(new Set());
   
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -119,39 +120,52 @@ export default function CriarCampanha() {
   };
 
   const loadTemplatesForAccounts = async (accountIds: number[]) => {
+    // Filtrar apenas contas que ainda não têm templates carregados
+    const accountsToLoad = accountIds.filter(id => !availableTemplates[id]);
+    if (accountsToLoad.length === 0) return;
+
+    // Marcar todas as contas novas como "carregando"
+    setLoadingAccountIds(prev => new Set([...prev, ...accountsToLoad]));
     setLoadingTemplates(true);
-    try {
-      for (const accountId of accountIds) {
-        if (!availableTemplates[accountId]) {
+
+    // Carregar todas as contas em PARALELO (muito mais rápido que sequencial)
+    await Promise.all(
+      accountsToLoad.map(async (accountId) => {
+        try {
           console.log(`\n📋 ===== CARREGANDO TEMPLATES (API OFICIAL) =====`);
           console.log(`   Conta ID: ${accountId}`);
-          
+
           const response = await whatsappAccountsAPI.getTemplates(accountId);
-          
+
           if (response.data.success) {
             const allTemplates = response.data.templates || [];
             const approvedTemplates = allTemplates.filter((t: Template) => t.status === 'APPROVED');
-            
+
             console.log(`   ✅ Templates recebidos do backend: ${allTemplates.length}`);
             console.log(`   ✅ Templates APPROVED: ${approvedTemplates.length}`);
-            console.log(`   Status:`, allTemplates.reduce((acc: any, t: Template) => {
-              acc[t.status] = (acc[t.status] || 0) + 1;
-              return acc;
-            }, {}));
             console.log(`================================================\n`);
-            
+
             setAvailableTemplates(prev => ({
               ...prev,
               [accountId]: approvedTemplates
             }));
           }
+        } catch (error) {
+          console.error(`Erro ao carregar templates da conta ${accountId}:`, error);
+          // Marcar conta com array vazio para não tentar novamente em loop
+          setAvailableTemplates(prev => ({ ...prev, [accountId]: [] }));
+        } finally {
+          // Remover esta conta do set de "carregando" ao terminar
+          setLoadingAccountIds(prev => {
+            const next = new Set(prev);
+            next.delete(accountId);
+            return next;
+          });
         }
-      }
-    } catch (error) {
-      console.error('Erro ao carregar templates:', error);
-    } finally {
-      setLoadingTemplates(false);
-    }
+      })
+    );
+
+    setLoadingTemplates(false);
   };
 
   const handleAccountToggle = (accountId: number) => {
@@ -1510,25 +1524,34 @@ export default function CriarCampanha() {
               </div>
               
               {/* Botões Globais */}
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={selectAllVisible}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white font-bold rounded-xl transition-all duration-200 shadow-lg shadow-primary-500/30 hover:shadow-primary-500/50 transform hover:scale-105"
-                >
-                  <FaCheckDouble className="text-lg" />
-                  Selecionar Todos
-                </button>
-                
-                <button
-                  type="button"
-                  onClick={deselectAll}
-                  className="flex items-center gap-2 px-6 py-3 bg-dark-700 hover:bg-dark-600 text-white font-bold rounded-xl transition-all duration-200 border-2 border-white/10 hover:border-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={totalSelected === 0}
-                >
-                  <FaTimesCircle className="text-lg" />
-                  Desmarcar Todos
-                </button>
+              <div className="flex flex-col items-end gap-2">
+                {loadingAccountIds.size > 0 && (
+                  <div className="flex items-center gap-2 text-sm text-yellow-400 font-semibold bg-yellow-400/10 border border-yellow-400/30 rounded-lg px-3 py-1.5">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-400"></div>
+                    Aguarde... carregando templates de {loadingAccountIds.size} conta(s)
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={selectAllVisible}
+                    disabled={loadingAccountIds.size > 0}
+                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white font-bold rounded-xl transition-all duration-200 shadow-lg shadow-primary-500/30 hover:shadow-primary-500/50 transform hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none disabled:hover:from-primary-500 disabled:hover:to-primary-600"
+                  >
+                    <FaCheckDouble className="text-lg" />
+                    Selecionar Todos
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={deselectAll}
+                    className="flex items-center gap-2 px-6 py-3 bg-dark-700 hover:bg-dark-600 text-white font-bold rounded-xl transition-all duration-200 border-2 border-white/10 hover:border-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={totalSelected === 0 || loadingAccountIds.size > 0}
+                  >
+                    <FaTimesCircle className="text-lg" />
+                    Desmarcar Todos
+                  </button>
+                </div>
               </div>
             </div>
             
@@ -1620,43 +1643,53 @@ export default function CriarCampanha() {
               </div>
             </div>
             
-            {loadingTemplates ? (
-              <div className="text-center py-20">
-                <div className="inline-block animate-spin rounded-full h-16 w-16 border-b-4 border-primary-500 mb-4"></div>
-                <p className="text-xl text-white/70">Carregando templates...</p>
-              </div>
-            ) : (
-              <div className="space-y-6 max-h-[700px] overflow-y-auto pr-2 custom-scrollbar">
+            <div className="space-y-6 max-h-[700px] overflow-y-auto pr-2 custom-scrollbar">
                 {selectedAccountIds.map(accountId => {
                   const account = accounts.find(a => a.id === accountId);
+                  const isAccountLoading = loadingAccountIds.has(accountId);
                   const filteredTemplates = getFilteredTemplatesForAccount(accountId);
                   const selectedCount = selectedTemplates[accountId]?.size || 0;
                   
                   if (!account) return null;
                   
                   return (
-                    <div key={accountId} className="border-2 border-primary-500/40 rounded-2xl p-6 bg-gradient-to-br from-primary-500/10 to-primary-600/5 backdrop-blur-md">
+                    <div key={accountId} className={`border-2 rounded-2xl p-6 backdrop-blur-md transition-all duration-300 ${isAccountLoading ? 'border-yellow-500/40 bg-gradient-to-br from-yellow-500/5 to-yellow-600/5' : 'border-primary-500/40 bg-gradient-to-br from-primary-500/10 to-primary-600/5'}`}>
                       {/* Header da Conta */}
                       <div className="mb-6 pb-4 border-b-2 border-white/10">
-                        <div className="flex items-center gap-3 mb-2">
-                          <div className="bg-primary-500/20 p-3 rounded-xl">
-                            <FaPhone className="text-2xl text-primary-400" />
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-3 rounded-xl ${isAccountLoading ? 'bg-yellow-500/20' : 'bg-primary-500/20'}`}>
+                              <FaPhone className={`text-2xl ${isAccountLoading ? 'text-yellow-400' : 'text-primary-400'}`} />
+                            </div>
+                            <div>
+                              <h3 className="text-2xl font-black text-white">
+                                {account.name}
+                              </h3>
+                              <p className="text-base text-white/60">{account.phone_number}</p>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="text-2xl font-black text-white">
-                              {account.name}
-                            </h3>
-                            <p className="text-base text-white/60">{account.phone_number}</p>
-                          </div>
+                          {isAccountLoading && (
+                            <div className="flex items-center gap-2 text-yellow-400 text-sm font-bold bg-yellow-400/10 border border-yellow-400/30 rounded-lg px-3 py-1.5">
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-400"></div>
+                              Carregando templates...
+                            </div>
+                          )}
                         </div>
-                        <p className="text-base text-primary-300 font-bold mt-3 flex items-center gap-2">
-                          <FaCheckCircle />
-                          {selectedCount} de {filteredTemplates.length} template(s) selecionado(s)
-                        </p>
+                        {!isAccountLoading && (
+                          <p className="text-base text-primary-300 font-bold mt-3 flex items-center gap-2">
+                            <FaCheckCircle />
+                            {selectedCount} de {filteredTemplates.length} template(s) selecionado(s)
+                          </p>
+                        )}
                       </div>
                       
                       {/* Lista de Templates */}
-                      {filteredTemplates.length === 0 ? (
+                      {isAccountLoading ? (
+                        <div className="text-center py-10 text-white/50">
+                          <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-yellow-400 mb-3"></div>
+                          <p className="text-base">Buscando templates desta conta...</p>
+                        </div>
+                      ) : filteredTemplates.length === 0 ? (
                         <div className="text-center py-12 text-white/50">
                           <FaExclamationTriangle className="text-4xl mx-auto mb-3" />
                           <p className="text-lg">Nenhum template disponível para esta conta</p>
@@ -1727,8 +1760,7 @@ export default function CriarCampanha() {
                     </div>
                   );
                 })}
-              </div>
-            )}
+            </div>
             
             {/* Resumo Global */}
             {totalSelected > 0 && (
