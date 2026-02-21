@@ -140,12 +140,15 @@ export class CampaignController {
       console.log(`   👤 Tenant ID: ${tenantId}`);
       console.log(`   👤 User ID: ${(req as any).user?.id || 'N/A'}`);
       
+      // Criar campanha com status temporário 'scheduled' + data futura para evitar
+      // race condition: o worker não vai processar até todos os templates serem salvos
+      const tempScheduledAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutos no futuro
       const campaign = await CampaignModel.create({
         name,
-        status: scheduled_at ? 'scheduled' : 'pending',
+        status: 'scheduled',
         tenant_id: tenantId,
         user_id: (req as any).user?.id || null,
-        scheduled_at: scheduledDate,
+        scheduled_at: tempScheduledAt,
         total_contacts: contacts.length,
         schedule_config,
         pause_config,
@@ -246,19 +249,20 @@ export class CampaignController {
       }
       console.log(`✅ ${campaignTemplates.length} templates associados à campanha`);
 
-      // Se não for agendada, iniciar imediatamente
-      // NOTA: Queue service desabilitado temporariamente
-      // A campanha fica com status 'pending' até implementarmos o worker
-      if (!scheduled_at) {
-        console.log('⚠️ Queue service desabilitado. Campanha criada com status "pending".');
-        console.log('💡 Implemente um worker para processar campanhas com status "pending"');
-        // await queueService.addCampaign({
-        //   campaignId: campaign.id!,
-        //   templates: campaignTemplates,
-        //   contacts: createdContacts,
-        //   pauseConfig: pause_config,
-        //   scheduleConfig: schedule_config,
-        // });
+      // Todos os dados foram salvos. Agora atualizar para o status final correto.
+      // Isso garante que o worker só pegue a campanha APÓS todos os templates estarem no banco.
+      if (scheduled_at && scheduledDate) {
+        // Campanha agendada: manter status 'scheduled' com a data real de agendamento
+        await CampaignModel.update(campaign.id, { status: 'scheduled', scheduled_at: scheduledDate });
+        campaign.status = 'scheduled';
+        campaign.scheduled_at = scheduledDate;
+        console.log(`📅 Campanha ${campaign.id} agendada para: ${scheduledDate.toISOString()}`);
+      } else {
+        // Campanha imediata: mudar para 'pending' e limpar o scheduled_at temporário
+        await CampaignModel.update(campaign.id, { status: 'pending', scheduled_at: null });
+        campaign.status = 'pending';
+        campaign.scheduled_at = undefined;
+        console.log(`✅ Campanha ${campaign.id} liberada para processamento (status: pending)`);
       }
 
       res.status(201).json({
@@ -266,7 +270,7 @@ export class CampaignController {
         data: campaign,
         message: scheduled_at 
           ? 'Campanha agendada com sucesso!' 
-          : 'Campanha criada com sucesso! (Worker de envio em desenvolvimento)',
+          : 'Campanha criada com sucesso!',
       });
     } catch (error: any) {
       console.error('❌ Erro ao criar campanha:', error);

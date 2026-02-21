@@ -629,14 +629,35 @@ class CampaignWorker {
     const templates: CampaignTemplate[] = templatesResult.rows;
 
     if (templates.length === 0) {
+      // Verificar se é race condition: campanha muito recente pode não ter templates salvos ainda
+      const campaignAgeMs = campaign.created_at 
+        ? Date.now() - new Date(campaign.created_at).getTime()
+        : Infinity;
+      
+      if (campaignAgeMs < 30000 && (campaign.total_contacts || 0) > 0) {
+        // Campanha criada há menos de 30s com contatos mas sem templates = possível race condition
+        const anyTemplatesResult = await query(
+          'SELECT COUNT(*) as count FROM campaign_templates WHERE campaign_id = $1',
+          [campaign.id]
+        );
+        const anyTemplates = parseInt(anyTemplatesResult.rows[0]?.count || '0');
+        
+        if (anyTemplates === 0) {
+          console.log(`⏳ [Campanha ${campaign.id}] Sem templates (${Math.round(campaignAgeMs/1000)}s criada) - aguardando próximo ciclo`);
+          // Reverter para pending para tentar novamente no próximo ciclo
+          await this.updateCampaignStatus(campaign.id, 'pending', campaign.tenant_id);
+          return;
+        }
+      }
+      
       console.log(`\n🚨 ===== CAMPANHA SEM TEMPLATES ATIVOS =====`);
       console.log(`   📊 Campanha ID: ${campaign.id}`);
       console.log(`   📛 Nome: ${campaign.name}`);
       console.log(`   👤 Tenant ID: ${campaign.tenant_id}`);
       console.log(`   ❌ Nenhum template ativo encontrado!`);
-      console.log(`   ⚠️  Marcando campanha como concluída...`);
+      console.log(`   ⚠️  Marcando campanha como FALHA (sem templates ativos)...`);
       console.log(`============================================\n`);
-      await this.updateCampaignStatus(campaign.id, 'completed', campaign.tenant_id);
+      await this.updateCampaignStatus(campaign.id, 'failed', campaign.tenant_id);
       return;
     }
 
