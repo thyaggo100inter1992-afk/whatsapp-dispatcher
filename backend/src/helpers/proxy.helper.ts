@@ -9,6 +9,8 @@ export interface ProxyConfig {
   port: number;
   username?: string;
   password?: string;
+  status?: string; // 'working' | 'failed' | 'unchecked'
+  proxyName?: string; // Nome do proxy para logs
 }
 
 export interface ProxyTestResult {
@@ -112,7 +114,9 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
 }
 
 /**
- * Aplica configuração de proxy em uma requisição Axios
+ * Aplica configuração de proxy em uma requisição Axios.
+ * Se o proxy falhar (status = 'failed' ou agent não puder ser criado),
+ * faz fallback automático para conexão direta sem proxy.
  */
 export function applyProxyToRequest(
   requestConfig: AxiosRequestConfig,
@@ -125,14 +129,32 @@ export function applyProxyToRequest(
     return requestConfig;
   }
 
-  const agent = createProxyAgent(proxyConfig);
+  // ⚠️ FALLBACK: Se o proxy está marcado como 'failed', usa conexão direta
+  if (proxyConfig.status === 'failed') {
+    console.warn(
+      `⚠️ [FALLBACK] Proxy "${proxyConfig.proxyName || proxyConfig.host + ':' + proxyConfig.port}" está com FALHA. ` +
+      `Conta "${accountName}" operando em modo DIRETO (sem proxy) automaticamente.`
+    );
+    return requestConfig;
+  }
+
+  let agent: any;
+  try {
+    agent = createProxyAgent(proxyConfig);
+  } catch (err: any) {
+    console.warn(
+      `⚠️ [FALLBACK] Erro ao criar agent de proxy para conta "${accountName}": ${err.message}. ` +
+      `Operando em modo DIRETO (sem proxy).`
+    );
+    return requestConfig;
+  }
   
   if (!agent) {
-    console.error(`❌ ERRO: Proxy configurado mas agent falhou! Conta: ${accountName}`);
-    throw new Error(
-      `Proxy está configurado mas falhou ao criar conexão. ` +
-      `Configure corretamente ou desative o proxy para esta conta.`
+    console.warn(
+      `⚠️ [FALLBACK] Proxy configurado mas agent não pôde ser criado para conta "${accountName}". ` +
+      `Operando em modo DIRETO (sem proxy).`
     );
+    return requestConfig;
   }
 
   console.log(`🌐 Requisição via PROXY ${proxyConfig.host}:${proxyConfig.port} para conta: ${accountName}`);
@@ -205,7 +227,9 @@ export async function getProxyConfigFromAccount(
         p.host,
         p.port,
         p.username,
-        p.password
+        p.password,
+        p.status,
+        p.name AS proxy_name
       FROM whatsapp_accounts wa
       LEFT JOIN proxies p ON wa.proxy_id = p.id
       WHERE wa.id = $1 AND p.id IS NOT NULL`;
@@ -230,13 +254,20 @@ export async function getProxyConfigFromAccount(
       return null;
     }
 
+    // ⚠️ Se o proxy está marcado como 'failed', retorna config com status para acionar fallback
+    if (row.status === 'failed') {
+      console.warn(`⚠️ [ProxyHelper] Proxy "${row.proxy_name}" está com status FAILED para conta ${accountId}. Fallback para conexão direta será ativado.`);
+    }
+
     return {
       enabled: true,
       type: row.type || 'socks5',
       host: row.host,
       port: row.port,
       username: row.username,
-      password: row.password
+      password: row.password,
+      status: row.status || 'unchecked',
+      proxyName: row.proxy_name
     };
   } catch (error) {
     console.error('Erro ao buscar configuração de proxy:', error);

@@ -567,6 +567,21 @@ export default function ProxiesPage() {
                       </div>
                     </div>
                     
+                    {/* Aviso de fallback quando proxy falhou mas tem contas usando */}
+                    {proxy.status === 'failed' && (proxy.accounts_count || 0) > 0 && (
+                      <div className="mt-4 flex items-start gap-3 p-4 bg-gradient-to-r from-orange-500/15 to-amber-500/10 border-2 border-orange-500/50 rounded-xl">
+                        <span className="text-orange-400 text-xl flex-shrink-0 mt-0.5">⚠️</span>
+                        <div>
+                          <p className="text-orange-300 font-bold text-sm">
+                            Proxy com falha — Modo Fallback Ativo
+                          </p>
+                          <p className="text-orange-200/70 text-xs mt-1">
+                            As <strong>{proxy.accounts_count}</strong> conta(s) associadas estão operando <strong>sem proxy</strong> automaticamente até que o proxy seja corrigido. Nenhuma conta foi bloqueada.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {proxy.description && (
                       <div className="mt-4 p-3 bg-white/5 border border-white/10 rounded-lg">
                         <p className="text-white/70 text-sm">{proxy.description}</p>
