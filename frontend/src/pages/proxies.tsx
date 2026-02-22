@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { useToast } from '@/hooks/useToast';
 import ToastContainer from '@/components/ToastContainer';
-import { FaGlobe, FaPlus, FaEdit, FaTrash, FaFlask, FaCheckCircle, FaTimesCircle, FaClock, FaSave, FaTimes, FaArrowLeft, FaUsers, FaExchangeAlt, FaPhone, FaCheckSquare, FaSquare } from 'react-icons/fa';
+import { FaGlobe, FaPlus, FaEdit, FaTrash, FaFlask, FaCheckCircle, FaTimesCircle, FaClock, FaSave, FaTimes, FaArrowLeft, FaUsers, FaExchangeAlt, FaPhone, FaCheckSquare, FaSquare, FaSearch } from 'react-icons/fa';
 import api from '@/services/api';
 
 interface ProxyPoolItem {
@@ -52,6 +52,12 @@ export default function ProxiesPage() {
   const [editingProxy, setEditingProxy] = useState<Proxy | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [testingAll, setTestingAll] = useState(false);
+
+  // States para seleção de contas no modal de criar/editar
+  const [allAccounts, setAllAccounts] = useState<Account[]>([]);
+  const [loadingAllAccounts, setLoadingAllAccounts] = useState(false);
+  const [selectedAccountsForProxy, setSelectedAccountsForProxy] = useState<number[]>([]);
+  const [accountSearch, setAccountSearch] = useState('');
 
   // States para Ver Contas
   const [showAccountsModal, setShowAccountsModal] = useState(false);
@@ -105,7 +111,7 @@ export default function ProxiesPage() {
     }
   };
 
-  const handleOpenModal = (proxy?: Proxy) => {
+  const handleOpenModal = async (proxy?: Proxy) => {
     if (proxy) {
       setEditingProxy(proxy);
       setFormData({
@@ -142,12 +148,38 @@ export default function ProxiesPage() {
     setPoolPort('');
     setPoolUsername('');
     setPoolPassword('');
+    setAccountSearch('');
+    setSelectedAccountsForProxy([]);
+
+    // Carregar lista de contas
+    setLoadingAllAccounts(true);
     setShowModal(true);
+    try {
+      const [accountsResp, proxyAccountsResp] = await Promise.all([
+        api.get('/whatsapp-accounts'),
+        proxy ? api.get(`/proxies/${proxy.id}/accounts`) : Promise.resolve({ data: { data: [] } })
+      ]);
+      if (accountsResp.data.success || Array.isArray(accountsResp.data)) {
+        const list: Account[] = accountsResp.data.data || accountsResp.data || [];
+        setAllAccounts(list);
+      }
+      // Pré-selecionar contas que já usam este proxy
+      if (proxy && proxyAccountsResp.data.success) {
+        setSelectedAccountsForProxy(proxyAccountsResp.data.data.map((a: Account) => a.id));
+      }
+    } catch (err) {
+      console.error('Erro ao carregar contas:', err);
+    } finally {
+      setLoadingAllAccounts(false);
+    }
   };
 
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingProxy(null);
+    setAllAccounts([]);
+    setSelectedAccountsForProxy([]);
+    setAccountSearch('');
   };
 
   const handleAddToPool = () => {
@@ -215,6 +247,17 @@ export default function ProxiesPage() {
       }
 
       if (response.data.success) {
+        const savedProxyId = response.data.data?.id || editingProxy?.id;
+        // Atribuir contas selecionadas ao proxy
+        if (savedProxyId && selectedAccountsForProxy.length > 0) {
+          try {
+            await api.post(`/proxies/${savedProxyId}/assign-accounts`, {
+              account_ids: selectedAccountsForProxy
+            });
+          } catch (err) {
+            console.error('Erro ao atribuir contas ao proxy:', err);
+          }
+        }
         toast.success(editingProxy ? '✅ Proxy atualizado!' : '✅ Proxy criado!');
         handleCloseModal();
         loadProxies();
@@ -1139,7 +1182,115 @@ export default function ProxiesPage() {
                   />
                 </button>
               </div>
-            </div>
+
+              {/* Seção: Atribuir Contas */}
+              <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-2 border-cyan-500/30 rounded-xl p-5">
+                <label className="block text-white font-bold text-base mb-1 flex items-center gap-2">
+                  <FaUsers className="text-cyan-300" /> Atribuir Contas a este Proxy
+                  {selectedAccountsForProxy.length > 0 && (
+                    <span className="ml-auto px-3 py-0.5 bg-cyan-500/30 text-cyan-300 text-xs font-black rounded-full">
+                      {selectedAccountsForProxy.length} selecionada(s)
+                    </span>
+                  )}
+                </label>
+                <p className="text-white/50 text-xs mb-4">Selecione as contas que usarão este proxy. As já selecionadas são as que já estão usando.</p>
+
+                {loadingAllAccounts ? (
+                  <div className="flex items-center gap-3 py-4 justify-center">
+                    <div className="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-white/60 text-sm">Carregando contas...</span>
+                  </div>
+                ) : allAccounts.length === 0 ? (
+                  <p className="text-white/40 text-sm text-center py-4">Nenhuma conta cadastrada</p>
+                ) : (
+                  <>
+                    {/* Busca + Selecionar todas */}
+                    <div className="flex gap-2 mb-3">
+                      <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-dark-700 border border-cyan-500/30 rounded-xl">
+                        <FaSearch className="text-white/40 text-sm flex-shrink-0" />
+                        <input
+                          type="text"
+                          value={accountSearch}
+                          onChange={(e) => setAccountSearch(e.target.value)}
+                          placeholder="Buscar conta..."
+                          className="bg-transparent text-white text-sm w-full outline-none placeholder-white/30"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const filtered = allAccounts.filter(a =>
+                            !accountSearch ||
+                            a.name?.toLowerCase().includes(accountSearch.toLowerCase()) ||
+                            a.phone_number?.includes(accountSearch)
+                          );
+                          const filteredIds = filtered.map(a => a.id);
+                          const allSelected = filteredIds.every(id => selectedAccountsForProxy.includes(id));
+                          if (allSelected) {
+                            setSelectedAccountsForProxy(prev => prev.filter(id => !filteredIds.includes(id)));
+                          } else {
+                            setSelectedAccountsForProxy(prev => [...new Set([...prev, ...filteredIds])]);
+                          }
+                        }}
+                        className="px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-bold rounded-xl transition-all whitespace-nowrap"
+                      >
+                        {(() => {
+                          const filtered = allAccounts.filter(a =>
+                            !accountSearch ||
+                            a.name?.toLowerCase().includes(accountSearch.toLowerCase()) ||
+                            a.phone_number?.includes(accountSearch)
+                          );
+                          return filtered.every(a => selectedAccountsForProxy.includes(a.id)) ? 'Desmarcar' : 'Todas';
+                        })()}
+                      </button>
+                    </div>
+
+                    {/* Lista de contas */}
+                    <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
+                      {allAccounts
+                        .filter(a =>
+                          !accountSearch ||
+                          a.name?.toLowerCase().includes(accountSearch.toLowerCase()) ||
+                          a.phone_number?.includes(accountSearch)
+                        )
+                        .map(account => {
+                          const isSelected = selectedAccountsForProxy.includes(account.id);
+                          return (
+                            <div
+                              key={account.id}
+                              onClick={() =>
+                                setSelectedAccountsForProxy(prev =>
+                                  isSelected ? prev.filter(x => x !== account.id) : [...prev, account.id]
+                                )
+                              }
+                              className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                                isSelected
+                                  ? 'bg-cyan-500/15 border-cyan-500/50'
+                                  : 'bg-white/5 border-white/10 hover:border-cyan-500/30'
+                              }`}
+                            >
+                              <span className={`flex-shrink-0 text-base ${isSelected ? 'text-cyan-400' : 'text-white/30'}`}>
+                                {isSelected ? <FaCheckSquare /> : <FaSquare />}
+                              </span>
+                              <div className="bg-cyan-500/20 p-1.5 rounded-lg flex-shrink-0">
+                                <FaPhone className="text-cyan-300 text-xs" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-white font-bold text-sm truncate">{account.name || 'Sem nome'}</p>
+                                <p className="text-white/50 text-xs font-mono">{account.phone_number || '—'}</p>
+                              </div>
+                              {account.is_active ? (
+                                <span className="flex-shrink-0 px-2 py-0.5 bg-green-500/20 text-green-300 text-xs font-bold rounded-full">Ativa</span>
+                              ) : (
+                                <span className="flex-shrink-0 px-2 py-0.5 bg-gray-500/20 text-gray-400 text-xs font-bold rounded-full">Inativa</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </>
+                )}
+              </div>
 
             {/* Botões */}
             <div className="flex gap-4 mt-8 pt-6 border-t-2 border-white/10">

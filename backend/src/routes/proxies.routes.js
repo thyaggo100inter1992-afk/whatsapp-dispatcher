@@ -46,5 +46,8 @@ router.get('/:id/accounts', (req, res) => proxyController.listAccounts(req, res)
 // Transferir contas em massa entre proxies
 router.post('/transfer-accounts', (req, res) => proxyController.transferAccounts(req, res));
 
+// Atribuir contas a um proxy
+router.post('/:id/assign-accounts', (req, res) => proxyController.assignAccounts(req, res));
+
 module.exports = router;
 

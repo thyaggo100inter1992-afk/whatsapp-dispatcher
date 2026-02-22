@@ -566,6 +566,66 @@ export class ProxyManagerController {
       res.status(500).json({ success: false, error: error.message });
     }
   }
+
+  /**
+   * POST /api/proxies/:id/assign-accounts
+   * Atribuir contas a um proxy em massa
+   * Body: { account_ids: number[] }
+   */
+  async assignAccounts(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { account_ids } = req.body;
+
+      if (!account_ids || !Array.isArray(account_ids)) {
+        return res.status(400).json({ success: false, error: 'account_ids deve ser um array' });
+      }
+
+      const { Pool } = require('pg');
+      const pool = new Pool({
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432'),
+        database: process.env.DB_NAME || 'whatsapp_dispatcher',
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD || 'postgres',
+      });
+
+      const tenantId = (req as any).user?.tenant_id || (req as any).tenant?.id;
+
+      // Verificar se proxy existe e pertence ao tenant
+      const proxyCheck = await pool.query(
+        'SELECT id, name FROM proxies WHERE id = $1 AND tenant_id = $2',
+        [id, tenantId]
+      );
+      if (proxyCheck.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Proxy não encontrado' });
+      }
+
+      let assigned = 0;
+
+      if (account_ids.length > 0) {
+        const result = await pool.query(
+          `UPDATE whatsapp_accounts
+           SET proxy_id = $1
+           WHERE id = ANY($2) AND tenant_id = $3
+           RETURNING id, name, phone_number`,
+          [id, account_ids, tenantId]
+        );
+        assigned = result.rows.length;
+      }
+
+      console.log(`✅ [ProxyManager] ${assigned} conta(s) atribuídas ao proxy "${proxyCheck.rows[0].name}"`);
+
+      res.json({
+        success: true,
+        assigned,
+        proxy: proxyCheck.rows[0]
+      });
+    } catch (error: any) {
+      console.error('❌ [ProxyManager] Erro ao atribuir contas:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
 }
 
 export const proxyManagerController = new ProxyManagerController();
