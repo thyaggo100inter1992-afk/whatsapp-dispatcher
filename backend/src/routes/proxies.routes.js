@@ -40,5 +40,11 @@ router.post('/:id/test', (req, res) => proxyController.test(req, res));
 // Testar todos os proxies
 router.post('/test-all', (req, res) => proxyController.testAll(req, res));
 
+// Listar contas que usam um proxy
+router.get('/:id/accounts', (req, res) => proxyController.listAccounts(req, res));
+
+// Transferir contas em massa entre proxies
+router.post('/transfer-accounts', (req, res) => proxyController.transferAccounts(req, res));
+
 module.exports = router;
 

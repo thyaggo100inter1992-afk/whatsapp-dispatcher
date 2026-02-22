@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { useToast } from '@/hooks/useToast';
 import ToastContainer from '@/components/ToastContainer';
-import { FaGlobe, FaPlus, FaEdit, FaTrash, FaFlask, FaCheckCircle, FaTimesCircle, FaClock, FaSave, FaTimes, FaArrowLeft } from 'react-icons/fa';
+import { FaGlobe, FaPlus, FaEdit, FaTrash, FaFlask, FaCheckCircle, FaTimesCircle, FaClock, FaSave, FaTimes, FaArrowLeft, FaUsers, FaExchangeAlt, FaPhone, FaCheckSquare, FaSquare } from 'react-icons/fa';
 import api from '@/services/api';
 
 interface ProxyPoolItem {
@@ -11,6 +11,14 @@ interface ProxyPoolItem {
   port: number;
   username?: string;
   password?: string;
+}
+
+interface Account {
+  id: number;
+  name: string;
+  phone_number: string;
+  status: string;
+  is_active: boolean;
 }
 
 interface Proxy {
@@ -44,6 +52,18 @@ export default function ProxiesPage() {
   const [editingProxy, setEditingProxy] = useState<Proxy | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [testingAll, setTestingAll] = useState(false);
+
+  // States para Ver Contas
+  const [showAccountsModal, setShowAccountsModal] = useState(false);
+  const [proxyAccounts, setProxyAccounts] = useState<Account[]>([]);
+  const [viewingProxy, setViewingProxy] = useState<Proxy | null>(null);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+
+  // States para Transferir Contas
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferTargetProxyId, setTransferTargetProxyId] = useState('');
+  const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
+  const [transferring, setTransferring] = useState(false);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -267,6 +287,78 @@ export default function ProxiesPage() {
       toast.error('Erro ao testar proxies');
     } finally {
       setTestingAll(false);
+    }
+  };
+
+  const handleViewAccounts = async (proxy: Proxy) => {
+    setViewingProxy(proxy);
+    setShowAccountsModal(true);
+    setLoadingAccounts(true);
+    setProxyAccounts([]);
+    try {
+      const response = await api.get(`/proxies/${proxy.id}/accounts`);
+      if (response.data.success) {
+        setProxyAccounts(response.data.data);
+      } else {
+        toast.error('Erro ao carregar contas');
+      }
+    } catch (err) {
+      console.error('Erro ao carregar contas do proxy:', err);
+      toast.error('Erro ao carregar contas');
+    } finally {
+      setLoadingAccounts(false);
+    }
+  };
+
+  const handleOpenTransfer = () => {
+    setSelectedAccountIds(proxyAccounts.map(a => a.id));
+    setTransferTargetProxyId('');
+    setShowTransferModal(true);
+  };
+
+  const handleToggleAccount = (id: number) => {
+    setSelectedAccountIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllAccounts = () => {
+    if (selectedAccountIds.length === proxyAccounts.length) {
+      setSelectedAccountIds([]);
+    } else {
+      setSelectedAccountIds(proxyAccounts.map(a => a.id));
+    }
+  };
+
+  const handleTransferAccounts = async () => {
+    if (!transferTargetProxyId) {
+      toast.error('Selecione o proxy de destino');
+      return;
+    }
+    if (selectedAccountIds.length === 0) {
+      toast.error('Selecione pelo menos uma conta');
+      return;
+    }
+    setTransferring(true);
+    try {
+      const response = await api.post('/proxies/transfer-accounts', {
+        from_proxy_id: viewingProxy?.id,
+        to_proxy_id: parseInt(transferTargetProxyId),
+        account_ids: selectedAccountIds
+      });
+      if (response.data.success) {
+        toast.success(`✅ ${response.data.transferred} conta(s) transferida(s) com sucesso!`);
+        setShowTransferModal(false);
+        setShowAccountsModal(false);
+        loadProxies();
+      } else {
+        toast.error(response.data.error || 'Erro ao transferir contas');
+      }
+    } catch (err) {
+      console.error('Erro ao transferir contas:', err);
+      toast.error('Erro ao transferir contas');
+    } finally {
+      setTransferring(false);
     }
   };
 
@@ -496,6 +588,13 @@ export default function ProxiesPage() {
                       )}
                     </button>
                     <button
+                      onClick={() => handleViewAccounts(proxy)}
+                      className="p-4 bg-cyan-500/20 hover:bg-cyan-500/30 border-2 border-cyan-500/50 text-cyan-300 rounded-xl transition-all hover:scale-110"
+                      title="Ver Contas"
+                    >
+                      <FaUsers className="text-xl" />
+                    </button>
+                    <button
                       onClick={() => handleOpenModal(proxy)}
                       className="p-4 bg-yellow-500/20 hover:bg-yellow-500/30 border-2 border-yellow-500/50 text-yellow-300 rounded-xl transition-all hover:scale-110"
                       title="Editar"
@@ -517,6 +616,217 @@ export default function ProxiesPage() {
           )}
         </div>
       </div>
+
+      {/* Modal: Ver Contas do Proxy */}
+      {showAccountsModal && viewingProxy && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-br from-dark-800 to-dark-900 border-2 border-cyan-500/30 rounded-2xl p-8 max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl shadow-cyan-500/20">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6 pb-4 border-b-2 border-white/10">
+              <div className="flex items-center gap-4">
+                <div className="bg-gradient-to-br from-cyan-500 to-blue-600 p-3 rounded-xl">
+                  <FaUsers className="text-2xl text-white" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black text-white">Contas usando este Proxy</h2>
+                  <p className="text-cyan-300 text-sm mt-1 font-bold">{viewingProxy.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAccountsModal(false)}
+                className="p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-all border-2 border-white/20"
+              >
+                <FaTimes className="text-white text-xl" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {loadingAccounts ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <div className="animate-spin rounded-full h-14 w-14 border-b-4 border-cyan-500 mb-4"></div>
+                  <p className="text-white/60 text-base">Carregando contas...</p>
+                </div>
+              ) : proxyAccounts.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="bg-white/10 p-6 rounded-full inline-block mb-4">
+                    <FaUsers className="text-5xl text-white/30" />
+                  </div>
+                  <p className="text-white font-bold text-lg mb-2">Nenhuma conta usando este proxy</p>
+                  <p className="text-white/50 text-sm">Associe contas a este proxy nas configurações de cada conta</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-white/70 text-sm font-bold">
+                      Total: <span className="text-cyan-300 text-base">{proxyAccounts.length}</span> conta(s)
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {proxyAccounts.map(account => (
+                      <div
+                        key={account.id}
+                        className="flex items-center gap-4 p-4 bg-white/5 border border-white/10 rounded-xl hover:border-cyan-500/30 transition-all"
+                      >
+                        <div className="bg-cyan-500/20 p-2 rounded-lg flex-shrink-0">
+                          <FaPhone className="text-cyan-300 text-base" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-bold text-sm truncate">{account.name || 'Sem nome'}</p>
+                          <p className="text-white/60 text-xs font-mono mt-0.5">{account.phone_number || '—'}</p>
+                        </div>
+                        <div className="flex-shrink-0">
+                          {account.is_active ? (
+                            <span className="px-3 py-1 bg-green-500/20 border border-green-500/40 text-green-300 text-xs font-bold rounded-full">
+                              Ativa
+                            </span>
+                          ) : (
+                            <span className="px-3 py-1 bg-gray-500/20 border border-gray-500/40 text-gray-300 text-xs font-bold rounded-full">
+                              Inativa
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 mt-6 pt-4 border-t-2 border-white/10">
+              <button
+                onClick={() => setShowAccountsModal(false)}
+                className="flex-1 px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-all border-2 border-white/20 flex items-center justify-center gap-2"
+              >
+                <FaTimes /> Fechar
+              </button>
+              {proxyAccounts.length > 0 && (
+                <button
+                  onClick={handleOpenTransfer}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-orange-500/30 flex items-center justify-center gap-2"
+                >
+                  <FaExchangeAlt /> Transferir Contas
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Transferir Contas em Massa */}
+      {showTransferModal && viewingProxy && (
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center z-[60] p-4">
+          <div className="bg-gradient-to-br from-dark-800 to-dark-900 border-2 border-orange-500/30 rounded-2xl p-8 max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl shadow-orange-500/20">
+            {/* Header */}
+            <div className="flex items-center gap-4 mb-6 pb-4 border-b-2 border-white/10">
+              <div className="bg-gradient-to-br from-orange-500 to-amber-600 p-3 rounded-xl">
+                <FaExchangeAlt className="text-2xl text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-white">Transferir Contas em Massa</h2>
+                <p className="text-orange-300 text-sm mt-1 font-bold">De: {viewingProxy.name}</p>
+              </div>
+            </div>
+
+            {/* Proxy destino */}
+            <div className="mb-5">
+              <label className="block text-white font-bold text-sm mb-2 flex items-center gap-2">
+                <FaGlobe className="text-orange-300" /> Proxy de Destino *
+              </label>
+              <select
+                value={transferTargetProxyId}
+                onChange={(e) => setTransferTargetProxyId(e.target.value)}
+                className="w-full px-5 py-4 bg-dark-700 text-white text-base rounded-xl border-2 border-orange-500/30 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 transition-all cursor-pointer"
+              >
+                <option value="">-- Selecione o proxy de destino --</option>
+                {proxies
+                  .filter(p => p.id !== viewingProxy.id)
+                  .map(p => (
+                    <option key={p.id} value={p.id} className="bg-dark-700">
+                      {p.name} {p.status === 'working' ? '✓' : p.status === 'failed' ? '✗' : '?'} — {p.accounts_count || 0} contas
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* Seleção de contas */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-white font-bold text-sm flex items-center gap-2">
+                  <FaUsers className="text-orange-300" /> Contas a transferir
+                </label>
+                <button
+                  onClick={handleSelectAllAccounts}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-300 text-xs font-bold rounded-lg transition-all"
+                >
+                  {selectedAccountIds.length === proxyAccounts.length ? (
+                    <><FaCheckSquare /> Desmarcar todas</>
+                  ) : (
+                    <><FaSquare /> Selecionar todas</>
+                  )}
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {proxyAccounts.map(account => (
+                  <div
+                    key={account.id}
+                    onClick={() => handleToggleAccount(account.id)}
+                    className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                      selectedAccountIds.includes(account.id)
+                        ? 'bg-orange-500/15 border-orange-500/50'
+                        : 'bg-white/5 border-white/10 hover:border-orange-500/30'
+                    }`}
+                  >
+                    <div className={`flex-shrink-0 text-lg ${selectedAccountIds.includes(account.id) ? 'text-orange-400' : 'text-white/30'}`}>
+                      {selectedAccountIds.includes(account.id) ? <FaCheckSquare /> : <FaSquare />}
+                    </div>
+                    <div className="bg-cyan-500/20 p-1.5 rounded-lg flex-shrink-0">
+                      <FaPhone className="text-cyan-300 text-sm" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-bold text-sm truncate">{account.name || 'Sem nome'}</p>
+                      <p className="text-white/50 text-xs font-mono">{account.phone_number || '—'}</p>
+                    </div>
+                    {account.is_active ? (
+                      <span className="flex-shrink-0 px-2 py-0.5 bg-green-500/20 text-green-300 text-xs font-bold rounded-full">Ativa</span>
+                    ) : (
+                      <span className="flex-shrink-0 px-2 py-0.5 bg-gray-500/20 text-gray-400 text-xs font-bold rounded-full">Inativa</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Summary + Buttons */}
+            <div className="mt-5 pt-4 border-t-2 border-white/10">
+              <p className="text-white/60 text-sm mb-4">
+                <span className="text-orange-300 font-black text-base">{selectedAccountIds.length}</span> conta(s) selecionada(s) para transferência
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowTransferModal(false)}
+                  className="flex-1 px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-all border-2 border-white/20 flex items-center justify-center gap-2"
+                >
+                  <FaTimes /> Cancelar
+                </button>
+                <button
+                  onClick={handleTransferAccounts}
+                  disabled={transferring || !transferTargetProxyId || selectedAccountIds.length === 0}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {transferring ? (
+                    <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Transferindo...</>
+                  ) : (
+                    <><FaExchangeAlt /> Confirmar Transferência</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Criar/Editar */}
       {showModal && (

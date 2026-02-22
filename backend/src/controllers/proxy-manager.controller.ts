@@ -436,5 +436,138 @@ export class ProxyManagerController {
   }
 }
 
+  /**
+   * GET /api/proxies/:id/accounts
+   * Listar contas que estão usando este proxy
+   */
+  async listAccounts(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+
+      const { Pool } = require('pg');
+      const pool = new Pool({
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432'),
+        database: process.env.DB_NAME || 'whatsapp_dispatcher',
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD || 'postgres',
+      });
+
+      const tenantId = (req as any).user?.tenant_id || (req as any).tenant?.id;
+
+      // Verificar se proxy existe e pertence ao tenant
+      const proxyCheck = await pool.query(
+        'SELECT id, name FROM proxies WHERE id = $1 AND tenant_id = $2',
+        [id, tenantId]
+      );
+      if (proxyCheck.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Proxy não encontrado' });
+      }
+
+      const result = await pool.query(
+        `SELECT 
+          wa.id, wa.name, wa.phone_number, wa.status, wa.is_active, wa.created_at
+        FROM whatsapp_accounts wa
+        WHERE wa.proxy_id = $1 AND wa.tenant_id = $2
+        ORDER BY wa.name ASC`,
+        [id, tenantId]
+      );
+
+      res.json({
+        success: true,
+        proxy: proxyCheck.rows[0],
+        data: result.rows,
+        total: result.rows.length
+      });
+    } catch (error: any) {
+      console.error('❌ [ProxyManager] Erro ao listar contas do proxy:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * POST /api/proxies/transfer-accounts
+   * Transferir contas em massa de um proxy para outro
+   * Body: { from_proxy_id, to_proxy_id, account_ids? }
+   */
+  async transferAccounts(req: Request, res: Response) {
+    try {
+      const { from_proxy_id, to_proxy_id, account_ids } = req.body;
+
+      if (!from_proxy_id || !to_proxy_id) {
+        return res.status(400).json({
+          success: false,
+          error: 'from_proxy_id e to_proxy_id são obrigatórios'
+        });
+      }
+
+      if (from_proxy_id === to_proxy_id) {
+        return res.status(400).json({
+          success: false,
+          error: 'Os proxies de origem e destino devem ser diferentes'
+        });
+      }
+
+      const { Pool } = require('pg');
+      const pool = new Pool({
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432'),
+        database: process.env.DB_NAME || 'whatsapp_dispatcher',
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD || 'postgres',
+      });
+
+      const tenantId = (req as any).user?.tenant_id || (req as any).tenant?.id;
+
+      // Verificar se proxies existem e pertencem ao tenant
+      const proxyCheck = await pool.query(
+        'SELECT id, name FROM proxies WHERE id = ANY($1) AND tenant_id = $2',
+        [[from_proxy_id, to_proxy_id], tenantId]
+      );
+      if (proxyCheck.rows.length < 2) {
+        return res.status(404).json({ success: false, error: 'Um ou ambos os proxies não foram encontrados' });
+      }
+
+      let result;
+
+      if (account_ids && Array.isArray(account_ids) && account_ids.length > 0) {
+        // Transferir apenas as contas selecionadas
+        result = await pool.query(
+          `UPDATE whatsapp_accounts
+           SET proxy_id = $1
+           WHERE proxy_id = $2 AND id = ANY($3) AND tenant_id = $4
+           RETURNING id, name, phone_number`,
+          [to_proxy_id, from_proxy_id, account_ids, tenantId]
+        );
+      } else {
+        // Transferir todas as contas do proxy origem
+        result = await pool.query(
+          `UPDATE whatsapp_accounts
+           SET proxy_id = $1
+           WHERE proxy_id = $2 AND tenant_id = $3
+           RETURNING id, name, phone_number`,
+          [to_proxy_id, from_proxy_id, tenantId]
+        );
+      }
+
+      const fromProxy = proxyCheck.rows.find((p: any) => p.id == from_proxy_id);
+      const toProxy = proxyCheck.rows.find((p: any) => p.id == to_proxy_id);
+
+      console.log(`✅ [ProxyManager] ${result.rows.length} conta(s) transferidas de "${fromProxy?.name}" para "${toProxy?.name}"`);
+
+      res.json({
+        success: true,
+        transferred: result.rows.length,
+        accounts: result.rows,
+        from_proxy: fromProxy,
+        to_proxy: toProxy
+      });
+    } catch (error: any) {
+      console.error('❌ [ProxyManager] Erro ao transferir contas:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+}
+
 export const proxyManagerController = new ProxyManagerController();
 
