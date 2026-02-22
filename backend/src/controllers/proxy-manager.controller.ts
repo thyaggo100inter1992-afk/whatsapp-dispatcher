@@ -434,7 +434,6 @@ export class ProxyManagerController {
       res.status(500).json({ success: false, error: error.message });
     }
   }
-}
 
   /**
    * GET /api/proxies/:id/accounts
@@ -570,4 +569,5 @@ export class ProxyManagerController {
 }
 
 export const proxyManagerController = new ProxyManagerController();
+
 
