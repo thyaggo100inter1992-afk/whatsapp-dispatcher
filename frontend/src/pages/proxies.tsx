@@ -1291,6 +1291,7 @@ export default function ProxiesPage() {
                   </>
                 )}
               </div>
+            </div>{/* fecha space-y-6 */}
 
             {/* Botões */}
             <div className="flex gap-4 mt-8 pt-6 border-t-2 border-white/10">
