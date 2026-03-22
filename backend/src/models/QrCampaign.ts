@@ -19,6 +19,7 @@ export interface QrCampaign {
   auto_remove_account_failures?: number;
   schedule_config?: any;
   pause_config?: any;
+  ignore_restrictions?: boolean;
   created_at?: Date;
   updated_at?: Date;
 }
@@ -41,8 +42,8 @@ export class QrCampaignModel {
       
       const result = await client.query(
         `INSERT INTO qr_campaigns 
-         (name, tenant_id, status, scheduled_at, schedule_config, pause_config, total_contacts)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (name, tenant_id, status, scheduled_at, schedule_config, pause_config, total_contacts, ignore_restrictions)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING *`,
         [
           campaign.name,
@@ -52,6 +53,7 @@ export class QrCampaignModel {
           JSON.stringify(campaign.schedule_config || {}),
           JSON.stringify(campaign.pause_config || {}),
           campaign.total_contacts || 0,
+          campaign.ignore_restrictions || false,
         ]
       );
       

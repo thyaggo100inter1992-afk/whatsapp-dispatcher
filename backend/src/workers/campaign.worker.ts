@@ -822,6 +822,10 @@ class CampaignWorker {
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         
         // 🚨 VERIFICAR LISTA DE RESTRIÇÃO ANTES DE ENVIAR
+        // Apenas se a campanha NÃO tiver a flag ignore_restrictions ativada
+        if (campaign.ignore_restrictions) {
+          console.log(`⚠️  [CAMPANHA] ignore_restrictions=true → Pulando verificação de restrição para ${contact.phone_number}`);
+        } else {
         console.log('🔍 [CAMPANHA] Verificando lista de restrição...');
         console.log(`   ⚠️  REGRA: Se número está na lista, bloqueia em TODAS as contas!`);
         console.log(`   📞 Número: ${contact.phone_number}`);
@@ -879,6 +883,7 @@ class CampaignWorker {
         console.log(`   📞 Número: ${contact.phone_number}`);
         console.log(`   ✅ PROSSEGUINDO COM ENVIO...`);
         console.log('═══════════════════════════════════════════════════\n');
+        } // fim do bloco else (ignore_restrictions)
         
         // 📱 VERIFICAÇÃO DE WHATSAPP DESABILITADA
         // Motivo: Endpoint /contacts é mais restritivo que /messages

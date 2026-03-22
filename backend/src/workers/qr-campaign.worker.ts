@@ -1032,6 +1032,10 @@ class QrCampaignWorker {
       console.log(`🎯 [QR Worker] Contato ${contact.phone_number} → Instância ${template.instance_name} (ID: ${template.instance_id}) → Template ${template.template_name} [instanceIdx=${instanceIndex}, cycle=${cycleNumber}, templateIdx=${templateIndex}]`);
       
       // 🚨 VERIFICAR LISTA DE RESTRIÇÃO ANTES DE ENVIAR
+      // Apenas se a campanha NÃO tiver a flag ignore_restrictions ativada
+      if (campaign.ignore_restrictions) {
+        console.log(`⚠️  [QR CAMPANHA] ignore_restrictions=true → Pulando verificação de restrição para ${contact.phone_number}`);
+      } else {
       console.log('🔍 [QR CAMPANHA] Verificando lista de restrição...');
       console.log(`   ⚠️  REGRA: Se número está na lista, bloqueia em TODAS as contas!`);
       console.log(`   📞 Número: ${contact.phone_number}`);
@@ -1087,6 +1091,7 @@ class QrCampaignWorker {
       console.log(`   📞 Número: ${contact.phone_number}`);
       console.log(`   ✅ PROSSEGUINDO COM ENVIO...`);
       console.log('═══════════════════════════════════════════════════\n');
+      } // fim do bloco else (ignore_restrictions)
 
       // ✅ VERIFICAR DELAY: Aguardar intervalo desde o último envio válido
       // 🔧 CORREÇÃO: Garantir que o interval_seconds seja um número válido
