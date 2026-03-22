@@ -301,6 +301,7 @@ interface QrCampaign {
   pause_config: PauseConfig;
   sent_count: number;
   total_contacts: number;
+  ignore_restrictions?: boolean;
   created_at?: Date;
   scheduled_at?: Date;
 }
