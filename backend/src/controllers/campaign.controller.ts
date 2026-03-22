@@ -20,6 +20,7 @@ export class CampaignController {
         scheduled_at,
         schedule_config,
         pause_config,
+        ignore_restrictions,
       } = req.body;
 
       const tenantId = (req as any).tenant?.id;
@@ -48,6 +49,11 @@ export class CampaignController {
 
       // Criar campanha
       // 🚨 VERIFICAR LISTA DE RESTRIÇÃO **ANTES** DE CRIAR A CAMPANHA
+      // Se ignore_restrictions = true, o usuário optou explicitamente por "Manter Todos" no modal
+      if (ignore_restrictions) {
+        console.log('⚠️  ignore_restrictions=true → usuário optou por MANTER TODOS os contatos (incluindo restritos)');
+        console.log('⚠️  Pulando verificação de lista de restrição na criação da campanha.');
+      } else {
       console.log('═══════════════════════════════════════════════════════');
       console.log('🔍 VERIFICANDO LISTA DE RESTRIÇÃO (INCLUI "SEM WHATSAPP")');
       console.log('═══════════════════════════════════════════════════════');
@@ -132,6 +138,7 @@ export class CampaignController {
           security_block: true,
         });
       }
+      } // fim do bloco if (!ignore_restrictions)
 
       console.log(`\n🚀 ===== CRIANDO CAMPANHA =====`);
       console.log(`   📛 Nome: ${name}`);

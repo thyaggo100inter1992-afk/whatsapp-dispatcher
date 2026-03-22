@@ -719,13 +719,16 @@ export default function CriarCampanhaQR() {
   const handleExcludeRestricted = async () => {
     if (!restrictionCheckResult) return;
     
-    // Filtrar contatos removendo os restritos
+    // Normalizar número para comparação robusta (remove espaços e caracteres não numéricos exceto +)
+    const normalizePhone = (phone: string) => String(phone || '').trim().replace(/\s+/g, '').replace(/[^\d+]/g, '');
+
+    // Filtrar contatos removendo os restritos (comparação normalizada para evitar problemas de formato)
     const restrictedPhones = [...new Set(restrictionCheckResult.restricted_details.map(
-      (d: any) => d.phone_number
+      (d: any) => normalizePhone(d.phone_number)
     ))];
     
     const filteredContacts = contacts.filter(
-      c => !restrictedPhones.includes(c.phone)
+      c => !restrictedPhones.includes(normalizePhone(c.phone))
     );
     
     console.log(`🗑️ Excluindo ${restrictedPhones.length} contatos restritos`);
@@ -738,10 +741,10 @@ export default function CriarCampanhaQR() {
   const handleKeepAll = async () => {
     console.log(`✅ Mantendo todos os ${contacts.length} contatos (incluindo restritos)`);
     setShowRestrictionModal(false);
-    await createCampaign(contacts);
+    await createCampaign(contacts, true); // ignore_restrictions = true: usuário optou por manter todos
   };
 
-  const createCampaign = async (contactsToUse: Contact[]) => {
+  const createCampaign = async (contactsToUse: Contact[], ignoreRestrictions: boolean = false) => {
     setLoading(true);
     try {
       const scheduled_at = scheduleDate && scheduleTime 
@@ -766,7 +769,8 @@ export default function CriarCampanhaQR() {
         pause_config: {
           pause_after: parseInt(pauseAfter),
           pause_duration_minutes: parseInt(pauseDuration)
-        }
+        },
+        ignore_restrictions: ignoreRestrictions,
       };
 
       await qrCampaignsAPI.create(data);

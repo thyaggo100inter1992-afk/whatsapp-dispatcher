@@ -38,6 +38,7 @@ export class QrCampaignController {
         scheduled_at,
         schedule_config,
         pause_config,
+        ignore_restrictions,
       } = req.body;
 
       // ✅ FIX: Adicionando tenant_id ao criar campanha
@@ -66,6 +67,11 @@ export class QrCampaignController {
       }
 
       // 🚨 VERIFICAR LISTA DE RESTRIÇÃO **ANTES** DE CRIAR A CAMPANHA
+      // Se ignore_restrictions = true, o usuário optou explicitamente por "Manter Todos" no modal
+      if (ignore_restrictions) {
+        console.log('⚠️  ignore_restrictions=true → usuário optou por MANTER TODOS os contatos (incluindo restritos)');
+        console.log('⚠️  Pulando verificação de lista de restrição na criação da campanha QR.');
+      } else {
       console.log('═══════════════════════════════════════════════════════');
       console.log('🔍 VERIFICANDO LISTA DE RESTRIÇÃO (QR ENVIO EM ANDAMENTO)');
       console.log('═══════════════════════════════════════════════════════');
@@ -147,6 +153,7 @@ export class QrCampaignController {
           security_block: true,
         });
       }
+      } // fim do bloco if (!ignore_restrictions)
 
       // O frontend envia horário de Brasília, precisamos converter para UTC
       let scheduledDate = undefined;
