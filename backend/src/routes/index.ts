@@ -78,6 +78,11 @@ const landingRoutes = require('./public/landing.routes');
 router.use('/public/landing', landingRoutes);
 console.log('✅ Rotas de landing page pública registradas (sem autenticação)');
 
+// API Pública - Lista de Restrição (autenticação por email+senha no body)
+const restrictionListPublicRoutes = require('./public/restriction-list-public.routes');
+router.use('/public/restriction-list', restrictionListPublicRoutes);
+console.log('✅ Rota /public/restriction-list registrada (API pública com email+senha)');
+
 // Screenshots públicos
 const { getPublicScreenshots } = require('../controllers/admin/screenshots.controller');
 router.get('/public/screenshots', getPublicScreenshots);
