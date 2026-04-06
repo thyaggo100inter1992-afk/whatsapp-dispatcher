@@ -255,4 +255,167 @@ router.post('/add', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/public/restriction-list/consultar
+ * Consulta se um ou mais telefones estão em alguma lista de restrição
+ *
+ * Body:
+ *   email     (obrigatório) - Email de login
+ *   senha     (obrigatório) - Senha de login
+ *   telefone  (obrigatório) - Número único OU array de números
+ *             Ex: "5511999999999" ou ["5511999999999", "5521888888888"]
+ */
+router.post('/consultar', async (req, res) => {
+  try {
+    const { email, senha, telefone } = req.body;
+
+    // ── Validação ──────────────────────────────────────────────────────────
+    if (!email || !senha) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Email e senha são obrigatórios',
+      });
+    }
+
+    if (!telefone) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'O campo telefone é obrigatório (pode ser um número ou uma lista)',
+      });
+    }
+
+    // ── Autenticação ───────────────────────────────────────────────────────
+    const userResult = await pool.query(
+      `SELECT u.id, u.tenant_id, u.senha_hash, u.ativo, t.ativo as tenant_ativo
+       FROM tenant_users u
+       INNER JOIN tenants t ON t.id = u.tenant_id
+       WHERE LOWER(u.email) = LOWER($1)`,
+      [email]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ sucesso: false, mensagem: 'Email ou senha inválidos' });
+    }
+
+    const usuario = userResult.rows[0];
+
+    if (!usuario.ativo || !usuario.tenant_ativo) {
+      return res.status(403).json({ sucesso: false, mensagem: 'Conta inativa ou suspensa' });
+    }
+
+    const senhaValida = await bcrypt.compare(senha, usuario.senha_hash);
+    if (!senhaValida) {
+      return res.status(401).json({ sucesso: false, mensagem: 'Email ou senha inválidos' });
+    }
+
+    const tenantId = usuario.tenant_id;
+
+    // ── Normalizar lista de telefones ──────────────────────────────────────
+    const telefonesInput = Array.isArray(telefone) ? telefone : [telefone];
+
+    // Para cada telefone, gerar versão principal + alternativa
+    const todasVariacoes = [];
+    const mapaVariacoes = {}; // variacao -> telefone original
+
+    for (const tel of telefonesInput) {
+      const principal = normalizarTelefone(tel);
+      const alternativo = gerarNumeroAlternativo(principal);
+
+      todasVariacoes.push(principal);
+      mapaVariacoes[principal] = tel;
+
+      if (alternativo && alternativo !== principal) {
+        todasVariacoes.push(alternativo);
+        mapaVariacoes[alternativo] = tel;
+      }
+    }
+
+    // ── Buscar nas listas ──────────────────────────────────────────────────
+    const resultado = await pool.query(
+      `SELECT
+         e.phone_number,
+         e.list_type,
+         e.contact_name,
+         e.added_at,
+         e.notes,
+         t.name as nome_lista
+       FROM restriction_list_entries e
+       JOIN restriction_list_types t ON e.list_type = t.id
+       WHERE e.tenant_id = $1
+         AND e.phone_number = ANY($2::text[])
+         AND (e.expires_at IS NULL OR e.expires_at > NOW())
+       ORDER BY e.added_at DESC`,
+      [tenantId, todasVariacoes]
+    );
+
+    // ── Mapeamento de list_type para portugues ─────────────────────────────
+    const LIST_TYPE_PT = {
+      do_not_disturb: 'nao_me_perturbe',
+      blocked: 'bloqueado',
+      not_interested: 'sem_interesse',
+      no_whatsapp: 'sem_whatsapp',
+    };
+
+    const LIST_NOME_PT = {
+      do_not_disturb: 'Não Me Perturbe',
+      blocked: 'Bloqueado',
+      not_interested: 'Sem Interesse',
+      no_whatsapp: 'Sem WhatsApp',
+    };
+
+    // ── Montar resposta agrupada por telefone original ─────────────────────
+    const agrupado = {};
+
+    // Inicializar todos os telefones como "nao restrito"
+    for (const tel of telefonesInput) {
+      agrupado[tel] = {
+        telefone: tel,
+        restrito: false,
+        listas: [],
+      };
+    }
+
+    // Preencher com os encontrados
+    for (const row of resultado.rows) {
+      const telOriginal = mapaVariacoes[row.phone_number];
+      if (!telOriginal) continue;
+
+      agrupado[telOriginal].restrito = true;
+
+      const listaJaAdicionada = agrupado[telOriginal].listas.find(
+        l => l.codigo === LIST_TYPE_PT[row.list_type]
+      );
+
+      if (!listaJaAdicionada) {
+        agrupado[telOriginal].listas.push({
+          codigo: LIST_TYPE_PT[row.list_type] || row.list_type,
+          nome: LIST_NOME_PT[row.list_type] || row.nome_lista,
+          adicionado_em: row.added_at,
+          nome_contato: row.contact_name || null,
+          observacao: row.notes || null,
+        });
+      }
+    }
+
+    const resultados = Object.values(agrupado);
+    const totalRestritos = resultados.filter(r => r.restrito).length;
+    const totalLivres = resultados.filter(r => !r.restrito).length;
+
+    return res.json({
+      sucesso: true,
+      total_consultados: resultados.length,
+      total_restritos: totalRestritos,
+      total_livres: totalLivres,
+      resultados,
+    });
+
+  } catch (erro) {
+    console.error('❌ Erro na consulta pública de lista de restrição:', erro);
+    return res.status(500).json({
+      sucesso: false,
+      mensagem: 'Erro interno do servidor. Tente novamente.',
+    });
+  }
+});
+
 module.exports = router;
