@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { 
   FaBuilding, FaSignOutAlt, FaUser, FaTachometerAlt, FaCreditCard,
-  FaChartBar, FaServer, FaDesktop, FaCloudUploadAlt, FaCog, FaUserCircle, FaVideo, FaFileInvoiceDollar, FaGlobe, FaShieldAlt, FaPaperPlane
+  FaChartBar, FaServer, FaDesktop, FaCloudUploadAlt, FaCog, FaUserCircle, FaVideo, FaFileInvoiceDollar, FaGlobe, FaShieldAlt, FaPaperPlane, FaPlug
 } from 'react-icons/fa';
 import { useAuth } from '@/contexts/AuthContext';
 import SystemLogo from '@/components/SystemLogo';
@@ -56,6 +56,7 @@ export default function AdminLayout({ children, title, subtitle, icon, currentPa
     { href: '/admin/logs-frontend', label: 'Frontend', icon: <FaDesktop />, page: 'logs-frontend' },
     { href: '/admin/arquivos', label: 'Arquivos', icon: <FaCloudUploadAlt />, page: 'arquivos' },
     { href: '/admin/tutoriais', label: 'Tutoriais', icon: <FaVideo />, page: 'tutoriais' },
+    { href: '/admin/api-externa', label: 'API Externa', icon: <FaPlug />, page: 'api-externa' },
   ];
 
   return (
