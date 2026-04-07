@@ -256,6 +256,126 @@ router.post('/add', async (req, res) => {
 });
 
 /**
+ * POST /api/public/restriction-list/remover
+ * Remove um telefone de uma lista de restrição específica (ou de todas as listas)
+ *
+ * Body:
+ *   email    (obrigatório) - Email de login
+ *   senha    (obrigatório) - Senha de login
+ *   telefone (obrigatório) - Número do telefone
+ *   lista    (opcional)    - Lista específica para remover. Se omitido, remove de TODAS as listas
+ */
+router.post('/remover', async (req, res) => {
+  try {
+    const { email, senha, telefone, lista } = req.body;
+
+    // ── Validação ──────────────────────────────────────────────────────────
+    if (!email || !senha) {
+      return res.status(400).json({ sucesso: false, mensagem: 'Email e senha são obrigatórios' });
+    }
+    if (!telefone) {
+      return res.status(400).json({ sucesso: false, mensagem: 'O campo telefone é obrigatório' });
+    }
+    if (lista && !LISTAS_VALIDAS[lista]) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: `Lista inválida: "${lista}". Use: nao_me_perturbe, bloqueado, sem_interesse ou sem_whatsapp`,
+      });
+    }
+
+    // ── Autenticação ───────────────────────────────────────────────────────
+    const userResult = await pool.query(
+      `SELECT u.id, u.tenant_id, u.senha_hash, u.ativo, t.ativo as tenant_ativo
+       FROM tenant_users u
+       INNER JOIN tenants t ON t.id = u.tenant_id
+       WHERE LOWER(u.email) = LOWER($1)`,
+      [email]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ sucesso: false, mensagem: 'Email ou senha inválidos' });
+    }
+
+    const usuario = userResult.rows[0];
+    if (!usuario.ativo || !usuario.tenant_ativo) {
+      return res.status(403).json({ sucesso: false, mensagem: 'Conta inativa ou suspensa' });
+    }
+
+    const senhaValida = await bcrypt.compare(senha, usuario.senha_hash);
+    if (!senhaValida) {
+      return res.status(401).json({ sucesso: false, mensagem: 'Email ou senha inválidos' });
+    }
+
+    const tenantId = usuario.tenant_id;
+
+    // ── Normalizar telefone e gerar variações ──────────────────────────────
+    const telefoneNormalizado = normalizarTelefone(telefone);
+    const telefoneAlternativo = gerarNumeroAlternativo(telefoneNormalizado);
+
+    const numerosParaRemover = [telefoneNormalizado];
+    if (telefoneAlternativo && telefoneAlternativo !== telefoneNormalizado) {
+      numerosParaRemover.push(telefoneAlternativo);
+    }
+
+    // ── Remover registros ──────────────────────────────────────────────────
+    let resultado;
+
+    if (lista) {
+      // Remover de uma lista específica
+      const listType = LISTAS_VALIDAS[lista];
+      resultado = await pool.query(
+        `DELETE FROM restriction_list_entries
+         WHERE tenant_id = $1
+           AND list_type = $2
+           AND phone_number = ANY($3::text[])
+         RETURNING id, phone_number, list_type`,
+        [tenantId, listType, numerosParaRemover]
+      );
+    } else {
+      // Remover de TODAS as listas
+      resultado = await pool.query(
+        `DELETE FROM restriction_list_entries
+         WHERE tenant_id = $1
+           AND phone_number = ANY($2::text[])
+         RETURNING id, phone_number, list_type`,
+        [tenantId, numerosParaRemover]
+      );
+    }
+
+    if (resultado.rowCount === 0) {
+      return res.status(404).json({
+        sucesso: false,
+        mensagem: lista
+          ? `Telefone não encontrado na lista "${NOMES_LISTAS[lista]}"`
+          : 'Telefone não encontrado em nenhuma lista de restrição',
+      });
+    }
+
+    // Montar resumo das listas onde foi removido
+    const LIST_NOME_PT = {
+      do_not_disturb: 'Não Me Perturbe',
+      blocked: 'Bloqueado',
+      not_interested: 'Sem Interesse',
+      no_whatsapp: 'Sem WhatsApp',
+    };
+
+    const listasRemovidas = [...new Set(resultado.rows.map(r => LIST_NOME_PT[r.list_type] || r.list_type))];
+
+    return res.json({
+      sucesso: true,
+      mensagem: `Telefone removido com sucesso`,
+      registros_removidos: resultado.rowCount,
+      listas_removidas: listasRemovidas,
+      telefone: telefoneNormalizado,
+    });
+
+  } catch (erro) {
+    console.error('❌ Erro na remoção pública de lista de restrição:', erro);
+    return res.status(500).json({ sucesso: false, mensagem: 'Erro interno do servidor.' });
+  }
+});
+
+/**
  * POST /api/public/restriction-list/consultar
  * Consulta se um ou mais telefones estão em alguma lista de restrição
  *

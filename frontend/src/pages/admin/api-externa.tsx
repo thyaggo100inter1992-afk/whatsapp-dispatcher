@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import AdminLayout from '@/components/admin/AdminLayout';
-import { FaPlug, FaCopy, FaCheck, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaLock, FaBan } from 'react-icons/fa';
+import { FaPlug, FaCopy, FaCheck, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaLock, FaBan, FaTrash } from 'react-icons/fa';
 
 // ── Componente de bloco de código copiável ─────────────────────────────────
 function CodeBlock({ code }: { code: string }) {
@@ -268,6 +268,86 @@ Content-Type: application/json
     }
   ]
 }`} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ENDPOINT 3 — REMOVER */}
+      <div className="bg-gray-800/50 border border-red-700/50 rounded-xl overflow-hidden">
+        <div className="bg-red-900/40 px-6 py-4 flex items-center gap-3 border-b border-red-700/50">
+          <MethodBadge method="POST" />
+          <code className="text-white font-mono text-sm">/api/public/restriction-list/remover</code>
+          <span className="text-gray-400 text-sm ml-auto">Remover telefone da lista</span>
+        </div>
+        <div className="p-6 space-y-5">
+          <p className="text-gray-300">
+            Remove um telefone de uma lista específica ou de{' '}
+            <strong className="text-white">todas as listas</strong> de uma vez.
+            O sistema remove automaticamente as duas versões do número (com e sem o 9º dígito).
+          </p>
+
+          <div>
+            <h4 className="text-white font-semibold mb-3">Campos</h4>
+            <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+              <Campo nome="email"    tipo="string" obrigatorio={true}  descricao="Email de login do usuário" />
+              <Campo nome="senha"    tipo="string" obrigatorio={true}  descricao="Senha do usuário" />
+              <Campo nome="telefone" tipo="string" obrigatorio={true}  descricao="Número do telefone a ser removido" />
+              <Campo nome="lista"    tipo="string" obrigatorio={false} descricao="Lista específica: nao_me_perturbe | bloqueado | sem_interesse | sem_whatsapp. Se omitido, remove de TODAS as listas" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <h4 className="text-white font-semibold mb-3">Remover de uma lista específica</h4>
+              <CodeBlock code={`POST ${baseUrl}/api/public/restriction-list/remover
+Content-Type: application/json
+
+{
+  "email": "usuario@empresa.com",
+  "senha": "sua_senha",
+  "telefone": "5511999999999",
+  "lista": "bloqueado"
+}`} />
+            </div>
+            <div>
+              <h4 className="text-white font-semibold mb-3">Remover de TODAS as listas</h4>
+              <CodeBlock code={`POST ${baseUrl}/api/public/restriction-list/remover
+Content-Type: application/json
+
+{
+  "email": "usuario@empresa.com",
+  "senha": "sua_senha",
+  "telefone": "5511999999999"
+}`} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                <FaCheckCircle className="text-green-400" /> Sucesso
+              </h4>
+              <CodeBlock code={`{
+  "sucesso": true,
+  "mensagem": "Telefone removido com sucesso",
+  "registros_removidos": 2,
+  "listas_removidas": ["Bloqueado"],
+  "telefone": "5511999999999"
+}`} />
+            </div>
+            <div>
+              <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                <FaTimesCircle className="text-red-400" /> Erros
+              </h4>
+              <CodeBlock code={`// 404 - Telefone não encontrado
+{ "sucesso": false, "mensagem": "Telefone não encontrado na lista \\"Bloqueado\\"" }
+
+// 401 - Credenciais inválidas
+{ "sucesso": false, "mensagem": "Email ou senha inválidos" }
+
+// 400 - Lista inválida
+{ "sucesso": false, "mensagem": "Lista inválida: \\"xxx\\"..." }`} />
             </div>
           </div>
         </div>
