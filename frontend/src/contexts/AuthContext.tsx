@@ -231,6 +231,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     localStorage.removeItem('@WhatsAppDispatcher:refreshToken');
     localStorage.removeItem('@WhatsAppDispatcher:user');
     localStorage.removeItem('@WhatsAppDispatcher:tenant');
+    // Limpar cache de permissões ao sair para não vazar dados entre sessões
+    sessionStorage.removeItem('@WhatsAppDispatcher:permissions');
 
     // Remover header do axios
     delete axios.defaults.headers.common['Authorization'];

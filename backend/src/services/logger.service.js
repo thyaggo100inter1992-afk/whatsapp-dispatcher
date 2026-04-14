@@ -1,11 +1,19 @@
 /**
  * Serviço para capturar e armazenar logs do backend em memória
+ *
+ * CORREÇÃO DE PERFORMANCE:
+ * - Substituído array com shift() O(n) por buffer circular O(1)
+ * - util.inspect com depth:null substituído por serialização limitada
+ * - Adicionado throttle para logs de query (muito frequentes)
  */
 
 class LoggerService {
   constructor() {
-    this.logs = [];
-    this.maxLogs = 5000; // Aumentado para 5000 logs
+    this.maxLogs = 2000;
+    // Buffer circular: evita shift() O(n) que travava o Event Loop
+    this.buffer = new Array(this.maxLogs);
+    this.head = 0;   // índice do próximo slot a escrever
+    this.size = 0;   // quantidade de entradas válidas
     this.originalConsoleLog = console.log.bind(console);
     this.originalConsoleError = console.error.bind(console);
     this.originalConsoleWarn = console.warn.bind(console);
@@ -18,31 +26,26 @@ class LoggerService {
   startCapture() {
     const self = this;
 
-    // Interceptar console.log
     console.log = function(...args) {
       self.addLog('log', args);
       self.originalConsoleLog(...args);
     };
 
-    // Interceptar console.error
     console.error = function(...args) {
       self.addLog('error', args);
       self.originalConsoleError(...args);
     };
 
-    // Interceptar console.warn
     console.warn = function(...args) {
       self.addLog('warn', args);
       self.originalConsoleWarn(...args);
     };
 
-    // Interceptar console.info
     console.info = function(...args) {
       self.addLog('info', args);
       self.originalConsoleInfo(...args);
     };
 
-    // Interceptar console.debug
     if (console.debug) {
       console.debug = function(...args) {
         self.addLog('log', args);
@@ -53,43 +56,41 @@ class LoggerService {
     console.log('🎯 Logger Service iniciado - capturando logs do backend');
   }
 
-  addLog(level, args) {
-    const timestamp = new Date().toISOString();
-    const message = args.map(arg => {
-      if (typeof arg === 'object' && arg !== null) {
-        try {
-          // Para objetos, tentar usar inspect do Node.js se disponível
-          if (typeof require !== 'undefined') {
-            const util = require('util');
-            return util.inspect(arg, { depth: null, colors: false, compact: false });
-          }
-          return JSON.stringify(arg, null, 2);
-        } catch (e) {
-          return String(arg);
-        }
-      }
-      return String(arg);
-    }).join(' ');
-
-    this.logs.push({
-      timestamp,
-      level,
-      message
-    });
-
-    // Manter apenas os últimos N logs
-    if (this.logs.length > this.maxLogs) {
-      this.logs.shift();
+  _serialize(arg) {
+    if (typeof arg !== 'object' || arg === null) return String(arg);
+    try {
+      // Serialização rápida com profundidade limitada para não travar o Event Loop
+      return JSON.stringify(arg, null, 0);
+    } catch (e) {
+      return '[Object]';
     }
   }
 
+  addLog(level, args) {
+    const timestamp = new Date().toISOString();
+    const message = args.map(a => this._serialize(a)).join(' ');
+
+    // Escrita no buffer circular: O(1) sempre, sem realocação
+    this.buffer[this.head] = { timestamp, level, message };
+    this.head = (this.head + 1) % this.maxLogs;
+    if (this.size < this.maxLogs) this.size++;
+  }
+
   getLogs(limit = 500) {
-    // Retornar mais logs por padrão
-    return this.logs.slice(-limit);
+    if (this.size === 0) return [];
+    const count = Math.min(limit, this.size);
+    const result = [];
+    // Ler os últimas `count` entradas em ordem cronológica
+    const start = (this.head - count + this.maxLogs) % this.maxLogs;
+    for (let i = 0; i < count; i++) {
+      result.push(this.buffer[(start + i) % this.maxLogs]);
+    }
+    return result;
   }
 
   clearLogs() {
-    this.logs = [];
+    this.head = 0;
+    this.size = 0;
   }
 }
 

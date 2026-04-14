@@ -12,6 +12,10 @@ const JWT_REFRESH_SECRET: Secret = process.env.JWT_REFRESH_SECRET || `${JWT_SECR
 const allowedRoutesForBlocked = ['/gestao', '/payments', '/logs', '/permissions', '/system-settings'];
 const validStatuses = ['active', 'trial'];
 
+// Cache de dados do usuário para evitar query ao banco em cada requisição
+const _userCache = new Map<number, { user: any; ts: number }>();
+const USER_CACHE_TTL = 60 * 1000; // 60 segundos
+
 const ACCESS_TOKEN_EXPIRATION = process.env.JWT_EXPIRATION || '7d';
 const REFRESH_TOKEN_EXPIRATION = process.env.JWT_REFRESH_EXPIRATION || '30d';
 
@@ -69,6 +73,12 @@ const decodeToken = (token: string) => {
 };
 
 const fetchUser = async (userId: number) => {
+  const now = Date.now();
+  const cached = _userCache.get(userId);
+  if (cached && (now - cached.ts) < USER_CACHE_TTL) {
+    return cached.user;
+  }
+
   const result = await pool.query(
     `SELECT 
       u.id,
@@ -90,10 +100,22 @@ const fetchUser = async (userId: number) => {
     [userId]
   );
 
-  return result.rows[0];
+  const user = result.rows[0] || null;
+  if (user) {
+    _userCache.set(userId, { user, ts: now });
+  }
+  return user;
 };
 
+// Throttle para updateTenantLastAccess — máximo 1x por minuto por tenant
+const _tenantAccessThrottle = new Map<number, number>();
+const TENANT_ACCESS_THROTTLE = 60 * 1000;
+
 const updateTenantLastAccess = (tenantId: number) => {
+  const now = Date.now();
+  const last = _tenantAccessThrottle.get(tenantId);
+  if (last && (now - last) < TENANT_ACCESS_THROTTLE) return;
+  _tenantAccessThrottle.set(tenantId, now);
   pool
     .query('UPDATE tenants SET data_ultimo_acesso = NOW() WHERE id = $1', [tenantId])
     .catch((err) => console.error('Erro ao atualizar último acesso:', err));
@@ -137,7 +159,8 @@ export const authenticate = async (
       return;
     }
 
-    await sessionService.updateLastActivity(token);
+    // Fire-and-forget com throttle — não bloqueia a requisição HTTP
+    sessionService.updateLastActivity(token);
 
     const isAllowedRoute = allowedRoutesForBlocked.some((route) => req.originalUrl.includes(route));
     const isBlocked = user.tenant_status === 'blocked';

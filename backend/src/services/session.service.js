@@ -1,10 +1,23 @@
 /**
  * Serviço de Gerenciamento de Sessões
  * Controla sessões ativas dos usuários e previne logins simultâneos
+ *
+ * OTIMIZAÇÕES DE PERFORMANCE:
+ * - Cache in-memory para isSessionValid (TTL 60s) — evita query por request
+ * - Throttle para updateLastActivity (máx 1x por minuto por sessão)
+ * - Throttle para updateTenantLastAccess (máx 1x por minuto por tenant)
  */
 
 const crypto = require('crypto');
 const { pool } = require('../database/connection');
+
+// Cache de validação de sessão: token_hash -> { valid, ts }
+const _sessionValidCache = new Map();
+const SESSION_VALID_TTL = 60 * 1000; // 60 segundos
+
+// Throttle de updateLastActivity: token_hash -> timestamp último update
+const _lastActivityThrottle = new Map();
+const LAST_ACTIVITY_THROTTLE = 60 * 1000; // máximo 1 update/min por sessão
 
 class SessionService {
   /**
@@ -69,6 +82,7 @@ class SessionService {
 
   /**
    * Verifica se uma sessão é válida
+   * Com cache in-memory de 60s: evita query ao banco em cada requisição HTTP.
    * @param {string} accessToken - JWT token de acesso
    * @param {number} userId - ID do usuário
    * @returns {Promise<boolean>} true se sessão é válida, false caso contrário
@@ -76,9 +90,17 @@ class SessionService {
   async isSessionValid(accessToken, userId) {
     try {
       const sessionToken = this.generateSessionToken(accessToken);
+      const cacheKey = `${sessionToken}:${userId}`;
+      const now = Date.now();
+
+      // Verificar cache antes de ir ao banco
+      const cached = _sessionValidCache.get(cacheKey);
+      if (cached && (now - cached.ts) < SESSION_VALID_TTL) {
+        return cached.valid;
+      }
 
       const result = await pool.query(
-        `SELECT * FROM user_sessions 
+        `SELECT id FROM user_sessions 
          WHERE session_token = $1 
          AND user_id = $2 
          AND is_active = true 
@@ -90,6 +112,10 @@ class SessionService {
 
       if (!isValid) {
         console.log(`⚠️  Sessão inválida ou expirada para usuário ${userId}`);
+        // Não cachear resultado inválido — força nova verificação
+        _sessionValidCache.delete(cacheKey);
+      } else {
+        _sessionValidCache.set(cacheKey, { valid: true, ts: now });
       }
 
       return isValid;
@@ -114,6 +140,11 @@ class SessionService {
          WHERE session_token = $1`,
         [sessionToken]
       );
+
+      // Limpar cache ao invalidar sessão
+      for (const key of _sessionValidCache.keys()) {
+        if (key.startsWith(sessionToken)) _sessionValidCache.delete(key);
+      }
 
       console.log(`🚪 Sessão invalidada (Token: ${sessionToken.substring(0, 10)}...)`);
 
@@ -149,19 +180,29 @@ class SessionService {
 
   /**
    * Atualiza a última atividade da sessão
+   * Com throttle: executa no máximo 1x por minuto por sessão para não sobrecarregar o banco.
    * @param {string} accessToken - JWT token de acesso
    * @returns {Promise<boolean>}
    */
   async updateLastActivity(accessToken) {
     try {
       const sessionToken = this.generateSessionToken(accessToken);
+      const now = Date.now();
 
-      await pool.query(
+      const lastUpdate = _lastActivityThrottle.get(sessionToken);
+      if (lastUpdate && (now - lastUpdate) < LAST_ACTIVITY_THROTTLE) {
+        return true; // Throttle: pular update
+      }
+
+      _lastActivityThrottle.set(sessionToken, now);
+
+      // Fire-and-forget: não bloquear a requisição HTTP
+      pool.query(
         `UPDATE user_sessions 
          SET last_activity = NOW() 
          WHERE session_token = $1 AND is_active = true`,
         [sessionToken]
-      );
+      ).catch((err) => console.error('❌ Erro ao atualizar última atividade:', err));
 
       return true;
     } catch (error) {

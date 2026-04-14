@@ -20,19 +20,9 @@ async function getCampaignStatus(campaignId: number, tenantId?: number): Promise
     return result.rows[0]?.status || null;
   }
 
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
-    const result = await client.query(`SELECT status FROM qr_campaigns WHERE id = $1`, [campaignId]);
-    await client.query('COMMIT');
-    return result.rows[0]?.status || null;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  // Usar queryWithRLS para evitar duplicação de lógica de pool
+  const result = await queryWithRLS(tenantId, `SELECT status FROM qr_campaigns WHERE id = $1`, [campaignId]);
+  return result.rows[0]?.status || null;
 }
 
 /**

@@ -107,9 +107,11 @@ class CampaignWorker {
   private pauseState: Map<number, { startedAt: Date; durationMinutes: number }> = new Map();
   private autoPausedCampaigns: Set<number> = new Set(); // Campanhas pausadas automaticamente pelo worker
   
-  // ⚡ NOVO: Cache de Health Check para evitar chamadas duplicadas na mesma conta
+  // ⚡ Cache de Health Check: evita chamadas duplicadas e limita frequência
   private healthCheckCache: Map<number, { timestamp: number; checking: Promise<void> | null }> = new Map();
-  private readonly HEALTH_CHECK_CACHE_TTL = 30000; // 30 segundos
+  // Aumentado de 30s para 5 minutos: health check é custoso (chamada HTTP externa à Meta)
+  // Rodar a cada 5s estava causando dezenas de chamadas simultâneas que bloqueavam o servidor
+  private readonly HEALTH_CHECK_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
   
   // 🔥 CORREÇÃO: Contador de mensagens do ciclo atual POR CAMPANHA
   // Cada campanha tem seu próprio contador isolado para a pausa programada
@@ -431,7 +433,7 @@ class CampaignWorker {
 
     this.isRunning = true;
     console.log('🚀 Campaign Worker iniciado!');
-    console.log('🔄 Verificando campanhas a cada 5 segundos...');
+    console.log('🔄 Verificando campanhas a cada 10 segundos...');
 
     // Loop principal do worker
     while (this.isRunning) {
@@ -441,8 +443,8 @@ class CampaignWorker {
         console.error('❌ Erro no worker:', error);
       }
 
-      // Aguardar 5 segundos antes da próxima verificação (reduzido para detectar novas campanhas mais rápido)
-      await this.sleep(5000);
+      // Aguardar 10 segundos (era 5s). Reduzir polling alivia o banco e o Event Loop.
+      await this.sleep(10000);
     }
   }
 
@@ -452,8 +454,6 @@ class CampaignWorker {
   }
 
   private async processPendingCampaigns() {
-    console.log('🔍 [DEBUG] Buscando campanhas pendentes...');
-    
     // 🔒 SEGURANÇA: Buscar tenants ativos primeiro para garantir isolamento
     const tenantsResult = await query(
       `SELECT DISTINCT id FROM tenants WHERE status != 'deleted' AND blocked_at IS NULL`
@@ -462,7 +462,6 @@ class CampaignWorker {
     const tenantIds = tenantsResult.rows.map(t => t.id);
     
     if (tenantIds.length === 0) {
-      console.log('⚠️ Nenhum tenant ativo encontrado');
       return;
     }
     
@@ -476,8 +475,6 @@ class CampaignWorker {
       [tenantIds]
     );
 
-    console.log(`🔍 [DEBUG] Encontradas ${result.rows.length} campanhas elegíveis`);
-
     if (result.rows.length === 0) {
       return;
     }
@@ -486,113 +483,63 @@ class CampaignWorker {
     
     if (campaigns.length > 1) {
       console.log(`🔥 Processando ${campaigns.length} campanhas simultaneamente!`);
-    } else if (campaigns.length === 1) {
+    } else {
       console.log(`📋 Processando campanha ID ${campaigns[0].id}: ${campaigns[0].name}`);
     }
 
-    // ⭐ NOVO: Processar todas as campanhas em PARALELO
-    console.log(`🚀 [DEBUG] Iniciando processamento PARALELO de ${campaigns.length} campanha(s)...`);
-    const startTime = Date.now();
-    
     await Promise.all(campaigns.map(campaign => this.processSingleCampaign(campaign)));
-    
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`✅ [DEBUG] Processamento de campanhas concluído em ${elapsed}s`);
   }
 
   private async processSingleCampaign(campaign: Campaign) {
-    console.log(`\n⏩ [INÍCIO] Campanha ${campaign.id} (${campaign.name}) - Status: ${campaign.status}`);
-    console.log(`   📅 Criada em: ${campaign.created_at}`);
-    console.log(`   ⏰ Agendada para: ${campaign.scheduled_at || 'IMEDIATA'}`);
-    console.log(`   ⚙️  schedule_config:`, JSON.stringify(campaign.schedule_config));
-    const campaignStartTime = Date.now();
-    
     try {
-      // ⚠️ Health Check NÃO-BLOQUEANTE: Erros não param a campanha
-      console.log(`🔍 [DEBUG] Iniciando health check para campanha ${campaign.id}...`);
+      // Health Check NÃO-BLOQUEANTE: Erros não param a campanha
       try {
         await this.checkCampaignAccountsHealth(campaign.id);
-        console.log(`✅ [DEBUG] Health check concluído para campanha ${campaign.id}`);
       } catch (error: any) {
-        console.log(`⚠️ Health check falhou para campanha ${campaign.id}, mas continuando...`);
-        console.log(`   Erro: ${error.message}`);
-        // CONTINUA sem parar a campanha
+        console.warn(`⚠️ Health check falhou para campanha ${campaign.id}: ${error.message}`);
       }
 
       // Verificar se está no horário de trabalho
-      console.log(`🔍 [DEBUG] Verificando horário de trabalho para campanha ${campaign.id}...`);
       const inWorkingHours = this.isWorkingHours(campaign.schedule_config);
-      console.log(`   ✅ Dentro do horário? ${inWorkingHours ? 'SIM' : 'NÃO'}`);
-      
       if (!inWorkingHours) {
-        console.log(`⏰ Campanha ${campaign.id} FORA do horário de trabalho - aguardando...`);
-        console.log(`   📋 Status da campanha continua: ${campaign.status}`);
-        console.log(`   ⏱️ A campanha NÃO será pausada, apenas aguardará o horário`);
-        // NÃO pausar a campanha - apenas não enviar mensagens
         return;
       }
-      
-      console.log(`✅ Campanha ${campaign.id} está dentro do horário de trabalho!`)
 
       // Iniciar campanha se estiver pending ou scheduled
-      console.log(`🔍 [DEBUG] Status da campanha ${campaign.id}: ${campaign.status}`);
       if (campaign.status === 'pending' || campaign.status === 'scheduled') {
-        console.log(`🚀 [DEBUG] Iniciando campanha ${campaign.id}: ${campaign.name}`);
-        
-        // 🔥 CORREÇÃO: Inicializar contador do ciclo em 0 para nova campanha
+        console.log(`🚀 Iniciando campanha ${campaign.id}: ${campaign.name}`);
         this.campaignCycleCounters.set(campaign.id, 0);
-        console.log(`🔢 [Campanha ${campaign.id}] Contador do ciclo inicializado em 0`);
-        
         await this.updateCampaignStatus(campaign.id, 'running', campaign.tenant_id);
         await query('UPDATE campaigns SET started_at = NOW() WHERE id = $1 AND tenant_id = $2', [campaign.id, campaign.tenant_id]);
-        campaign.status = 'running'; // ⭐ CORRIGIDO: Atualizar objeto local também!
-        console.log(`✅ [DEBUG] Campanha ${campaign.id} mudou para RUNNING`);
-      } else {
-        console.log(`ℹ️  [DEBUG] Campanha ${campaign.id} já está em status: ${campaign.status}`);
+        campaign.status = 'running';
       }
 
-      // ⏸️ VERIFICAR SE ESTÁ EM PAUSA PROGRAMADA
-      console.log(`🔍 [DEBUG] Verificando pausa programada da campanha ${campaign.id}...`);
+      // Verificar pausa programada
       const pauseState = await this.getPauseStateAsync(campaign.id);
       
       if (pauseState && pauseState.remainingSeconds > 0) {
         const remainingMinutes = Math.ceil(pauseState.remainingSeconds / 60);
-        console.log(`⏸️ ═══════════════════════════════════════════════════`);
-        console.log(`⏸️  CAMPANHA ${campaign.id} EM PAUSA PROGRAMADA`);
-        console.log(`⏸️  Tempo restante: ${remainingMinutes} minuto(s) (${pauseState.remainingSeconds}s)`);
-        console.log(`⏸️  ✅ Esta campanha será retomada automaticamente`);
-        console.log(`⏸️  ✅ OUTRAS campanhas continuam rodando normalmente!`);
-        console.log(`⏸️ ═══════════════════════════════════════════════════`);
-        return; // ✅ Sair sem processar, deixar outras campanhas rodarem
+        console.log(`⏸️ Campanha ${campaign.id} em pausa — retoma em ${remainingMinutes}min`);
+        return;
       }
       
-      // 🔥 CORREÇÃO: Se a pausa acabou, garantir que o contador do ciclo está zerado
+      // Se a pausa acabou, garantir que o contador do ciclo está zerado
       if (!pauseState || pauseState.remainingSeconds <= 0) {
         const cycleCount = this.campaignCycleCounters.get(campaign.id) || 0;
         if (cycleCount > 0) {
-          console.log(`✅ [Campanha ${campaign.id}] Pausa concluída! Resetando contador do ciclo (era ${cycleCount}, agora 0)`);
           this.campaignCycleCounters.set(campaign.id, 0);
         }
       }
-      
-      console.log(`✅ [DEBUG] Campanha ${campaign.id} não está em pausa programada`);
 
       // Processar envios
       if (campaign.status === 'running') {
-        console.log(`📤 [DEBUG] Processando envios da campanha ${campaign.id}...`);
         this.currentCampaignId = campaign.id;
         await this.processCampaign(campaign);
         this.currentCampaignId = null;
-      } else {
-        console.log(`⏸️ [DEBUG] Campanha ${campaign.id} não está em RUNNING, pulando envios`);
       }
-      
-      const campaignElapsed = ((Date.now() - campaignStartTime) / 1000).toFixed(2);
-      console.log(`⏸️ [FIM] Campanha ${campaign.id} processada em ${campaignElapsed}s\n`);
       
     } catch (error: any) {
       console.error(`❌ Erro ao processar campanha ${campaign.id}:`, error.message);
-      // Não para outras campanhas
     }
   }
 
