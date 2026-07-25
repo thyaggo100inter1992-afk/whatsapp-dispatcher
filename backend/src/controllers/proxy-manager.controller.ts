@@ -365,50 +365,90 @@ export class ProxyManagerController {
    * Testar proxy
    */
   async test(req: Request, res: Response) {
-    try {
-      const { id } = req.params;
+    const { id } = req.params;
+    console.log(`🧪 [INICIO] Teste proxy id=${id}`);
 
+    let responded = false;
+    const respond = (payload: any, status = 200) => {
+      if (responded || res.headersSent) return;
+      responded = true;
+      res.status(status).json(payload);
+    };
+
+    // Hard timeout da rota — evita spinner infinito no frontend
+    const hardTimer = setTimeout(() => {
+      console.error(`⏱️ [TIMEOUT ROTA] Teste proxy id=${id} excedeu 15s`);
+      respond({
+        success: false,
+        error: 'Tempo esgotado no servidor. Verifique usuário/senha e se o tipo é SOCKS5 ou HTTP.',
+      });
+    }, 15000);
+
+    try {
       const result = await tenantQuery(req, 'SELECT * FROM proxies WHERE id = $1', [id]);
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ success: false, error: 'Proxy não encontrado' });
+        clearTimeout(hardTimer);
+        return respond({ success: false, error: 'Proxy não encontrado' }, 404);
       }
 
       const proxy = result.rows[0];
 
+      // Proxies rotativos usam o pool — pegar o proxy atual do pool
+      let host = proxy.host;
+      let port = proxy.port;
+      let username = proxy.username;
+      let password = proxy.password;
+      let type = proxy.type === 'rotating' ? 'socks5' : (proxy.type || 'socks5');
+
+      if (proxy.type === 'rotating' && Array.isArray(proxy.proxy_pool) && proxy.proxy_pool.length > 0) {
+        const idx = proxy.current_proxy_index || 0;
+        const current = proxy.proxy_pool[idx] || proxy.proxy_pool[0];
+        host = current.host;
+        port = current.port;
+        username = current.username;
+        password = current.password;
+        console.log(`🔄 Proxy rotativo — testando item ${idx}: ${host}:${port}`);
+      }
+
       const proxyConfig: ProxyConfig = {
         enabled: true,
-        type: proxy.type,
-        host: proxy.host,
-        port: proxy.port,
-        username: proxy.username,
-        password: proxy.password
+        type: type as any,
+        host,
+        port,
+        username,
+        password,
       };
 
-      console.log(`🧪 Testando proxy: ${proxy.name} (${proxy.host}:${proxy.port})`);
+      console.log(
+        `🧪 Testando proxy: ${proxy.name} (${host}:${port}) tipo=${type} auth=${username ? 'SIM' : 'NÃO'}`
+      );
 
       const testResult = await testProxyConnection(proxyConfig);
 
-      // Atualizar status no banco
-      await tenantQuery(req, 
+      // Atualizar status no banco (não bloqueia a resposta se falhar)
+      tenantQuery(req,
         `UPDATE proxies SET 
           status = $1,
           last_check = CURRENT_TIMESTAMP,
           last_ip = $2,
-          location = $3
+          location = COALESCE($3, location)
         WHERE id = $4`,
         [
           testResult.success ? 'working' : 'failed',
           testResult.ip || null,
-          testResult.location || proxy.location,
+          testResult.location || null,
           id
         ]
-      );
+      ).catch((e) => console.error('Erro ao salvar status do teste:', e.message));
 
-      res.json(testResult);
+      clearTimeout(hardTimer);
+      console.log(`🧪 [FIM] Teste proxy id=${id} success=${testResult.success}`);
+      respond(testResult);
     } catch (error: any) {
+      clearTimeout(hardTimer);
       console.error('Erro ao testar proxy:', error);
-      res.status(500).json({ success: false, error: error.message });
+      respond({ success: false, error: error.message }, 500);
     }
   }
 

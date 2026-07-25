@@ -374,8 +374,8 @@ export default function ProxiesPage() {
   const handleTest = async (id: number) => {
     setTestingId(id);
     try {
-      // Backend responde em ~10s; timeout cliente um pouco maior
-      const response = await api.post(`/proxies/${id}/test`, {}, { timeout: 20000 });
+      // Backend tem hard timeout 15s; cliente um pouco maior
+      const response = await api.post(`/proxies/${id}/test`, {}, { timeout: 18000 });
 
       if (response.data.success) {
         const loc = response.data.location ? ` — ${response.data.location}` : '';

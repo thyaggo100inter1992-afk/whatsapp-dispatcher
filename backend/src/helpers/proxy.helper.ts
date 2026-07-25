@@ -84,35 +84,37 @@ function buildProxyUrl(scheme: string, config: ProxyConfig): string {
  * Cria um agent de proxy.
  * Prefira passar host já resolvido (IP) — funciona igual aos proxies antigos.
  */
-export function createProxyAgent(config: ProxyConfig): any {
+export function createProxyAgent(config: ProxyConfig, socketTimeoutMs = 8000): any {
   if (!config.enabled || !config.host || !config.port) {
     return null;
   }
 
   const host = config.host.trim();
   const port = Number(config.port);
+  const agentOpts = { timeout: socketTimeoutMs, keepAlive: false };
 
   if (config.type === 'socks5') {
     // Com IP: socks5. Com hostname: socks5h (DNS remota do destino)
     const scheme = isIpLiteral(host) ? 'socks5' : 'socks5h';
     const proxyUrl = buildProxyUrl(scheme, { ...config, host, port });
     console.log(`🌐 Criando Socks5 Proxy Agent (${scheme}): ${host}:${port}`);
-    return new SocksProxyAgent(proxyUrl);
+    return new SocksProxyAgent(proxyUrl, agentOpts);
   }
 
   const proxyUrl = buildProxyUrl(config.type, { ...config, host, port });
   console.log(`🌐 Criando ${config.type.toUpperCase()} Proxy Agent: ${host}:${port}`);
-  return new HttpsProxyAgent(proxyUrl);
+  return new HttpsProxyAgent(proxyUrl, agentOpts);
 }
 
 /**
  * Testa se o proxy está funcionando.
- * Tempo máximo ~10s para não travar a UI.
+ * HARD TIMEOUT 12s — o agent SOCKS às vezes ignora o timeout do Axios.
  */
 export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
   const startTime = Date.now();
+  const HARD_TIMEOUT_MS = 12000;
 
-  try {
+  const work = async (): Promise<ProxyTestResult> => {
     if (!config.enabled) {
       return { success: false, error: 'Proxy não está habilitado' };
     }
@@ -124,10 +126,9 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
     const originalHost = config.host.trim();
     const port = Number(config.port);
 
-    // Resolver hostname → IP (mesmo padrão dos proxies que funcionam)
     let connectHost = originalHost;
     try {
-      connectHost = await resolveHostWithTimeout(originalHost, 3000);
+      connectHost = await resolveHostWithTimeout(originalHost, 2500);
       if (connectHost !== originalHost) {
         console.log(`🔎 Hostname "${originalHost}" → IP ${connectHost}`);
       }
@@ -139,35 +140,61 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
       };
     }
 
-    if (!config.username || !config.password) {
-      console.warn(`⚠️ Proxy ${originalHost}:${port} SEM usuário/senha — gateways IPBR geralmente exigem autenticação`);
+    const hasAuth = !!(config.username && config.password);
+    if (!hasAuth) {
+      console.warn(`⚠️ Proxy ${originalHost}:${port} SEM usuário/senha`);
+    }
+
+    // Teste TCP rápido na porta (3s) — se a porta não abre, falha imediata
+    try {
+      const net = await import('net');
+      await new Promise<void>((resolve, reject) => {
+        const socket = net.createConnection({ host: connectHost, port, timeout: 3000 });
+        socket.once('connect', () => {
+          socket.destroy();
+          resolve();
+        });
+        socket.once('timeout', () => {
+          socket.destroy();
+          reject(new Error(`Porta ${port} sem resposta em ${connectHost}`));
+        });
+        socket.once('error', (err) => {
+          socket.destroy();
+          reject(err);
+        });
+      });
+      console.log(`✅ TCP OK em ${connectHost}:${port}`);
+    } catch (tcpErr: any) {
+      return {
+        success: false,
+        error: `Host alcançável via DNS, mas a porta ${port} não responde (${tcpErr.message}). Confira host/porta com o provedor.`,
+        latency: Date.now() - startTime,
+      };
     }
 
     const runOnce = async (
       type: 'socks5' | 'http' | 'https',
       hostToUse: string
     ): Promise<ProxyTestResult> => {
-      const agent = createProxyAgent({
-        ...config,
-        enabled: true,
-        type,
-        host: hostToUse,
-        port,
-      });
+      const agent = createProxyAgent(
+        { ...config, enabled: true, type, host: hostToUse, port },
+        5000
+      );
 
       if (!agent) {
         return { success: false, error: 'Falha ao criar agent de proxy', latency: Date.now() - startTime };
       }
 
-      console.log(`🔍 Testando ${type}://${hostToUse}:${port} (cadastro: ${originalHost})...`);
+      console.log(`🔍 Testando ${type}://${hostToUse}:${port} (cadastro: ${originalHost}, auth=${hasAuth})...`);
 
       try {
         const response = await axios.get('https://api.ipify.org?format=json', {
           httpsAgent: agent,
           httpAgent: agent,
-          timeout: 7000,
+          timeout: 5000,
           headers: { 'User-Agent': 'WhatsApp-Dispatcher/1.0' },
           proxy: false,
+          transitional: { clarifyTimeoutError: true },
         });
 
         const ip = response.data?.ip;
@@ -175,23 +202,9 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
           return { success: false, error: 'Resposta inválida do teste de IP', latency: Date.now() - startTime };
         }
 
-        // Complementar localização (rápido, não bloqueia sucesso)
-        let location: string | undefined;
-        try {
-          const info = await axios.get('https://ipinfo.io/json', {
-            httpsAgent: agent,
-            httpAgent: agent,
-            timeout: 4000,
-            proxy: false,
-          });
-          location = [info.data?.city, info.data?.region, info.data?.country].filter(Boolean).join(', ');
-        } catch {
-          // opcional
-        }
-
         const latency = Date.now() - startTime;
         console.log(`✅ Proxy OK via ${type}! IP saída: ${ip}, latência: ${latency}ms`);
-        return { success: true, ip, location, latency };
+        return { success: true, ip, location: undefined, latency };
       } catch (err: any) {
         const msg = err.message || String(err);
         console.warn(`⚠️ Falha ${type}://${hostToUse}:${port}: ${msg}`);
@@ -199,20 +212,18 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
       }
     };
 
-    // 1) Tipo configurado, conectando no IP resolvido
+    // 1) Tipo cadastrado
     let result = await runOnce(config.type || 'socks5', connectHost);
     if (result.success) return result;
 
-    // 2) Se SOCKS5 falhou, tentar HTTP no mesmo IP (provedor pode ter mudado o protocolo)
+    // 2) Fallback HTTP se era SOCKS5
     if ((config.type || 'socks5') === 'socks5') {
       console.log('🔄 SOCKS5 falhou — tentando HTTP...');
       const httpResult = await runOnce('http', connectHost);
       if (httpResult.success) {
         return {
           ...httpResult,
-          location: httpResult.location
-            ? `${httpResult.location} (via HTTP — mude o tipo do proxy para HTTP)`
-            : 'Conectou via HTTP — mude o tipo do proxy para HTTP',
+          location: 'Conectou via HTTP — mude o tipo do proxy para HTTP',
         };
       }
       result = httpResult;
@@ -222,16 +233,34 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
     if (/ECONNREFUSED/i.test(friendly)) {
       friendly = `Conexão recusada em ${originalHost}:${port} (${connectHost}). Verifique porta/protocolo.`;
     } else if (/ETIMEDOUT|timeout|Proxy connection timed out/i.test(friendly)) {
-      friendly = `Timeout em ${originalHost}:${port}. Verifique usuário/senha, tipo (SOCKS5 ou HTTP) e se o proxy está ativo.`;
+      friendly = `Timeout em ${originalHost}:${port}. Usuário/senha incorretos, tipo errado (SOCKS5/HTTP) ou proxy offline.`;
     } else if (/authentication|auth|SOCKS/i.test(friendly)) {
       friendly = `Falha de autenticação em ${originalHost}:${port}. Confira usuário e senha.`;
     }
-    if (!config.username || !config.password) {
+    if (!hasAuth) {
       friendly += ' Atenção: proxy SEM usuário/senha cadastrados.';
     }
 
     console.error(`❌ Erro ao testar proxy ${originalHost}:${port}:`, friendly);
     return { success: false, error: friendly, latency: Date.now() - startTime };
+  };
+
+  try {
+    // Garante resposta mesmo se o agent SOCKS travar ignorando timeout do Axios
+    return await Promise.race([
+      work(),
+      new Promise<ProxyTestResult>((resolve) =>
+        setTimeout(
+          () =>
+            resolve({
+              success: false,
+              error: `Timeout em ${config.host}:${config.port}. Verifique usuário/senha e se o tipo é SOCKS5 ou HTTP.`,
+              latency: Date.now() - startTime,
+            }),
+          HARD_TIMEOUT_MS
+        )
+      ),
+    ]);
   } catch (error: any) {
     console.error('❌ Erro ao testar proxy:', error.message);
     return {
