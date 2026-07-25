@@ -134,63 +134,84 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
     }
 
     console.log(`🔍 Testando proxy ${host}:${port} (tipo: ${config.type})...`);
+    if (!config.username || !config.password) {
+      console.warn(`⚠️ Proxy ${host}:${port} sem usuário/senha — muitos gateways (IPBR) exigem autenticação`);
+    }
 
-    // Endpoints de teste com fallback (alguns proxies bloqueiam um ou outro)
+    // 1 endpoint rápido + 1 fallback. Timeout curto para NÃO deixar a tela girando 45s
     const testEndpoints = [
+      { url: 'https://api.ipify.org?format=json', parse: (d: any) => ({ ip: d.ip, location: undefined as string | undefined }) },
       { url: 'https://ipinfo.io/json', parse: (d: any) => ({ ip: d.ip, location: [d.city, d.region, d.country].filter(Boolean).join(', ') }) },
-      { url: 'https://api.ipify.org?format=json', parse: (d: any) => ({ ip: d.ip, location: undefined }) },
-      { url: 'https://ifconfig.me/ip', parse: (d: any) => ({ ip: typeof d === 'string' ? d.trim() : String(d).trim(), location: undefined }) },
     ];
 
-    let lastError = 'Erro desconhecido ao testar proxy';
-
-    for (const endpoint of testEndpoints) {
-      try {
-        const response = await axios.get(endpoint.url, {
-          httpsAgent: agent,
-          httpAgent: agent,
-          timeout: 15000,
-          responseType: endpoint.url.includes('ifconfig.me') ? 'text' : 'json',
-          headers: {
-            'User-Agent': 'WhatsApp-Dispatcher/1.0'
-          },
-          proxy: false,
-        });
-
-        const latency = Date.now() - startTime;
-        const parsed = endpoint.parse(response.data);
-
-        if (!parsed.ip) {
-          lastError = `Resposta inválida de ${endpoint.url}`;
-          continue;
+    const tryWithAgent = async (testAgent: any, label: string): Promise<ProxyTestResult | null> => {
+      let lastError = 'Erro desconhecido';
+      for (const endpoint of testEndpoints) {
+        try {
+          const response = await axios.get(endpoint.url, {
+            httpsAgent: testAgent,
+            httpAgent: testAgent,
+            timeout: 8000, // 8s — falha rápido
+            headers: { 'User-Agent': 'WhatsApp-Dispatcher/1.0' },
+            proxy: false,
+          });
+          const parsed = endpoint.parse(response.data);
+          if (!parsed.ip) {
+            lastError = `Resposta inválida de ${endpoint.url}`;
+            continue;
+          }
+          const latency = Date.now() - startTime;
+          console.log(`✅ Proxy funcionando via ${label}! IP: ${parsed.ip}, Latência: ${latency}ms`);
+          return { success: true, ip: parsed.ip, location: parsed.location, latency };
+        } catch (err: any) {
+          lastError = err.message || String(err);
+          console.warn(`⚠️ [${label}] Falha em ${endpoint.url}: ${lastError}`);
         }
+      }
+      return { success: false, error: lastError, latency: Date.now() - startTime };
+    };
 
-        const result: ProxyTestResult = {
-          success: true,
-          ip: parsed.ip,
-          location: parsed.location,
-          latency
-        };
+    // Tentativa 1: tipo configurado (socks5/http)
+    let result = await tryWithAgent(agent, config.type);
+    if (result?.success) return result;
 
-        console.log(`✅ Proxy funcionando! IP: ${result.ip}${result.location ? `, Localização: ${result.location}` : ''}, Latência: ${result.latency}ms`);
-        return result;
-      } catch (err: any) {
-        lastError = err.message || String(err);
-        console.warn(`⚠️ Falha no endpoint ${endpoint.url}: ${lastError}`);
+    // Tentativa 2: se SOCKS5 falhou, tentar HTTP (provedores trocam o protocolo no novo formato)
+    if (config.type === 'socks5') {
+      console.log(`🔄 SOCKS5 falhou — tentando HTTP no mesmo host:porta...`);
+      try {
+        const httpAgent = createProxyAgent({ ...config, host, port, type: 'http' });
+        if (httpAgent) {
+          const httpResult = await tryWithAgent(httpAgent, 'http');
+          if (httpResult?.success) {
+            return {
+              ...httpResult,
+              // Aviso embutido no location para o usuário perceber que o tipo correto é HTTP
+              location: httpResult.location
+                ? `${httpResult.location} (conectou via HTTP — considere mudar o tipo)`
+                : 'Conectou via HTTP — considere mudar o tipo do proxy para HTTP',
+            };
+          }
+          if (httpResult?.error) result = httpResult;
+        }
+      } catch (e: any) {
+        console.warn(`⚠️ Fallback HTTP também falhou: ${e.message}`);
       }
     }
 
     const latency = Date.now() - startTime;
-    // Mensagens mais claras para erros comuns
+    let lastError = result?.error || 'Erro desconhecido ao testar proxy';
     let friendly = lastError;
     if (/ECONNREFUSED/i.test(lastError)) {
-      friendly = `Conexão recusada em ${host}:${port}. Verifique host/porta ou se o proxy aceita SOCKS5.`;
-    } else if (/ETIMEDOUT|timeout/i.test(lastError)) {
-      friendly = `Timeout ao conectar em ${host}:${port}. Host inacessível ou porta bloqueada.`;
+      friendly = `Conexão recusada em ${host}:${port}. Verifique host/porta ou protocolo (SOCKS5 vs HTTP).`;
+    } else if (/ETIMEDOUT|timeout|Proxy connection timed out/i.test(lastError)) {
+      friendly = `Timeout em ${host}:${port}. Possíveis causas: usuário/senha incorretos, protocolo errado (tente HTTP) ou proxy offline.`;
     } else if (/ENOTFOUND/i.test(lastError)) {
       friendly = `Hostname "${host}" não encontrado (DNS).`;
     } else if (/authentication|auth|username|password|SOCKS/i.test(lastError)) {
-      friendly = `Falha de autenticação no proxy. Verifique usuário e senha. Detalhe: ${lastError}`;
+      friendly = `Falha de autenticação. Verifique usuário e senha. Detalhe: ${lastError}`;
+    }
+    if (!config.username || !config.password) {
+      friendly += ' Atenção: este proxy está SEM usuário/senha cadastrados.';
     }
 
     console.error(`❌ Erro ao testar proxy ${host}:${port}:`, friendly);
