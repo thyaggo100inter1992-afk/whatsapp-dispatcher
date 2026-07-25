@@ -1,6 +1,39 @@
 import { Request, Response } from 'express';
 import { tenantQuery } from '../database/tenant-query';
-import { testProxy as testProxyConnection, formatProxyInfo, ProxyConfig } from '../helpers/proxy.helper';
+import { testProxy as testProxyConnection, formatProxyInfo, ProxyConfig, parseProxyString } from '../helpers/proxy.helper';
+
+/** Normaliza host/porta/user/senha — aceita string completa do provedor no campo host */
+function normalizeProxyFields(input: {
+  type?: string;
+  host?: string;
+  port?: any;
+  username?: string;
+  password?: string;
+}) {
+  let { type, host, port, username, password } = input;
+
+  const hostStr = (host || '').trim();
+  // Se o host parece uma string completa de proxy, parsear
+  if (hostStr && (hostStr.includes('@') || hostStr.includes('://') || hostStr.split(':').length >= 3)) {
+    const parsed = parseProxyString(hostStr);
+    if (parsed?.host && parsed?.port) {
+      console.log(`🔧 Proxy string reconhecida: ${parsed.host}:${parsed.port}`);
+      type = parsed.type || type;
+      host = parsed.host;
+      port = parsed.port;
+      username = parsed.username ?? username;
+      password = parsed.password ?? password;
+    }
+  }
+
+  return {
+    type: type || 'socks5',
+    host: (host || '').trim(),
+    port: parseInt(String(port), 10) || 0,
+    username,
+    password,
+  };
+}
 
 export class ProxyManagerController {
   /**
@@ -128,7 +161,11 @@ export class ProxyManagerController {
    */
   async create(req: Request, res: Response) {
     try {
-      const { name, type, host, port, username, password, location, description, rotation_interval, proxy_pool } = req.body;
+      const { name, location, description, rotation_interval, proxy_pool } = req.body;
+      let { type, host, port, username, password } = req.body;
+
+      // Aceitar novo formato com hostname/domínio e strings completas do provedor
+      ({ type, host, port, username, password } = normalizeProxyFields({ type, host, port, username, password }));
 
       // Validações
       if (!name) {
@@ -212,7 +249,11 @@ export class ProxyManagerController {
   async update(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { name, type, host, port, username, password, location, description, is_active, rotation_interval, proxy_pool } = req.body;
+      const { name, location, description, is_active, rotation_interval, proxy_pool } = req.body;
+      let { type, host, port, username, password } = req.body;
+
+      // Aceitar novo formato com hostname/domínio e strings completas do provedor
+      ({ type, host, port, username, password } = normalizeProxyFields({ type, host, port, username, password }));
 
       // Verificar se proxy existe
       const existingResult = await tenantQuery(req, 'SELECT id FROM proxies WHERE id = $1', [id]);

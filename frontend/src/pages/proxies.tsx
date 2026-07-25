@@ -42,6 +42,82 @@ interface Proxy {
   current_proxy_index?: number; // Qual proxy do pool está ativo
 }
 
+/**
+ * Parseia string completa de proxy nos formatos comuns dos provedores:
+ * - host:port
+ * - host:port:user:pass
+ * - user:pass@host:port
+ * - socks5://user:pass@host:port
+ * - user:pass:host:port
+ */
+function parseProxyString(raw: string): {
+  type?: string;
+  host?: string;
+  port?: string;
+  username?: string;
+  password?: string;
+} | null {
+  if (!raw || typeof raw !== 'string') return null;
+  let value = raw.trim();
+  if (!value) return null;
+
+  let type: string | undefined;
+
+  const schemeMatch = value.match(/^(socks5h?|https?):\/\//i);
+  if (schemeMatch) {
+    const scheme = schemeMatch[1].toLowerCase();
+    type = scheme.startsWith('socks') ? 'socks5' : scheme;
+    value = value.replace(/^[a-z0-9]+:\/\//i, '');
+  }
+
+  // user:pass@host:port
+  if (value.includes('@')) {
+    const atIdx = value.lastIndexOf('@');
+    const creds = value.slice(0, atIdx);
+    const hostPort = value.slice(atIdx + 1);
+    const colonCred = creds.indexOf(':');
+    if (colonCred === -1) return null;
+    const username = creds.slice(0, colonCred);
+    const password = creds.slice(colonCred + 1);
+    const lastColon = hostPort.lastIndexOf(':');
+    if (lastColon === -1) return null;
+    const host = hostPort.slice(0, lastColon).trim();
+    const port = hostPort.slice(lastColon + 1).trim();
+    if (!host || !port) return null;
+    return { type, host, port, username, password };
+  }
+
+  const parts = value.split(':');
+
+  // host:port
+  if (parts.length === 2) {
+    const host = parts[0].trim();
+    const port = parts[1].trim();
+    if (!host || !/^\d+$/.test(port)) return null;
+    return { type, host, port };
+  }
+
+  // host:port:user:pass  OU  user:pass:host:port
+  if (parts.length >= 4) {
+    const p0 = parts[0].trim();
+    const p1 = parts[1].trim();
+    const p2 = parts[2].trim();
+    const p3 = parts.slice(3).join(':').trim();
+
+    // host:port:user:pass (host não é só número, porta é número)
+    if (/^\d+$/.test(p1) && !/^\d+$/.test(p0)) {
+      return { type, host: p0, port: p1, username: p2, password: p3 };
+    }
+
+    // user:pass:host:port
+    if (/^\d+$/.test(p3) && !/^\d+$/.test(p0)) {
+      return { type, username: p0, password: p1, host: p2, port: p3 };
+    }
+  }
+
+  return null;
+}
+
 export default function ProxiesPage() {
   const router = useRouter();
   const { toasts, removeToast, success, error, info, warning } = useToast();
@@ -949,14 +1025,34 @@ export default function ProxiesPage() {
                     </label>
                     <div className="grid grid-cols-3 gap-4">
                       <div className="col-span-2">
-                        <label className="block text-white/70 text-sm mb-2">Host / IP *</label>
+                        <label className="block text-white/70 text-sm mb-2">Host / IP / Domínio *</label>
                         <input
                           type="text"
                           value={formData.host}
-                          onChange={(e) => setFormData({ ...formData, host: e.target.value })}
-                          placeholder="Ex: 191.5.153.178"
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            // Auto-preencher se colar string completa do provedor
+                            const parsed = parseProxyString(value);
+                            if (parsed && parsed.host && parsed.port && (value.includes('@') || value.split(':').length >= 3)) {
+                              setFormData((prev) => ({
+                                ...prev,
+                                host: parsed.host || '',
+                                port: parsed.port || '',
+                                username: parsed.username || prev.username,
+                                password: parsed.password || prev.password,
+                                type: parsed.type || prev.type,
+                              }));
+                              toast.success('Formato de proxy reconhecido e campos preenchidos!');
+                              return;
+                            }
+                            setFormData({ ...formData, host: value });
+                          }}
+                          placeholder="Ex: proxy22-br-hz.ipbr.pro ou 191.5.153.178"
                           className="w-full px-6 py-4 bg-dark-700 text-white text-base font-mono rounded-xl border-2 border-cyan-500/30 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/30 transition-all placeholder-white/40"
                         />
+                        <p className="text-white/40 text-xs mt-2">
+                          Aceita IP ou hostname. Também pode colar a string completa: host:porta:usuario:senha
+                        </p>
                       </div>
                       <div>
                         <label className="block text-white/70 text-sm mb-2">Porta *</label>

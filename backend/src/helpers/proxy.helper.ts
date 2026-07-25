@@ -1,6 +1,10 @@
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import axios, { AxiosRequestConfig } from 'axios';
+import dns from 'dns';
+import { promisify } from 'util';
+
+const dnsLookup = promisify(dns.lookup);
 
 export interface ProxyConfig {
   enabled: boolean;
@@ -21,32 +25,68 @@ export interface ProxyTestResult {
   error?: string;
 }
 
+/** Detecta se o host é um IP literal (IPv4/IPv6) ou um hostname/domínio */
+function isIpLiteral(host: string): boolean {
+  // IPv4
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return true;
+  // IPv6 simples (contém :)
+  if (host.includes(':') && /^[0-9a-fA-F:]+$/.test(host)) return true;
+  return false;
+}
+
 /**
- * Cria um agent de proxy baseado na configuração
+ * Monta URL de proxy com credenciais corretamente URL-encoded.
+ * Necessário para senhas/usuários com @ : # % etc (comum em proxies novos).
+ */
+function buildProxyUrl(scheme: string, config: ProxyConfig): string {
+  const host = config.host.trim();
+  const port = Number(config.port);
+
+  if (config.username && config.password) {
+    const user = encodeURIComponent(config.username);
+    const pass = encodeURIComponent(config.password);
+    return `${scheme}://${user}:${pass}@${host}:${port}`;
+  }
+
+  return `${scheme}://${host}:${port}`;
+}
+
+/**
+ * Cria um agent de proxy baseado na configuração.
+ * Suporta host como IP OU hostname (ex: proxy22-br-hz.ipbr.pro).
  */
 export function createProxyAgent(config: ProxyConfig): any {
   if (!config.enabled || !config.host || !config.port) {
     return null;
   }
 
-  const auth = config.username && config.password 
-    ? `${config.username}:${config.password}@` 
-    : '';
+  const host = config.host.trim();
+  const port = Number(config.port);
 
   if (config.type === 'socks5') {
-    const proxyUrl = `socks5://${auth}${config.host}:${config.port}`;
-    console.log(`🌐 Criando Socks5 Proxy Agent: ${config.host}:${config.port}`);
-    return new SocksProxyAgent(proxyUrl);
-  } else {
-    // HTTP ou HTTPS
-    const proxyUrl = `${config.type}://${auth}${config.host}:${config.port}`;
-    console.log(`🌐 Criando ${config.type.toUpperCase()} Proxy Agent: ${config.host}:${config.port}`);
-    return new HttpsProxyAgent(proxyUrl);
+    // socks5h = DNS do destino resolvida pelo proxy (melhor p/ gateways com hostname)
+    // socks5  = DNS local (melhor p/ IP literal)
+    const preferredScheme = isIpLiteral(host) ? 'socks5' : 'socks5h';
+    const proxyUrl = buildProxyUrl(preferredScheme, { ...config, host, port });
+    console.log(`🌐 Criando Socks5 Proxy Agent (${preferredScheme}): ${host}:${port}`);
+    try {
+      return new SocksProxyAgent(proxyUrl);
+    } catch (err: any) {
+      // Fallback para socks5 clássico se socks5h não for aceito
+      console.warn(`⚠️ Fallback para socks5://: ${err.message}`);
+      return new SocksProxyAgent(buildProxyUrl('socks5', { ...config, host, port }));
+    }
   }
+
+  // HTTP ou HTTPS
+  const proxyUrl = buildProxyUrl(config.type, { ...config, host, port });
+  console.log(`🌐 Criando ${config.type.toUpperCase()} Proxy Agent: ${host}:${port}`);
+  return new HttpsProxyAgent(proxyUrl);
 }
 
 /**
- * Testa se o proxy está funcionando
+ * Testa se o proxy está funcionando.
+ * Aceita host como IP ou hostname (ex: proxy22-br-hz.ipbr.pro).
  */
 export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
   const startTime = Date.now();
@@ -66,7 +106,25 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
       };
     }
 
-    const agent = createProxyAgent(config);
+    const host = config.host.trim();
+    const port = Number(config.port);
+
+    // Se for hostname (não IP), validar DNS antes de tentar conectar
+    if (!isIpLiteral(host)) {
+      try {
+        const resolved = await dnsLookup(host);
+        console.log(`🔎 Hostname "${host}" resolvido para ${resolved.address}`);
+      } catch (dnsErr: any) {
+        console.error(`❌ DNS falhou para hostname "${host}":`, dnsErr.message);
+        return {
+          success: false,
+          error: `Não foi possível resolver o hostname "${host}". Verifique se o domínio está correto e se o DNS do servidor consegue resolvê-lo.`,
+          latency: Date.now() - startTime
+        };
+      }
+    }
+
+    const agent = createProxyAgent({ ...config, host, port });
     
     if (!agent) {
       return {
@@ -75,31 +133,72 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
       };
     }
 
-    console.log(`🔍 Testando proxy ${config.host}:${config.port}...`);
+    console.log(`🔍 Testando proxy ${host}:${port} (tipo: ${config.type})...`);
 
-    // Testar através de ipinfo.io
-    const response = await axios.get('https://ipinfo.io/json', {
-      httpsAgent: agent,
-      httpAgent: agent,
-      timeout: 15000, // 15 segundos
-      headers: {
-        'User-Agent': 'WhatsApp-Dispatcher/1.0'
+    // Endpoints de teste com fallback (alguns proxies bloqueiam um ou outro)
+    const testEndpoints = [
+      { url: 'https://ipinfo.io/json', parse: (d: any) => ({ ip: d.ip, location: [d.city, d.region, d.country].filter(Boolean).join(', ') }) },
+      { url: 'https://api.ipify.org?format=json', parse: (d: any) => ({ ip: d.ip, location: undefined }) },
+      { url: 'https://ifconfig.me/ip', parse: (d: any) => ({ ip: typeof d === 'string' ? d.trim() : String(d).trim(), location: undefined }) },
+    ];
+
+    let lastError = 'Erro desconhecido ao testar proxy';
+
+    for (const endpoint of testEndpoints) {
+      try {
+        const response = await axios.get(endpoint.url, {
+          httpsAgent: agent,
+          httpAgent: agent,
+          timeout: 15000,
+          responseType: endpoint.url.includes('ifconfig.me') ? 'text' : 'json',
+          headers: {
+            'User-Agent': 'WhatsApp-Dispatcher/1.0'
+          },
+          proxy: false,
+        });
+
+        const latency = Date.now() - startTime;
+        const parsed = endpoint.parse(response.data);
+
+        if (!parsed.ip) {
+          lastError = `Resposta inválida de ${endpoint.url}`;
+          continue;
+        }
+
+        const result: ProxyTestResult = {
+          success: true,
+          ip: parsed.ip,
+          location: parsed.location,
+          latency
+        };
+
+        console.log(`✅ Proxy funcionando! IP: ${result.ip}${result.location ? `, Localização: ${result.location}` : ''}, Latência: ${result.latency}ms`);
+        return result;
+      } catch (err: any) {
+        lastError = err.message || String(err);
+        console.warn(`⚠️ Falha no endpoint ${endpoint.url}: ${lastError}`);
       }
-    });
+    }
 
     const latency = Date.now() - startTime;
-    const data = response.data;
+    // Mensagens mais claras para erros comuns
+    let friendly = lastError;
+    if (/ECONNREFUSED/i.test(lastError)) {
+      friendly = `Conexão recusada em ${host}:${port}. Verifique host/porta ou se o proxy aceita SOCKS5.`;
+    } else if (/ETIMEDOUT|timeout/i.test(lastError)) {
+      friendly = `Timeout ao conectar em ${host}:${port}. Host inacessível ou porta bloqueada.`;
+    } else if (/ENOTFOUND/i.test(lastError)) {
+      friendly = `Hostname "${host}" não encontrado (DNS).`;
+    } else if (/authentication|auth|username|password|SOCKS/i.test(lastError)) {
+      friendly = `Falha de autenticação no proxy. Verifique usuário e senha. Detalhe: ${lastError}`;
+    }
 
-    const result: ProxyTestResult = {
-      success: true,
-      ip: data.ip,
-      location: `${data.city}, ${data.region}, ${data.country}`,
+    console.error(`❌ Erro ao testar proxy ${host}:${port}:`, friendly);
+    return {
+      success: false,
+      error: friendly,
       latency
     };
-
-    console.log(`✅ Proxy funcionando! IP: ${result.ip}, Localização: ${result.location}, Latência: ${result.latency}ms`);
-
-    return result;
 
   } catch (error: any) {
     const latency = Date.now() - startTime;
@@ -168,7 +267,7 @@ export function applyProxyToRequest(
 }
 
 /**
- * Valida configuração de proxy
+ * Valida configuração de proxy (aceita IP ou hostname/domínio)
  */
 export function validateProxyConfig(config: Partial<ProxyConfig>): {
   valid: boolean;
@@ -177,8 +276,14 @@ export function validateProxyConfig(config: Partial<ProxyConfig>): {
   const errors: string[] = [];
 
   if (config.enabled) {
-    if (!config.host || config.host.trim() === '') {
+    const host = (config.host || '').trim();
+
+    if (!host) {
       errors.push('Host do proxy é obrigatório');
+    } else if (host.includes('://')) {
+      errors.push('Host não deve incluir protocolo (ex: socks5://). Use apenas o domínio ou IP');
+    } else if (/\s/.test(host)) {
+      errors.push('Host não pode conter espaços');
     }
 
     if (!config.port || config.port < 1 || config.port > 65535) {
@@ -194,6 +299,94 @@ export function validateProxyConfig(config: Partial<ProxyConfig>): {
     valid: errors.length === 0,
     errors
   };
+}
+
+/**
+ * Parseia string de proxy nos formatos comuns dos provedores:
+ * - host:port
+ * - host:port:user:pass
+ * - user:pass@host:port
+ * - socks5://user:pass@host:port
+ * - user:pass:host:port
+ */
+export function parseProxyString(raw: string): {
+  type?: 'socks5' | 'http' | 'https';
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+} | null {
+  if (!raw || typeof raw !== 'string') return null;
+
+  let value = raw.trim();
+  if (!value) return null;
+
+  let type: 'socks5' | 'http' | 'https' | undefined;
+
+  // Remover esquema se presente
+  const schemeMatch = value.match(/^(socks5h?|https?):\/\//i);
+  if (schemeMatch) {
+    const scheme = schemeMatch[1].toLowerCase();
+    type = scheme.startsWith('socks') ? 'socks5' : (scheme as 'http' | 'https');
+    value = value.replace(/^[a-z0-9]+:\/\//i, '');
+  }
+
+  // Formato: user:pass@host:port
+  if (value.includes('@')) {
+    const atIdx = value.lastIndexOf('@');
+    const creds = value.slice(0, atIdx);
+    const hostPort = value.slice(atIdx + 1);
+    const [username, ...passParts] = creds.split(':');
+    const password = passParts.join(':');
+    const lastColon = hostPort.lastIndexOf(':');
+    if (lastColon === -1) return null;
+    const host = hostPort.slice(0, lastColon).trim();
+    const port = parseInt(hostPort.slice(lastColon + 1), 10);
+    if (!host || !port) return null;
+    return { type, host, port, username, password };
+  }
+
+  const parts = value.split(':');
+
+  // host:port
+  if (parts.length === 2) {
+    const host = parts[0].trim();
+    const port = parseInt(parts[1], 10);
+    if (!host || !port) return null;
+    return { type, host, port };
+  }
+
+  // host:port:user:pass  OU  user:pass:host:port
+  if (parts.length >= 4) {
+    const p0 = parts[0].trim();
+    const p1 = parts[1].trim();
+    const p2 = parts[2].trim();
+    const p3 = parts.slice(3).join(':').trim();
+
+    // Se parts[1] é porta numérica → host:port:user:pass
+    if (/^\d+$/.test(p1) && !/^\d+$/.test(p0)) {
+      return {
+        type,
+        host: p0,
+        port: parseInt(p1, 10),
+        username: p2,
+        password: p3,
+      };
+    }
+
+    // Se parts[3] é porta → user:pass:host:port
+    if (/^\d+$/.test(p3) && !/^\d+$/.test(p0)) {
+      return {
+        type,
+        username: p0,
+        password: p1,
+        host: p2,
+        port: parseInt(p3, 10),
+      };
+    }
+  }
+
+  return null;
 }
 
 /**
