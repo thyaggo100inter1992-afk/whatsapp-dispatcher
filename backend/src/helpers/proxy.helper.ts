@@ -364,6 +364,20 @@ export function validateProxyConfig(config: Partial<ProxyConfig>): {
  * - socks5://user:pass@host:port
  * - user:pass:host:port
  */
+function inferIpbrType(port: number): 'socks5' | 'http' | undefined {
+  if (port === 10001) return 'http';
+  if (port === 10000) return 'socks5';
+  return undefined;
+}
+
+function cleanHost(host: string): string {
+  return host
+    .trim()
+    .replace(/^:+|:+$/g, '')
+    .replace(/\.ipbr\.prox$/i, '.ipbr.pro')
+    .replace(/\.ipbr\.pr$/i, '.ipbr.pro');
+}
+
 export function parseProxyString(raw: string): {
   type?: 'socks5' | 'http' | 'https';
   host?: string;
@@ -373,7 +387,11 @@ export function parseProxyString(raw: string): {
 } | null {
   if (!raw || typeof raw !== 'string') return null;
 
-  let value = raw.trim();
+  let value = raw
+    .replace(/https?\s*proxy\s*:?/gi, '')
+    .replace(/socks5?\s*proxy\s*:?/gi, '')
+    .replace(/\s+/g, '')
+    .trim();
   if (!value) return null;
 
   let type: 'socks5' | 'http' | 'https' | undefined;
@@ -393,19 +411,20 @@ export function parseProxyString(raw: string): {
     const password = passParts.join(':');
     const lastColon = hostPort.lastIndexOf(':');
     if (lastColon === -1) return null;
-    const host = hostPort.slice(0, lastColon).trim();
+    const host = cleanHost(hostPort.slice(0, lastColon));
     const port = parseInt(hostPort.slice(lastColon + 1), 10);
     if (!host || !port) return null;
-    return { type, host, port, username, password };
+    return { type: type || inferIpbrType(port), host, port, username, password };
   }
 
-  const parts = value.split(':');
+  // Filtrar partes vazias evita host:::porta virar lixo
+  const parts = value.split(':').filter((p) => p.length > 0);
 
   if (parts.length === 2) {
-    const host = parts[0].trim();
+    const host = cleanHost(parts[0]);
     const port = parseInt(parts[1], 10);
     if (!host || !port) return null;
-    return { type, host, port };
+    return { type: type || inferIpbrType(port), host, port };
   }
 
   if (parts.length >= 4) {
@@ -414,12 +433,28 @@ export function parseProxyString(raw: string): {
     const p2 = parts[2].trim();
     const p3 = parts.slice(3).join(':').trim();
 
+    // host:port:user:pass (formato IPBR)
     if (/^\d+$/.test(p1) && !/^\d+$/.test(p0)) {
-      return { type, host: p0, port: parseInt(p1, 10), username: p2, password: p3 };
+      const port = parseInt(p1, 10);
+      return {
+        type: type || inferIpbrType(port),
+        host: cleanHost(p0),
+        port,
+        username: p2,
+        password: p3,
+      };
     }
 
+    // user:pass:host:port
     if (/^\d+$/.test(p3) && !/^\d+$/.test(p0)) {
-      return { type, username: p0, password: p1, host: p2, port: parseInt(p3, 10) };
+      const port = parseInt(p3, 10);
+      return {
+        type: type || inferIpbrType(port),
+        username: p0,
+        password: p1,
+        host: cleanHost(p2),
+        port,
+      };
     }
   }
 

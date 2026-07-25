@@ -2,6 +2,15 @@ import { Request, Response } from 'express';
 import { tenantQuery } from '../database/tenant-query';
 import { testProxy as testProxyConnection, formatProxyInfo, ProxyConfig, parseProxyString } from '../helpers/proxy.helper';
 
+/** Corrige typos comuns do painel IPBR e remove `:` sobrando no host */
+function sanitizeProxyHost(host: string): string {
+  let h = (host || '').trim().replace(/^:+|:+$/g, '');
+  // Typos frequentes ao digitar o domínio do provedor
+  h = h.replace(/\.ipbr\.prox$/i, '.ipbr.pro');
+  h = h.replace(/\.ipbr\.pr$/i, '.ipbr.pro');
+  return h;
+}
+
 /** Normaliza host/porta/user/senha — aceita string completa do provedor no campo host */
 function normalizeProxyFields(input: {
   type?: string;
@@ -14,7 +23,7 @@ function normalizeProxyFields(input: {
 
   const hostStr = (host || '').trim();
   // Se o host parece uma string completa de proxy, parsear
-  if (hostStr && (hostStr.includes('@') || hostStr.includes('://') || hostStr.split(':').length >= 3)) {
+  if (hostStr && (hostStr.includes('@') || hostStr.includes('://') || hostStr.split(':').filter(Boolean).length >= 3)) {
     const parsed = parseProxyString(hostStr);
     if (parsed?.host && parsed?.port) {
       console.log(`🔧 Proxy string reconhecida: ${parsed.host}:${parsed.port}`);
@@ -26,11 +35,18 @@ function normalizeProxyFields(input: {
     }
   }
 
+  const portNum = parseInt(String(port), 10) || 0;
+  // Portas padrão IPBR: 10000=SOCKS5, 10001=HTTP
+  if (!type || type === 'socks5') {
+    if (portNum === 10001) type = 'http';
+    else if (portNum === 10000) type = 'socks5';
+  }
+
   return {
     type: type || 'socks5',
-    host: (host || '').trim(),
-    port: parseInt(String(port), 10) || 0,
-    username,
+    host: sanitizeProxyHost(host || ''),
+    port: portNum,
+    username: username?.trim() || username,
     password,
   };
 }

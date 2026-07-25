@@ -58,11 +58,18 @@ function parseProxyString(raw: string): {
   password?: string;
 } | null {
   if (!raw || typeof raw !== 'string') return null;
-  let value = raw.trim();
+  // Remove espaços, labels do provedor (HTTP Proxy / SOCKS5 Proxy) e lixo
+  let value = raw
+    .replace(/https?\s*proxy\s*:?/gi, '')
+    .replace(/socks5?\s*proxy\s*:?/gi, '')
+    .replace(/\s+/g, '')
+    .trim();
   if (!value) return null;
 
   let type: string | undefined;
 
+  // Detectar tipo pela porta padrão IPBR se vier na string
+  // 10000 = SOCKS5, 10001 = HTTP (formato do painel IPBR)
   const schemeMatch = value.match(/^(socks5h?|https?):\/\//i);
   if (schemeMatch) {
     const scheme = schemeMatch[1].toLowerCase();
@@ -81,41 +88,67 @@ function parseProxyString(raw: string): {
     const password = creds.slice(colonCred + 1);
     const lastColon = hostPort.lastIndexOf(':');
     if (lastColon === -1) return null;
-    const host = hostPort.slice(0, lastColon).trim();
+    const host = sanitizeHost(hostPort.slice(0, lastColon));
     const port = hostPort.slice(lastColon + 1).trim();
-    if (!host || !port) return null;
+    if (!host || !/^\d+$/.test(port)) return null;
+    if (!type) type = port === '10001' ? 'http' : port === '10000' ? 'socks5' : undefined;
     return { type, host, port, username, password };
   }
 
-  const parts = value.split(':');
+  const parts = value.split(':').filter((p) => p.length > 0);
 
   // host:port
   if (parts.length === 2) {
-    const host = parts[0].trim();
+    const host = sanitizeHost(parts[0]);
     const port = parts[1].trim();
     if (!host || !/^\d+$/.test(port)) return null;
+    if (!type) type = port === '10001' ? 'http' : port === '10000' ? 'socks5' : undefined;
     return { type, host, port };
   }
 
-  // host:port:user:pass  OU  user:pass:host:port
+  // Formato IPBR e maioria dos provedores: host:port:user:pass
   if (parts.length >= 4) {
     const p0 = parts[0].trim();
     const p1 = parts[1].trim();
     const p2 = parts[2].trim();
     const p3 = parts.slice(3).join(':').trim();
 
-    // host:port:user:pass (host não é só número, porta é número)
+    // host:port:user:pass
     if (/^\d+$/.test(p1) && !/^\d+$/.test(p0)) {
-      return { type, host: p0, port: p1, username: p2, password: p3 };
+      if (!type) type = p1 === '10001' ? 'http' : p1 === '10000' ? 'socks5' : undefined;
+      return { type, host: sanitizeHost(p0), port: p1, username: p2, password: p3 };
     }
 
     // user:pass:host:port
     if (/^\d+$/.test(p3) && !/^\d+$/.test(p0)) {
-      return { type, username: p0, password: p1, host: p2, port: p3 };
+      if (!type) type = p3 === '10001' ? 'http' : p3 === '10000' ? 'socks5' : undefined;
+      return { type, username: p0, password: p1, host: sanitizeHost(p2), port: p3 };
     }
   }
 
   return null;
+}
+
+function sanitizeHost(host: string): string {
+  return (host || '')
+    .trim()
+    .replace(/^:+|:+$/g, '')
+    .replace(/\.ipbr\.prox$/i, '.ipbr.pro')
+    .replace(/\.ipbr\.pr$/i, '.ipbr.pro');
+}
+
+function applyParsedProxy(
+  parsed: NonNullable<ReturnType<typeof parseProxyString>>,
+  prev: { name: string; type: string; host: string; port: string; username: string; password: string; location: string; description: string; is_active: boolean; rotation_interval: number; proxy_pool: ProxyPoolItem[] }
+) {
+  return {
+    ...prev,
+    host: sanitizeHost(parsed.host || ''),
+    port: parsed.port || '',
+    username: parsed.username || prev.username,
+    password: parsed.password || prev.password,
+    type: parsed.type || prev.type,
+  };
 }
 
 export default function ProxiesPage() {
@@ -1025,6 +1058,44 @@ export default function ProxiesPage() {
               {/* PROXY FIXO: Host e Porta */}
               {formData.type !== 'rotating' && (
                 <>
+                  {/* Colar string completa do provedor (formato IPBR) */}
+                  <div className="bg-gradient-to-br from-emerald-500/10 to-cyan-500/5 border-2 border-emerald-500/40 rounded-xl p-4">
+                    <label className="block text-white font-bold text-base mb-2 flex items-center gap-2">
+                      <span className="text-xl">📋</span> Colar string do provedor
+                    </label>
+                    <p className="text-emerald-200/80 text-xs mb-3">
+                      Cole a linha completa do painel IPBR. Exemplos:
+                      <br />
+                      <span className="font-mono text-emerald-300">SOCKS5: proxy22-br-hz.ipbr.pro:10000:usuario:senha</span>
+                      <br />
+                      <span className="font-mono text-emerald-300">HTTP: proxy22-br-hz.ipbr.pro:10001:usuario:senha</span>
+                    </p>
+                    <input
+                      type="text"
+                      placeholder="Cole aqui: host:porta:usuario:senha"
+                      className="w-full px-6 py-4 bg-dark-700 text-white text-base font-mono rounded-xl border-2 border-emerald-500/40 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/30 transition-all placeholder-white/40"
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const parsed = parseProxyString(value);
+                        if (parsed?.host && parsed?.port) {
+                          setFormData((prev) => applyParsedProxy(parsed, prev));
+                          toast.success(`Proxy reconhecido! ${parsed.host}:${parsed.port} (${parsed.type || formData.type})`);
+                          e.target.value = '';
+                        }
+                      }}
+                      onPaste={(e) => {
+                        const pasted = e.clipboardData.getData('text');
+                        const parsed = parseProxyString(pasted);
+                        if (parsed?.host && parsed?.port) {
+                          e.preventDefault();
+                          setFormData((prev) => applyParsedProxy(parsed, prev));
+                          toast.success(`Proxy reconhecido! ${parsed.host}:${parsed.port} (${parsed.type || 'auto'})`);
+                          (e.target as HTMLInputElement).value = '';
+                        }
+                      }}
+                    />
+                  </div>
+
                   <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4">
                     <label className="block text-white font-bold text-base mb-3 flex items-center gap-2">
                       <span className="text-xl">🌐</span> Servidor
@@ -1037,28 +1108,17 @@ export default function ProxiesPage() {
                           value={formData.host}
                           onChange={(e) => {
                             const value = e.target.value;
-                            // Auto-preencher se colar string completa do provedor
                             const parsed = parseProxyString(value);
-                            if (parsed && parsed.host && parsed.port && (value.includes('@') || value.split(':').length >= 3)) {
-                              setFormData((prev) => ({
-                                ...prev,
-                                host: parsed.host || '',
-                                port: parsed.port || '',
-                                username: parsed.username || prev.username,
-                                password: parsed.password || prev.password,
-                                type: parsed.type || prev.type,
-                              }));
+                            if (parsed?.host && parsed?.port && (value.includes('@') || value.split(':').filter(Boolean).length >= 3)) {
+                              setFormData((prev) => applyParsedProxy(parsed, prev));
                               toast.success('Formato de proxy reconhecido e campos preenchidos!');
                               return;
                             }
-                            setFormData({ ...formData, host: value });
+                            setFormData({ ...formData, host: sanitizeHost(value) });
                           }}
-                          placeholder="Ex: proxy22-br-hz.ipbr.pro ou 191.5.153.178"
+                          placeholder="Ex: proxy22-br-hz.ipbr.pro"
                           className="w-full px-6 py-4 bg-dark-700 text-white text-base font-mono rounded-xl border-2 border-cyan-500/30 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/30 transition-all placeholder-white/40"
                         />
-                        <p className="text-white/40 text-xs mt-2">
-                          Aceita IP ou hostname. Também pode colar a string completa: host:porta:usuario:senha
-                        </p>
                       </div>
                       <div>
                         <label className="block text-white/70 text-sm mb-2">Porta *</label>
@@ -1066,17 +1126,20 @@ export default function ProxiesPage() {
                           type="number"
                           value={formData.port}
                           onChange={(e) => setFormData({ ...formData, port: e.target.value })}
-                          placeholder="1080"
+                          placeholder={formData.type === 'http' ? '10001' : '10000'}
                           className="w-full px-6 py-4 bg-dark-700 text-white text-base font-mono rounded-xl border-2 border-cyan-500/30 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/30 transition-all placeholder-white/40"
                         />
                       </div>
                     </div>
+                    <p className="text-white/40 text-xs mt-2">
+                      IPBR: SOCKS5 usa porta <strong className="text-white/70">10000</strong> · HTTP usa porta <strong className="text-white/70">10001</strong>
+                    </p>
                   </div>
 
                   {/* Usuário e Senha */}
                   <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4">
                     <label className="block text-white font-bold text-base mb-3 flex items-center gap-2">
-                      <span className="text-xl">🔐</span> Autenticação (opcional)
+                      <span className="text-xl">🔐</span> Autenticação
                     </label>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
