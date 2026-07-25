@@ -50,11 +50,34 @@ interface WorkerConfig {
   interval_seconds_max?: number;
 }
 
-// Função para obter intervalo aleatório entre min e max
+// Função para obter intervalo aleatório entre min e max (segundos)
+// Aceita 0; se min vier null e max=1, usa 1 (não cai no default 10)
 function getRandomInterval(config: WorkerConfig): number {
-  const min = config.interval_seconds_min || config.interval_seconds || 10;
-  const max = config.interval_seconds_max || config.interval_seconds || min;
-  
+  const legacy = config.interval_seconds;
+  let minRaw = config.interval_seconds_min;
+  let maxRaw = config.interval_seconds_max;
+
+  // null/undefined ≠ 0 — usar ?? para não transformar 0 em default
+  if (minRaw == null && maxRaw == null && legacy == null) {
+    return 1;
+  }
+  if (minRaw == null) {
+    minRaw = maxRaw != null ? maxRaw : legacy;
+  }
+  if (maxRaw == null) {
+    maxRaw = minRaw != null ? minRaw : legacy;
+  }
+
+  let min = Number(minRaw);
+  let max = Number(maxRaw);
+  if (!Number.isFinite(min) || min < 0) min = 0;
+  if (!Number.isFinite(max) || max < 0) max = min;
+  if (min > max) {
+    const tmp = min;
+    min = max;
+    max = tmp;
+  }
+
   if (min === max) return min;
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }

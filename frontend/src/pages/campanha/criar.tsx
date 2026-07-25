@@ -1189,11 +1189,21 @@ export default function CriarCampanha() {
       }
       
       // Preparar configurações
+      let minSec = parseInt(intervalSecondsMin, 10);
+      let maxSec = parseInt(intervalSecondsMax, 10);
+      if (!Number.isFinite(minSec) || minSec < 0) minSec = 0;
+      if (!Number.isFinite(maxSec) || maxSec < 0) maxSec = minSec;
+      if (minSec > maxSec) {
+        const tmp = minSec;
+        minSec = maxSec;
+        maxSec = tmp;
+      }
+
       const scheduleConfig = {
         work_start_time: workStartTime,
         work_end_time: workEndTime,
-        interval_seconds_min: parseInt(intervalSecondsMin),
-        interval_seconds_max: parseInt(intervalSecondsMax),
+        interval_seconds_min: minSec,
+        interval_seconds_max: maxSec,
       };
       
       const pauseConfig = {
@@ -2424,7 +2434,8 @@ export default function CriarCampanha() {
                     <input
                       type="number"
                       className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
-                          min="5"
+                          min="0"
+                          step="1"
                           value={intervalSecondsMin}
                           onChange={(e) => {
                             setIntervalSecondsMin(e.target.value);

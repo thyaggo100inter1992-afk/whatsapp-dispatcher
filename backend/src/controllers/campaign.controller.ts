@@ -159,6 +159,7 @@ export class CampaignController {
         total_contacts: contacts.length,
         schedule_config,
         pause_config,
+        ignore_restrictions: ignore_restrictions || false,
         sent_count: 0,
         delivered_count: 0,
         read_count: 0,
@@ -795,7 +796,30 @@ export class CampaignController {
         updateData.scheduled_at = null;
       }
       
-      if (schedule_config) updateData.schedule_config = schedule_config;
+      if (schedule_config) {
+        // Normalizar intervalo: min null + max 1 não pode virar default 10 no worker
+        const sc = { ...schedule_config };
+        let minSec = sc.interval_seconds_min;
+        let maxSec = sc.interval_seconds_max;
+        if (minSec == null && maxSec == null && sc.interval_seconds != null) {
+          minSec = sc.interval_seconds;
+          maxSec = sc.interval_seconds;
+        }
+        if (minSec == null && maxSec != null) minSec = maxSec;
+        if (maxSec == null && minSec != null) maxSec = minSec;
+        minSec = Number(minSec);
+        maxSec = Number(maxSec);
+        if (!Number.isFinite(minSec) || minSec < 0) minSec = 0;
+        if (!Number.isFinite(maxSec) || maxSec < 0) maxSec = minSec;
+        if (minSec > maxSec) {
+          const tmp = minSec;
+          minSec = maxSec;
+          maxSec = tmp;
+        }
+        sc.interval_seconds_min = minSec;
+        sc.interval_seconds_max = maxSec;
+        updateData.schedule_config = sc;
+      }
       if (pause_config) updateData.pause_config = pause_config;
 
       // Atualizar campanha

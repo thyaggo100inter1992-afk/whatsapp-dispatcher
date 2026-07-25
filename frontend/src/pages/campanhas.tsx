@@ -291,16 +291,31 @@ export default function Campanhas() {
     const pauseConfig = campaign.pause_config || {};
     
     // Suporte tanto ao formato antigo (interval_seconds) quanto ao novo (min/max)
-    const intervalMin = scheduleConfig.interval_seconds_min || scheduleConfig.interval_seconds || 5;
-    const intervalMax = scheduleConfig.interval_seconds_max || scheduleConfig.interval_seconds || 10;
+    // Usar ?? para não transformar 0 em default; se min vier null, espelhar o max
+    const legacy = scheduleConfig.interval_seconds;
+    let intervalMin = scheduleConfig.interval_seconds_min;
+    let intervalMax = scheduleConfig.interval_seconds_max;
+    if (intervalMin == null && intervalMax == null) {
+      intervalMin = legacy ?? 1;
+      intervalMax = legacy ?? 1;
+    } else if (intervalMin == null) {
+      intervalMin = intervalMax;
+    } else if (intervalMax == null) {
+      intervalMax = intervalMin;
+    }
+    if (Number(intervalMin) > Number(intervalMax)) {
+      const tmp = intervalMin;
+      intervalMin = intervalMax;
+      intervalMax = tmp;
+    }
 
     setEditForm({
       name: campaign.name,
       scheduled_at: campaign.scheduled_at ? campaign.scheduled_at.split('T')[0] + 'T' + campaign.scheduled_at.split('T')[1].substring(0, 5) : '',
       work_start_time: scheduleConfig.work_start_time || '08:00',
       work_end_time: scheduleConfig.work_end_time || '20:00',
-      interval_seconds_min: String(intervalMin),
-      interval_seconds_max: String(intervalMax),
+      interval_seconds_min: String(intervalMin ?? 1),
+      interval_seconds_max: String(intervalMax ?? 1),
       pause_after: String(pauseConfig.pause_after || 100),
       pause_duration_minutes: String(pauseConfig.pause_duration_minutes || 30),
     });
@@ -314,14 +329,24 @@ export default function Campanhas() {
     if (!editingCampaign) return;
     
     try {
+      let minSec = parseInt(editForm.interval_seconds_min, 10);
+      let maxSec = parseInt(editForm.interval_seconds_max, 10);
+      if (!Number.isFinite(minSec) || minSec < 0) minSec = 0;
+      if (!Number.isFinite(maxSec) || maxSec < 0) maxSec = minSec;
+      if (minSec > maxSec) {
+        const tmp = minSec;
+        minSec = maxSec;
+        maxSec = tmp;
+      }
+
       const data = {
         name: editForm.name,
         scheduled_at: editForm.scheduled_at || null,
         schedule_config: {
           work_start_time: editForm.work_start_time,
           work_end_time: editForm.work_end_time,
-          interval_seconds_min: parseInt(editForm.interval_seconds_min),
-          interval_seconds_max: parseInt(editForm.interval_seconds_max),
+          interval_seconds_min: minSec,
+          interval_seconds_max: maxSec,
         },
         pause_config: {
           pause_after: parseInt(editForm.pause_after),
