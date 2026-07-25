@@ -524,13 +524,18 @@ export default function ProxiesPage() {
         }
       }
 
-      const payload = {
+      const payload: any = {
         ...formData,
         port: formData.type === 'rotating' ? 0 : parseInt(formData.port) || 0,
         host: formData.type === 'rotating' ? '' : formData.host,
         rotation_interval: formData.type === 'rotating' ? formData.rotation_interval : null,
         proxy_pool: formData.type === 'rotating' ? formData.proxy_pool : null
       };
+
+      // Em edição, senha em branco = manter a atual (não enviar vazia)
+      if (editingProxy && !String(formData.password || '').trim()) {
+        delete payload.password;
+      }
 
       let response;
       if (editingProxy) {
@@ -1555,9 +1560,14 @@ export default function ProxiesPage() {
                           type="password"
                           value={formData.password}
                           onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                          placeholder="••••••••"
+                          placeholder={editingProxy ? 'Deixe em branco para manter a senha atual' : '••••••••'}
                           className="w-full px-6 py-4 bg-dark-700 text-white text-base rounded-xl border-2 border-cyan-500/30 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/30 transition-all placeholder-white/40"
                         />
+                        {editingProxy && (
+                          <p className="text-white/40 text-xs mt-2">
+                            Por segurança a senha não é exibida. Só preencha se quiser trocar.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

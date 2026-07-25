@@ -377,7 +377,11 @@ export class ProxyManagerController {
       ({ type, host, port, username, password } = normalizeProxyFields({ type, host, port, username, password }));
 
       // Verificar se proxy existe
-      const existingResult = await tenantQuery(req, 'SELECT id FROM proxies WHERE id = $1', [id]);
+      const existingResult = await tenantQuery(
+        req,
+        'SELECT id, password FROM proxies WHERE id = $1',
+        [id]
+      );
       if (existingResult.rows.length === 0) {
         return res.status(404).json({ success: false, error: 'Proxy não encontrado' });
       }
@@ -406,6 +410,12 @@ export class ProxyManagerController {
         }
       }
 
+      // Senha vazia no edit = manter a senha já salva (lista não devolve a senha)
+      const passwordToSave =
+        password === undefined || password === null || String(password).trim() === ''
+          ? existingResult.rows[0].password
+          : password;
+
       const result = await tenantQuery(req, 
         `UPDATE proxies SET 
           name = COALESCE($1, name),
@@ -421,14 +431,14 @@ export class ProxyManagerController {
           proxy_pool = $11,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = $12
-        RETURNING *`,
+        RETURNING id, name, type, host, port, username, location, description, status, last_check, last_ip, is_active, created_at, updated_at, rotation_interval, proxy_pool, current_proxy_index`,
         [
           name, 
           type, 
           host, 
           port, 
           username, 
-          password, 
+          passwordToSave, 
           location, 
           description, 
           is_active,
