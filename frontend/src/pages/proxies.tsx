@@ -374,8 +374,8 @@ export default function ProxiesPage() {
   const handleTest = async (id: number) => {
     setTestingId(id);
     try {
-      // Timeout no cliente para não ficar girando infinito se o backend demorar
-      const response = await api.post(`/proxies/${id}/test`, {}, { timeout: 25000 });
+      // Backend responde em ~10s; timeout cliente um pouco maior
+      const response = await api.post(`/proxies/${id}/test`, {}, { timeout: 20000 });
 
       if (response.data.success) {
         const loc = response.data.location ? ` — ${response.data.location}` : '';
@@ -383,17 +383,16 @@ export default function ProxiesPage() {
       } else {
         toast.error('❌ Teste falhou: ' + (response.data.error || 'Proxy não está funcionando'));
       }
-      loadProxies();
     } catch (error: any) {
       console.error('Erro ao testar proxy:', error);
       const msg =
-        error?.code === 'ECONNABORTED'
-          ? 'Tempo esgotado ao testar o proxy (timeout). Verifique host/porta/usuário/senha.'
+        error?.code === 'ECONNABORTED' || error?.message?.includes('timeout')
+          ? 'Tempo esgotado. Confira usuário/senha e se o tipo é SOCKS5 ou HTTP.'
           : (error?.response?.data?.error || error?.message || 'Erro ao testar proxy');
       toast.error('❌ ' + msg);
-      loadProxies();
     } finally {
       setTestingId(null);
+      loadProxies();
     }
   };
 
