@@ -45,23 +45,12 @@ async function resolveHostWithTimeout(host: string, timeoutMs = 3000): Promise<s
 }
 
 /**
- * Resolve hostname → IP (novo formato IPBR usa domínio).
- * Proxies com IP direto funcionam melhor no socks-proxy-agent.
+ * Normaliza config do proxy.
+ * Mantém hostname (não resolve para IP): IPBR exige socks5h + domínio;
+ * resolver para IP quebra a saída IPv6 (HostUnreachable em destinos IPv4).
  */
 export async function resolveProxyConfig(config: ProxyConfig): Promise<ProxyConfig> {
-  const host = (config.host || '').trim();
-  if (!host || isIpLiteral(host)) {
-    return { ...config, host };
-  }
-
-  try {
-    const ip = await resolveHostWithTimeout(host);
-    console.log(`🔎 Proxy hostname "${host}" resolvido para ${ip}`);
-    return { ...config, host: ip };
-  } catch (err: any) {
-    console.warn(`⚠️ Não foi possível resolver "${host}": ${err.message}. Usando hostname.`);
-    return { ...config, host };
-  }
+  return { ...config, host: (config.host || '').trim() };
 }
 
 /**
@@ -82,7 +71,8 @@ function buildProxyUrl(scheme: string, config: ProxyConfig): string {
 
 /**
  * Cria um agent de proxy.
- * Prefira passar host já resolvido (IP) — funciona igual aos proxies antigos.
+ * SOCKS sempre usa socks5h (DNS do destino no proxy) — necessário para
+ * gateways IPBR com saída IPv6; também funciona com proxies IP antigos.
  */
 export function createProxyAgent(config: ProxyConfig, socketTimeoutMs = 8000): any {
   if (!config.enabled || !config.host || !config.port) {
@@ -94,10 +84,8 @@ export function createProxyAgent(config: ProxyConfig, socketTimeoutMs = 8000): a
   const agentOpts = { timeout: socketTimeoutMs, keepAlive: false };
 
   if (config.type === 'socks5') {
-    // Com IP: socks5. Com hostname: socks5h (DNS remota do destino)
-    const scheme = isIpLiteral(host) ? 'socks5' : 'socks5h';
-    const proxyUrl = buildProxyUrl(scheme, { ...config, host, port });
-    console.log(`🌐 Criando Socks5 Proxy Agent (${scheme}): ${host}:${port}`);
+    const proxyUrl = buildProxyUrl('socks5h', { ...config, host, port });
+    console.log(`🌐 Criando Socks5 Proxy Agent (socks5h): ${host}:${port}`);
     return new SocksProxyAgent(proxyUrl, agentOpts);
   }
 
@@ -106,13 +94,38 @@ export function createProxyAgent(config: ProxyConfig, socketTimeoutMs = 8000): a
   return new HttpsProxyAgent(proxyUrl, agentOpts);
 }
 
+/** Endpoints de teste — api64/icanhazip suportam saída IPv6 do IPBR; api.ipify (IPv4) costuma falhar. */
+const PROXY_TEST_ENDPOINTS: Array<{
+  url: string;
+  parse: (data: any) => string | undefined;
+}> = [
+  {
+    url: 'https://api64.ipify.org?format=json',
+    parse: (d) => (typeof d?.ip === 'string' ? d.ip : undefined),
+  },
+  {
+    url: 'https://icanhazip.com',
+    parse: (d) => {
+      const t = (typeof d === 'string' ? d : String(d ?? '')).trim();
+      return t || undefined;
+    },
+  },
+  {
+    url: 'https://ifconfig.co/ip',
+    parse: (d) => {
+      const t = (typeof d === 'string' ? d : String(d ?? '')).trim();
+      return t || undefined;
+    },
+  },
+];
+
 /**
  * Testa se o proxy está funcionando.
- * HARD TIMEOUT 12s — o agent SOCKS às vezes ignora o timeout do Axios.
+ * HARD TIMEOUT 15s — o agent SOCKS às vezes ignora o timeout do Axios.
  */
 export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
   const startTime = Date.now();
-  const HARD_TIMEOUT_MS = 12000;
+  const HARD_TIMEOUT_MS = 15000;
 
   const work = async (): Promise<ProxyTestResult> => {
     if (!config.enabled) {
@@ -126,11 +139,12 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
     const originalHost = config.host.trim();
     const port = Number(config.port);
 
-    let connectHost = originalHost;
+    // DNS só para validar que o host existe e para o check TCP
+    let resolvedIp = originalHost;
     try {
-      connectHost = await resolveHostWithTimeout(originalHost, 2500);
-      if (connectHost !== originalHost) {
-        console.log(`🔎 Hostname "${originalHost}" → IP ${connectHost}`);
+      resolvedIp = await resolveHostWithTimeout(originalHost, 2500);
+      if (resolvedIp !== originalHost) {
+        console.log(`🔎 Hostname "${originalHost}" → IP ${resolvedIp}`);
       }
     } catch (dnsErr: any) {
       return {
@@ -149,21 +163,21 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
     try {
       const net = await import('net');
       await new Promise<void>((resolve, reject) => {
-        const socket = net.createConnection({ host: connectHost, port, timeout: 3000 });
+        const socket = net.createConnection({ host: resolvedIp, port, timeout: 3000 });
         socket.once('connect', () => {
           socket.destroy();
           resolve();
         });
         socket.once('timeout', () => {
           socket.destroy();
-          reject(new Error(`Porta ${port} sem resposta em ${connectHost}`));
+          reject(new Error(`Porta ${port} sem resposta em ${resolvedIp}`));
         });
         socket.once('error', (err) => {
           socket.destroy();
           reject(err);
         });
       });
-      console.log(`✅ TCP OK em ${connectHost}:${port}`);
+      console.log(`✅ TCP OK em ${resolvedIp}:${port}`);
     } catch (tcpErr: any) {
       return {
         success: false,
@@ -172,70 +186,90 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
       };
     }
 
+    // Agent usa o hostname original (socks5h) — NÃO o IP resolvido
+    const agentHost = originalHost;
+
     const runOnce = async (
       type: 'socks5' | 'http' | 'https',
-      hostToUse: string
+      hostToUse: string,
+      portToUse: number
     ): Promise<ProxyTestResult> => {
       const agent = createProxyAgent(
-        { ...config, enabled: true, type, host: hostToUse, port },
-        5000
+        { ...config, enabled: true, type, host: hostToUse, port: portToUse },
+        8000
       );
 
       if (!agent) {
         return { success: false, error: 'Falha ao criar agent de proxy', latency: Date.now() - startTime };
       }
 
-      console.log(`🔍 Testando ${type}://${hostToUse}:${port} (cadastro: ${originalHost}, auth=${hasAuth})...`);
+      console.log(`🔍 Testando ${type}://${hostToUse}:${portToUse} (auth=${hasAuth})...`);
 
-      try {
-        const response = await axios.get('https://api.ipify.org?format=json', {
-          httpsAgent: agent,
-          httpAgent: agent,
-          timeout: 5000,
-          headers: { 'User-Agent': 'WhatsApp-Dispatcher/1.0' },
-          proxy: false,
-          transitional: { clarifyTimeoutError: true },
-        });
+      let lastError = 'Falha no teste do proxy';
+      for (const endpoint of PROXY_TEST_ENDPOINTS) {
+        try {
+          const response = await axios.get(endpoint.url, {
+            httpsAgent: agent,
+            httpAgent: agent,
+            timeout: 8000,
+            headers: { 'User-Agent': 'WhatsApp-Dispatcher/1.0' },
+            proxy: false,
+            transitional: { clarifyTimeoutError: true },
+            responseType: endpoint.url.includes('format=json') ? 'json' : 'text',
+          });
 
-        const ip = response.data?.ip;
-        if (!ip) {
-          return { success: false, error: 'Resposta inválida do teste de IP', latency: Date.now() - startTime };
+          const ip = endpoint.parse(response.data);
+          if (!ip) {
+            lastError = `Resposta inválida de ${endpoint.url}`;
+            continue;
+          }
+
+          const latency = Date.now() - startTime;
+          console.log(`✅ Proxy OK via ${type}! IP saída: ${ip}, latência: ${latency}ms (${endpoint.url})`);
+          return { success: true, ip, location: undefined, latency };
+        } catch (err: any) {
+          lastError = err.message || String(err);
+          console.warn(`⚠️ Falha ${type}://${hostToUse}:${portToUse} → ${endpoint.url}: ${lastError}`);
         }
-
-        const latency = Date.now() - startTime;
-        console.log(`✅ Proxy OK via ${type}! IP saída: ${ip}, latência: ${latency}ms`);
-        return { success: true, ip, location: undefined, latency };
-      } catch (err: any) {
-        const msg = err.message || String(err);
-        console.warn(`⚠️ Falha ${type}://${hostToUse}:${port}: ${msg}`);
-        return { success: false, error: msg, latency: Date.now() - startTime };
       }
+
+      return { success: false, error: lastError, latency: Date.now() - startTime };
     };
 
-    // 1) Tipo cadastrado
-    let result = await runOnce(config.type || 'socks5', connectHost);
+    // 1) Tipo cadastrado no hostname (socks5h)
+    let result = await runOnce(config.type || 'socks5', agentHost, port);
     if (result.success) return result;
+    const socksError = result.error;
 
-    // 2) Fallback HTTP se era SOCKS5
+    // 2) Fallback HTTP na porta 10001 (padrão IPBR) se SOCKS estava em 10000
     if ((config.type || 'socks5') === 'socks5') {
-      console.log('🔄 SOCKS5 falhou — tentando HTTP...');
-      const httpResult = await runOnce('http', connectHost);
+      const httpPort = port === 10000 ? 10001 : port;
+      console.log(`🔄 SOCKS5 falhou — tentando HTTP :${httpPort}...`);
+      const httpResult = await runOnce('http', agentHost, httpPort);
       if (httpResult.success) {
         return {
           ...httpResult,
-          location: 'Conectou via HTTP — mude o tipo do proxy para HTTP',
+          location:
+            httpPort !== port
+              ? `Conectou via HTTP porta ${httpPort} — cadastre tipo HTTP e porta ${httpPort}`
+              : 'Conectou via HTTP — mude o tipo do proxy para HTTP',
         };
       }
-      result = httpResult;
+      // Preferir erro SOCKS real (HostUnreachable etc.) em vez do ruído CONNECT do HTTP
+      result = { ...result, error: socksError || httpResult.error };
     }
 
     let friendly = result.error || 'Erro desconhecido';
-    if (/ECONNREFUSED/i.test(friendly)) {
-      friendly = `Conexão recusada em ${originalHost}:${port} (${connectHost}). Verifique porta/protocolo.`;
+    if (/HostUnreachable/i.test(friendly)) {
+      friendly = `Proxy rejeitou o destino (HostUnreachable) em ${originalHost}:${port}. Confira usuário/senha e se o tipo é SOCKS5 porta 10000.`;
+    } else if (/ECONNREFUSED/i.test(friendly)) {
+      friendly = `Conexão recusada em ${originalHost}:${port}. Verifique porta/protocolo.`;
     } else if (/ETIMEDOUT|timeout|Proxy connection timed out/i.test(friendly)) {
       friendly = `Timeout em ${originalHost}:${port}. Usuário/senha incorretos, tipo errado (SOCKS5/HTTP) ou proxy offline.`;
-    } else if (/authentication|auth|SOCKS/i.test(friendly)) {
+    } else if (/authentication|NotAllowed|SOCKS.*auth/i.test(friendly)) {
       friendly = `Falha de autenticação em ${originalHost}:${port}. Confira usuário e senha.`;
+    } else if (/CONNECT response/i.test(friendly)) {
+      friendly = `Porta ${port} não é HTTP. Para IPBR use SOCKS5 porta 10000 (ou HTTP porta 10001).`;
     }
     if (!hasAuth) {
       friendly += ' Atenção: proxy SEM usuário/senha cadastrados.';
@@ -246,7 +280,6 @@ export async function testProxy(config: ProxyConfig): Promise<ProxyTestResult> {
   };
 
   try {
-    // Garante resposta mesmo se o agent SOCKS travar ignorando timeout do Axios
     return await Promise.race([
       work(),
       new Promise<ProxyTestResult>((resolve) =>

@@ -393,12 +393,12 @@ export class ProxyManagerController {
 
     // Hard timeout da rota — evita spinner infinito no frontend
     const hardTimer = setTimeout(() => {
-      console.error(`⏱️ [TIMEOUT ROTA] Teste proxy id=${id} excedeu 15s`);
+      console.error(`⏱️ [TIMEOUT ROTA] Teste proxy id=${id} excedeu 20s`);
       respond({
         success: false,
         error: 'Tempo esgotado no servidor. Verifique usuário/senha e se o tipo é SOCKS5 ou HTTP.',
       });
-    }, 15000);
+    }, 20000);
 
     try {
       const result = await tenantQuery(req, 'SELECT * FROM proxies WHERE id = $1', [id]);
