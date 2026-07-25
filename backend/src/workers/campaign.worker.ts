@@ -456,18 +456,20 @@ class CampaignWorker {
 
     this.isRunning = true;
     console.log('🚀 Campaign Worker iniciado!');
-    console.log('🔄 Verificando campanhas a cada 10 segundos...');
+    console.log('🔄 Worker ativo — delay da campanha respeitado entre envios (sem espera extra de 10s)');
 
     // Loop principal do worker
     while (this.isRunning) {
+      let hadWork = false;
       try {
-        await this.processPendingCampaigns();
+        hadWork = await this.processPendingCampaigns();
       } catch (error) {
         console.error('❌ Erro no worker:', error);
       }
 
-      // Aguardar 10 segundos (era 5s). Reduzir polling alivia o banco e o Event Loop.
-      await this.sleep(10000);
+      // Com campanha ativa: ciclo curto para não somar 10s ao delay configurado.
+      // Idle: espera maior para aliviar o banco.
+      await this.sleep(hadWork ? 200 : 5000);
     }
   }
 
@@ -476,7 +478,7 @@ class CampaignWorker {
     console.log('🛑 Campaign Worker parado');
   }
 
-  private async processPendingCampaigns() {
+  private async processPendingCampaigns(): Promise<boolean> {
     // 🔒 SEGURANÇA: Buscar tenants ativos primeiro para garantir isolamento
     const tenantsResult = await query(
       `SELECT DISTINCT id FROM tenants WHERE status != 'deleted' AND blocked_at IS NULL`
@@ -485,7 +487,7 @@ class CampaignWorker {
     const tenantIds = tenantsResult.rows.map(t => t.id);
     
     if (tenantIds.length === 0) {
-      return;
+      return false;
     }
     
     // 🔒 SEGURANÇA: Buscar campanhas APENAS de tenants ativos
@@ -499,7 +501,7 @@ class CampaignWorker {
     );
 
     if (result.rows.length === 0) {
-      return;
+      return false;
     }
 
     const campaigns: Campaign[] = result.rows;
@@ -511,6 +513,7 @@ class CampaignWorker {
     }
 
     await Promise.all(campaigns.map(campaign => this.processSingleCampaign(campaign)));
+    return true;
   }
 
   private async processSingleCampaign(campaign: Campaign) {
@@ -712,9 +715,10 @@ class CampaignWorker {
       return;
     }
 
-    // Buscar os próximos contatos para processar
-    // ⚡ AJUSTE: Lote de apenas 1 mensagem por vez para permitir detecção rápida de novas campanhas
-    const batchSize = 1;
+    // Buscar próximos contatos em lote.
+    // Antes: lote=1 + sleep 10s no loop principal → ~12s entre envios mesmo com delay 1s.
+    // Agora: processa vários no mesmo ciclo; só o delay da campanha separa cada envio.
+    const batchSize = 50;
     const contactsResult = await queryWithTenantId(
       campaign.tenant_id,
       `SELECT c.*, cc.id as cc_id
