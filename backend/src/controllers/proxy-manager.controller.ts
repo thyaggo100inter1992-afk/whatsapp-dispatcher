@@ -36,12 +36,8 @@ function normalizeProxyFields(input: {
   }
 
   const portNum = parseInt(String(port), 10) || 0;
-  // Portas padrão IPBR: 10000=SOCKS5, 10001=HTTP
-  if (!type || type === 'socks5') {
-    if (portNum === 10001) type = 'http';
-    else if (portNum === 10000) type = 'socks5';
-  }
 
+  // Tipo NÃO é inferido pela porta — o usuário escolhe SOCKS5 ou HTTP
   return {
     type: type || 'socks5',
     host: sanitizeProxyHost(host || ''),
@@ -254,6 +250,115 @@ export class ProxyManagerController {
       res.json({ success: true, data: result.rows[0] });
     } catch (error: any) {
       console.error('Erro ao criar proxy:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * POST /api/proxies/bulk
+   * Criar vários proxies de uma vez (lista já validada/editada no frontend)
+   */
+  async createBulk(req: Request, res: Response) {
+    try {
+      const items = req.body?.proxies;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Envie um array "proxies" com pelo menos 1 item',
+        });
+      }
+
+      if (items.length > 200) {
+        return res.status(400).json({
+          success: false,
+          error: 'Máximo de 200 proxies por importação',
+        });
+      }
+
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      const created: any[] = [];
+      const errors: Array<{ index: number; name?: string; error: string }> = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const raw = items[i] || {};
+        const name = String(raw.name || '').trim();
+        let { type, host, port, username, password } = normalizeProxyFields({
+          type: raw.type,
+          host: raw.host,
+          port: raw.port,
+          username: raw.username,
+          password: raw.password,
+        });
+
+        // Respeitar tipo explícito do item (não sobrescrever com parse da string)
+        if (raw.type === 'socks5' || raw.type === 'http' || raw.type === 'https') {
+          type = raw.type;
+        }
+
+        if (!name) {
+          errors.push({ index: i, error: 'Nome é obrigatório' });
+          continue;
+        }
+        if (!host || !port) {
+          errors.push({ index: i, name, error: 'Host e porta são obrigatórios' });
+          continue;
+        }
+        if (!['socks5', 'http', 'https'].includes(type)) {
+          errors.push({ index: i, name, error: 'Tipo deve ser socks5, http ou https' });
+          continue;
+        }
+
+        try {
+          const existing = await tenantQuery(req, 'SELECT id FROM proxies WHERE name = $1', [name]);
+          if (existing.rows.length > 0) {
+            errors.push({ index: i, name, error: 'Já existe um proxy com este nome' });
+            continue;
+          }
+
+          const result = await tenantQuery(
+            req,
+            `INSERT INTO proxies
+            (tenant_id, name, type, host, port, username, password, location, description, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
+            RETURNING id, name, type, host, port, username, status, is_active, created_at`,
+            [
+              tenantId,
+              name,
+              type,
+              host,
+              port,
+              username || null,
+              password || null,
+              raw.location || null,
+              raw.description || null,
+            ]
+          );
+
+          created.push(result.rows[0]);
+        } catch (err: any) {
+          errors.push({ index: i, name, error: err.message || 'Erro ao inserir' });
+        }
+      }
+
+      console.log(
+        `✅ [ProxyManager] Bulk: ${created.length} criados, ${errors.length} erros (tenant ${tenantId})`
+      );
+
+      res.json({
+        success: true,
+        data: {
+          created,
+          errors,
+          createdCount: created.length,
+          errorCount: errors.length,
+        },
+      });
+    } catch (error: any) {
+      console.error('Erro no createBulk:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   }

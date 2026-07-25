@@ -28,6 +28,15 @@ router.get('/:id', (req, res) => proxyController.findById(req, res));
 // Criar novo proxy
 router.post('/', (req, res) => proxyController.create(req, res));
 
+// Criar vários proxies (deve ficar ANTES de /:id)
+router.post('/bulk', (req, res) => proxyController.createBulk(req, res));
+
+// Testar todos os proxies (antes de /:id)
+router.post('/test-all', (req, res) => proxyController.testAll(req, res));
+
+// Transferir contas em massa entre proxies
+router.post('/transfer-accounts', (req, res) => proxyController.transferAccounts(req, res));
+
 // Atualizar proxy
 router.put('/:id', (req, res) => proxyController.update(req, res));
 
@@ -37,14 +46,8 @@ router.delete('/:id', (req, res) => proxyController.delete(req, res));
 // Testar proxy
 router.post('/:id/test', (req, res) => proxyController.test(req, res));
 
-// Testar todos os proxies
-router.post('/test-all', (req, res) => proxyController.testAll(req, res));
-
 // Listar contas que usam um proxy
 router.get('/:id/accounts', (req, res) => proxyController.listAccounts(req, res));
-
-// Transferir contas em massa entre proxies
-router.post('/transfer-accounts', (req, res) => proxyController.transferAccounts(req, res));
 
 // Atribuir contas a um proxy
 router.post('/:id/assign-accounts', (req, res) => proxyController.assignAccounts(req, res));

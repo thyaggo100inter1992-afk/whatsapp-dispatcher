@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { useToast } from '@/hooks/useToast';
 import ToastContainer from '@/components/ToastContainer';
-import { FaGlobe, FaPlus, FaEdit, FaTrash, FaFlask, FaCheckCircle, FaTimesCircle, FaClock, FaSave, FaTimes, FaArrowLeft, FaUsers, FaExchangeAlt, FaPhone, FaCheckSquare, FaSquare, FaSearch } from 'react-icons/fa';
+import { FaGlobe, FaPlus, FaEdit, FaTrash, FaFlask, FaCheckCircle, FaTimesCircle, FaClock, FaSave, FaTimes, FaArrowLeft, FaUsers, FaExchangeAlt, FaPhone, FaCheckSquare, FaSquare, FaSearch, FaListUl } from 'react-icons/fa';
 import api from '@/services/api';
 
 interface ProxyPoolItem {
@@ -11,6 +11,19 @@ interface ProxyPoolItem {
   port: number;
   username?: string;
   password?: string;
+}
+
+interface BulkProxyRow {
+  key: string;
+  name: string;
+  type: 'socks5' | 'http';
+  host: string;
+  port: string;
+  username: string;
+  password: string;
+  raw: string;
+  valid: boolean;
+  error?: string;
 }
 
 interface Account {
@@ -180,6 +193,14 @@ export default function ProxiesPage() {
   const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
   const [transferring, setTransferring] = useState(false);
 
+  // States para importação em lote
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkRawText, setBulkRawText] = useState('');
+  const [bulkDefaultType, setBulkDefaultType] = useState<'socks5' | 'http'>('socks5');
+  const [bulkNamePrefix, setBulkNamePrefix] = useState('PROXY');
+  const [bulkRows, setBulkRows] = useState<BulkProxyRow[]>([]);
+  const [bulkSaving, setBulkSaving] = useState(false);
+
   // Form states
   const [formData, setFormData] = useState({
     name: '',
@@ -289,6 +310,169 @@ export default function ProxiesPage() {
     setAllAccounts([]);
     setSelectedAccountsForProxy([]);
     setAccountSearch('');
+  };
+
+  const handleOpenBulkModal = () => {
+    setBulkRawText('');
+    setBulkDefaultType('socks5');
+    setBulkNamePrefix('PROXY');
+    setBulkRows([]);
+    setShowBulkModal(true);
+  };
+
+  const handleCloseBulkModal = () => {
+    if (bulkSaving) return;
+    setShowBulkModal(false);
+    setBulkRawText('');
+    setBulkRows([]);
+  };
+
+  const buildBulkPreview = () => {
+    const lines = bulkRawText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith('#'));
+
+    if (lines.length === 0) {
+      toast.error('Cole pelo menos uma linha de proxy');
+      return;
+    }
+
+    const prefix = (bulkNamePrefix || 'PROXY').trim() || 'PROXY';
+    const pad = String(lines.length).length;
+
+    const rows: BulkProxyRow[] = lines.map((line, index) => {
+      // Opcional: nome|host:port:user:pass
+      let nameFromLine = '';
+      let proxyPart = line;
+      if (line.includes('|')) {
+        const pipeIdx = line.indexOf('|');
+        nameFromLine = line.slice(0, pipeIdx).trim();
+        proxyPart = line.slice(pipeIdx + 1).trim();
+      }
+
+      const parsed = parseProxyString(proxyPart);
+      const autoName = `${prefix} ${String(index + 1).padStart(Math.max(pad, 2), '0')}`;
+
+      if (!parsed?.host || !parsed?.port) {
+        return {
+          key: `bulk-${index}-${Date.now()}`,
+          name: nameFromLine || autoName,
+          type: bulkDefaultType,
+          host: '',
+          port: '',
+          username: '',
+          password: '',
+          raw: line,
+          valid: false,
+          error: 'Formato não reconhecido. Use host:porta:usuario:senha',
+        };
+      }
+
+      return {
+        key: `bulk-${index}-${Date.now()}`,
+        name: nameFromLine || autoName,
+        type: bulkDefaultType, // tipo escolhido pelo usuário — não detecta automaticamente
+        host: sanitizeHost(parsed.host),
+        port: parsed.port,
+        username: parsed.username || '',
+        password: parsed.password || '',
+        raw: line,
+        valid: true,
+      };
+    });
+
+    setBulkRows(rows);
+    const ok = rows.filter((r) => r.valid).length;
+    const bad = rows.length - ok;
+    toast.success(`Prévia gerada: ${ok} válida(s)${bad ? `, ${bad} com erro` : ''}. Edite antes de criar.`);
+  };
+
+  const updateBulkRow = (key: string, patch: Partial<BulkProxyRow>) => {
+    setBulkRows((prev) =>
+      prev.map((row) => {
+        if (row.key !== key) return row;
+        const next = { ...row, ...patch };
+        const hostOk = !!(next.host || '').trim();
+        const portOk = /^\d+$/.test(String(next.port || ''));
+        const nameOk = !!(next.name || '').trim();
+        next.valid = hostOk && portOk && nameOk;
+        next.error = !nameOk
+          ? 'Nome obrigatório'
+          : !hostOk
+            ? 'Host obrigatório'
+            : !portOk
+              ? 'Porta inválida'
+              : undefined;
+        return next;
+      })
+    );
+  };
+
+  const removeBulkRow = (key: string) => {
+    setBulkRows((prev) => prev.filter((r) => r.key !== key));
+  };
+
+  const handleBulkCreate = async () => {
+    const validRows = bulkRows.filter((r) => r.valid && r.name.trim() && r.host.trim() && r.port);
+    if (validRows.length === 0) {
+      toast.error('Nenhuma linha válida para criar. Gere a prévia e corrija os erros.');
+      return;
+    }
+
+    const names = validRows.map((r) => r.name.trim());
+    const dupes = names.filter((n, i) => names.indexOf(n) !== i);
+    if (dupes.length > 0) {
+      toast.error(`Nomes duplicados na lista: ${[...new Set(dupes)].join(', ')}`);
+      return;
+    }
+
+    setBulkSaving(true);
+    try {
+      const response = await api.post('/proxies/bulk', {
+        proxies: validRows.map((r) => ({
+          name: r.name.trim(),
+          type: r.type,
+          host: r.host.trim(),
+          port: parseInt(r.port, 10),
+          username: r.username || undefined,
+          password: r.password || undefined,
+        })),
+      });
+
+      if (!response.data.success) {
+        toast.error(response.data.error || 'Falha ao criar proxies');
+        return;
+      }
+
+      const { createdCount, errorCount, errors } = response.data.data;
+      if (createdCount > 0) {
+        toast.success(`${createdCount} proxy(s) criado(s) com sucesso!`);
+      }
+      if (errorCount > 0) {
+        const sample = (errors || [])
+          .slice(0, 3)
+          .map((e: any) => `${e.name || `#${e.index + 1}`}: ${e.error}`)
+          .join(' | ');
+        toast.error(`${errorCount} falha(s): ${sample}`);
+      }
+
+      await loadProxies();
+      if (errorCount === 0) {
+        setShowBulkModal(false);
+        setBulkRawText('');
+        setBulkRows([]);
+      } else {
+        const createdNames = new Set(
+          (response.data.data.created || []).map((c: any) => String(c.name || '').trim())
+        );
+        setBulkRows((prev) => prev.filter((r) => !createdNames.has(r.name.trim())));
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Erro ao criar proxies em lote');
+    } finally {
+      setBulkSaving(false);
+    }
   };
 
   const handleAddToPool = () => {
@@ -584,7 +768,7 @@ export default function ProxiesPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-3 flex-wrap">
                 <button
                   onClick={handleTestAll}
                   disabled={testingAll || proxies.length === 0}
@@ -600,6 +784,12 @@ export default function ProxiesPage() {
                       <FaFlask className="text-lg" /> Testar Todos
                     </>
                   )}
+                </button>
+                <button
+                  onClick={handleOpenBulkModal}
+                  className="px-6 py-4 bg-gradient-to-r from-emerald-500/20 to-teal-600/10 hover:from-emerald-500/30 hover:to-teal-600/20 border-2 border-emerald-500/50 text-emerald-200 font-bold rounded-xl transition-all flex items-center gap-2 text-base"
+                >
+                  <FaListUl className="text-lg" /> Importar Lista
                 </button>
                 <button
                   onClick={() => handleOpenModal()}
@@ -993,6 +1183,213 @@ export default function ProxiesPage() {
                     <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Transferindo...</>
                   ) : (
                     <><FaExchangeAlt /> Confirmar Transferência</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Importar Lista */}
+      {showBulkModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-br from-dark-800 to-dark-900 border-2 border-emerald-500/30 rounded-2xl p-6 md:p-8 max-w-6xl w-full max-h-[92vh] overflow-y-auto shadow-2xl shadow-emerald-500/20">
+            <div className="flex items-center justify-between gap-4 mb-6 pb-4 border-b-2 border-white/10">
+              <div className="flex items-center gap-4">
+                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-3 rounded-xl">
+                  <FaListUl className="text-3xl text-white" />
+                </div>
+                <div>
+                  <h2 className="text-3xl font-black text-white">Importar Lista de Proxies</h2>
+                  <p className="text-white/60 text-sm mt-1">
+                    Cole uma proxy por linha, gere a prévia, edite e crie todas de uma vez
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseBulkModal}
+                disabled={bulkSaving}
+                className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white"
+              >
+                <FaTimes />
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4">
+                  <label className="block text-white font-bold text-sm mb-2">Tipo do lote *</label>
+                  <select
+                    value={bulkDefaultType}
+                    onChange={(e) => setBulkDefaultType(e.target.value as 'socks5' | 'http')}
+                    className="w-full px-4 py-3 bg-dark-700 text-white rounded-xl border-2 border-emerald-500/30 focus:border-emerald-400"
+                  >
+                    <option value="socks5">SOCKS5</option>
+                    <option value="http">HTTP</option>
+                  </select>
+                  <p className="text-white/40 text-xs mt-2">Aplicado a todas as linhas ao gerar a prévia (editável depois)</p>
+                </div>
+                <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4 md:col-span-2">
+                  <label className="block text-white font-bold text-sm mb-2">Prefixo do nome</label>
+                  <input
+                    type="text"
+                    value={bulkNamePrefix}
+                    onChange={(e) => setBulkNamePrefix(e.target.value)}
+                    placeholder="Ex: IPBR ou PROXY - CONTA"
+                    className="w-full px-4 py-3 bg-dark-700 text-white rounded-xl border-2 border-emerald-500/30 focus:border-emerald-400"
+                  />
+                  <p className="text-white/40 text-xs mt-2">
+                    Gera nomes como <span className="text-white/70 font-mono">{bulkNamePrefix || 'PROXY'} 01</span>, depois você edita cada um na prévia
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4">
+                <label className="block text-white font-bold text-sm mb-2">Lista (1 proxy por linha)</label>
+                <textarea
+                  value={bulkRawText}
+                  onChange={(e) => setBulkRawText(e.target.value)}
+                  rows={8}
+                  placeholder={`proxy22-br-hz.ipbr.pro:10000:usuario1:senha1\nproxy22-br-hz.ipbr.pro:10000:usuario2:senha2\n\nOpcional com nome na linha:\nCONTA 07|proxy22-br-hz.ipbr.pro:10000:user:pass`}
+                  className="w-full px-4 py-3 bg-dark-700 text-white font-mono text-sm rounded-xl border-2 border-emerald-500/30 focus:border-emerald-400 placeholder-white/30"
+                />
+                <div className="flex flex-wrap gap-3 mt-3">
+                  <button
+                    type="button"
+                    onClick={buildBulkPreview}
+                    className="px-5 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 border-2 border-emerald-500/50 text-emerald-200 font-bold rounded-xl"
+                  >
+                    Gerar prévia editável
+                  </button>
+                  {bulkRows.length > 0 && (
+                    <span className="self-center text-white/60 text-sm">
+                      {bulkRows.filter((r) => r.valid).length}/{bulkRows.length} válidas
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {bulkRows.length > 0 && (
+                <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4 overflow-x-auto">
+                  <label className="block text-white font-bold text-sm mb-3">
+                    Prévia editável — ajuste nome, tipo, host, porta e credenciais antes de criar
+                  </label>
+                  <table className="w-full text-sm min-w-[900px]">
+                    <thead>
+                      <tr className="text-left text-white/60 border-b border-white/10">
+                        <th className="py-2 pr-2">#</th>
+                        <th className="py-2 pr-2">Nome</th>
+                        <th className="py-2 pr-2">Tipo</th>
+                        <th className="py-2 pr-2">Host</th>
+                        <th className="py-2 pr-2">Porta</th>
+                        <th className="py-2 pr-2">Usuário</th>
+                        <th className="py-2 pr-2">Senha</th>
+                        <th className="py-2 pr-2">Status</th>
+                        <th className="py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkRows.map((row, idx) => (
+                        <tr key={row.key} className="border-b border-white/5 align-top">
+                          <td className="py-2 pr-2 text-white/40">{idx + 1}</td>
+                          <td className="py-2 pr-2">
+                            <input
+                              value={row.name}
+                              onChange={(e) => updateBulkRow(row.key, { name: e.target.value })}
+                              className="w-36 px-2 py-1.5 bg-dark-700 text-white rounded-lg border border-white/20"
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
+                            <select
+                              value={row.type}
+                              onChange={(e) =>
+                                updateBulkRow(row.key, { type: e.target.value as 'socks5' | 'http' })
+                              }
+                              className="px-2 py-1.5 bg-dark-700 text-white rounded-lg border border-white/20"
+                            >
+                              <option value="socks5">SOCKS5</option>
+                              <option value="http">HTTP</option>
+                            </select>
+                          </td>
+                          <td className="py-2 pr-2">
+                            <input
+                              value={row.host}
+                              onChange={(e) => updateBulkRow(row.key, { host: sanitizeHost(e.target.value) })}
+                              className="w-48 px-2 py-1.5 bg-dark-700 text-white font-mono rounded-lg border border-white/20"
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
+                            <input
+                              value={row.port}
+                              onChange={(e) => updateBulkRow(row.key, { port: e.target.value })}
+                              className="w-20 px-2 py-1.5 bg-dark-700 text-white font-mono rounded-lg border border-white/20"
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
+                            <input
+                              value={row.username}
+                              onChange={(e) => updateBulkRow(row.key, { username: e.target.value })}
+                              className="w-28 px-2 py-1.5 bg-dark-700 text-white font-mono rounded-lg border border-white/20"
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
+                            <input
+                              value={row.password}
+                              onChange={(e) => updateBulkRow(row.key, { password: e.target.value })}
+                              className="w-28 px-2 py-1.5 bg-dark-700 text-white font-mono rounded-lg border border-white/20"
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
+                            {row.valid ? (
+                              <span className="text-emerald-300 text-xs font-bold">OK</span>
+                            ) : (
+                              <span className="text-red-300 text-xs" title={row.error}>
+                                Erro
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2">
+                            <button
+                              type="button"
+                              onClick={() => removeBulkRow(row.key)}
+                              className="p-2 text-red-300 hover:bg-red-500/20 rounded-lg"
+                              title="Remover linha"
+                            >
+                              <FaTrash />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-3 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={handleCloseBulkModal}
+                  disabled={bulkSaving}
+                  className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkCreate}
+                  disabled={bulkSaving || bulkRows.filter((r) => r.valid).length === 0}
+                  className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {bulkSaving ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Criando...
+                    </>
+                  ) : (
+                    <>
+                      <FaSave /> Criar {bulkRows.filter((r) => r.valid).length} proxy(s)
+                    </>
                   )}
                 </button>
               </div>
