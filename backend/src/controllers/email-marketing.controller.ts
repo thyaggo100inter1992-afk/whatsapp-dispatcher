@@ -99,8 +99,8 @@ export const verifyDomain = async (req: Request, res: Response) => {
     if (!domainRow.rows[0]) return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
 
     const mg = await getMailgunClient();
-    const verification = await mg.domains.verify(domainRow.rows[0].domain);
-    const isActive = verification.domain?.state === 'active';
+    const verification = await mg.domains.verify(domainRow.rows[0].domain) as any;
+    const isActive = (verification.domain?.state || verification.state) === 'active';
 
     await pool.query(
       `UPDATE email_marketing_domains SET status=$1, updated_at=NOW() WHERE id=$2`,
