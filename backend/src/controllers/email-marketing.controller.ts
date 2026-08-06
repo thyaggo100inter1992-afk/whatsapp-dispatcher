@@ -46,16 +46,16 @@ export const addDomain = async (req: Request, res: Response) => {
     if (!domain) return res.status(400).json({ success: false, message: 'Domínio obrigatório' });
 
     const mg = await getMailgunClient();
-    const mgDomain = await mg.domains.create({ name: domain });
+    const mgDomain = await mg.domains.create({ name: domain }) as any;
 
-    const dnsRecords = mgDomain.receiving_dns_records?.concat(mgDomain.sending_dns_records || []) || [];
+    const dnsRecords = (mgDomain.receiving_dns_records || []).concat(mgDomain.sending_dns_records || []);
 
     const result = await pool.query(
       `INSERT INTO email_marketing_domains (tenant_id, domain, mailgun_domain_id, smtp_login, smtp_password, status, dns_records)
        VALUES ($1, $2, $3, $4, $5, 'pending', $6)
        ON CONFLICT (tenant_id, domain) DO UPDATE SET status='pending', dns_records=$6, updated_at=NOW()
        RETURNING *`,
-      [tenantId, domain, mgDomain.id || domain, mgDomain.smtp_login || `postmaster@${domain}`, mgDomain.smtp_password || '', JSON.stringify(dnsRecords)]
+      [tenantId, domain, mgDomain.id || mgDomain.domain || domain, mgDomain.smtp_login || `postmaster@${domain}`, mgDomain.smtp_password || '', JSON.stringify(dnsRecords)]
     );
 
     res.json({ success: true, data: result.rows[0], dns_records: dnsRecords });
