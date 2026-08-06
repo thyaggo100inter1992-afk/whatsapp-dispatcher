@@ -19,7 +19,16 @@ async function getMailgunClient() {
 }
 
 function getTenantId(req: Request): number {
-  return (req as any).user?.tenant_id || (req as any).tenantId;
+  return (req as any).tenant?.id || (req as any).user?.tenant_id || (req as any).tenantId;
+}
+
+function requireTenant(req: Request, res: Response): number | null {
+  const tenantId = getTenantId(req);
+  if (!tenantId) {
+    res.status(400).json({ success: false, message: 'Tenant não identificado. Faça login novamente.' });
+    return null;
+  }
+  return tenantId;
 }
 
 // =============================================
@@ -28,7 +37,8 @@ function getTenantId(req: Request): number {
 
 export const getDomains = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const result = await pool.query(
       `SELECT id, domain, status, dns_records, is_active, created_at FROM email_marketing_domains WHERE tenant_id = $1 ORDER BY created_at DESC`,
       [tenantId]
@@ -41,7 +51,8 @@ export const getDomains = async (req: Request, res: Response) => {
 
 export const addDomain = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { domain } = req.body;
     if (!domain) return res.status(400).json({ success: false, message: 'Domínio obrigatório' });
 
@@ -66,7 +77,8 @@ export const addDomain = async (req: Request, res: Response) => {
 
 export const verifyDomain = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { id } = req.params;
 
     const domainRow = await pool.query(
@@ -92,7 +104,8 @@ export const verifyDomain = async (req: Request, res: Response) => {
 
 export const deleteDomain = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { id } = req.params;
     await pool.query(`DELETE FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
     res.json({ success: true });
@@ -107,7 +120,8 @@ export const deleteDomain = async (req: Request, res: Response) => {
 
 export const getLists = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const result = await pool.query(
       `SELECT * FROM email_marketing_lists WHERE tenant_id=$1 ORDER BY created_at DESC`,
       [tenantId]
@@ -120,7 +134,8 @@ export const getLists = async (req: Request, res: Response) => {
 
 export const createList = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { name, description } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Nome obrigatório' });
     const result = await pool.query(
@@ -135,7 +150,8 @@ export const createList = async (req: Request, res: Response) => {
 
 export const deleteList = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { id } = req.params;
     await pool.query(`DELETE FROM email_marketing_lists WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
     res.json({ success: true });
@@ -146,7 +162,8 @@ export const deleteList = async (req: Request, res: Response) => {
 
 export const importContacts = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { list_id } = req.params;
 
     const listCheck = await pool.query(`SELECT id FROM email_marketing_lists WHERE id=$1 AND tenant_id=$2`, [list_id, tenantId]);
@@ -191,7 +208,8 @@ export const importContacts = async (req: Request, res: Response) => {
 
 export const getContacts = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { list_id } = req.params;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 50;
@@ -215,7 +233,8 @@ export const getContacts = async (req: Request, res: Response) => {
 
 export const getTemplates = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const result = await pool.query(`SELECT * FROM email_marketing_templates WHERE tenant_id=$1 ORDER BY created_at DESC`, [tenantId]);
     res.json({ success: true, data: result.rows });
   } catch (error: any) {
@@ -225,7 +244,8 @@ export const getTemplates = async (req: Request, res: Response) => {
 
 export const createTemplate = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { name, subject, body_html, body_text } = req.body;
     if (!name || !subject) return res.status(400).json({ success: false, message: 'Nome e assunto obrigatórios' });
     const result = await pool.query(
@@ -240,7 +260,8 @@ export const createTemplate = async (req: Request, res: Response) => {
 
 export const updateTemplate = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { id } = req.params;
     const { name, subject, body_html, body_text } = req.body;
     const result = await pool.query(
@@ -255,7 +276,8 @@ export const updateTemplate = async (req: Request, res: Response) => {
 
 export const deleteTemplate = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { id } = req.params;
     await pool.query(`DELETE FROM email_marketing_templates WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
     res.json({ success: true });
@@ -270,7 +292,8 @@ export const deleteTemplate = async (req: Request, res: Response) => {
 
 export const getCampaigns = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const result = await pool.query(
       `SELECT c.*, d.domain as domain_name, l.name as list_name, t.name as template_name
        FROM email_marketing_campaigns c
@@ -288,7 +311,8 @@ export const getCampaigns = async (req: Request, res: Response) => {
 
 export const getCampaignById = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { id } = req.params;
     const result = await pool.query(
       `SELECT c.*, d.domain as domain_name, l.name as list_name, t.name as template_name
@@ -308,7 +332,8 @@ export const getCampaignById = async (req: Request, res: Response) => {
 
 export const createCampaign = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { name, subject, from_name, from_email, reply_to, domain_id, list_id, template_id, body_html, body_text, delay_seconds } = req.body;
     if (!name || !subject || !from_name || !from_email) {
       return res.status(400).json({ success: false, message: 'Nome, assunto, remetente e email obrigatórios' });
@@ -326,7 +351,8 @@ export const createCampaign = async (req: Request, res: Response) => {
 
 export const startCampaign = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { id } = req.params;
 
     const campaign = await pool.query(`SELECT * FROM email_marketing_campaigns WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
@@ -364,7 +390,8 @@ export const startCampaign = async (req: Request, res: Response) => {
 
 export const pauseCampaign = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { id } = req.params;
     await pool.query(`UPDATE email_marketing_campaigns SET status='paused', updated_at=NOW() WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
     res.json({ success: true });
@@ -375,7 +402,8 @@ export const pauseCampaign = async (req: Request, res: Response) => {
 
 export const cancelCampaign = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { id } = req.params;
     await pool.query(`UPDATE email_marketing_campaigns SET status='cancelled', updated_at=NOW() WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
     res.json({ success: true });
@@ -386,7 +414,8 @@ export const cancelCampaign = async (req: Request, res: Response) => {
 
 export const deleteCampaign = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { id } = req.params;
     await pool.query(`DELETE FROM email_marketing_campaigns WHERE id=$1 AND tenant_id=$2 AND status IN ('draft','cancelled','completed')`, [id, tenantId]);
     res.json({ success: true });
@@ -397,7 +426,8 @@ export const deleteCampaign = async (req: Request, res: Response) => {
 
 export const getCampaignStats = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { id } = req.params;
     const result = await pool.query(
       `SELECT total_contacts, sent_count, failed_count, opened_count, clicked_count, bounced_count, complained_count, status, started_at, completed_at
@@ -416,7 +446,8 @@ export const getCampaignStats = async (req: Request, res: Response) => {
 
 export const sendSingle = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
     const { to_email, to_name, from_name, from_email, reply_to, subject, body_html, body_text, domain_id } = req.body;
     if (!to_email || !from_email || !subject) {
       return res.status(400).json({ success: false, message: 'Destinatário, remetente e assunto obrigatórios' });
