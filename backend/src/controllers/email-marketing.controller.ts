@@ -57,7 +57,17 @@ export const addDomain = async (req: Request, res: Response) => {
     if (!domain) return res.status(400).json({ success: false, message: 'Domínio obrigatório' });
 
     const mg = await getMailgunClient();
-    const mgDomain = await mg.domains.create({ name: domain }) as any;
+    let mgDomain: any;
+
+    try {
+      mgDomain = await mg.domains.create({ name: domain }) as any;
+    } catch (createError: any) {
+      const msg = (createError.message || '').toLowerCase();
+      const alreadyExists = createError.status === 400 && (msg.includes('already exists') || msg.includes('already been registered'));
+      if (!alreadyExists) throw createError;
+      // Domínio já existe no Mailgun — buscar os dados existentes
+      mgDomain = await mg.domains.get(domain) as any;
+    }
 
     const dnsRecords = (mgDomain.receiving_dns_records || []).concat(mgDomain.sending_dns_records || []);
 
@@ -71,6 +81,7 @@ export const addDomain = async (req: Request, res: Response) => {
 
     res.json({ success: true, data: result.rows[0], dns_records: dnsRecords });
   } catch (error: any) {
+    console.error('[email-marketing] addDomain error:', error.message, error.status);
     res.status(500).json({ success: false, message: error.message });
   }
 };
