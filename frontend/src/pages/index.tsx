@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaWhatsapp, FaQrcode, FaRocket, FaCheckCircle, FaShieldAlt, FaSearch, FaGlobe, FaDatabase, FaSignOutAlt, FaUser, FaBuilding, FaLock, FaBan, FaComments, FaClock } from 'react-icons/fa';
+import { FaWhatsapp, FaQrcode, FaRocket, FaCheckCircle, FaShieldAlt, FaSearch, FaGlobe, FaDatabase, FaSignOutAlt, FaUser, FaBuilding, FaLock, FaBan, FaComments, FaClock, FaEnvelope } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useFeatures } from '../hooks/useFeatures';
 import { usePermissions } from '../hooks/usePermissions';
@@ -122,8 +122,8 @@ export default function ChooseIntegration() {
           </p>
         </div>
 
-        {/* CARDS DE ESCOLHA - GRID 3 COLUNAS */}
-        <div className="grid md:grid-cols-3 gap-8 max-w-7xl mx-auto">
+        {/* CARDS DE ESCOLHA - GRID 4 COLUNAS (incluindo Email Marketing) */}
+        <div className="grid md:grid-cols-4 gap-6 max-w-7xl mx-auto">
           
           {/* CARD 1: API OFICIAL */}
           <button
@@ -237,7 +237,63 @@ export default function ChooseIntegration() {
             </div>
           </button>
 
-          {/* CARD 3: CHAT - DINÂMICO */}
+          {/* CARD 3: EMAIL MARKETING */}
+          <button
+            onClick={() => router.push('/email-marketing')}
+            className="group relative overflow-hidden rounded-3xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-red-500/20 to-orange-600/10 hover:from-red-500/30 hover:to-orange-600/20 border-4 border-red-500/40 hover:border-red-500/60 hover:scale-105 hover:shadow-2xl shadow-lg shadow-red-500/30 cursor-pointer"
+          >
+            <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/10 rounded-full blur-3xl"></div>
+            
+            <div className="relative space-y-6">
+              {/* Badge */}
+              <div className="inline-block px-6 py-2 bg-red-500/20 border-2 border-red-400 rounded-full">
+                <span className="text-red-300 font-black text-sm tracking-wider">NOVIDADE</span>
+              </div>
+
+              {/* Ícone e Título */}
+              <div className="space-y-3">
+                <div className="bg-red-500/20 backdrop-blur-sm p-6 rounded-3xl group-hover:bg-red-500/30 transition-all duration-300 w-fit">
+                  <FaEnvelope className="text-6xl text-red-300" />
+                </div>
+                <h2 className="text-3xl font-black text-white">E-mail Marketing</h2>
+                <p className="text-white/70 text-base leading-relaxed">
+                  Campanhas de e-mail profissional com rastreamento
+                </p>
+              </div>
+
+              {/* Vantagens */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center gap-3">
+                  <div className="bg-red-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-red-300" />
+                  </div>
+                  <span className="text-white text-sm font-bold">Envio em massa</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="bg-red-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-red-300" />
+                  </div>
+                  <span className="text-white text-sm font-bold">Rastreio de abertura</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="bg-red-500/30 p-2 rounded-lg">
+                    <FaCheckCircle className="text-lg text-red-300" />
+                  </div>
+                  <span className="text-white text-sm font-bold">Domínio próprio</span>
+                </div>
+              </div>
+
+              {/* Botão de Ação */}
+              <div className="pt-4">
+                <div className="flex items-center gap-3 text-white text-lg font-black">
+                  Acessar
+                  <FaRocket className="text-2xl group-hover:translate-x-3 transition-transform duration-200" />
+                </div>
+              </div>
+            </div>
+          </button>
+
+          {/* CARD 4: CHAT - DINÂMICO */}
           {canAccessChat ? (
             <button
               onClick={() => router.push('/chat')}

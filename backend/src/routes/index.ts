@@ -38,6 +38,10 @@ const consultasAvulsasRoutes = require('./consultas-avulsas.routes').default;
 // Import rotas de conversas (chat)
 const conversationsRoutes = require('./conversations.routes').default;
 
+// Import rotas de email marketing
+const emailMarketingRoutes = require('./email-marketing.routes').default;
+const adminMailgunCredentialsRoutes = require('./admin/mailgun-credentials.routes').default;
+
 // Import rotas de administração
 const adminTenantsRoutes = require('./admin/tenants.routes');
 const adminPlansRoutes = require('./admin/plans.routes');
@@ -173,6 +177,10 @@ console.log('✅ Rotas de gestão do tenant registradas');
 router.use('/conversations', authenticate, setTenantContext, conversationsRoutes);
 console.log('✅ Rotas de conversas (chat) registradas');
 
+// Rotas de email marketing (por tenant)
+router.use('/email-marketing', authenticate, setTenantContext, emailMarketingRoutes);
+console.log('✅ Rotas de Email Marketing registradas (por tenant)');
+
 console.log('✅ Rotas principais registradas (WhatsApp API Oficial)');
 
 // ============================================
@@ -275,6 +283,14 @@ console.log('✅ Rota /admin/relatorios-financeiros registrada (apenas super_adm
 
 router.use('/admin/email-templates', authenticate, requireSuperAdmin, adminEmailTemplatesRoutes);
 console.log('✅ Rota /admin/email-templates registrada (apenas super_admin)');
+
+router.use('/admin/mailgun-credentials', authenticate, requireSuperAdmin, adminMailgunCredentialsRoutes);
+console.log('✅ Rota /admin/mailgun-credentials registrada (apenas super_admin)');
+
+// Webhook público do Mailgun (sem autenticação - recebe tracking events)
+const { mailgunWebhook } = require('../controllers/email-marketing.controller');
+router.post('/webhook/mailgun', mailgunWebhook);
+console.log('✅ Webhook público Mailgun registrado em /webhook/mailgun');
 
 const adminLandingRoutes = require('./admin/landing.routes');
 router.use('/admin/landing', authenticate, requireSuperAdmin, adminLandingRoutes);

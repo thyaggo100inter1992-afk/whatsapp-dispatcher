@@ -11,6 +11,7 @@ import { testConnection } from './database/connection';
 import { cleanupService } from './services/cleanup.service';
 import { campaignWorker } from './workers/campaign.worker';
 import { qrCampaignWorker } from './workers/qr-campaign.worker';
+import { startEmailMarketingWorker } from './workers/email-marketing.worker';
 import { restrictionCleanupWorker } from './workers/restriction-cleanup.worker';
 import { trialCleanupWorker } from './workers/trial-cleanup.worker';
 import { paymentRenewalWorker } from './workers/payment-renewal.worker';
@@ -561,6 +562,11 @@ async function startServer() {
       qrCampaignWorker.start();
       console.log('✅ QR Campaign Worker iniciado e processando campanhas QR');
       console.log('');
+
+      // Iniciar Email Marketing Worker
+      console.log('📧 Iniciando Email Marketing Worker...');
+      startEmailMarketingWorker();
+      console.log('✅ Email Marketing Worker iniciado');
 
       // Iniciar Restriction Cleanup Worker
       console.log('🚀 Iniciando Restriction Cleanup Worker...');

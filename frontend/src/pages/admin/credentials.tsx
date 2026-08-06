@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { FaCog, FaPlus, FaEdit, FaTrash, FaStar, FaRegStar, FaToggleOn, FaToggleOff, FaBuilding, FaServer, FaKey, FaCheckCircle, FaCopy, FaLink, FaEnvelope, FaPaperPlane, FaEnvelopeOpen } from 'react-icons/fa';
+import { FaCog, FaPlus, FaEdit, FaTrash, FaStar, FaRegStar, FaToggleOn, FaToggleOff, FaBuilding, FaServer, FaKey, FaCheckCircle, FaCopy, FaLink, FaEnvelope, FaPaperPlane, FaEnvelopeOpen, FaAt } from 'react-icons/fa';
 import AdminLayout from '@/components/admin/AdminLayout';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
@@ -63,7 +63,7 @@ export default function AdminCredentials() {
   const notification = useNotification();
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'uazap' | 'novavida' | 'asaas'>('uazap');
+  const [activeTab, setActiveTab] = useState<'uazap' | 'novavida' | 'asaas' | 'mailgun'>('uazap');
   const [uazapCredentials, setUazapCredentials] = useState<UazapCredential[]>([]);
   const [novaVidaCredentials, setNovaVidaCredentials] = useState<NovaVidaCredential[]>([]);
   const [asaasCredentials, setAsaasCredentials] = useState<AsaasCredential[]>([]);
@@ -161,6 +161,7 @@ export default function AdminCredentials() {
 
   useEffect(() => {
     loadCredentials();
+    loadMailgunCredential();
   }, []);
 
   const loadCredentials = async () => {
@@ -445,6 +446,36 @@ export default function AdminCredentials() {
     });
   };
 
+  // === MAILGUN FUNCTIONS ===
+  const [mailgunForm, setMailgunForm] = useState({ api_key: '', region: 'us' as 'us' | 'eu' });
+  const [mailgunConfigured, setMailgunConfigured] = useState(false);
+  const [savingMailgun, setSavingMailgun] = useState(false);
+
+  const loadMailgunCredential = async () => {
+    try {
+      const res = await api.get('/admin/mailgun-credentials');
+      setMailgunConfigured(res.data.configured);
+    } catch {}
+  };
+
+  const handleSaveMailgun = async () => {
+    if (!mailgunForm.api_key) {
+      notification.warning('Campo obrigatório', 'Informe a chave API do Mailgun');
+      return;
+    }
+    setSavingMailgun(true);
+    try {
+      await api.post('/admin/mailgun-credentials', mailgunForm);
+      notification.success('Mailgun configurado!', 'Chave API salva com sucesso.');
+      setMailgunConfigured(true);
+      setMailgunForm({ api_key: '', region: 'us' });
+    } catch (error: any) {
+      notification.error('Erro ao salvar', error.response?.data?.message || error.message);
+    } finally {
+      setSavingMailgun(false);
+    }
+  };
+
   // === EMAIL FUNCTIONS ===
 
   if (loading) {
@@ -517,6 +548,16 @@ export default function AdminCredentials() {
             className="flex-1 py-4 px-6 rounded-xl font-bold transition-all flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg"
           >
             <FaEnvelope /> Email
+          </button>
+          <button
+            onClick={() => setActiveTab('mailgun')}
+            className={`flex-1 py-4 px-6 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'mailgun'
+                ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg scale-105'
+                : 'bg-white/10 text-gray-300 hover:bg-white/20'
+            }`}
+          >
+            <FaAt /> Mailgun {mailgunConfigured ? '✅' : '⚠️'}
           </button>
         </div>
 
@@ -1185,6 +1226,87 @@ export default function AdminCredentials() {
         )}
 
         {/* EMAIL Content - REMOVIDO - Agora em /admin/email-accounts */}
+
+        {/* MAILGUN Content */}
+        {activeTab === 'mailgun' && (
+          <div className="space-y-6">
+            {/* Status atual */}
+            <div className={`rounded-2xl p-6 border-2 ${mailgunConfigured ? 'bg-green-500/10 border-green-500/40' : 'bg-yellow-500/10 border-yellow-500/40'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-3 rounded-xl ${mailgunConfigured ? 'bg-green-500/20' : 'bg-yellow-500/20'}`}>
+                  <FaAt className={`text-2xl ${mailgunConfigured ? 'text-green-400' : 'text-yellow-400'}`} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-white">
+                    {mailgunConfigured ? '✅ Mailgun Configurado' : '⚠️ Mailgun não configurado'}
+                  </h3>
+                  <p className="text-gray-400 text-sm">
+                    {mailgunConfigured
+                      ? 'A chave API está ativa. Os tenants podem cadastrar domínios e fazer disparos.'
+                      : 'Configure a chave API do Mailgun para habilitar o módulo de E-mail Marketing.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Formulário */}
+            <div className="bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-8 border-2 border-red-500/30">
+              <h2 className="text-2xl font-black text-white mb-2 flex items-center gap-3">
+                <FaAt className="text-red-400" />
+                Configurar Chave API Mailgun
+              </h2>
+              <p className="text-gray-400 text-sm mb-6">
+                A chave fica armazenada no servidor e os tenants <strong className="text-white">nunca terão acesso</strong> a ela.
+                Eles apenas configuram seus próprios domínios de envio dentro do sistema.
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-300 mb-2">Chave API do Mailgun *</label>
+                  <input
+                    type="password"
+                    value={mailgunForm.api_key}
+                    onChange={(e) => setMailgunForm({ ...mailgunForm, api_key: e.target.value })}
+                    placeholder="key-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-red-500 focus:outline-none font-mono"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Encontre em: mailgun.com → Settings → API Keys → Private API key
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-300 mb-2">Região do servidor</label>
+                  <select
+                    value={mailgunForm.region}
+                    onChange={(e) => setMailgunForm({ ...mailgunForm, region: e.target.value as 'us' | 'eu' })}
+                    className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-red-500 focus:outline-none"
+                  >
+                    <option value="us">🇺🇸 EUA (api.mailgun.net) — Recomendado</option>
+                    <option value="eu">🇪🇺 Europa (api.eu.mailgun.net)</option>
+                  </select>
+                </div>
+
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 text-sm text-blue-300">
+                  <strong>ℹ️ Como funciona:</strong><br />
+                  Você salva a chave aqui → Os tenants cadastram seus domínios via painel → O sistema configura automaticamente via API do Mailgun → Tenants fazem disparos sem ver nenhuma credencial.
+                </div>
+
+                <button
+                  onClick={handleSaveMailgun}
+                  disabled={savingMailgun}
+                  className="w-full py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {savingMailgun ? (
+                    <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> Salvando...</>
+                  ) : (
+                    <><FaCheckCircle /> {mailgunConfigured ? 'Atualizar Chave API' : 'Salvar Chave API'}</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AdminLayout>
     </>
