@@ -65,6 +65,9 @@ app.use(cors({
 app.use('/media', express.static(path.join(__dirname, '../public/media')));
 console.log('📁 Pasta de mídias configurada: /media');
 
+// 🔧 MIDDLEWARE: Mailgun webhook — aceitar qualquer Content-Type como raw
+app.use('/api/webhook/mailgun', express.raw({ type: '*/*' }));
+
 // 🔧 MIDDLEWARE ESPECIAL: Corrigir JSON malformado da UAZAPI
 app.use(['/api/qr-webhook/uaz-event', '/api/webhook/tenant-'], express.raw({ type: 'application/json' }), (req: any, res, next) => {
   try {

@@ -740,14 +740,23 @@ export const getSends = async (req: Request, res: Response) => {
 
 export const mailgunWebhook = async (req: Request, res: Response) => {
   try {
-    const event = req.body['event-data'] || req.body;
+    // Suporta body como objeto (json), Buffer (raw) ou string
+    let rawBody = req.body;
+    if (Buffer.isBuffer(rawBody)) {
+      try { rawBody = JSON.parse(rawBody.toString('utf8')); } catch { rawBody = {}; }
+    } else if (typeof rawBody === 'string') {
+      try { rawBody = JSON.parse(rawBody); } catch { rawBody = {}; }
+    }
+    const body = rawBody || {};
+
+    const event = body['event-data'] || body;
     const eventType = event?.event;
     // Mailgun pode enviar o message-id com ou sem < >
     const rawMsgId = event?.message?.headers?.['message-id'] || event?.['message-id'] || '';
     const messageId = rawMsgId.replace(/^<|>$/g, '').trim();
     const recipient = event?.recipient;
 
-    console.log(`[webhook-mailgun] PAYLOAD:`, JSON.stringify(req.body).substring(0, 300));
+    console.log(`[webhook-mailgun] PAYLOAD:`, JSON.stringify(body).substring(0, 400));
     console.log(`[webhook-mailgun] evento: ${eventType} | msgId: ${messageId} | recipient: ${recipient}`);
     if (!eventType || !messageId) return res.json({ success: true });
 
