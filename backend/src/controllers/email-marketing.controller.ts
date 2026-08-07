@@ -62,8 +62,12 @@ export const addDomain = async (req: Request, res: Response) => {
     try {
       mgDomain = await mg.domains.create({ name: domain }) as any;
     } catch (createError: any) {
+      // O Mailgun coloca "domain already exists" em e.details, não em e.message
+      const details = (createError.details || '').toLowerCase();
       const msg = (createError.message || '').toLowerCase();
-      const alreadyExists = createError.status === 400 && (msg.includes('already exists') || msg.includes('already been registered'));
+      const alreadyExists = createError.status === 400 &&
+        (details.includes('already exists') || details.includes('already been registered') ||
+         msg.includes('already exists') || msg.includes('already been registered'));
       if (!alreadyExists) throw createError;
       // Domínio já existe no Mailgun — buscar os dados existentes
       mgDomain = await mg.domains.get(domain) as any;
