@@ -78,10 +78,25 @@ export const getDomains = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const result = await pool.query(
-      `SELECT id, domain, status, dns_records, is_active, created_at FROM email_marketing_domains WHERE tenant_id = $1 ORDER BY created_at DESC`,
+      `SELECT id, domain, status, dns_records, is_active, created_at, updated_at, verified_at FROM email_marketing_domains WHERE tenant_id = $1 ORDER BY created_at DESC`,
       [tenantId]
     );
-    res.json({ success: true, data: result.rows });
+    // Garantir que DMARC sempre aparece em cada domínio
+    const rows = result.rows.map((row: any) => {
+      const dns: any[] = Array.isArray(row.dns_records) ? row.dns_records : [];
+      const hasDmarc = dns.some((r: any) => (r.name || '').startsWith('_dmarc.'));
+      if (!hasDmarc) {
+        dns.push({
+          record_type: 'TXT',
+          name: `_dmarc.${row.domain}`,
+          value: `v=DMARC1; p=none; rua=mailto:dmarc@${row.domain}`,
+          valid: 'unknown',
+          _is_dmarc: true
+        });
+      }
+      return { ...row, dns_records: dns };
+    });
+    res.json({ success: true, data: rows });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
