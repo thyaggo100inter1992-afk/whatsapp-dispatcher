@@ -227,7 +227,7 @@ export default function Dominios() {
                   <p className="text-green-400/70 text-sm">
                     {showDns.verified_at
                       ? <>Verificado em <strong>{formatDateTime(showDns.verified_at)}</strong></>
-                      : 'Todos os registros DNS foram propagados e validados pelo Mailgun.'}
+                      : 'Todos os registros DNS foram propagados e validados com sucesso.'}
                   </p>
                 </div>
               </div>
@@ -271,7 +271,7 @@ export default function Dominios() {
               <div className="space-y-3">
                 {showDns.dns_records.map((rec: any, i: number) => {
                   const type = (rec.record_type || rec.type || '').toUpperCase();
-                  // MX não tem "name" na API do Mailgun — o host é o próprio domínio
+                  // MX não tem "name" na API — o host é o próprio domínio
                   const recName = rec.name || (type === 'MX' ? showDns.domain : '');
                   return (
                     <div key={i} className="bg-black/30 rounded-lg p-4 border border-white/10">
@@ -283,7 +283,7 @@ export default function Dominios() {
                             Prioridade: {rec.priority}
                           </span>
                         )}
-                        {/* Status real de cada registro vindo do Mailgun */}
+                        {/* Status real de cada registro */}
                         <span className={`px-2 py-0.5 rounded text-xs font-bold border ${rec.valid === 'valid' ? 'bg-green-500/20 border-green-500/30 text-green-300' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'}`}>
                           {rec.valid === 'valid' ? '✅ Verificado' : '⏳ Aguardando propagação'}
                         </span>
@@ -358,7 +358,7 @@ export default function Dominios() {
           </div>
 
           <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mb-4 text-sm text-blue-300">
-            <strong>ℹ️ Como funciona:</strong> Ao adicionar um domínio, o sistema cria ele no Mailgun e exibe os registros DNS para configurar. Após configurar no seu provedor, o sistema verifica automaticamente a cada {POLL_INTERVAL} segundos — mesmo com o modal fechado.
+            <strong>ℹ️ Como funciona:</strong> Ao adicionar um domínio, o sistema registra ele automaticamente e exibe os registros DNS para configurar. Após configurar no seu provedor, o sistema verifica automaticamente a cada {POLL_INTERVAL} segundos — mesmo com o modal fechado.
           </div>
 
           {/* Indicador de verificação em segundo plano */}

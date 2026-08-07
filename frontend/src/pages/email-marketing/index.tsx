@@ -134,7 +134,7 @@ export default function EmailMarketingDashboard() {
                   </div>
                   <div>
                     <h1 className="text-3xl font-black text-white">E-mail Marketing</h1>
-                    <p className="text-gray-400">Campanhas de e-mail profissional com Mailgun</p>
+                    <p className="text-gray-400">Campanhas de e-mail profissional</p>
                   </div>
                 </div>
               </div>
