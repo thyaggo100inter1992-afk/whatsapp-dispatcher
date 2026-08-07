@@ -783,12 +783,13 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
       [newStatus, messageId, recipient]
     );
 
-    // 2. Atualizar envios únicos — busca em ambos os formatos (com e sem <>) para compatibilidade
+    // 2. Atualizar envios únicos — busca com e sem <> para compatibilidade
+    const msgIdWithBrackets = `<${messageId}>`;
     await pool.query(
       `UPDATE email_marketing_single_sends
        SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
-       WHERE mailgun_message_id IN ($2, '<' || $2 || '>')`,
-      [newStatus, messageId]
+       WHERE mailgun_message_id = $2 OR mailgun_message_id = $3`,
+      [newStatus, messageId, msgIdWithBrackets]
     );
 
     // 3. Atualizar contadores da campanha
