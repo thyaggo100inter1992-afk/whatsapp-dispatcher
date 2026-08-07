@@ -103,31 +103,40 @@ export const verifyDomain = async (req: Request, res: Response) => {
     if (!domainRow.rows[0]) return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
 
     const mg = await getMailgunClient();
+
+    // verify() aciona uma verificação DNS fresca e retorna os status atualizados de cada registro
     const verification = await mg.domains.verify(domainRow.rows[0].domain) as any;
     const domainData = verification.domain || verification;
     const isActive = domainData.state === 'active';
 
-    // Busca os registros DNS atualizados com status real de cada um
-    const freshDomain = await mg.domains.get(domainRow.rows[0].domain) as any;
-    const freshDns = (freshDomain.receiving_dns_records || []).concat(freshDomain.sending_dns_records || []);
-    const dnsToSave = freshDns.length > 0 ? JSON.stringify(freshDns) : null;
+    // Usar os registros da resposta do verify() — eles têm valid: "valid"/"invalid"/"unknown" atualizados
+    const verifiedDns = (domainData.receiving_dns_records || []).concat(domainData.sending_dns_records || []);
+
+    // Se verify() não retornou registros, tentar buscar via get()
+    let dnsToSave: string | null = null;
+    if (verifiedDns.length > 0) {
+      dnsToSave = JSON.stringify(verifiedDns);
+    } else {
+      const fallback = await mg.domains.get(domainRow.rows[0].domain) as any;
+      const fallbackDns = (fallback.receiving_dns_records || []).concat(fallback.sending_dns_records || []);
+      if (fallbackDns.length > 0) dnsToSave = JSON.stringify(fallbackDns);
+    }
 
     const newStatus = isActive ? 'active' : 'unverified';
-    const verified_at = isActive ? 'NOW()' : 'NULL';
 
     if (dnsToSave) {
       await pool.query(
-        `UPDATE email_marketing_domains SET status=$1, dns_records=$3, verified_at=${verified_at}, updated_at=NOW() WHERE id=$2`,
+        `UPDATE email_marketing_domains SET status=$1, dns_records=$3, verified_at=${isActive ? 'NOW()' : 'NULL'}, updated_at=NOW() WHERE id=$2`,
         [newStatus, id, dnsToSave]
       );
     } else {
       await pool.query(
-        `UPDATE email_marketing_domains SET status=$1, verified_at=${verified_at}, updated_at=NOW() WHERE id=$2`,
+        `UPDATE email_marketing_domains SET status=$1, verified_at=${isActive ? 'NOW()' : 'NULL'}, updated_at=NOW() WHERE id=$2`,
         [newStatus, id]
       );
     }
 
-    // Retorna o domínio atualizado
+    // Retorna o domínio atualizado com os registros frescos
     const updated = await pool.query(`SELECT * FROM email_marketing_domains WHERE id=$1`, [id]);
     res.json({ success: true, verified: isActive, status: newStatus, data: updated.rows[0] });
   } catch (error: any) {

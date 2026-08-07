@@ -85,11 +85,13 @@ export default function Dominios() {
     for (const d of pending) {
       try {
         const r = await api.post(`/email-marketing/domains/${d.id}/verify`);
+        // Atualiza o modal com os dados frescos (dns_records com status reais)
+        if (r.data.data) {
+          setShowDns(prev => prev?.id === d.id ? r.data.data : prev);
+        }
         if (r.data.verified) {
           anyVerified = true;
           notification.success('Domínio verificado!', `${d.domain} foi verificado com sucesso!`);
-          // Atualiza também o modal se estiver aberto para esse domínio
-          setShowDns(prev => prev?.id === d.id ? { ...prev, status: 'active' } : prev);
         }
       } catch { /* silencioso */ }
     }
@@ -138,12 +140,17 @@ export default function Dominios() {
     try {
       const r = await api.post(`/email-marketing/domains/${id}/verify`);
       setLastChecked(new Date());
+      // Atualiza o modal com os dados frescos retornados pelo backend (inclui dns_records atualizados)
+      if (r.data.data) {
+        setShowDns(prev => prev?.id === id ? r.data.data : prev);
+      }
       if (r.data.verified) {
         notification.success('Domínio verificado!', 'Verificação concluída com sucesso!');
-        setShowDns(prev => prev?.id === id ? { ...prev, status: 'active' } : prev);
         await loadDomains();
       } else {
         notification.warning('DNS não propagado ainda', 'Os registros ainda não propagaram. O sistema continua verificando em segundo plano.');
+        // Recarrega a lista para atualizar os status individuais dos registros
+        await loadDomains();
       }
     } catch (error: any) {
       notification.error('Erro', error.response?.data?.message || error.message);
