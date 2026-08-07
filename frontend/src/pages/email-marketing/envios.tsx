@@ -4,7 +4,8 @@ import Head from 'next/head';
 import {
   FaEnvelope, FaBullhorn, FaPaperPlane, FaSignOutAlt, FaSync,
   FaCheckCircle, FaTimesCircle, FaEye, FaMousePointer,
-  FaExclamationTriangle, FaUser, FaClock, FaSearch, FaFilter
+  FaExclamationTriangle, FaUser, FaClock, FaSearch, FaFilter,
+  FaCheckDouble, FaFlag, FaBan
 } from 'react-icons/fa';
 import api from '@/services/api';
 
@@ -55,6 +56,39 @@ function pct(num: number, total: number) {
   if (!total) return '0%';
   return `${Math.round((num / total) * 100)}%`;
 }
+
+// Calcula quais eventos de rastreamento ocorreram para um envio
+function getTrackingFlags(s: Send) {
+  if (s.type === 'campaign') {
+    return {
+      delivered:  (s.sent_count || 0) > 0,
+      opened:     (s.opened_count || 0) > 0,
+      clicked:    (s.clicked_count || 0) > 0,
+      bounced:    (s.bounced_count || 0) > 0,
+      complained: (s.complained_count || 0) > 0,
+      failed:     (s.failed_count || 0) > 0,
+    };
+  }
+  // Envio único — hierarquia de status
+  const st = s.status;
+  return {
+    delivered:  !['failed', 'bounced'].includes(st),
+    opened:     ['opened', 'clicked'].includes(st),
+    clicked:    st === 'clicked',
+    bounced:    st === 'bounced',
+    complained: st === 'complained',
+    failed:     st === 'failed',
+  };
+}
+
+const TRACKING_ICONS = [
+  { key: 'delivered',  label: 'Entregue',  icon: <FaCheckDouble />, activeColor: 'text-green-400 bg-green-500/20 border-green-500/40' },
+  { key: 'opened',     label: 'Aberto',    icon: <FaEye />,         activeColor: 'text-purple-400 bg-purple-500/20 border-purple-500/40' },
+  { key: 'clicked',    label: 'Clicado',   icon: <FaMousePointer />,activeColor: 'text-indigo-400 bg-indigo-500/20 border-indigo-500/40' },
+  { key: 'bounced',    label: 'Rejeitado', icon: <FaExclamationTriangle />, activeColor: 'text-orange-400 bg-orange-500/20 border-orange-500/40' },
+  { key: 'complained', label: 'Spam',      icon: <FaFlag />,        activeColor: 'text-red-400 bg-red-500/20 border-red-500/40' },
+  { key: 'failed',     label: 'Falhou',    icon: <FaBan />,         activeColor: 'text-red-400 bg-red-500/20 border-red-500/40' },
+] as const;
 
 export default function Envios() {
   const router = useRouter();
@@ -171,6 +205,8 @@ export default function Envios() {
                 const st = STATUS_CONFIG[s.status] || STATUS_CONFIG['sent'];
                 const isCampaign = s.type === 'campaign';
 
+                const flags = getTrackingFlags(s);
+
                 return (
                   <div key={`${s.type}-${s.id}`}
                     className={`bg-gradient-to-br rounded-2xl p-5 border transition-all hover:border-white/20 cursor-pointer
@@ -187,7 +223,7 @@ export default function Envios() {
                             ? <FaBullhorn className="text-orange-300 text-lg" />
                             : <FaPaperPlane className="text-blue-300 text-lg" />}
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${isCampaign ? 'text-orange-300 bg-orange-500/10 border-orange-500/30' : 'text-blue-300 bg-blue-500/10 border-blue-500/30'}`}>
                               {isCampaign ? '📢 Em Massa' : '✉️ Envio Único'}
@@ -210,53 +246,78 @@ export default function Envios() {
                               </span>
                             )}
                           </div>
+
+                          {/* ── Ícones de rastreamento ── */}
+                          <div className="flex items-center gap-1.5 mt-3">
+                            {TRACKING_ICONS.map(({ key, label, icon, activeColor }) => {
+                              const active = flags[key as keyof typeof flags];
+                              return (
+                                <div key={key} title={label}
+                                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all select-none
+                                    ${active
+                                      ? activeColor
+                                      : 'text-gray-600 bg-white/3 border-white/8 opacity-35'}`}>
+                                  {icon}
+                                  <span className="hidden sm:inline">{label}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
 
-                      {/* Direita: stats + data */}
+                      {/* Direita: data + contadores campanha */}
                       <div className="flex flex-col items-end gap-2 flex-shrink-0">
                         <span className="text-gray-500 text-xs flex items-center gap-1">
                           <FaClock className="text-xs" /> {formatDateTime(s.sent_at || s.created_at)}
                         </span>
 
-                        {/* Métricas */}
-                        <div className="flex items-center gap-3">
-                          {isCampaign && (
+                        {/* Métricas numéricas para campanhas */}
+                        {isCampaign && (
+                          <div className="flex items-center gap-3">
                             <div className="text-center">
                               <p className="text-white font-bold text-sm">{s.sent_count}/{s.total_contacts}</p>
                               <p className="text-gray-500 text-xs">Enviados</p>
                             </div>
-                          )}
-                          {s.opened_count > 0 && (
-                            <div className="text-center">
-                              <p className="text-purple-300 font-bold text-sm flex items-center gap-1">
-                                <FaEye className="text-xs" /> {s.opened_count}
-                                {isCampaign && <span className="text-gray-500 font-normal text-xs">({pct(s.opened_count, s.sent_count)})</span>}
-                              </p>
-                              <p className="text-gray-500 text-xs">Abertos</p>
-                            </div>
-                          )}
-                          {s.clicked_count > 0 && (
-                            <div className="text-center">
-                              <p className="text-indigo-300 font-bold text-sm flex items-center gap-1">
-                                <FaMousePointer className="text-xs" /> {s.clicked_count}
-                              </p>
-                              <p className="text-gray-500 text-xs">Cliques</p>
-                            </div>
-                          )}
-                          {s.bounced_count > 0 && (
-                            <div className="text-center">
-                              <p className="text-orange-300 font-bold text-sm">{s.bounced_count}</p>
-                              <p className="text-gray-500 text-xs">Rejeit.</p>
-                            </div>
-                          )}
-                          {s.failed_count > 0 && (
-                            <div className="text-center">
-                              <p className="text-red-300 font-bold text-sm">{s.failed_count}</p>
-                              <p className="text-gray-500 text-xs">Falhou</p>
-                            </div>
-                          )}
-                        </div>
+                            {s.opened_count > 0 && (
+                              <div className="text-center">
+                                <p className="text-purple-300 font-bold text-sm flex items-center gap-1">
+                                  <FaEye className="text-xs" /> {s.opened_count}
+                                  <span className="text-gray-500 font-normal text-xs">({pct(s.opened_count, s.sent_count)})</span>
+                                </p>
+                                <p className="text-gray-500 text-xs">Abertos</p>
+                              </div>
+                            )}
+                            {s.clicked_count > 0 && (
+                              <div className="text-center">
+                                <p className="text-indigo-300 font-bold text-sm flex items-center gap-1">
+                                  <FaMousePointer className="text-xs" /> {s.clicked_count}
+                                </p>
+                                <p className="text-gray-500 text-xs">Cliques</p>
+                              </div>
+                            )}
+                            {s.bounced_count > 0 && (
+                              <div className="text-center">
+                                <p className="text-orange-300 font-bold text-sm">{s.bounced_count}</p>
+                                <p className="text-gray-500 text-xs">Rejeit.</p>
+                              </div>
+                            )}
+                            {s.failed_count > 0 && (
+                              <div className="text-center">
+                                <p className="text-red-300 font-bold text-sm">{s.failed_count}</p>
+                                <p className="text-gray-500 text-xs">Falhou</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Para envios únicos: mostrar contadores quando > 1 abertura */}
+                        {!isCampaign && (s.opened_count > 1 || s.clicked_count > 0) && (
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            {s.opened_count > 1 && <span className="text-purple-400">{s.opened_count}x aberto</span>}
+                            {s.clicked_count > 0 && <span className="text-indigo-400">{s.clicked_count}x clicado</span>}
+                          </div>
+                        )}
                       </div>
                     </div>
 
