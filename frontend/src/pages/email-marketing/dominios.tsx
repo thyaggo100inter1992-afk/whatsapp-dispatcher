@@ -109,18 +109,6 @@ export default function Dominios() {
     setCountdown(POLL_INTERVAL);
     setBgChecking(false);
     await loadDomains();
-    if (false) {
-      // placeholder — sempre recarrega a lista
-      // Agenda próxima rodada
-      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = setInterval(() => {
-        setCountdown(prev => (prev <= 1 ? POLL_INTERVAL : prev - 1));
-      }, 1000);
-      pollTimerRef.current = setTimeout(() => {
-        pollTimerRef.current = null;
-        runBackgroundCheck();
-      }, POLL_INTERVAL * 1000);
-    }
   };
 
   const loadDomains = async () => {
