@@ -740,7 +740,6 @@ export const getSends = async (req: Request, res: Response) => {
 
 export const mailgunWebhook = async (req: Request, res: Response) => {
   try {
-    console.log(`[webhook-mailgun] CHAMADO! content-type=${req.headers['content-type']} content-length=${req.headers['content-length']} body-type=${typeof req.body} isBuffer=${Buffer.isBuffer(req.body)} body=${JSON.stringify(req.body).substring(0,200)}`);
     // Suporta body como objeto (json), Buffer (raw) ou string
     let rawBody = req.body;
     if (Buffer.isBuffer(rawBody)) {
