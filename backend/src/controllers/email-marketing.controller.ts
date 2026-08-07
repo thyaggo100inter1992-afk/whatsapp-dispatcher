@@ -678,48 +678,71 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
   try {
     const event = req.body['event-data'] || req.body;
     const eventType = event?.event;
-    const messageId = event?.message?.headers?.['message-id'] || event?.['message-id'];
+    // Mailgun pode enviar o message-id com ou sem < >
+    const rawMsgId = event?.message?.headers?.['message-id'] || event?.['message-id'] || '';
+    const messageId = rawMsgId.replace(/^<|>$/g, '').trim();
     const recipient = event?.recipient;
 
     if (!eventType || !messageId) return res.json({ success: true });
 
     const statusMap: Record<string, string> = {
       delivered: 'sent',
-      opened: 'opened',
-      clicked: 'clicked',
-      bounced: 'bounced',
-      complained: 'complained',
-      failed: 'failed',
+      opened:    'opened',
+      clicked:   'clicked',
+      bounced:   'bounced',
+      complained:'complained',
+      failed:    'failed',
     };
     const newStatus = statusMap[eventType];
     if (!newStatus) return res.json({ success: true });
 
-    const timestampField = eventType === 'opened' ? 'opened_at' : eventType === 'clicked' ? 'clicked_at' : 'sent_at';
+    const openedAt  = eventType === 'opened'  ? 'NOW()' : 'opened_at';
+    const clickedAt = eventType === 'clicked' ? 'NOW()' : 'clicked_at';
 
+    // 1. Atualizar destinatários de campanhas
     await pool.query(
-      `UPDATE email_marketing_recipients SET status=$1, ${timestampField}=NOW(), updated_at=NOW()
+      `UPDATE email_marketing_recipients
+       SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
        WHERE mailgun_message_id=$2 AND email=$3`,
       [newStatus, messageId, recipient]
     );
 
-    // Atualiza contadores da campanha
+    // 2. Atualizar envios únicos
+    await pool.query(
+      `UPDATE email_marketing_single_sends
+       SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
+       WHERE mailgun_message_id=$2 AND to_email=$3`,
+      [newStatus, messageId, recipient]
+    );
+    // Também tenta sem o to_email (caso o recipient venha diferente)
+    await pool.query(
+      `UPDATE email_marketing_single_sends
+       SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
+       WHERE mailgun_message_id=$2`,
+      [newStatus, messageId]
+    );
+
+    // 3. Atualizar contadores da campanha
     const counterField: Record<string, string> = {
-      sent: 'sent_count',
-      opened: 'opened_count',
-      clicked: 'clicked_count',
-      bounced: 'bounced_count',
-      complained: 'complained_count',
-      failed: 'failed_count',
+      sent: 'sent_count', opened: 'opened_count', clicked: 'clicked_count',
+      bounced: 'bounced_count', complained: 'complained_count', failed: 'failed_count',
     };
     if (counterField[newStatus]) {
-      const recip = await pool.query(`SELECT campaign_id FROM email_marketing_recipients WHERE mailgun_message_id=$1 AND email=$2`, [messageId, recipient]);
+      const recip = await pool.query(
+        `SELECT campaign_id FROM email_marketing_recipients WHERE mailgun_message_id=$1 AND email=$2 LIMIT 1`,
+        [messageId, recipient]
+      );
       if (recip.rows[0]) {
-        await pool.query(`UPDATE email_marketing_campaigns SET ${counterField[newStatus]}=${counterField[newStatus]}+1, updated_at=NOW() WHERE id=$1`, [recip.rows[0].campaign_id]);
+        await pool.query(
+          `UPDATE email_marketing_campaigns SET ${counterField[newStatus]}=${counterField[newStatus]}+1, updated_at=NOW() WHERE id=$1`,
+          [recip.rows[0].campaign_id]
+        );
       }
     }
 
     res.json({ success: true });
   } catch (error: any) {
+    console.error('[webhook] erro:', error.message);
     res.status(500).json({ success: false });
   }
 };
