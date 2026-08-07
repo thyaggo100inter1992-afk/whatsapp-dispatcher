@@ -273,35 +273,48 @@ export default function Dominios() {
             {/* Lista de registros DNS */}
             {showDns.dns_records && Array.isArray(showDns.dns_records) && showDns.dns_records.length > 0 ? (
               <div className="space-y-3">
-                {showDns.dns_records.map((rec: any, i: number) => (
-                  <div key={i} className="bg-black/30 rounded-lg p-4 border border-white/10">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-gray-400 uppercase">
-                        {rec.record_type || rec.type}
-                        {rec.priority && <span className="ml-2 text-gray-500">• Prioridade: {rec.priority}</span>}
-                        <span className="ml-2">{rec.valid === 'valid' ? '✅' : rec.valid === 'unknown' ? '⏳' : '❌'}</span>
-                      </span>
-                    </div>
-                    <div className="grid gap-1 text-sm">
-                      {rec.name && (
+                {showDns.dns_records.map((rec: any, i: number) => {
+                  const type = (rec.record_type || rec.type || '').toUpperCase();
+                  // MX não tem "name" na API do Mailgun — o host é o próprio domínio
+                  const recName = rec.name || (type === 'MX' ? showDns.domain : '');
+                  return (
+                    <div key={i} className="bg-black/30 rounded-lg p-4 border border-white/10">
+                      {/* Cabeçalho: tipo + prioridade + status */}
+                      <div className="flex items-center gap-3 mb-2 flex-wrap">
+                        <span className="px-2 py-0.5 bg-white/10 rounded text-xs font-bold text-white uppercase">{type}</span>
+                        {rec.priority && (
+                          <span className="px-2 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded text-xs font-bold text-blue-300">
+                            Prioridade: {rec.priority}
+                          </span>
+                        )}
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold border ${rec.valid === 'valid' ? 'bg-green-500/20 border-green-500/30 text-green-300' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'}`}>
+                          {rec.valid === 'valid' ? '✅ Verificado' : '⏳ Aguardando'}
+                        </span>
+                      </div>
+
+                      <div className="grid gap-2 text-sm">
+                        {/* Nome/Host — sempre exibe, usa domínio como fallback para MX */}
                         <div className="flex items-start gap-2">
-                          <span className="text-gray-500 w-16 flex-shrink-0">Nome:</span>
+                          <span className="text-gray-500 w-20 flex-shrink-0 pt-0.5">Host (nome):</span>
                           <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <code className="text-green-300 break-all">{rec.name}</code>
-                            <button onClick={() => copyToClipboard(rec.name)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500" title="Copiar"><FaCopy /></button>
+                            <code className="text-green-300 break-all">{recName || '@ (raiz do domínio)'}</code>
+                            {recName && (
+                              <button onClick={() => copyToClipboard(recName)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500" title="Copiar"><FaCopy /></button>
+                            )}
                           </div>
                         </div>
-                      )}
-                      <div className="flex items-start gap-2">
-                        <span className="text-gray-500 w-16 flex-shrink-0">Valor:</span>
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <code className="text-blue-300 break-all text-xs">{rec.value}</code>
-                          <button onClick={() => copyToClipboard(rec.value)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500" title="Copiar"><FaCopy /></button>
+                        {/* Valor */}
+                        <div className="flex items-start gap-2">
+                          <span className="text-gray-500 w-20 flex-shrink-0 pt-0.5">Valor:</span>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <code className="text-blue-300 break-all text-xs">{rec.value}</code>
+                            <button onClick={() => copyToClipboard(rec.value)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500" title="Copiar"><FaCopy /></button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <p className="text-gray-400 text-center py-4">Nenhum registro DNS disponível.</p>
