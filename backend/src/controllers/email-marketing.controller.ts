@@ -595,7 +595,76 @@ export const sendSingle = async (req: Request, res: Response) => {
       text: body_text || 'Por favor, habilite HTML para visualizar este e-mail.',
     });
 
-    res.json({ success: true, message_id: result.id, message: 'E-mail enviado com sucesso' });
+    // Salvar no histórico de envios
+    const userId = (req as any).user?.id || (req as any).tenant?.userId || null;
+    const userName = (req as any).user?.name || (req as any).user?.username || null;
+    const msgId = (result as any).id || (result as any).message_id || null;
+    await pool.query(
+      `INSERT INTO email_marketing_single_sends
+       (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'sent')`,
+      [tenantId, userId, userName, to_email, to_name || null, from_email, from_name || null, subject, domain_id || null, msgId]
+    );
+
+    res.json({ success: true, message_id: msgId, message: 'E-mail enviado com sucesso' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// =============================================
+// HISTÓRICO UNIFICADO DE ENVIOS
+// =============================================
+export const getSends = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const limit = parseInt((req.query.limit as string) || '50');
+    const offset = parseInt((req.query.offset as string) || '0');
+
+    // Campanhas em massa
+    const campaigns = await pool.query(
+      `SELECT
+        c.id, 'campaign' as type, c.name as title, c.subject,
+        c.from_email, c.from_name,
+        c.user_id, c.user_name,
+        c.status, c.total_contacts, c.sent_count, c.failed_count,
+        c.opened_count, c.clicked_count, c.bounced_count, c.complained_count,
+        c.started_at as sent_at, c.created_at,
+        NULL::varchar as to_email, NULL::varchar as to_name,
+        NULL::varchar as mailgun_message_id
+       FROM email_marketing_campaigns c
+       WHERE c.tenant_id = $1 AND c.status NOT IN ('draft')
+       ORDER BY c.created_at DESC`,
+      [tenantId]
+    );
+
+    // Envios únicos
+    const singles = await pool.query(
+      `SELECT
+        s.id, 'single' as type, s.subject as title, s.subject,
+        s.from_email, s.from_name,
+        s.user_id, s.user_name,
+        s.status, 1 as total_contacts, 1 as sent_count, 0 as failed_count,
+        CASE WHEN s.opened_at IS NOT NULL THEN 1 ELSE 0 END as opened_count,
+        CASE WHEN s.clicked_at IS NOT NULL THEN 1 ELSE 0 END as clicked_count,
+        0 as bounced_count, 0 as complained_count,
+        s.created_at as sent_at, s.created_at,
+        s.to_email, s.to_name,
+        s.mailgun_message_id
+       FROM email_marketing_single_sends s
+       WHERE s.tenant_id = $1
+       ORDER BY s.created_at DESC`,
+      [tenantId]
+    );
+
+    // Unir e ordenar por data desc
+    const all = [...campaigns.rows, ...singles.rows]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(offset, offset + limit);
+
+    const total = campaigns.rows.length + singles.rows.length;
+    res.json({ success: true, data: all, total });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

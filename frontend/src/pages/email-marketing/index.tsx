@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import {
   FaEnvelope, FaPaperPlane, FaBullhorn, FaList, FaFileAlt, FaGlobe,
-  FaChartBar, FaPlus, FaArrowRight, FaCheckCircle, FaExclamationTriangle,
+  FaHistory, FaPlus, FaArrowRight, FaCheckCircle, FaExclamationTriangle,
   FaSignOutAlt
 } from 'react-icons/fa';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,6 +17,7 @@ interface Stats {
   total_templates: number;
   total_domains: number;
   active_domains: number;
+  total_sends: number;
 }
 
 export default function EmailMarketingDashboard() {
@@ -24,7 +25,7 @@ export default function EmailMarketingDashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState<Stats>({
     total_campaigns: 0, active_campaigns: 0, total_lists: 0,
-    total_contacts: 0, total_templates: 0, total_domains: 0, active_domains: 0
+    total_contacts: 0, total_templates: 0, total_domains: 0, active_domains: 0, total_sends: 0
   });
   const [loading, setLoading] = useState(true);
 
@@ -34,11 +35,12 @@ export default function EmailMarketingDashboard() {
 
   const loadStats = async () => {
     try {
-      const [campaigns, lists, templates, domains] = await Promise.all([
+      const [campaigns, lists, templates, domains, sends] = await Promise.all([
         api.get('/email-marketing/campaigns'),
         api.get('/email-marketing/lists'),
         api.get('/email-marketing/templates'),
         api.get('/email-marketing/domains'),
+        api.get('/email-marketing/sends?limit=1'),
       ]);
       const campaignData = campaigns.data.data || [];
       const listData = lists.data.data || [];
@@ -53,6 +55,7 @@ export default function EmailMarketingDashboard() {
         total_templates: (templates.data.data || []).length,
         total_domains: domainData.length,
         active_domains: domainData.filter((d: any) => d.status === 'active').length,
+        total_sends: sends.data.total || 0,
       });
     } catch (err) {
       console.error(err);
@@ -102,6 +105,14 @@ export default function EmailMarketingDashboard() {
       href: '/email-marketing/dominios',
       badge: stats.active_domains === 0 ? '⚠️ Nenhum ativo' : `${stats.active_domains} ativo(s)`,
     },
+    {
+      title: 'Histórico de Envios',
+      description: 'Veja todos os e-mails enviados, status, aberturas e cliques',
+      icon: <FaHistory className="text-4xl text-teal-300" />,
+      color: 'teal',
+      href: '/email-marketing/envios',
+      badge: stats.total_sends > 0 ? `${stats.total_sends} envio(s)` : null,
+    },
   ];
 
   const colorMap: Record<string, string> = {
@@ -110,6 +121,7 @@ export default function EmailMarketingDashboard() {
     green: 'from-green-500/20 to-green-600/10 border-green-500/40 hover:from-green-500/30 hover:border-green-500/60 shadow-green-500/20',
     purple: 'from-purple-500/20 to-purple-600/10 border-purple-500/40 hover:from-purple-500/30 hover:border-purple-500/60 shadow-purple-500/20',
     red: 'from-red-500/20 to-red-600/10 border-red-500/40 hover:from-red-500/30 hover:border-red-500/60 shadow-red-500/20',
+    teal: 'from-teal-500/20 to-teal-600/10 border-teal-500/40 hover:from-teal-500/30 hover:border-teal-500/60 shadow-teal-500/20',
   };
 
   return (
@@ -154,7 +166,7 @@ export default function EmailMarketingDashboard() {
               {[
                 { label: 'Campanhas', value: stats.total_campaigns, icon: <FaBullhorn className="text-orange-400" /> },
                 { label: 'Listas', value: stats.total_lists, icon: <FaList className="text-green-400" /> },
-                { label: 'Contatos', value: stats.total_contacts.toLocaleString('pt-BR'), icon: <FaEnvelope className="text-blue-400" /> },
+                { label: 'Total Enviados', value: stats.total_sends.toLocaleString('pt-BR'), icon: <FaHistory className="text-teal-400" /> },
                 { label: 'Domínios Ativos', value: stats.active_domains, icon: <FaGlobe className="text-red-400" /> },
               ].map((s, i) => (
                 <div key={i} className="bg-white/5 border border-white/10 rounded-2xl p-5 flex items-center gap-4">

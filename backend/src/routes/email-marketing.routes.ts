@@ -47,4 +47,9 @@ router.delete('/campaigns/:id', ctrl.deleteCampaign);
 // =============================================
 router.post('/send-single', ctrl.sendSingle);
 
+// =============================================
+// HISTÓRICO DE ENVIOS (campanhas + envio único)
+// =============================================
+router.get('/sends', ctrl.getSends);
+
 export default router;
