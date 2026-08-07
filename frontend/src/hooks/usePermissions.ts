@@ -16,6 +16,7 @@ interface Permissions {
     webhooks?: boolean;
     configuracoes?: boolean;
     chat_atendimento?: boolean;
+    email_marketing?: boolean;
     [key: string]: boolean | undefined;
   };
 }
@@ -90,7 +91,7 @@ export function usePermissions() {
           templates: true, base_dados: true, nova_vida: true,
           verificar_numeros: true, gerenciar_proxies: true,
           lista_restricao: true, webhooks: true, configuracoes: true,
-          chat_atendimento: true, relatorios: true, dashboard: true,
+          chat_atendimento: true, email_marketing: true, relatorios: true, dashboard: true,
         },
       };
       setPermissions(fallback);
@@ -123,6 +124,7 @@ export function usePermissions() {
   const canAccessWebhooks = hasPermission('webhooks');
   const canAccessConfiguracoes = hasPermission('configuracoes');
   const canAccessChat = hasPermission('chat_atendimento');
+  const canAccessEmailMarketing = hasPermission('email_marketing');
 
   return {
     permissions,
@@ -141,6 +143,7 @@ export function usePermissions() {
     canAccessWebhooks,
     canAccessConfiguracoes,
     canAccessChat,
+    canAccessEmailMarketing,
   };
 }
 

@@ -419,6 +419,7 @@ router.get('/', async (req, res) => {
       relatorios: (permissoesUsuario.relatorios === true) && (funcionalidadesTenant.relatorios === true),
       auditoria: (permissoesUsuario.auditoria === true) && (funcionalidadesTenant.auditoria === true),
       chat_atendimento: (permissoesUsuario.chat_atendimento === true) && (funcionalidadesTenant.chat_atendimento === true),
+      email_marketing: (permissoesUsuario.email_marketing !== false) && (funcionalidadesTenant.email_marketing === true),
       dashboard: true, // Dashboard sempre liberado
       configuracoes: (permissoesUsuario.configuracoes === true) // Configurações depende apenas da permissão do usuário
     };

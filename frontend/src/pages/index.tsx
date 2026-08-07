@@ -12,7 +12,7 @@ export default function ChooseIntegration() {
   const router = useRouter();
   const { user, isAuthenticated, loading, signOut } = useAuth();
   const { hasFeature, isTrial, getBlockedMessage, loading: loadingFeatures } = useFeatures();
-  const { canAccessNovaVida, canVerifyNumbers, canManageProxies, canAccessChat, loading: loadingPermissions } = usePermissions();
+  const { canAccessNovaVida, canVerifyNumbers, canManageProxies, canAccessChat, canAccessEmailMarketing, loading: loadingPermissions } = usePermissions();
   
   // Verificar tanto o plano quanto as permissões do usuário
   const canAccessConsultaDados = hasFeature('consulta_dados') && canAccessNovaVida;
@@ -237,8 +237,8 @@ export default function ChooseIntegration() {
             </div>
           </button>
 
-          {/* CARD 3: EMAIL MARKETING */}
-          <button
+          {/* CARD 3: EMAIL MARKETING — só visível se o plano/tenant tiver habilitado */}
+          {canAccessEmailMarketing && <button
             onClick={() => router.push('/email-marketing')}
             className="group relative overflow-hidden rounded-3xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-red-500/20 to-orange-600/10 hover:from-red-500/30 hover:to-orange-600/20 border-4 border-red-500/40 hover:border-red-500/60 hover:scale-105 hover:shadow-2xl shadow-lg shadow-red-500/30 cursor-pointer"
           >
@@ -291,7 +291,7 @@ export default function ChooseIntegration() {
                 </div>
               </div>
             </div>
-          </button>
+          </button>}
 
           {/* CARD 4: CHAT - DINÂMICO */}
           {canAccessChat ? (

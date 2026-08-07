@@ -37,6 +37,7 @@ interface Plan {
     verificar_numeros?: boolean;
     gerenciar_proxies?: boolean;
     chat_atendimento?: boolean;
+    email_marketing?: boolean;
     [key: string]: boolean | undefined;
   };
 }
@@ -76,6 +77,7 @@ export default function AdminPlans() {
       verificar_numeros: true,
       gerenciar_proxies: true,
       chat_atendimento: false,
+      email_marketing: false,
     }
   };
 
@@ -367,6 +369,7 @@ export default function AdminPlans() {
                         { key: 'verificar_numeros', label: 'Verificar Números', icon: <FaCheckCircle /> },
                         { key: 'gerenciar_proxies', label: 'Gerenciar Proxies', icon: <FaCheckCircle /> },
                         { key: 'chat_atendimento', label: 'Chat de Atendimento', icon: <FaComments /> },
+                        { key: 'email_marketing', label: '📧 E-mail Marketing', icon: <FaComments /> },
                       ].map((field) => (
                         <label key={field.key} className="flex items-center gap-2 text-white cursor-pointer bg-gray-700/50 p-3 rounded-lg hover:bg-gray-700 transition-all">
                           <input

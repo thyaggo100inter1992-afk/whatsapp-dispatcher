@@ -276,6 +276,7 @@ export default function TenantDetailsPage() {
     { key: 'verificar_numeros', label: '🔍 Verificar Números', icon: FaCheckCircle },
     { key: 'gerenciar_proxies', label: '🌐 Gerenciar Proxies', icon: FaShieldAlt },
     { key: 'chat_atendimento', label: '💬 Chat de Atendimento', icon: FaComments },
+    { key: 'email_marketing', label: '📧 E-mail Marketing', icon: FaEnvelope },
     { key: 'campanhas', label: 'Campanhas', icon: FaBullhorn },
     { key: 'templates', label: 'Templates', icon: FaTemplate },
     { key: 'lista_restricao', label: 'Lista de Restrição', icon: FaBan },
