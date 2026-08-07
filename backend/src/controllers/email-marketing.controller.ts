@@ -113,6 +113,18 @@ export const addDomain = async (req: Request, res: Response) => {
 
     const dnsRecords = (mgDomain.receiving_dns_records || []).concat(mgDomain.sending_dns_records || []);
 
+    // Adicionar registro DMARC (não vem do Mailgun — o tenant deve configurar no DNS)
+    const dmarcRecord = {
+      record_type: 'TXT',
+      name: `_dmarc.${domain}`,
+      value: `v=DMARC1; p=none; rua=mailto:dmarc@${domain}`,
+      valid: 'unknown',
+      _is_dmarc: true
+    };
+    // Só adiciona se ainda não existir
+    const hasDmarc = dnsRecords.some((r: any) => (r.name || '').startsWith('_dmarc.'));
+    if (!hasDmarc) dnsRecords.push(dmarcRecord);
+
     const result = await pool.query(
       `INSERT INTO email_marketing_domains (tenant_id, domain, mailgun_domain_id, smtp_login, smtp_password, status, dns_records)
        VALUES ($1, $2, $3, $4, $5, 'pending', $6)
@@ -143,7 +155,19 @@ export const verifyDomain = async (req: Request, res: Response) => {
     const domainName = domainRow.rows[0].domain;
 
     // Buscar registros DNS atuais do banco
-    const storedDns: any[] = domainRow.rows[0].dns_records || [];
+    let storedDns: any[] = domainRow.rows[0].dns_records || [];
+
+    // Garantir que o registro DMARC sempre está na lista
+    const hasDmarc = storedDns.some((r: any) => (r.name || '').startsWith('_dmarc.'));
+    if (!hasDmarc) {
+      storedDns.push({
+        record_type: 'TXT',
+        name: `_dmarc.${domainName}`,
+        value: `v=DMARC1; p=none; rua=mailto:dmarc@${domainName}`,
+        valid: 'unknown',
+        _is_dmarc: true
+      });
+    }
 
     // Verificar cada registro DNS diretamente (sem depender da API do provedor)
     const checkedDns = await Promise.all(

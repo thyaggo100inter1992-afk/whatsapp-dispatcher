@@ -286,26 +286,37 @@ export default function Dominios() {
               <div className="space-y-3">
                 {showDns.dns_records.map((rec: any, i: number) => {
                   const type = (rec.record_type || rec.type || '').toUpperCase();
+                  const isDmarc = !!(rec._is_dmarc || (rec.name || '').startsWith('_dmarc.'));
                   // MX não tem "name" na API — o host é o próprio domínio
                   const recName = rec.name || (type === 'MX' ? showDns.domain : '');
                   return (
-                    <div key={i} className="bg-black/30 rounded-lg p-4 border border-white/10">
-                      {/* Cabeçalho: tipo + prioridade + status */}
-                      <div className="flex items-center gap-3 mb-2 flex-wrap">
-                        <span className="px-2 py-0.5 bg-white/10 rounded text-xs font-bold text-white uppercase">{type}</span>
+                    <div key={i} className={`rounded-lg p-4 border ${isDmarc ? 'bg-purple-900/20 border-purple-500/30' : 'bg-black/30 border-white/10'}`}>
+                      {/* Cabeçalho: tipo + badges + status */}
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold text-white uppercase ${isDmarc ? 'bg-purple-500/40' : 'bg-white/10'}`}>{type}</span>
+                        {isDmarc && (
+                          <span className="px-2 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-xs font-bold text-purple-300">
+                            🛡️ DMARC — Recomendado para sair do spam
+                          </span>
+                        )}
                         {rec.priority && (
                           <span className="px-2 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded text-xs font-bold text-blue-300">
                             Prioridade: {rec.priority}
                           </span>
                         )}
-                        {/* Status real de cada registro */}
                         <span className={`px-2 py-0.5 rounded text-xs font-bold border ${rec.valid === 'valid' ? 'bg-green-500/20 border-green-500/30 text-green-300' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'}`}>
                           {rec.valid === 'valid' ? '✅ Verificado' : '⏳ Aguardando propagação'}
                         </span>
                       </div>
 
+                      {/* Aviso explicativo para DMARC */}
+                      {isDmarc && rec.valid !== 'valid' && (
+                        <div className="mb-3 p-2 bg-purple-500/10 border border-purple-500/20 rounded text-xs text-purple-300">
+                          ⚠️ <strong>Adicione este registro no seu DNS</strong> para melhorar drasticamente a entregabilidade e evitar que e-mails caiam no spam. Configure no mesmo painel onde gerencia os outros registros DNS do domínio.
+                        </div>
+                      )}
+
                       <div className="grid gap-2 text-sm">
-                        {/* Nome/Host — sempre exibe, usa domínio como fallback para MX */}
                         <div className="flex items-start gap-2">
                           <span className="text-gray-500 w-20 flex-shrink-0 pt-0.5">Host (nome):</span>
                           <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -315,7 +326,6 @@ export default function Dominios() {
                             )}
                           </div>
                         </div>
-                        {/* Valor */}
                         <div className="flex items-start gap-2">
                           <span className="text-gray-500 w-20 flex-shrink-0 pt-0.5">Valor:</span>
                           <div className="flex items-center gap-2 flex-1 min-w-0">
