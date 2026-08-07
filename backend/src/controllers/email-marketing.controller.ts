@@ -5,6 +5,44 @@ import Mailgun from 'mailgun.js';
 import multer from 'multer';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
+import * as dns from 'dns';
+import { promisify } from 'util';
+
+const resolveTxt  = promisify(dns.resolveTxt);
+const resolveMx   = promisify(dns.resolveMx);
+const resolveCname = promisify(dns.resolveCname);
+
+// Verifica o status real de cada registro DNS diretamente (independente da API do provedor)
+async function checkDnsRecord(rec: any, domain: string): Promise<'valid' | 'unknown'> {
+  try {
+    const type = (rec.record_type || rec.type || '').toUpperCase();
+    const name = rec.name || domain;
+    const expectedValue = (rec.value || '').toLowerCase().trim();
+
+    if (type === 'TXT') {
+      const results = await resolveTxt(name);
+      const flat = results.map((r: string[]) => r.join('').toLowerCase().trim());
+      return flat.some((v: string) => v === expectedValue || v.includes(expectedValue.substring(0, 20))) ? 'valid' : 'unknown';
+    }
+
+    if (type === 'MX') {
+      const results = await resolveMx(domain);
+      const found = results.some((r: any) => (r.exchange || '').toLowerCase().replace(/\.$/, '') === expectedValue.replace(/\.$/, ''));
+      return found ? 'valid' : 'unknown';
+    }
+
+    if (type === 'CNAME') {
+      const result = await resolveCname(name);
+      const resolved = (result[0] || result || '').toString().toLowerCase().replace(/\.$/, '');
+      const expected = expectedValue.replace(/\.$/, '');
+      return resolved === expected ? 'valid' : 'unknown';
+    }
+
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
 
 // Helper para pegar credencial Mailgun ativa
 async function getMailgunClient() {
@@ -102,43 +140,49 @@ export const verifyDomain = async (req: Request, res: Response) => {
     );
     if (!domainRow.rows[0]) return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
 
-    const mg = await getMailgunClient();
+    const domainName = domainRow.rows[0].domain;
 
-    // verify() aciona uma verificação DNS fresca e retorna os status atualizados de cada registro
-    const verification = await mg.domains.verify(domainRow.rows[0].domain) as any;
-    const domainData = verification.domain || verification;
-    const isActive = domainData.state === 'active';
+    // Buscar registros DNS atuais do banco
+    const storedDns: any[] = domainRow.rows[0].dns_records || [];
 
-    // Usar os registros da resposta do verify() — eles têm valid: "valid"/"invalid"/"unknown" atualizados
-    const verifiedDns = (domainData.receiving_dns_records || []).concat(domainData.sending_dns_records || []);
+    // Verificar cada registro DNS diretamente (sem depender da API do provedor)
+    const checkedDns = await Promise.all(
+      storedDns.map(async (rec: any) => ({
+        ...rec,
+        valid: await checkDnsRecord(rec, domainName)
+      }))
+    );
 
-    // Se verify() não retornou registros, tentar buscar via get()
-    let dnsToSave: string | null = null;
-    if (verifiedDns.length > 0) {
-      dnsToSave = JSON.stringify(verifiedDns);
-    } else {
-      const fallback = await mg.domains.get(domainRow.rows[0].domain) as any;
-      const fallbackDns = (fallback.receiving_dns_records || []).concat(fallback.sending_dns_records || []);
-      if (fallbackDns.length > 0) dnsToSave = JSON.stringify(fallbackDns);
-    }
+    // Domínio está ativo quando os registros ESSENCIAIS de envio estão válidos:
+    // SPF (TXT com v=spf1) + DKIM (TXT com smtp._domainkey)
+    const spfOk = checkedDns.some((r: any) =>
+      (r.record_type || r.type || '').toUpperCase() === 'TXT' &&
+      !(r.name || '').includes('_domainkey') &&
+      r.valid === 'valid'
+    );
+    const dkimOk = checkedDns.some((r: any) =>
+      (r.record_type || r.type || '').toUpperCase() === 'TXT' &&
+      (r.name || '').includes('_domainkey') &&
+      r.valid === 'valid'
+    );
+    const allVerified = checkedDns.every((r: any) => r.valid === 'valid');
+    const canSend = spfOk && dkimOk;
+    const newStatus = allVerified ? 'active' : (canSend ? 'active' : 'unverified');
 
-    const newStatus = isActive ? 'active' : 'unverified';
+    // Também notificar o provedor da verificação (best-effort, erros ignorados)
+    try {
+      const mg = await getMailgunClient();
+      await mg.domains.verify(domainName);
+    } catch { /* ignorar erros do provedor */ }
 
-    if (dnsToSave) {
-      await pool.query(
-        `UPDATE email_marketing_domains SET status=$1, dns_records=$3, verified_at=${isActive ? 'NOW()' : 'NULL'}, updated_at=NOW() WHERE id=$2`,
-        [newStatus, id, dnsToSave]
-      );
-    } else {
-      await pool.query(
-        `UPDATE email_marketing_domains SET status=$1, verified_at=${isActive ? 'NOW()' : 'NULL'}, updated_at=NOW() WHERE id=$2`,
-        [newStatus, id]
-      );
-    }
+    const dnsToSave = JSON.stringify(checkedDns);
+    await pool.query(
+      `UPDATE email_marketing_domains SET status=$1, dns_records=$3, verified_at=${canSend ? 'NOW()' : 'NULL'}, updated_at=NOW() WHERE id=$2`,
+      [newStatus, id, dnsToSave]
+    );
 
-    // Retorna o domínio atualizado com os registros frescos
     const updated = await pool.query(`SELECT * FROM email_marketing_domains WHERE id=$1`, [id]);
-    res.json({ success: true, verified: isActive, status: newStatus, data: updated.rows[0] });
+    res.json({ success: true, verified: canSend, allVerified, status: newStatus, data: updated.rows[0] });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

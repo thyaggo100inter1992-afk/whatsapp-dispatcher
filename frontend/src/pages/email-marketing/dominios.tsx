@@ -10,6 +10,7 @@ interface Domain { id: number; domain: string; status: string; dns_records: any;
 
 const STATUS = {
   active: { label: '✅ Verificado', color: 'text-green-300 bg-green-500/10 border-green-500/30' },
+  active_partial: { label: '📤 Ativo (parcial)', color: 'text-blue-300 bg-blue-500/10 border-blue-500/30' },
   pending: { label: '⏳ Pendente', color: 'text-yellow-300 bg-yellow-500/10 border-yellow-500/30' },
   unverified: { label: '⚠️ Não verificado', color: 'text-orange-300 bg-orange-500/10 border-orange-500/30' },
   failed: { label: '❌ Falhou', color: 'text-red-300 bg-red-500/10 border-red-500/30' },
@@ -47,9 +48,16 @@ export default function Dominios() {
     };
   }, []);
 
+  // Helper para verificar se um domínio ainda tem registros pendentes
+  const domainHasPendingRecords = (d: Domain) => {
+    if (d.status !== 'active' && d.status !== 'active_partial') return true;
+    if (!Array.isArray(d.dns_records) || d.dns_records.length === 0) return true;
+    return d.dns_records.some((r: any) => r.valid !== 'valid');
+  };
+
   // Sempre que a lista de domínios mudar, reinicia o polling se houver domínios pendentes
   useEffect(() => {
-    const hasPending = domains.some(d => d.status !== 'active');
+    const hasPending = domains.some(d => domainHasPendingRecords(d));
     if (hasPending) {
       startBackgroundPolling();
     } else {
@@ -78,10 +86,10 @@ export default function Dominios() {
   };
 
   const runBackgroundCheck = async () => {
-    const pending = domainsRef.current.filter(d => d.status !== 'active');
+    const pending = domainsRef.current.filter(d => domainHasPendingRecords(d));
     if (pending.length === 0) return;
     setBgChecking(true);
-    let anyVerified = false;
+    let anyFullyVerified = false;
     for (const d of pending) {
       try {
         const r = await api.post(`/email-marketing/domains/${d.id}/verify`);
@@ -89,18 +97,20 @@ export default function Dominios() {
         if (r.data.data) {
           setShowDns(prev => prev?.id === d.id ? r.data.data : prev);
         }
-        if (r.data.verified) {
-          anyVerified = true;
-          notification.success('Domínio verificado!', `${d.domain} foi verificado com sucesso!`);
+        if (r.data.allVerified) {
+          anyFullyVerified = true;
+          notification.success('Domínio totalmente verificado!', `Todos os registros DNS de ${d.domain} foram verificados!`);
+        } else if (r.data.verified && !r.data.allVerified) {
+          notification.info('Domínio ativo para envio', `${d.domain} está ativo mas ainda há registros pendentes.`);
         }
       } catch { /* silencioso */ }
     }
     setLastChecked(new Date());
     setCountdown(POLL_INTERVAL);
     setBgChecking(false);
-    if (anyVerified) {
-      await loadDomains();
-    } else {
+    await loadDomains();
+    if (false) {
+      // placeholder — sempre recarrega a lista
       // Agenda próxima rodada
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = setInterval(() => {
@@ -225,17 +235,27 @@ export default function Dominios() {
               <button onClick={() => setShowDns(null)} className="p-2 hover:bg-white/10 rounded-lg text-gray-400" title="Fechar — a verificação continua em segundo plano"><FaTimes /></button>
             </div>
 
-            {/* Banner de verificado */}
-            {showDns.status === 'active' ? (
+            {/* Banner de status */}
+            {showDns.status === 'active' && showDns.dns_records && Array.isArray(showDns.dns_records) && showDns.dns_records.every((r: any) => r.valid === 'valid') ? (
+              // TODOS os registros verificados
               <div className="bg-green-500/20 border border-green-500/40 rounded-xl p-4 mb-4 flex items-center gap-3">
                 <FaCheckCircle className="text-green-400 text-2xl flex-shrink-0" />
                 <div>
-                  <p className="text-green-300 font-bold text-lg">Domínio verificado com sucesso!</p>
+                  <p className="text-green-300 font-bold text-lg">Todos os registros verificados!</p>
                   <p className="text-green-400/70 text-sm">
                     {showDns.verified_at
                       ? <>Verificado em <strong>{formatDateTime(showDns.verified_at)}</strong></>
                       : 'Todos os registros DNS foram propagados e validados com sucesso.'}
                   </p>
+                </div>
+              </div>
+            ) : showDns.status === 'active' ? (
+              // Ativo para envio mas alguns registros ainda pendentes
+              <div className="bg-blue-500/20 border border-blue-500/40 rounded-xl p-4 mb-4 flex items-center gap-3">
+                <FaCheckCircle className="text-blue-400 text-2xl flex-shrink-0" />
+                <div>
+                  <p className="text-blue-300 font-bold text-lg">Domínio ativo para envio!</p>
+                  <p className="text-blue-400/70 text-sm">Os registros essenciais (SPF e DKIM) estão verificados. Configure os demais registros abaixo para habilitar rastreamento.</p>
                 </div>
               </div>
             ) : (
@@ -324,25 +344,22 @@ export default function Dominios() {
               <p className="text-gray-400 text-center py-4">Nenhum registro DNS disponível.</p>
             )}
 
-            {/* Botão Verificar Agora */}
-            {showDns.status !== 'active' && (
-              <button
-                onClick={() => handleVerify(showDns.id)}
-                disabled={verifying === showDns.id || bgChecking}
-                className="w-full mt-6 py-3 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all"
-              >
-                {verifying === showDns.id || bgChecking
-                  ? <><FaSpinner className="animate-spin" /> Verificando...</>
-                  : <><FaSync /> Verificar Agora</>
-                }
-              </button>
-            )}
-
-            {showDns.status === 'active' && (
-              <button onClick={() => setShowDns(null)} className="w-full mt-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold flex items-center justify-center gap-2">
-                <FaCheckCircle /> Fechar
-              </button>
-            )}
+            {/* Botão Verificar Agora — sempre disponível enquanto houver registros pendentes */}
+            {(() => {
+              const allOk = showDns.dns_records && Array.isArray(showDns.dns_records) && showDns.dns_records.every((r: any) => r.valid === 'valid');
+              return (
+                <button
+                  onClick={() => handleVerify(showDns.id)}
+                  disabled={verifying === showDns.id || bgChecking}
+                  className={`w-full mt-6 py-3 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${allOk ? 'bg-green-500 hover:bg-green-600' : 'bg-blue-500 hover:bg-blue-600'}`}
+                >
+                  {verifying === showDns.id || bgChecking
+                    ? <><FaSpinner className="animate-spin" /> Verificando...</>
+                    : allOk ? <><FaCheckCircle /> Fechar</> : <><FaSync /> Verificar Agora</>
+                  }
+                </button>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -406,7 +423,10 @@ export default function Dominios() {
           ) : (
             <div className="space-y-4">
               {domains.map(d => {
-                const st = STATUS[d.status as keyof typeof STATUS] || STATUS.pending;
+                // Calcular status real: "active" só se TODOS os DNS estiverem válidos
+                const allRecordsOk = Array.isArray(d.dns_records) && d.dns_records.length > 0 && d.dns_records.every((r: any) => r.valid === 'valid');
+                const effectiveStatus = d.status === 'active' && !allRecordsOk ? 'active_partial' : d.status;
+                const st = STATUS[effectiveStatus as keyof typeof STATUS] || STATUS.pending;
                 return (
                   <div key={d.id} className="bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-6 border border-white/10">
                     <div className="flex items-center justify-between flex-wrap gap-4">
@@ -420,9 +440,14 @@ export default function Dominios() {
                           <p className="text-gray-500 text-xs mt-1 flex items-center gap-1">
                             <FaClock className="text-xs" /> Criado em: <strong className="text-gray-400">{formatDateTime(d.created_at)}</strong>
                           </p>
-                          {d.status === 'active' && d.verified_at && (
+                          {allRecordsOk && d.verified_at && (
                             <p className="text-green-500 text-xs mt-0.5 flex items-center gap-1">
-                              <FaCheckCircle className="text-xs" /> Verificado em: <strong className="text-green-400">{formatDateTime(d.verified_at)}</strong>
+                              <FaCheckCircle className="text-xs" /> Todos verificados em: <strong className="text-green-400">{formatDateTime(d.verified_at)}</strong>
+                            </p>
+                          )}
+                          {!allRecordsOk && d.status === 'active' && (
+                            <p className="text-blue-400 text-xs mt-0.5 flex items-center gap-1">
+                              <FaSync className="text-xs" /> Ativo para envio — alguns registros pendentes
                             </p>
                           )}
                         </div>
