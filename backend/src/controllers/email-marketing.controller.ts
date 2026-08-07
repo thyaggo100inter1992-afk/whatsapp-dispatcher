@@ -69,6 +69,41 @@ function requireTenant(req: Request, res: Response): number | null {
   return tenantId;
 }
 
+// Registra (ou atualiza) webhooks no Mailgun para um domínio
+async function registerMailgunWebhooks(domain: string): Promise<void> {
+  try {
+    const mg = await getMailgunClient();
+    const webhookUrl = 'https://api.sistemasnettsistemas.com.br/api/webhook/mailgun';
+
+    const events = ['opened', 'clicked', 'delivered', 'bounced', 'complained', 'failed', 'unsubscribed'];
+
+    // Tenta listar webhooks existentes
+    let existing: any = {};
+    try {
+      const list = await (mg.webhooks as any).list(domain);
+      existing = list?.webhooks || list || {};
+    } catch { /* domínio pode não ter nenhum webhook ainda */ }
+
+    for (const event of events) {
+      const hasWebhook = existing[event]?.urls?.includes(webhookUrl) || existing[event]?.url === webhookUrl;
+      if (hasWebhook) continue;
+
+      try {
+        // Se já existe webhook para o evento mas com URL errada, deleta primeiro
+        if (existing[event]) {
+          await (mg.webhooks as any).delete(domain, event).catch(() => {});
+        }
+        await (mg.webhooks as any).create(domain, event, webhookUrl);
+        console.log(`[webhooks] Registrado ${event} para ${domain}`);
+      } catch (e: any) {
+        console.warn(`[webhooks] Falha ao registrar ${event} para ${domain}:`, e.message);
+      }
+    }
+  } catch (e: any) {
+    console.error('[webhooks] Erro ao registrar webhooks:', e.message);
+  }
+}
+
 // =============================================
 // DOMÍNIOS
 // =============================================
@@ -148,6 +183,9 @@ export const addDomain = async (req: Request, res: Response) => {
       [tenantId, domain, mgDomain.id || mgDomain.domain || domain, mgDomain.smtp_login || `postmaster@${domain}`, mgDomain.smtp_password || '', JSON.stringify(dnsRecords)]
     );
 
+    // Registrar webhooks no Mailgun em background (não bloqueia a resposta)
+    registerMailgunWebhooks(domain).catch(() => {});
+
     res.json({ success: true, data: result.rows[0], dns_records: dnsRecords });
   } catch (error: any) {
     console.error('[email-marketing] addDomain error:', error.message, error.status);
@@ -220,8 +258,28 @@ export const verifyDomain = async (req: Request, res: Response) => {
       [newStatus, id, dnsToSave]
     );
 
+    // Quando o domínio está ativo, garantir que webhooks estejam registrados
+    if (canSend) {
+      registerMailgunWebhooks(domainName).catch(() => {});
+    }
+
     const updated = await pool.query(`SELECT * FROM email_marketing_domains WHERE id=$1`, [id]);
     res.json({ success: true, verified: canSend, allVerified, status: newStatus, data: updated.rows[0] });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const registerDomainWebhooks = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const { id } = req.params;
+    const row = await pool.query(`SELECT domain FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
+    if (!row.rows[0]) return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
+
+    await registerMailgunWebhooks(row.rows[0].domain);
+    res.json({ success: true, message: 'Webhooks registrados com sucesso' });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

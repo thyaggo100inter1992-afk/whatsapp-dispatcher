@@ -155,6 +155,16 @@ export default function Dominios() {
     } finally { setVerifying(null); }
   };
 
+  const handleRegisterWebhooks = async (id: number) => {
+    setVerifying(id);
+    try {
+      await api.post(`/email-marketing/domains/${id}/register-webhooks`);
+      notification.success('Webhooks registrados!', 'O rastreamento de aberturas e cliques foi ativado com sucesso.');
+    } catch (error: any) {
+      notification.error('Erro', error.response?.data?.message || error.message);
+    } finally { setVerifying(null); }
+  };
+
   const handleDelete = async (id: number, domain: string) => {
     const ok = await confirm({ title: 'Excluir Domínio', message: `Deseja remover o domínio "${domain}"?`, confirmText: 'Sim, Excluir', type: 'danger' });
     if (!ok) return;
@@ -499,6 +509,13 @@ export default function Dominios() {
                           <button onClick={() => handleVerify(d.id)} disabled={verifying === d.id}
                             className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/40 rounded-lg font-bold text-sm flex items-center gap-2 disabled:opacity-50">
                             {verifying === d.id ? <FaSpinner className="animate-spin" /> : <FaSync />} Verificar
+                          </button>
+                        )}
+                        {(d.status === 'active' || d.status === 'active_partial') && (
+                          <button onClick={() => handleRegisterWebhooks(d.id)} disabled={verifying === d.id}
+                            title="Ativar rastreamento de aberturas e cliques"
+                            className="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 rounded-lg font-bold text-sm flex items-center gap-2 disabled:opacity-50">
+                            {verifying === d.id ? <FaSpinner className="animate-spin" /> : '📡'} Rastreamento
                           </button>
                         )}
                         <button onClick={() => handleDelete(d.id, d.domain)} className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded-lg font-bold text-sm flex items-center gap-2">

@@ -11,6 +11,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 
 router.get('/domains', ctrl.getDomains);
 router.post('/domains', ctrl.addDomain);
 router.post('/domains/:id/verify', ctrl.verifyDomain);
+router.post('/domains/:id/register-webhooks', ctrl.registerDomainWebhooks);
 router.delete('/domains/:id', ctrl.deleteDomain);
 
 // =============================================
