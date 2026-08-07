@@ -237,61 +237,69 @@ export default function ChooseIntegration() {
             </div>
           </button>
 
-          {/* CARD 3: EMAIL MARKETING — só visível se o plano/tenant tiver habilitado */}
-          {canAccessEmailMarketing && <button
-            onClick={() => router.push('/email-marketing')}
-            className="group relative overflow-hidden rounded-3xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-red-500/20 to-orange-600/10 hover:from-red-500/30 hover:to-orange-600/20 border-4 border-red-500/40 hover:border-red-500/60 hover:scale-105 hover:shadow-2xl shadow-lg shadow-red-500/30 cursor-pointer"
-          >
-            <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/10 rounded-full blur-3xl"></div>
-            
-            <div className="relative space-y-6">
-              {/* Badge */}
-              <div className="inline-block px-6 py-2 bg-red-500/20 border-2 border-red-400 rounded-full">
-                <span className="text-red-300 font-black text-sm tracking-wider">NOVIDADE</span>
-              </div>
-
-              {/* Ícone e Título */}
-              <div className="space-y-3">
-                <div className="bg-red-500/20 backdrop-blur-sm p-6 rounded-3xl group-hover:bg-red-500/30 transition-all duration-300 w-fit">
-                  <FaEnvelope className="text-6xl text-red-300" />
+          {/* CARD 3: EMAIL MARKETING — aparece sempre, bloqueado se não habilitado no plano */}
+          {canAccessEmailMarketing ? (
+            <button
+              onClick={() => router.push('/email-marketing')}
+              className="group relative overflow-hidden rounded-3xl p-8 text-left transition-all duration-300 bg-gradient-to-br from-red-500/20 to-orange-600/10 hover:from-red-500/30 hover:to-orange-600/20 border-4 border-red-500/40 hover:border-red-500/60 hover:scale-105 hover:shadow-2xl shadow-lg shadow-red-500/30 cursor-pointer"
+            >
+              <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/10 rounded-full blur-3xl"></div>
+              <div className="relative space-y-6">
+                <div className="inline-block px-6 py-2 bg-red-500/20 border-2 border-red-400 rounded-full">
+                  <span className="text-red-300 font-black text-sm tracking-wider">NOVIDADE</span>
                 </div>
-                <h2 className="text-3xl font-black text-white">E-mail Marketing</h2>
-                <p className="text-white/70 text-base leading-relaxed">
-                  Campanhas de e-mail profissional com rastreamento
-                </p>
-              </div>
-
-              {/* Vantagens */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center gap-3">
-                  <div className="bg-red-500/30 p-2 rounded-lg">
-                    <FaCheckCircle className="text-lg text-red-300" />
+                <div className="space-y-3">
+                  <div className="bg-red-500/20 backdrop-blur-sm p-6 rounded-3xl group-hover:bg-red-500/30 transition-all duration-300 w-fit">
+                    <FaEnvelope className="text-6xl text-red-300" />
                   </div>
-                  <span className="text-white text-sm font-bold">Envio em massa</span>
+                  <h2 className="text-3xl font-black text-white">E-mail Marketing</h2>
+                  <p className="text-white/70 text-base leading-relaxed">Campanhas de e-mail profissional com rastreamento</p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="bg-red-500/30 p-2 rounded-lg">
-                    <FaCheckCircle className="text-lg text-red-300" />
-                  </div>
-                  <span className="text-white text-sm font-bold">Rastreio de abertura</span>
+                <div className="space-y-3 pt-2">
+                  {['Envio em massa', 'Rastreio de abertura', 'Domínio próprio'].map(item => (
+                    <div key={item} className="flex items-center gap-3">
+                      <div className="bg-red-500/30 p-2 rounded-lg"><FaCheckCircle className="text-lg text-red-300" /></div>
+                      <span className="text-white text-sm font-bold">{item}</span>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="bg-red-500/30 p-2 rounded-lg">
-                    <FaCheckCircle className="text-lg text-red-300" />
+                <div className="pt-4">
+                  <div className="flex items-center gap-3 text-white text-lg font-black">
+                    Acessar <FaRocket className="text-2xl group-hover:translate-x-3 transition-transform duration-200" />
                   </div>
-                  <span className="text-white text-sm font-bold">Domínio próprio</span>
                 </div>
               </div>
-
-              {/* Botão de Ação */}
-              <div className="pt-4">
-                <div className="flex items-center gap-3 text-white text-lg font-black">
-                  Acessar
-                  <FaRocket className="text-2xl group-hover:translate-x-3 transition-transform duration-200" />
+            </button>
+          ) : (
+            <div className="group relative overflow-hidden rounded-3xl p-8 text-left bg-gradient-to-br from-gray-700/20 to-gray-800/10 border-4 border-gray-600/40 shadow-lg shadow-gray-500/20 cursor-not-allowed opacity-75">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-gray-500/10 rounded-full blur-3xl"></div>
+              <div className="relative space-y-6">
+                <div className="inline-block px-6 py-2 bg-yellow-500/20 border-2 border-yellow-400 rounded-full">
+                  <span className="text-yellow-300 font-black text-sm tracking-wider">PLANO NÃO INCLUI</span>
+                </div>
+                <div className="space-y-3">
+                  <div className="bg-gray-500/20 backdrop-blur-sm p-6 rounded-3xl w-fit">
+                    <FaEnvelope className="text-6xl text-gray-400" />
+                  </div>
+                  <h2 className="text-3xl font-black text-white">E-mail Marketing</h2>
+                  <p className="text-white/50 text-base leading-relaxed">Campanhas de e-mail profissional com rastreamento</p>
+                </div>
+                <div className="space-y-3 pt-2">
+                  {['Envio em massa', 'Rastreio de abertura', 'Domínio próprio'].map(item => (
+                    <div key={item} className="flex items-center gap-3">
+                      <div className="bg-gray-500/30 p-2 rounded-lg"><FaClock className="text-lg text-gray-300" /></div>
+                      <span className="text-white/60 text-sm font-bold">{item}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="pt-4">
+                  <div className="flex items-center gap-3 text-yellow-300 text-lg font-black">
+                    <FaClock className="text-2xl" /> Recurso não disponível no plano
+                  </div>
                 </div>
               </div>
             </div>
-          </button>}
+          )}
 
           {/* CARD 4: CHAT - DINÂMICO */}
           {canAccessChat ? (
