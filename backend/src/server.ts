@@ -148,7 +148,7 @@ app.use((req, res, next) => {
   const contentType = req.headers['content-type'] || '';
   const path = req.path;
   
-  // NÃO aplicar express-fileupload em rotas que usam Multer
+  // NÃO aplicar express-fileupload em rotas que usam Multer ou webhook externo
   if (
     path.includes('/upload-media') || 
     path.includes('/upload/media') || 
@@ -157,7 +157,8 @@ app.use((req, res, next) => {
     path.includes('/screenshots') ||
     path.includes('/restriction-lists/import') ||
     path.includes('/restriction-lists/bulk-import') ||
-    (path.includes('/conversations') && path.includes('/messages/media'))  // ✅ Chat media upload
+    (path.includes('/conversations') && path.includes('/messages/media')) ||
+    path.includes('/webhook/mailgun')  // ✅ Webhook Mailgun — body já processado pelo express.text
   ) {
     console.log('🔄 Rota de upload detectada - pulando express-fileupload (usa Multer)');
     return next();
