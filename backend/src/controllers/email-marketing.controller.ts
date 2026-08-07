@@ -586,14 +586,18 @@ export const sendSingle = async (req: Request, res: Response) => {
     }
 
     const mg = await getMailgunClient();
+    const htmlBody = body_html || (body_text ? `<div style="font-family:Arial,sans-serif">${body_text.replace(/\n/g,'<br>')}</div>` : undefined);
     const result = await mg.messages.create(domain, {
       from: `${from_name} <${from_email}>`,
       to: [to_name ? `${to_name} <${to_email}>` : to_email],
       'h:Reply-To': reply_to || from_email,
       subject,
-      html: body_html || undefined,
+      html: htmlBody,
       text: body_text || 'Por favor, habilite HTML para visualizar este e-mail.',
-    });
+      'o:tracking': 'yes',
+      'o:tracking-clicks': 'yes',
+      'o:tracking-opens': 'yes',
+    } as any);
 
     // Salvar no histórico de envios
     const userId = (req as any).user?.id || (req as any).tenant?.userId || null;
@@ -685,6 +689,7 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
     const messageId = rawMsgId.replace(/^<|>$/g, '').trim();
     const recipient = event?.recipient;
 
+    console.log(`[webhook-mailgun] PAYLOAD:`, JSON.stringify(req.body).substring(0, 300));
     console.log(`[webhook-mailgun] evento: ${eventType} | msgId: ${messageId} | recipient: ${recipient}`);
     if (!eventType || !messageId) return res.json({ success: true });
 
