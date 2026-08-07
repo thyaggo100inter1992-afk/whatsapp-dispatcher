@@ -35,12 +35,16 @@ export default function EmailMarketingDashboard() {
 
   const loadStats = async () => {
     try {
+      const safeGet = async (url: string) => {
+        try { return await api.get(url); } catch { return { data: { data: [], total: 0 } }; }
+      };
+
       const [campaigns, lists, templates, domains, sends] = await Promise.all([
-        api.get('/email-marketing/campaigns'),
-        api.get('/email-marketing/lists'),
-        api.get('/email-marketing/templates'),
-        api.get('/email-marketing/domains'),
-        api.get('/email-marketing/sends?limit=1'),
+        safeGet('/email-marketing/campaigns'),
+        safeGet('/email-marketing/lists'),
+        safeGet('/email-marketing/templates'),
+        safeGet('/email-marketing/domains'),
+        safeGet('/email-marketing/sends?limit=1'),
       ]);
       const campaignData = campaigns.data.data || [];
       const listData = lists.data.data || [];
