@@ -332,18 +332,28 @@ export default function Dominios() {
               <p className="text-gray-400 text-center py-4">Nenhum registro DNS disponível.</p>
             )}
 
-            {/* Botão Verificar Agora — sempre disponível enquanto houver registros pendentes */}
+            {/* Botão: Fechar (todos ok) ou Verificar Agora (pendentes) */}
             {(() => {
               const allOk = showDns.dns_records && Array.isArray(showDns.dns_records) && showDns.dns_records.every((r: any) => r.valid === 'valid');
+              if (allOk) {
+                return (
+                  <button
+                    onClick={() => setShowDns(null)}
+                    className="w-full mt-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all"
+                  >
+                    <FaCheckCircle /> Fechar
+                  </button>
+                );
+              }
               return (
                 <button
                   onClick={() => handleVerify(showDns.id)}
                   disabled={verifying === showDns.id || bgChecking}
-                  className={`w-full mt-6 py-3 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${allOk ? 'bg-green-500 hover:bg-green-600' : 'bg-blue-500 hover:bg-blue-600'}`}
+                  className="w-full mt-6 py-3 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all"
                 >
                   {verifying === showDns.id || bgChecking
                     ? <><FaSpinner className="animate-spin" /> Verificando...</>
-                    : allOk ? <><FaCheckCircle /> Fechar</> : <><FaSync /> Verificar Agora</>
+                    : <><FaSync /> Verificar Agora</>
                   }
                 </button>
               );
