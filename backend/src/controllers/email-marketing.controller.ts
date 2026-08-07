@@ -104,11 +104,16 @@ export const verifyDomain = async (req: Request, res: Response) => {
 
     const mg = await getMailgunClient();
     const verification = await mg.domains.verify(domainRow.rows[0].domain) as any;
-    const isActive = (verification.domain?.state || verification.state) === 'active';
+    const domainData = verification.domain || verification;
+    const isActive = (domainData.state) === 'active';
+
+    // Atualiza registros DNS com os dados mais recentes do Mailgun
+    const updatedDns = (domainData.receiving_dns_records || []).concat(domainData.sending_dns_records || []);
+    const dnsToSave = updatedDns.length > 0 ? JSON.stringify(updatedDns) : null;
 
     await pool.query(
-      `UPDATE email_marketing_domains SET status=$1, updated_at=NOW() WHERE id=$2`,
-      [isActive ? 'active' : 'unverified', id]
+      `UPDATE email_marketing_domains SET status=$1, updated_at=NOW() ${dnsToSave ? ', dns_records=$3' : ''} WHERE id=$2`,
+      dnsToSave ? [isActive ? 'active' : 'unverified', id, dnsToSave] : [isActive ? 'active' : 'unverified', id]
     );
 
     res.json({ success: true, verified: isActive, status: isActive ? 'active' : 'unverified' });

@@ -274,9 +274,16 @@ export default function Dominios() {
                             Prioridade: {rec.priority}
                           </span>
                         )}
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold border ${rec.valid === 'valid' ? 'bg-green-500/20 border-green-500/30 text-green-300' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'}`}>
-                          {rec.valid === 'valid' ? '✅ Verificado' : '⏳ Aguardando'}
-                        </span>
+                        {/* Se o domínio está ativo, todos os registros estão verificados */}
+                        {showDns.status === 'active' ? (
+                          <span className="px-2 py-0.5 rounded text-xs font-bold border bg-green-500/20 border-green-500/30 text-green-300">
+                            ✅ Verificado
+                          </span>
+                        ) : (
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold border ${rec.valid === 'valid' ? 'bg-green-500/20 border-green-500/30 text-green-300' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'}`}>
+                            {rec.valid === 'valid' ? '✅ Verificado' : '⏳ Aguardando propagação'}
+                          </span>
+                        )}
                       </div>
 
                       <div className="grid gap-2 text-sm">
