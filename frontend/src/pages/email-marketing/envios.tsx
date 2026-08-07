@@ -253,12 +253,12 @@ export default function Envios() {
                               const active = flags[key as keyof typeof flags];
                               return (
                                 <div key={key} title={label}
-                                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all select-none
+                                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all select-none
                                     ${active
                                       ? activeColor
-                                      : 'text-gray-600 bg-white/3 border-white/8 opacity-35'}`}>
+                                      : 'text-gray-400 bg-white/5 border-white/10'}`}>
                                   {icon}
-                                  <span className="hidden sm:inline">{label}</span>
+                                  <span>{label}</span>
                                 </div>
                               );
                             })}
