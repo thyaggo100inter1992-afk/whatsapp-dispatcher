@@ -65,8 +65,14 @@ app.use(cors({
 app.use('/media', express.static(path.join(__dirname, '../public/media')));
 console.log('📁 Pasta de mídias configurada: /media');
 
-// 🔧 MIDDLEWARE: Mailgun webhook — aceitar qualquer Content-Type como raw
-app.use('/api/webhook/mailgun', express.raw({ type: '*/*' }));
+// 🔧 MIDDLEWARE: Mailgun webhook — lê body como texto para evitar falha de parsing
+app.use('/api/webhook/mailgun', express.text({ type: '*/*', limit: '10mb' }), (req: any, _res, next) => {
+  if (typeof req.body === 'string') {
+    try { req.body = JSON.parse(req.body); } catch { req.body = {}; }
+  }
+  if (!req.body) req.body = {};
+  next();
+});
 
 // 🔧 MIDDLEWARE ESPECIAL: Corrigir JSON malformado da UAZAPI
 app.use(['/api/qr-webhook/uaz-event', '/api/webhook/tenant-'], express.raw({ type: 'application/json' }), (req: any, res, next) => {
@@ -114,7 +120,14 @@ app.use((req, res, next) => {
   
   // Aplicar middlewares normalmente para outros tipos de conteúdo
   express.json({ limit: '500mb' })(req, res, (err: any) => {
-    if (err) return next(err);
+    if (err) {
+      // Webhook Mailgun: não quebrar se JSON inválido
+      if ((req as any).path?.includes('webhook/mailgun')) {
+        (req as any).body = (req as any).body || {};
+        return next();
+      }
+      return next(err);
+    }
     express.urlencoded({ extended: true, limit: '500mb' })(req, res, next);
   });
 });
