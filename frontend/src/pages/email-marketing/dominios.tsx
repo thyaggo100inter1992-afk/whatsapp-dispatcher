@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaGlobe, FaArrowLeft, FaPlus, FaTrash, FaSync, FaCheckCircle, FaExclamationTriangle, FaSpinner, FaCopy, FaTimes } from 'react-icons/fa';
+import { FaGlobe, FaArrowLeft, FaPlus, FaTrash, FaSync, FaCheckCircle, FaExclamationTriangle, FaSpinner, FaCopy, FaTimes, FaClock, FaWifi } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -15,6 +15,8 @@ const STATUS = {
   failed: { label: '❌ Falhou', color: 'text-red-300 bg-red-500/10 border-red-500/30' },
 };
 
+const POLL_INTERVAL = 30; // segundos entre cada verificação automática
+
 export default function Dominios() {
   const router = useRouter();
   const notification = useNotification();
@@ -27,6 +29,17 @@ export default function Dominios() {
   const [showAdd, setShowAdd] = useState(false);
   const [showDns, setShowDns] = useState<Domain | null>(null);
 
+  // Estado do polling em tempo real
+  const [autoChecking, setAutoChecking] = useState(false);
+  const [lastChecked, setLastChecked] = useState<Date | null>(null);
+  const [countdown, setCountdown] = useState(POLL_INTERVAL);
+  const [domainVerified, setDomainVerified] = useState(false);
+
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const showDnsRef = useRef<Domain | null>(null);
+  showDnsRef.current = showDns;
+
   useEffect(() => { loadDomains(); }, []);
 
   const loadDomains = async () => {
@@ -36,12 +49,83 @@ export default function Dominios() {
     } catch { } finally { setLoading(false); }
   };
 
+  // Inicia o polling quando o modal DNS é aberto
+  useEffect(() => {
+    if (showDns) {
+      setDomainVerified(showDns.status === 'active');
+      setLastChecked(null);
+      setCountdown(POLL_INTERVAL);
+      if (showDns.status !== 'active') {
+        startPolling(showDns.id);
+      }
+    } else {
+      stopPolling();
+      setDomainVerified(false);
+      setLastChecked(null);
+      setCountdown(POLL_INTERVAL);
+    }
+    return () => stopPolling();
+  }, [showDns?.id]);
+
+  const stopPolling = () => {
+    if (pollTimerRef.current) { clearTimeout(pollTimerRef.current); pollTimerRef.current = null; }
+    if (countdownTimerRef.current) { clearInterval(countdownTimerRef.current); countdownTimerRef.current = null; }
+    setAutoChecking(false);
+  };
+
+  const startPolling = useCallback((domainId: number) => {
+    stopPolling();
+    // Inicia contagem regressiva
+    setCountdown(POLL_INTERVAL);
+    countdownTimerRef.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) return POLL_INTERVAL;
+        return prev - 1;
+      });
+    }, 1000);
+    // Agenda a próxima verificação
+    scheduleNextCheck(domainId);
+  }, []);
+
+  const scheduleNextCheck = (domainId: number) => {
+    pollTimerRef.current = setTimeout(async () => {
+      if (!showDnsRef.current) return;
+      await runAutoCheck(domainId);
+    }, POLL_INTERVAL * 1000);
+  };
+
+  const runAutoCheck = async (domainId: number) => {
+    if (!showDnsRef.current) return;
+    setAutoChecking(true);
+    try {
+      const r = await api.post(`/email-marketing/domains/${domainId}/verify`);
+      setLastChecked(new Date());
+      setCountdown(POLL_INTERVAL);
+      if (r.data.verified) {
+        setDomainVerified(true);
+        stopPolling();
+        loadDomains();
+        // Atualiza o showDns com status active
+        setShowDns(prev => prev ? { ...prev, status: 'active' } : null);
+      } else {
+        // Agenda próxima verificação
+        scheduleNextCheck(domainId);
+      }
+    } catch {
+      setLastChecked(new Date());
+      setCountdown(POLL_INTERVAL);
+      scheduleNextCheck(domainId);
+    } finally {
+      setAutoChecking(false);
+    }
+  };
+
   const handleAdd = async () => {
     if (!newDomain) { notification.warning('Campo obrigatório', 'Informe o domínio.'); return; }
     setAdding(true);
     try {
       const r = await api.post('/email-marketing/domains', { domain: newDomain });
-      notification.success('Domínio adicionado!', 'Configure os registros DNS e clique em Verificar.');
+      notification.success('Domínio adicionado!', 'Configure os registros DNS — o sistema verificará automaticamente.');
       setShowAdd(false);
       setNewDomain('');
       loadDomains();
@@ -51,16 +135,22 @@ export default function Dominios() {
     } finally { setAdding(false); }
   };
 
-  const handleVerify = async (id: number) => {
+  const handleVerify = async (id: number, fromModal = false) => {
     setVerifying(id);
     try {
       const r = await api.post(`/email-marketing/domains/${id}/verify`);
+      setLastChecked(new Date());
+      setCountdown(POLL_INTERVAL);
       if (r.data.verified) {
-        notification.success('Domínio verificado!', 'O domínio foi verificado com sucesso.');
+        notification.success('Domínio verificado!', 'O domínio foi verificado com sucesso!');
+        setDomainVerified(true);
+        stopPolling();
+        loadDomains();
+        if (fromModal) setShowDns(prev => prev ? { ...prev, status: 'active' } : null);
       } else {
-        notification.warning('DNS não propagado', 'Os registros DNS ainda não foram propagados. Aguarde e tente novamente.');
+        notification.warning('DNS não propagado ainda', 'Os registros ainda não propagaram. O sistema continuará verificando automaticamente.');
+        if (fromModal && showDns) scheduleNextCheck(showDns.id);
       }
-      loadDomains();
     } catch (error: any) {
       notification.error('Erro', error.response?.data?.message || error.message);
     } finally { setVerifying(null); }
@@ -83,6 +173,9 @@ export default function Dominios() {
     notification.success('Copiado!', '');
   };
 
+  const formatTime = (date: Date) =>
+    date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
   return (
     <>
       <Head><title>Domínios | E-mail Marketing</title></Head>
@@ -102,7 +195,7 @@ export default function Dominios() {
               <input type="text" value={newDomain} onChange={e => setNewDomain(e.target.value)}
                 placeholder="Ex: envios.seudominio.com"
                 className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-red-500 focus:outline-none" />
-              <p className="text-xs text-gray-500 mt-2">Recomendado: use um subdomínio dedicado para envios, como <code className="bg-white/10 px-1 rounded">mail.seudominio.com</code></p>
+              <p className="text-xs text-gray-500 mt-2">Recomendado: use um subdomínio dedicado, como <code className="bg-white/10 px-1 rounded">mail.seudominio.com</code></p>
             </div>
             <div className="flex gap-3">
               <button onClick={handleAdd} disabled={adding}
@@ -115,37 +208,95 @@ export default function Dominios() {
         </div>
       )}
 
-      {/* Modal DNS */}
+      {/* Modal DNS com Polling em Tempo Real */}
       {showDns && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-gray-900 border-2 border-yellow-500/40 rounded-2xl p-8 max-w-3xl w-full my-4">
+
+            {/* Header */}
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-black text-white">🔧 Registros DNS para {showDns.domain}</h2>
-              <button onClick={() => setShowDns(null)} className="p-2 hover:bg-white/10 rounded-lg text-gray-400"><FaTimes /></button>
+              <button onClick={() => setShowDns(null)} className="p-2 hover:bg-white/10 rounded-lg text-gray-400" title="Fechar"><FaTimes /></button>
             </div>
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4 text-sm text-yellow-300">
-              Configure esses registros no painel DNS do seu domínio (Cloudflare, Registro.br, etc.) e depois clique em <strong>Verificar</strong>.
-            </div>
+
+            {/* Banner de verificado */}
+            {domainVerified ? (
+              <div className="bg-green-500/20 border border-green-500/40 rounded-xl p-4 mb-4 flex items-center gap-3">
+                <FaCheckCircle className="text-green-400 text-2xl flex-shrink-0" />
+                <div>
+                  <p className="text-green-300 font-bold text-lg">Domínio verificado com sucesso!</p>
+                  <p className="text-green-400/70 text-sm">Todos os registros DNS foram propagados e validados pelo Mailgun.</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Instrução */}
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4 text-sm text-yellow-300">
+                  Configure esses registros no painel DNS do seu domínio (Cloudflare, Registro.br, etc.) e o sistema verificará automaticamente a cada <strong>{POLL_INTERVAL} segundos</strong>.
+                </div>
+
+                {/* Barra de status em tempo real */}
+                <div className="bg-black/40 border border-white/10 rounded-xl p-4 mb-4 flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                    {autoChecking ? (
+                      <FaSpinner className="text-blue-400 animate-spin text-lg" />
+                    ) : (
+                      <FaWifi className={`text-lg ${countdown <= 5 ? 'text-yellow-400 animate-pulse' : 'text-green-400'}`} />
+                    )}
+                    <div>
+                      <p className="text-white text-sm font-bold">
+                        {autoChecking ? 'Consultando Mailgun...' : `Próxima verificação em ${countdown}s`}
+                      </p>
+                      {lastChecked ? (
+                        <p className="text-gray-400 text-xs flex items-center gap-1">
+                          <FaClock className="text-xs" /> Última consulta: <strong className="text-gray-300">{formatTime(lastChecked)}</strong>
+                        </p>
+                      ) : (
+                        <p className="text-gray-500 text-xs">Aguardando primeira verificação automática...</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Barra de progresso do countdown */}
+                  <div className="w-full mt-2">
+                    <div className="bg-white/10 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-1000 bg-gradient-to-r from-blue-500 to-green-500"
+                        style={{ width: `${((POLL_INTERVAL - countdown) / POLL_INTERVAL) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Lista de registros DNS */}
             {showDns.dns_records && Array.isArray(showDns.dns_records) && showDns.dns_records.length > 0 ? (
               <div className="space-y-3">
                 {showDns.dns_records.map((rec: any, i: number) => (
                   <div key={i} className="bg-black/30 rounded-lg p-4 border border-white/10">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-gray-400 uppercase">{rec.record_type || rec.type} • {rec.valid === 'valid' ? '✅' : '⏳'}</span>
+                      <span className="text-xs font-bold text-gray-400 uppercase">
+                        {rec.record_type || rec.type}
+                        {rec.priority && <span className="ml-2 text-gray-500">• Prioridade: {rec.priority}</span>}
+                        <span className="ml-2">{rec.valid === 'valid' ? '✅' : rec.valid === 'unknown' ? '⏳' : '❌'}</span>
+                      </span>
                     </div>
                     <div className="grid gap-1 text-sm">
-                      <div className="flex items-start gap-2">
-                        <span className="text-gray-500 w-16 flex-shrink-0">Nome:</span>
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <code className="text-green-300 break-all">{rec.name}</code>
-                          <button onClick={() => copyToClipboard(rec.name)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500"><FaCopy /></button>
+                      {rec.name && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-gray-500 w-16 flex-shrink-0">Nome:</span>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <code className="text-green-300 break-all">{rec.name}</code>
+                            <button onClick={() => copyToClipboard(rec.name)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500" title="Copiar"><FaCopy /></button>
+                          </div>
                         </div>
-                      </div>
+                      )}
                       <div className="flex items-start gap-2">
                         <span className="text-gray-500 w-16 flex-shrink-0">Valor:</span>
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           <code className="text-blue-300 break-all text-xs">{rec.value}</code>
-                          <button onClick={() => copyToClipboard(rec.value)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500"><FaCopy /></button>
+                          <button onClick={() => copyToClipboard(rec.value)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500" title="Copiar"><FaCopy /></button>
                         </div>
                       </div>
                     </div>
@@ -153,12 +304,28 @@ export default function Dominios() {
                 ))}
               </div>
             ) : (
-              <p className="text-gray-400 text-center py-4">Nenhum registro DNS disponível. Verifique o domínio para carregar.</p>
+              <p className="text-gray-400 text-center py-4">Nenhum registro DNS disponível.</p>
             )}
-            <button onClick={() => { handleVerify(showDns.id); setShowDns(null); }}
-              className="w-full mt-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold flex items-center justify-center gap-2">
-              <FaSync /> Verificar Agora
-            </button>
+
+            {/* Botão Verificar Agora */}
+            {!domainVerified && (
+              <button
+                onClick={() => handleVerify(showDns.id, true)}
+                disabled={verifying === showDns.id || autoChecking}
+                className="w-full mt-6 py-3 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all"
+              >
+                {verifying === showDns.id || autoChecking
+                  ? <><FaSpinner className="animate-spin" /> Verificando...</>
+                  : <><FaSync /> Verificar Agora</>
+                }
+              </button>
+            )}
+
+            {domainVerified && (
+              <button onClick={() => setShowDns(null)} className="w-full mt-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold flex items-center justify-center gap-2">
+                <FaCheckCircle /> Fechar
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -180,9 +347,8 @@ export default function Dominios() {
             </button>
           </div>
 
-          {/* Info */}
           <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mb-6 text-sm text-blue-300">
-            <strong>ℹ️ Como funciona:</strong> Ao adicionar um domínio, o sistema cria ele automaticamente no Mailgun e exibe os registros DNS que você precisa configurar no seu provedor de domínio. Após configurar, clique em Verificar.
+            <strong>ℹ️ Como funciona:</strong> Ao adicionar um domínio, o sistema cria ele no Mailgun e exibe os registros DNS para configurar. Após configurar no seu provedor, o sistema verifica automaticamente a cada {POLL_INTERVAL} segundos.
           </div>
 
           {loading ? (
