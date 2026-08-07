@@ -394,7 +394,7 @@ export default function Dominios() {
           </div>
 
           {/* Indicador de verificação em segundo plano */}
-          {domains.some(d => d.status !== 'active') && (
+          {domains.some(d => domainHasPendingRecords(d)) && (
             <div className="bg-black/30 border border-white/10 rounded-xl px-4 py-3 mb-6 flex items-center gap-3 flex-wrap">
               {bgChecking ? (
                 <FaSpinner className="text-blue-400 animate-spin flex-shrink-0" />
@@ -467,7 +467,7 @@ export default function Dominios() {
                             🔧 Ver DNS
                           </button>
                         )}
-                        {d.status !== 'active' && (
+                        {domainHasPendingRecords(d) && (
                           <button onClick={() => handleVerify(d.id)} disabled={verifying === d.id}
                             className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/40 rounded-lg font-bold text-sm flex items-center gap-2 disabled:opacity-50">
                             {verifying === d.id ? <FaSpinner className="animate-spin" /> : <FaSync />} Verificar
