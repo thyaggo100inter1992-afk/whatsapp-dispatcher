@@ -6,7 +6,7 @@ import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
 
-interface Domain { id: number; domain: string; status: string; dns_records: any; created_at: string; }
+interface Domain { id: number; domain: string; status: string; dns_records: any; created_at: string; updated_at: string; verified_at: string | null; }
 
 const STATUS = {
   active: { label: '✅ Verificado', color: 'text-green-300 bg-green-500/10 border-green-500/30' },
@@ -170,6 +170,11 @@ export default function Dominios() {
   const formatTime = (date: Date) =>
     date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+  const formatDateTime = (isoStr: string) => {
+    const d = new Date(isoStr);
+    return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
     <>
       <Head><title>Domínios | E-mail Marketing</title></Head>
@@ -219,7 +224,11 @@ export default function Dominios() {
                 <FaCheckCircle className="text-green-400 text-2xl flex-shrink-0" />
                 <div>
                   <p className="text-green-300 font-bold text-lg">Domínio verificado com sucesso!</p>
-                  <p className="text-green-400/70 text-sm">Todos os registros DNS foram propagados e validados pelo Mailgun.</p>
+                  <p className="text-green-400/70 text-sm">
+                    {showDns.verified_at
+                      ? <>Verificado em <strong>{formatDateTime(showDns.verified_at)}</strong></>
+                      : 'Todos os registros DNS foram propagados e validados pelo Mailgun.'}
+                  </p>
                 </div>
               </div>
             ) : (
@@ -274,16 +283,10 @@ export default function Dominios() {
                             Prioridade: {rec.priority}
                           </span>
                         )}
-                        {/* Se o domínio está ativo, todos os registros estão verificados */}
-                        {showDns.status === 'active' ? (
-                          <span className="px-2 py-0.5 rounded text-xs font-bold border bg-green-500/20 border-green-500/30 text-green-300">
-                            ✅ Verificado
-                          </span>
-                        ) : (
-                          <span className={`px-2 py-0.5 rounded text-xs font-bold border ${rec.valid === 'valid' ? 'bg-green-500/20 border-green-500/30 text-green-300' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'}`}>
-                            {rec.valid === 'valid' ? '✅ Verificado' : '⏳ Aguardando propagação'}
-                          </span>
-                        )}
+                        {/* Status real de cada registro vindo do Mailgun */}
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold border ${rec.valid === 'valid' ? 'bg-green-500/20 border-green-500/30 text-green-300' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'}`}>
+                          {rec.valid === 'valid' ? '✅ Verificado' : '⏳ Aguardando propagação'}
+                        </span>
                       </div>
 
                       <div className="grid gap-2 text-sm">
@@ -407,7 +410,14 @@ export default function Dominios() {
                         <div>
                           <h3 className="text-xl font-black text-white">{d.domain}</h3>
                           <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold border mt-1 ${st.color}`}>{st.label}</span>
-                          <p className="text-gray-600 text-xs mt-1">Adicionado em {new Date(d.created_at).toLocaleDateString('pt-BR')}</p>
+                          <p className="text-gray-500 text-xs mt-1 flex items-center gap-1">
+                            <FaClock className="text-xs" /> Criado em: <strong className="text-gray-400">{formatDateTime(d.created_at)}</strong>
+                          </p>
+                          {d.status === 'active' && d.verified_at && (
+                            <p className="text-green-500 text-xs mt-0.5 flex items-center gap-1">
+                              <FaCheckCircle className="text-xs" /> Verificado em: <strong className="text-green-400">{formatDateTime(d.verified_at)}</strong>
+                            </p>
+                          )}
                         </div>
                       </div>
 

@@ -105,18 +105,31 @@ export const verifyDomain = async (req: Request, res: Response) => {
     const mg = await getMailgunClient();
     const verification = await mg.domains.verify(domainRow.rows[0].domain) as any;
     const domainData = verification.domain || verification;
-    const isActive = (domainData.state) === 'active';
+    const isActive = domainData.state === 'active';
 
-    // Atualiza registros DNS com os dados mais recentes do Mailgun
-    const updatedDns = (domainData.receiving_dns_records || []).concat(domainData.sending_dns_records || []);
-    const dnsToSave = updatedDns.length > 0 ? JSON.stringify(updatedDns) : null;
+    // Busca os registros DNS atualizados com status real de cada um
+    const freshDomain = await mg.domains.get(domainRow.rows[0].domain) as any;
+    const freshDns = (freshDomain.receiving_dns_records || []).concat(freshDomain.sending_dns_records || []);
+    const dnsToSave = freshDns.length > 0 ? JSON.stringify(freshDns) : null;
 
-    await pool.query(
-      `UPDATE email_marketing_domains SET status=$1, updated_at=NOW() ${dnsToSave ? ', dns_records=$3' : ''} WHERE id=$2`,
-      dnsToSave ? [isActive ? 'active' : 'unverified', id, dnsToSave] : [isActive ? 'active' : 'unverified', id]
-    );
+    const newStatus = isActive ? 'active' : 'unverified';
+    const verified_at = isActive ? 'NOW()' : 'NULL';
 
-    res.json({ success: true, verified: isActive, status: isActive ? 'active' : 'unverified' });
+    if (dnsToSave) {
+      await pool.query(
+        `UPDATE email_marketing_domains SET status=$1, dns_records=$3, verified_at=${verified_at}, updated_at=NOW() WHERE id=$2`,
+        [newStatus, id, dnsToSave]
+      );
+    } else {
+      await pool.query(
+        `UPDATE email_marketing_domains SET status=$1, verified_at=${verified_at}, updated_at=NOW() WHERE id=$2`,
+        [newStatus, id]
+      );
+    }
+
+    // Retorna o domínio atualizado
+    const updated = await pool.query(`SELECT * FROM email_marketing_domains WHERE id=$1`, [id]);
+    res.json({ success: true, verified: isActive, status: newStatus, data: updated.rows[0] });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
