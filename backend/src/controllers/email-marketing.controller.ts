@@ -598,7 +598,9 @@ export const sendSingle = async (req: Request, res: Response) => {
     // Salvar no histórico de envios
     const userId = (req as any).user?.id || (req as any).tenant?.userId || null;
     const userName = (req as any).user?.name || (req as any).user?.username || null;
-    const msgId = (result as any).id || (result as any).message_id || null;
+    // Normalizar message ID removendo < > para consistência com o webhook
+    const rawMsgId = (result as any).id || (result as any).message_id || '';
+    const msgId = rawMsgId.replace(/^<|>$/g, '').trim() || null;
     await pool.query(
       `INSERT INTO email_marketing_single_sends
        (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status)
@@ -683,6 +685,7 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
     const messageId = rawMsgId.replace(/^<|>$/g, '').trim();
     const recipient = event?.recipient;
 
+    console.log(`[webhook-mailgun] evento: ${eventType} | msgId: ${messageId} | recipient: ${recipient}`);
     if (!eventType || !messageId) return res.json({ success: true });
 
     const statusMap: Record<string, string> = {
@@ -707,18 +710,11 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
       [newStatus, messageId, recipient]
     );
 
-    // 2. Atualizar envios únicos
+    // 2. Atualizar envios únicos — busca em ambos os formatos (com e sem <>) para compatibilidade
     await pool.query(
       `UPDATE email_marketing_single_sends
        SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
-       WHERE mailgun_message_id=$2 AND to_email=$3`,
-      [newStatus, messageId, recipient]
-    );
-    // Também tenta sem o to_email (caso o recipient venha diferente)
-    await pool.query(
-      `UPDATE email_marketing_single_sends
-       SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
-       WHERE mailgun_message_id=$2`,
+       WHERE mailgun_message_id IN ($2, '<' || $2 || '>')`,
       [newStatus, messageId]
     );
 
