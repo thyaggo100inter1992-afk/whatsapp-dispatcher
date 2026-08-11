@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaFileAlt, FaArrowLeft, FaPlus, FaEdit, FaTrash, FaSpinner, FaCheckCircle, FaTimes } from 'react-icons/fa';
+import { FaFileAlt, FaArrowLeft, FaPlus, FaEdit, FaTrash, FaSpinner, FaCheckCircle, FaTimes, FaEye } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -25,10 +25,8 @@ export default function Templates() {
   useEffect(() => { loadTemplates(); }, []);
 
   const loadTemplates = async () => {
-    try {
-      const r = await api.get('/email-marketing/templates');
-      setTemplates(r.data.data || []);
-    } catch { } finally { setLoading(false); }
+    try { const r = await api.get('/email-marketing/templates'); setTemplates(r.data.data || []); }
+    catch { } finally { setLoading(false); }
   };
 
   const openCreate = () => { setEditingId(null); setForm({ ...emptyForm }); setShowModal(true); };
@@ -38,31 +36,22 @@ export default function Templates() {
     if (!form.name || !form.subject) { notification.warning('Campos obrigatórios', 'Nome e assunto são obrigatórios.'); return; }
     setSaving(true);
     try {
-      if (editingId) {
-        await api.put(`/email-marketing/templates/${editingId}`, form);
-        notification.success('Template atualizado!', '');
-      } else {
-        await api.post('/email-marketing/templates', form);
-        notification.success('Template criado!', '');
-      }
-      setShowModal(false);
-      loadTemplates();
-    } catch (error: any) {
-      notification.error('Erro', error.response?.data?.message || error.message);
-    } finally { setSaving(false); }
+      if (editingId) { await api.put(`/email-marketing/templates/${editingId}`, form); notification.success('Template atualizado!', ''); }
+      else { await api.post('/email-marketing/templates', form); notification.success('Template criado!', ''); }
+      setShowModal(false); loadTemplates();
+    } catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
+    finally { setSaving(false); }
   };
 
   const handleDelete = async (id: number, name: string) => {
-    const ok = await confirm({ title: 'Excluir Template', message: `Excluir o template "${name}"?`, confirmText: 'Sim, Excluir', type: 'danger' });
+    const ok = await confirm({ title: 'Excluir Template', message: `Excluir "${name}"?`, confirmText: 'Sim, Excluir', type: 'danger' });
     if (!ok) return;
-    try {
-      await api.delete(`/email-marketing/templates/${id}`);
-      notification.success('Template excluído', '');
-      loadTemplates();
-    } catch (error: any) {
-      notification.error('Erro', error.response?.data?.message || error.message);
-    }
+    try { await api.delete(`/email-marketing/templates/${id}`); notification.success('Excluído', ''); loadTemplates(); }
+    catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
   };
+
+  const inputCls = 'w-full px-6 py-4 text-base bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-purple-500 focus:ring-4 focus:ring-purple-500/30 transition-all';
+  const labelCls = 'block text-base font-bold mb-3 text-white/90';
 
   return (
     <>
@@ -72,38 +61,41 @@ export default function Templates() {
 
       {/* Modal Criar/Editar */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-gray-900 border-2 border-purple-500/40 rounded-2xl p-8 max-w-3xl w-full space-y-4 my-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-dark-800 border-2 border-purple-500/40 rounded-2xl p-8 max-w-3xl w-full space-y-5 my-4 shadow-2xl shadow-purple-500/20">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-black text-white">{editingId ? 'Editar' : 'Criar'} Template</h2>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-white/10 rounded-lg text-gray-400"><FaTimes /></button>
+              <h2 className="text-2xl font-black text-white flex items-center gap-3">
+                <span className="bg-gradient-to-br from-purple-500 to-purple-600 text-white font-black w-10 h-10 rounded-xl flex items-center justify-center text-base shadow-lg">{editingId ? '✏️' : '+'}</span>
+                {editingId ? 'Editar' : 'Criar'} Template
+              </h2>
+              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all"><FaTimes className="text-xl" /></button>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-300 mb-2">Nome do Template *</label>
+              <label className={labelCls}>Nome do Template *</label>
               <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-                placeholder="Ex: Boas-vindas"
-                className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-purple-500 focus:outline-none" />
+                placeholder="Ex: Boas-vindas" className={inputCls} />
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-300 mb-2">Assunto Padrão *</label>
+              <label className={labelCls}>Assunto Padrão *</label>
               <input type="text" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })}
-                placeholder="Assunto do e-mail"
-                className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-purple-500 focus:outline-none" />
+                placeholder="Assunto do e-mail" className={inputCls} />
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-300 mb-2">Corpo HTML</label>
+              <label className={labelCls}>Corpo HTML</label>
               <textarea value={form.body_html} onChange={e => setForm({ ...form, body_html: e.target.value })}
                 placeholder="<p>Olá {{nome}},</p><p>Conteúdo do template...</p>"
-                rows={12}
-                className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-purple-500 focus:outline-none font-mono text-sm resize-y" />
-              <p className="text-xs text-gray-500 mt-1">Variáveis disponíveis: <code className="bg-white/10 px-1 rounded">{`{{nome}}`}</code> e <code className="bg-white/10 px-1 rounded">{`{{email}}`}</code></p>
+                rows={14}
+                className="w-full px-5 py-4 text-base bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-purple-500 focus:ring-4 focus:ring-purple-500/30 transition-all font-mono resize-y" />
+              <p className="text-sm text-white/50 mt-2">
+                Variáveis: <code className="bg-white/10 px-1 rounded">{'{{nome}}'}</code> e <code className="bg-white/10 px-1 rounded">{'{{email}}'}</code>
+              </p>
             </div>
             <div className="flex gap-3 pt-2">
               <button onClick={handleSave} disabled={saving}
-                className="flex-1 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                {saving ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />} {editingId ? 'Salvar' : 'Criar'}
+                className="flex-1 py-4 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl font-black text-lg flex items-center justify-center gap-3 disabled:opacity-50 shadow-xl shadow-purple-500/30 transition-all">
+                {saving ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />} {editingId ? 'Salvar Alterações' : 'Criar Template'}
               </button>
-              <button onClick={() => setShowModal(false)} className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold">Cancelar</button>
+              <button onClick={() => setShowModal(false)} className="px-8 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-all">Cancelar</button>
             </div>
           </div>
         </div>
@@ -111,62 +103,88 @@ export default function Templates() {
 
       {/* Modal Preview */}
       {preview && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b">
-              <span className="font-bold text-gray-800">{preview.subject}</span>
-              <button onClick={() => setPreview(null)} className="p-2 hover:bg-gray-100 rounded"><FaTimes /></button>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[85vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b">
+              <div>
+                <p className="text-sm text-gray-500 font-bold">{preview.name}</p>
+                <p className="font-bold text-gray-800">{preview.subject}</p>
+              </div>
+              <button onClick={() => setPreview(null)} className="p-2 hover:bg-gray-100 rounded-xl text-gray-500 transition-all"><FaTimes className="text-xl" /></button>
             </div>
-            <div className="p-4" dangerouslySetInnerHTML={{ __html: preview.body_html || '<p>Sem conteúdo HTML</p>' }} />
+            <div className="p-6" dangerouslySetInnerHTML={{ __html: preview.body_html || '<p class="text-gray-400">Sem conteúdo HTML</p>' }} />
           </div>
         </div>
       )}
 
-      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-12 px-4">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-4">
-              <button onClick={() => router.push('/email-marketing')} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all">
-                <FaArrowLeft />
-              </button>
-              <div>
-                <h1 className="text-3xl font-black text-white flex items-center gap-3"><FaFileAlt className="text-purple-400" /> Templates</h1>
-                <p className="text-gray-400">{templates.length} template(s)</p>
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
+        <div className="max-w-7xl mx-auto space-y-8">
+
+          {/* HEADER */}
+          <div className="relative overflow-hidden bg-gradient-to-r from-purple-600/30 via-purple-500/20 to-purple-600/30 backdrop-blur-xl border-2 border-purple-500/40 rounded-3xl p-10 shadow-2xl shadow-purple-500/20">
+            <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
+            <div className="relative flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-6">
+                <button onClick={() => router.push('/email-marketing')} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all">
+                  <FaArrowLeft className="text-xl" />
+                </button>
+                <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-2xl shadow-lg shadow-purple-500/50">
+                  <FaFileAlt className="text-5xl text-white" />
+                </div>
+                <div>
+                  <h1 className="text-5xl font-black text-white mb-2 tracking-tight">Templates</h1>
+                  <p className="text-xl text-white/80 font-medium">{templates.length} template{templates.length !== 1 ? 's' : ''} criado{templates.length !== 1 ? 's' : ''}</p>
+                </div>
               </div>
+              <button onClick={openCreate}
+                className="px-8 py-4 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-2xl font-black text-lg transition-all flex items-center gap-3 shadow-xl shadow-purple-500/30 hover:scale-105">
+                <FaPlus /> Novo Template
+              </button>
             </div>
-            <button onClick={openCreate} className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl font-bold transition-all flex items-center gap-2">
-              <FaPlus /> Novo Template
-            </button>
           </div>
 
+          {/* LISTA */}
           {loading ? (
-            <div className="flex justify-center py-20"><FaSpinner className="text-4xl text-purple-400 animate-spin" /></div>
+            <div className="flex justify-center py-20"><FaSpinner className="text-5xl text-purple-400 animate-spin" /></div>
           ) : templates.length === 0 ? (
-            <div className="bg-white/5 rounded-2xl p-12 text-center border border-white/10">
-              <FaFileAlt className="text-6xl text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-400 text-lg mb-4">Nenhum template criado ainda</p>
-              <button onClick={openCreate} className="px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-bold">Criar Primeiro Template</button>
+            <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-purple-500/20 rounded-2xl p-16 text-center">
+              <div className="bg-purple-500/10 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+                <FaFileAlt className="text-5xl text-purple-400" />
+              </div>
+              <h3 className="text-2xl font-black text-white mb-3">Nenhum template criado</h3>
+              <p className="text-gray-400 mb-6">Crie modelos reutilizáveis para suas campanhas</p>
+              <button onClick={openCreate} className="px-8 py-4 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-2xl font-black text-lg inline-flex items-center gap-3 shadow-xl">
+                <FaPlus /> Criar Primeiro Template
+              </button>
             </div>
           ) : (
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
               {templates.map(t => (
-                <div key={t.id} className="bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-6 border border-white/10">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="text-lg font-black text-white">{t.name}</h3>
-                      <p className="text-gray-400 text-sm">{t.subject}</p>
+                <div key={t.id} className="bg-dark-800/60 backdrop-blur-xl border-2 border-purple-500/20 hover:border-purple-500/40 rounded-2xl p-6 shadow-xl transition-all duration-300">
+                  <div className="flex items-start gap-4 mb-4">
+                    <div className="bg-purple-500/20 p-3 rounded-xl flex-shrink-0">
+                      <FaFileAlt className="text-2xl text-purple-300" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-black text-white truncate">{t.name}</h3>
+                      <p className="text-gray-400 text-sm truncate mt-0.5">{t.subject}</p>
                       <p className="text-gray-600 text-xs mt-1">{new Date(t.created_at).toLocaleDateString('pt-BR')}</p>
                     </div>
                   </div>
-                  <div className="flex gap-2 mt-4">
-                    <button onClick={() => setPreview(t)} className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-lg text-sm flex items-center gap-1">
-                      👁️ Preview
+                  {t.body_html && (
+                    <div className="bg-black/20 rounded-xl p-3 mb-4 max-h-16 overflow-hidden">
+                      <p className="text-gray-500 text-xs font-mono truncate">{t.body_html.replace(/<[^>]+>/g, ' ').trim().substring(0, 80)}...</p>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button onClick={() => setPreview(t)} className="flex-1 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 transition-all">
+                      <FaEye /> Preview
                     </button>
-                    <button onClick={() => openEdit(t)} className="px-3 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 rounded-lg text-sm flex items-center gap-1">
+                    <button onClick={() => openEdit(t)} className="flex-1 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 transition-all">
                       <FaEdit /> Editar
                     </button>
-                    <button onClick={() => handleDelete(t.id, t.name)} className="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded-lg text-sm flex items-center gap-1">
-                      <FaTrash /> Excluir
+                    <button onClick={() => handleDelete(t.id, t.name)} className="py-2.5 px-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 rounded-xl text-sm transition-all">
+                      <FaTrash />
                     </button>
                   </div>
                 </div>

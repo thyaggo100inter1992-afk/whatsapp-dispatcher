@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaList, FaArrowLeft, FaPlus, FaTrash, FaUpload, FaUsers, FaSpinner, FaCheckCircle, FaClipboard, FaFileExcel, FaTimesCircle } from 'react-icons/fa';
+import { FaList, FaArrowLeft, FaPlus, FaTrash, FaUpload, FaUsers, FaSpinner, FaCheckCircle, FaClipboard, FaFileExcel, FaTimesCircle, FaTimes } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -31,10 +31,8 @@ export default function Listas() {
   useEffect(() => { loadLists(); }, []);
 
   const loadLists = async () => {
-    try {
-      const r = await api.get('/email-marketing/lists');
-      setLists(r.data.data || []);
-    } catch { } finally { setLoading(false); }
+    try { const r = await api.get('/email-marketing/lists'); setLists(r.data.data || []); }
+    catch { } finally { setLoading(false); }
   };
 
   const handleCreate = async () => {
@@ -43,24 +41,16 @@ export default function Listas() {
     try {
       await api.post('/email-marketing/lists', newList);
       notification.success('Lista criada!', '');
-      setShowCreate(false);
-      setNewList({ name: '', description: '' });
-      loadLists();
-    } catch (error: any) {
-      notification.error('Erro', error.response?.data?.message || error.message);
-    } finally { setCreating(false); }
+      setShowCreate(false); setNewList({ name: '', description: '' }); loadLists();
+    } catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
+    finally { setCreating(false); }
   };
 
   const handleDelete = async (id: number, name: string) => {
     const ok = await confirm({ title: 'Excluir Lista', message: `Excluir "${name}" e todos os seus contatos?`, confirmText: 'Sim, Excluir', type: 'danger' });
     if (!ok) return;
-    try {
-      await api.delete(`/email-marketing/lists/${id}`);
-      notification.success('Lista excluída', '');
-      loadLists();
-    } catch (error: any) {
-      notification.error('Erro', error.response?.data?.message || error.message);
-    }
+    try { await api.delete(`/email-marketing/lists/${id}`); notification.success('Lista excluída', ''); loadLists(); }
+    catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
   };
 
   const handleImport = async (listId: number, file: File) => {
@@ -68,102 +58,54 @@ export default function Listas() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const r = await api.post(`/email-marketing/lists/${listId}/import`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const r = await api.post(`/email-marketing/lists/${listId}/import`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       notification.success('Importação concluída!', `${r.data.imported} contatos importados de ${r.data.total}.`);
       loadLists();
-    } catch (error: any) {
-      notification.error('Erro na importação', error.response?.data?.message || error.message);
-    } finally { setImporting(null); }
+    } catch (e: any) { notification.error('Erro na importação', e.response?.data?.message || e.message); }
+    finally { setImporting(null); }
   };
 
-  // Importar via colar texto
   const handlePasteImport = async () => {
-    if (!pasteListId || !pasteText.trim()) {
-      notification.warning('Atenção', 'Cole ao menos um e-mail na área de texto.');
-      return;
-    }
-
-    // Parsear linhas: aceita email,nome ou só email, separados por vírgula, ponto-e-vírgula ou nova linha
-    const lines = pasteText
-      .split(/[\n;]/)
-      .map(l => l.trim())
-      .filter(Boolean);
-
-    if (lines.length === 0) {
-      notification.warning('Atenção', 'Nenhum e-mail encontrado no texto colado.');
-      return;
-    }
-
-    // Montar CSV em memória
+    if (!pasteListId || !pasteText.trim()) { notification.warning('Atenção', 'Cole ao menos um e-mail.'); return; }
+    const lines = pasteText.split(/[\n;]/).map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) { notification.warning('Atenção', 'Nenhum e-mail encontrado.'); return; }
     const csvLines = ['email,name'];
     for (const line of lines) {
       const parts = line.split(',').map(p => p.trim());
-      const email = parts[0];
-      const name = parts[1] || '';
+      const email = parts[0]; const name = parts[1] || '';
       if (!email.includes('@')) continue;
       csvLines.push(`${email},${name}`);
     }
-
-    if (csvLines.length <= 1) {
-      notification.warning('Nenhum e-mail válido', 'Verifique se os endereços contêm "@".');
-      return;
-    }
-
+    if (csvLines.length <= 1) { notification.warning('Nenhum e-mail válido', 'Verifique se os endereços contêm "@".'); return; }
     const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' });
     const file = new File([blob], 'contatos.csv', { type: 'text/csv' });
-
     setPasteImporting(true);
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const r = await api.post(`/email-marketing/lists/${pasteListId}/import`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const r = await api.post(`/email-marketing/lists/${pasteListId}/import`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       notification.success('Importação concluída!', `${r.data.imported} contatos importados de ${r.data.total}.`);
-      setShowPaste(false);
-      setPasteText('');
-      loadLists();
-    } catch (error: any) {
-      notification.error('Erro na importação', error.response?.data?.message || error.message);
-    } finally { setPasteImporting(false); }
+      setShowPaste(false); setPasteText(''); loadLists();
+    } catch (e: any) { notification.error('Erro na importação', e.response?.data?.message || e.message); }
+    finally { setPasteImporting(false); }
   };
 
-  // Baixar modelo Excel (CSV com BOM para abrir corretamente no Excel)
   const downloadExcelTemplate = () => {
     const bom = '\uFEFF';
-    const content = [
-      'email,name',
-      'joao.silva@email.com,João Silva',
-      'maria.santos@email.com,Maria Santos',
-      'pedro.oliveira@gmail.com,Pedro Oliveira',
-      'ana.costa@hotmail.com,Ana Costa',
-      'carlos.mendes@empresa.com.br,Carlos Mendes',
-    ].join('\r\n');
-
+    const content = ['email,name', 'joao.silva@email.com,João Silva', 'maria.santos@email.com,Maria Santos', 'pedro.oliveira@gmail.com,Pedro Oliveira', 'ana.costa@hotmail.com,Ana Costa', 'carlos.mendes@empresa.com.br,Carlos Mendes'].join('\r\n');
     const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'modelo-lista-contatos.csv';
-    a.click();
+    const a = document.createElement('a'); a.href = url; a.download = 'modelo-lista-contatos.csv'; a.click();
     URL.revokeObjectURL(url);
-    notification.success('Download iniciado!', 'Abra o arquivo no Excel para visualizar o modelo.');
+    notification.success('Download iniciado!', 'Abra o arquivo no Excel para ver o modelo.');
   };
 
-  const openPasteModal = (id: number, name: string) => {
-    setPasteListId(id);
-    setPasteListName(name);
-    setPasteText('');
-    setShowPaste(true);
-  };
+  const openPasteModal = (id: number, name: string) => { setPasteListId(id); setPasteListName(name); setPasteText(''); setShowPaste(true); };
 
-  // Contar e-mails válidos no texto colado
-  const validEmailCount = pasteText
-    .split(/[\n;]/)
-    .map(l => l.trim().split(',')[0].trim())
-    .filter(e => e.includes('@')).length;
+  const validEmailCount = pasteText.split(/[\n;]/).map(l => l.trim().split(',')[0].trim()).filter(e => e.includes('@')).length;
+
+  const inputCls = 'w-full px-6 py-4 text-base bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-green-500 focus:ring-4 focus:ring-green-500/30 transition-all';
+  const labelCls = 'block text-base font-bold mb-3 text-white/90';
 
   return (
     <>
@@ -176,159 +118,169 @@ export default function Listas() {
         e.target.value = '';
       }} />
 
-      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-12 px-4">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-4">
-              <button onClick={() => router.push('/email-marketing')} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all">
-                <FaArrowLeft />
+      {/* Modal Criar */}
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 border-2 border-green-500/40 rounded-2xl p-8 max-w-md w-full space-y-5 shadow-2xl shadow-green-500/20">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-black text-white flex items-center gap-3">
+                <span className="bg-gradient-to-br from-green-500 to-green-600 text-white font-black w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">+</span>
+                Nova Lista de Contatos
+              </h2>
+              <button onClick={() => setShowCreate(false)} className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all"><FaTimes className="text-xl" /></button>
+            </div>
+            <div>
+              <label className={labelCls}>Nome *</label>
+              <input type="text" value={newList.name} onChange={e => setNewList({ ...newList, name: e.target.value })}
+                placeholder="Ex: Leads Novembro 2026" onKeyDown={e => e.key === 'Enter' && handleCreate()} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Descrição</label>
+              <input type="text" value={newList.description} onChange={e => setNewList({ ...newList, description: e.target.value })}
+                placeholder="Descrição opcional" className={inputCls} />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={handleCreate} disabled={creating}
+                className="flex-1 py-4 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-black flex items-center justify-center gap-2 disabled:opacity-50 shadow-xl shadow-green-500/30 transition-all">
+                {creating ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />} Criar Lista
               </button>
-              <div>
-                <h1 className="text-3xl font-black text-white flex items-center gap-3"><FaList className="text-green-400" /> Listas de Contatos</h1>
-                <p className="text-gray-400">{lists.length} lista(s)</p>
-              </div>
+              <button onClick={() => setShowCreate(false)} className="px-8 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-all">Cancelar</button>
             </div>
-            <button onClick={() => setShowCreate(true)} className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-bold transition-all flex items-center gap-2">
-              <FaPlus /> Nova Lista
-            </button>
           </div>
+        </div>
+      )}
 
-          {/* Modal Criar */}
-          {showCreate && (
-            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-              <div className="bg-gray-900 border-2 border-green-500/40 rounded-2xl p-8 max-w-md w-full space-y-4">
-                <h2 className="text-xl font-black text-white">Nova Lista de Contatos</h2>
-                <div>
-                  <label className="block text-sm font-bold text-gray-300 mb-2">Nome *</label>
-                  <input type="text" value={newList.name} onChange={e => setNewList({ ...newList, name: e.target.value })}
-                    placeholder="Ex: Leads Novembro 2026"
-                    className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-green-500 focus:outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-300 mb-2">Descrição</label>
-                  <input type="text" value={newList.description} onChange={e => setNewList({ ...newList, description: e.target.value })}
-                    placeholder="Descrição opcional"
-                    className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-green-500 focus:outline-none" />
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <button onClick={handleCreate} disabled={creating}
-                    className="flex-1 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                    {creating ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />} Criar
-                  </button>
-                  <button onClick={() => setShowCreate(false)} className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold">Cancelar</button>
-                </div>
-              </div>
+      {/* Modal Colar Contatos */}
+      {showPaste && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 border-2 border-purple-500/40 rounded-2xl p-8 max-w-lg w-full space-y-5 shadow-2xl shadow-purple-500/20">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-black text-white flex items-center gap-3">
+                <span className="bg-gradient-to-br from-purple-500 to-purple-600 p-2.5 rounded-xl shadow-lg"><FaClipboard className="text-white text-xl" /></span>
+                Colar Contatos
+              </h2>
+              <button onClick={() => setShowPaste(false)} className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all"><FaTimesCircle className="text-xl" /></button>
             </div>
-          )}
+            <p className="text-gray-400">Lista: <span className="text-white font-bold">{pasteListName}</span></p>
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300 space-y-2">
+              <p><strong>Como colar:</strong> Um e-mail por linha, ou <code className="bg-black/30 px-1 rounded">email,nome</code> por linha.</p>
+              <code className="block font-mono text-xs bg-black/30 rounded-lg p-3">
+                joao@email.com,João Silva<br />
+                maria@email.com<br />
+                pedro@email.com,Pedro
+              </code>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <label className={labelCls}>Cole os e-mails aqui</label>
+                {pasteText && (
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full border ${validEmailCount > 0 ? 'bg-green-500/20 text-green-300 border-green-500/30' : 'bg-red-500/20 text-red-300 border-red-500/30'}`}>
+                    {validEmailCount} e-mail{validEmailCount !== 1 ? 's' : ''} válido{validEmailCount !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+              <textarea value={pasteText} onChange={e => setPasteText(e.target.value)}
+                placeholder="joao@email.com,João Silva&#10;maria@email.com&#10;pedro@email.com,Pedro"
+                rows={10}
+                className="w-full px-5 py-4 text-sm bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-purple-500 focus:ring-4 focus:ring-purple-500/30 font-mono resize-y transition-all" />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={handlePasteImport} disabled={pasteImporting || validEmailCount === 0}
+                className="flex-1 py-4 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl font-black flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-purple-500/30 transition-all">
+                {pasteImporting ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />}
+                {pasteImporting ? 'Importando...' : `Importar ${validEmailCount > 0 ? validEmailCount + ' contatos' : ''}`}
+              </button>
+              <button onClick={() => setShowPaste(false)} className="px-8 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-all">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
-          {/* Modal Colar Contatos */}
-          {showPaste && (
-            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-              <div className="bg-gray-900 border-2 border-purple-500/40 rounded-2xl p-8 max-w-lg w-full space-y-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-black text-white flex items-center gap-2">
-                    <FaClipboard className="text-purple-400" /> Colar Contatos
-                  </h2>
-                  <button onClick={() => setShowPaste(false)} className="text-gray-500 hover:text-white transition-all">
-                    <FaTimesCircle className="text-xl" />
-                  </button>
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
+        <div className="max-w-7xl mx-auto space-y-8">
+
+          {/* HEADER */}
+          <div className="relative overflow-hidden bg-gradient-to-r from-green-600/30 via-green-500/20 to-green-600/30 backdrop-blur-xl border-2 border-green-500/40 rounded-3xl p-10 shadow-2xl shadow-green-500/20">
+            <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
+            <div className="relative flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-6">
+                <button onClick={() => router.push('/email-marketing')} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all">
+                  <FaArrowLeft className="text-xl" />
+                </button>
+                <div className="bg-gradient-to-br from-green-500 to-green-600 p-6 rounded-2xl shadow-lg shadow-green-500/50">
+                  <FaList className="text-5xl text-white" />
                 </div>
-                <p className="text-gray-400 text-sm">
-                  Lista: <span className="text-white font-bold">{pasteListName}</span>
-                </p>
-
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 text-sm text-blue-300 space-y-1">
-                  <p><strong>Como colar:</strong> Um e-mail por linha, ou e-mail,nome por linha.</p>
-                  <p className="font-mono text-xs bg-black/30 rounded p-2 mt-1">
-                    joao@email.com,João Silva<br />
-                    maria@email.com<br />
-                    pedro@email.com,Pedro
+                <div>
+                  <h1 className="text-5xl font-black text-white mb-2 tracking-tight">Listas de Contatos</h1>
+                  <p className="text-xl text-white/80 font-medium">
+                    {lists.length} lista{lists.length !== 1 ? 's' : ''} •{' '}
+                    {lists.reduce((s, l) => s + l.total_contacts, 0).toLocaleString('pt-BR')} contatos no total
                   </p>
                 </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-bold text-gray-300">Cole os e-mails aqui</label>
-                    {pasteText && (
-                      <span className={`text-xs font-bold px-2 py-1 rounded-full ${validEmailCount > 0 ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
-                        {validEmailCount} e-mail{validEmailCount !== 1 ? 's' : ''} válido{validEmailCount !== 1 ? 's' : ''}
-                      </span>
-                    )}
-                  </div>
-                  <textarea
-                    value={pasteText}
-                    onChange={e => setPasteText(e.target.value)}
-                    placeholder="joao@email.com,João Silva&#10;maria@email.com&#10;pedro@email.com,Pedro"
-                    rows={10}
-                    className="w-full px-4 py-3 bg-black/40 border-2 border-white/20 rounded-lg text-white text-sm font-mono focus:border-purple-500 focus:outline-none resize-y"
-                  />
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={handlePasteImport}
-                    disabled={pasteImporting || validEmailCount === 0}
-                    className="flex-1 py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-lg font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                  >
-                    {pasteImporting ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />}
-                    {pasteImporting ? 'Importando...' : `Importar ${validEmailCount > 0 ? validEmailCount + ' contatos' : ''}`}
-                  </button>
-                  <button onClick={() => setShowPaste(false)} className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold">
-                    Cancelar
-                  </button>
-                </div>
+              </div>
+              <div className="flex gap-3 flex-wrap">
+                <button onClick={downloadExcelTemplate}
+                  className="px-6 py-4 bg-white/10 hover:bg-white/20 text-white border-2 border-white/20 hover:border-white/30 rounded-2xl font-bold text-base transition-all flex items-center gap-3">
+                  <FaFileExcel className="text-green-400 text-xl" /> Baixar Modelo Excel
+                </button>
+                <button onClick={() => setShowCreate(true)}
+                  className="px-8 py-4 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-2xl font-black text-lg transition-all flex items-center gap-3 shadow-xl shadow-green-500/30 hover:scale-105">
+                  <FaPlus /> Nova Lista
+                </button>
               </div>
             </div>
-          )}
+          </div>
 
+          {/* Info CSV */}
+          <div className="bg-blue-500/10 border-2 border-blue-500/30 rounded-2xl p-5 text-sm text-blue-300">
+            <strong>📋 Formato do arquivo CSV:</strong> O arquivo deve ter as colunas <code className="bg-white/10 px-1 rounded">email</code> (obrigatório) e <code className="bg-white/10 px-1 rounded">name</code> (nome, opcional). Você também pode colar os e-mails diretamente usando o botão "Colar".
+            <code className="block mt-2 bg-black/30 rounded-lg p-3 font-mono text-xs">email,name<br />joao@email.com,João Silva<br />maria@email.com,Maria</code>
+          </div>
+
+          {/* LISTA */}
           {loading ? (
-            <div className="flex justify-center py-20"><FaSpinner className="text-4xl text-green-400 animate-spin" /></div>
+            <div className="flex justify-center py-20"><FaSpinner className="text-5xl text-green-400 animate-spin" /></div>
           ) : lists.length === 0 ? (
-            <div className="bg-white/5 rounded-2xl p-12 text-center border border-white/10">
-              <FaList className="text-6xl text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-400 text-lg mb-4">Nenhuma lista criada ainda</p>
-              <button onClick={() => setShowCreate(true)} className="px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold">Criar Primeira Lista</button>
+            <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-green-500/20 rounded-2xl p-16 text-center">
+              <div className="bg-green-500/10 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+                <FaList className="text-5xl text-green-400" />
+              </div>
+              <h3 className="text-2xl font-black text-white mb-3">Nenhuma lista criada</h3>
+              <p className="text-gray-400 mb-6">Crie listas para organizar seus contatos por segmento</p>
+              <button onClick={() => setShowCreate(true)} className="px-8 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-2xl font-black text-lg inline-flex items-center gap-3 shadow-xl">
+                <FaPlus /> Criar Primeira Lista
+              </button>
             </div>
           ) : (
             <div className="space-y-4">
               {lists.map(l => (
-                <div key={l.id} className="bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-6 border border-white/10">
+                <div key={l.id} className="bg-dark-800/60 backdrop-blur-xl border-2 border-green-500/20 hover:border-green-500/40 rounded-2xl p-6 shadow-xl transition-all duration-300">
                   <div className="flex items-center justify-between flex-wrap gap-4">
                     <div className="flex items-center gap-4">
-                      <div className="p-3 bg-green-500/20 rounded-xl">
+                      <div className="p-4 bg-green-500/20 rounded-xl">
                         <FaUsers className="text-2xl text-green-400" />
                       </div>
                       <div>
                         <h3 className="text-xl font-black text-white">{l.name}</h3>
-                        {l.description && <p className="text-gray-400 text-sm">{l.description}</p>}
-                        <p className="text-gray-500 text-xs mt-1">
-                          {l.total_contacts.toLocaleString('pt-BR')} contatos • Criada em {new Date(l.created_at).toLocaleDateString('pt-BR')}
+                        {l.description && <p className="text-gray-400 text-sm mt-0.5">{l.description}</p>}
+                        <p className="text-gray-500 text-sm mt-1">
+                          <span className="text-green-300 font-bold">{l.total_contacts.toLocaleString('pt-BR')}</span> contatos
+                          {' '}• Criada em {new Date(l.created_at).toLocaleDateString('pt-BR')}
                         </p>
                       </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      {/* Colar contatos */}
-                      <button
-                        onClick={() => openPasteModal(l.id, l.name)}
-                        className="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 rounded-lg font-bold text-sm flex items-center gap-2 transition-all"
-                      >
+                      <button onClick={() => openPasteModal(l.id, l.name)}
+                        className="px-4 py-2.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 rounded-xl font-bold text-sm flex items-center gap-2 transition-all">
                         <FaClipboard /> Colar
                       </button>
-                      {/* Importar CSV */}
-                      <button
-                        onClick={() => { setSelectedListId(l.id); fileRef.current?.click(); }}
-                        disabled={importing === l.id}
-                        className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 rounded-lg font-bold text-sm flex items-center gap-2 disabled:opacity-50 transition-all"
-                      >
-                        {importing === l.id ? <FaSpinner className="animate-spin" /> : <FaUpload />}
-                        Importar CSV
+                      <button onClick={() => { setSelectedListId(l.id); fileRef.current?.click(); }} disabled={importing === l.id}
+                        className="px-4 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 rounded-xl font-bold text-sm flex items-center gap-2 disabled:opacity-50 transition-all">
+                        {importing === l.id ? <FaSpinner className="animate-spin" /> : <FaUpload />} Importar CSV
                       </button>
-                      {/* Excluir */}
-                      <button
-                        onClick={() => handleDelete(l.id, l.name)}
-                        className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded-lg font-bold text-sm flex items-center gap-2 transition-all"
-                      >
+                      <button onClick={() => handleDelete(l.id, l.name)}
+                        className="px-4 py-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded-xl font-bold text-sm flex items-center gap-2 transition-all">
                         <FaTrash /> Excluir
                       </button>
                     </div>
@@ -337,25 +289,6 @@ export default function Listas() {
               ))}
             </div>
           )}
-
-          {/* Rodapé com instruções + botão modelo Excel */}
-          <div className="mt-6 space-y-3">
-            {/* Botão baixar modelo */}
-            <div className="flex justify-end">
-              <button
-                onClick={downloadExcelTemplate}
-                className="px-5 py-2.5 bg-green-600/20 hover:bg-green-600/30 text-green-300 border border-green-500/40 rounded-xl font-bold text-sm flex items-center gap-2 transition-all"
-              >
-                <FaFileExcel className="text-lg" /> Baixar Modelo Excel
-              </button>
-            </div>
-
-            {/* Info CSV */}
-            <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300">
-              <strong>📋 Formato do arquivo CSV:</strong> O arquivo deve ter uma coluna chamada <code className="bg-white/10 px-1 rounded">email</code> (obrigatório) e opcionalmente <code className="bg-white/10 px-1 rounded">name</code> (nome do contato). Baixe o modelo acima para usar como referência no Excel.
-              <code className="block mt-2 bg-black/30 rounded p-2">email,name<br />joao@email.com,João Silva<br />maria@email.com,Maria</code>
-            </div>
-          </div>
         </div>
       </div>
     </>
