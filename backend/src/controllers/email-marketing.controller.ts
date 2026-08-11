@@ -517,14 +517,71 @@ export const createCampaign = async (req: Request, res: Response) => {
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
-    const { name, subject, from_name, from_email, reply_to, domain_id, list_id, template_id, body_html, body_text, delay_seconds } = req.body;
-    if (!name || !subject || !from_name || !from_email) {
-      return res.status(400).json({ success: false, message: 'Nome, assunto, remetente e email obrigatórios' });
+    const {
+      name, reply_to, domain_id, list_id, template_id, body_html, body_text,
+      // Legado (compat)
+      subject, from_name, from_email,
+      // Novos campos avançados
+      from_senders,    // [{ from_name, from_email }]
+      subjects,        // ["Assunto A", "Assunto B"]
+      delay_seconds_min, delay_seconds_max,
+      scheduled_at,
+      work_start_time, work_end_time,
+      pause_after, pause_duration_minutes,
+    } = req.body;
+
+    // Normaliza remetentes: aceita array novo OU campos legados
+    const sendersArr: { from_name: string; from_email: string }[] =
+      Array.isArray(from_senders) && from_senders.length > 0
+        ? from_senders
+        : [{ from_name: from_name || '', from_email: from_email || '' }];
+
+    // Normaliza assuntos: aceita array novo OU campo legado
+    const subjectsArr: string[] =
+      Array.isArray(subjects) && subjects.length > 0
+        ? subjects
+        : [subject || ''];
+
+    if (!name || sendersArr.length === 0 || !sendersArr[0].from_email || subjectsArr.length === 0 || !subjectsArr[0]) {
+      return res.status(400).json({ success: false, message: 'Nome, ao menos um remetente e ao menos um assunto são obrigatórios' });
     }
+
+    // Define status inicial: se agendado para o futuro -> 'scheduled', senão -> 'draft'
+    const initStatus = scheduled_at && new Date(scheduled_at) > new Date() ? 'scheduled' : 'draft';
+
     const result = await pool.query(
-      `INSERT INTO email_marketing_campaigns (tenant_id, name, subject, from_name, from_email, reply_to, domain_id, list_id, template_id, body_html, body_text, delay_seconds)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [tenantId, name, subject, from_name, from_email, reply_to || null, domain_id || null, list_id || null, template_id || null, body_html || null, body_text || null, delay_seconds || 1]
+      `INSERT INTO email_marketing_campaigns (
+         tenant_id, name,
+         subject, from_name, from_email,
+         from_senders, subjects,
+         reply_to, domain_id, list_id, template_id,
+         body_html, body_text,
+         delay_seconds, delay_seconds_min, delay_seconds_max,
+         scheduled_at, work_start_time, work_end_time,
+         pause_after, pause_duration_minutes,
+         status
+       ) VALUES (
+         $1,$2,
+         $3,$4,$5,
+         $6,$7,
+         $8,$9,$10,$11,
+         $12,$13,
+         $14,$15,$16,
+         $17,$18,$19,
+         $20,$21,
+         $22
+       ) RETURNING *`,
+      [
+        tenantId, name,
+        subjectsArr[0], sendersArr[0].from_name, sendersArr[0].from_email,
+        JSON.stringify(sendersArr), JSON.stringify(subjectsArr),
+        reply_to || null, domain_id || null, list_id || null, template_id || null,
+        body_html || null, body_text || null,
+        delay_seconds_min || 1, delay_seconds_min || 1, delay_seconds_max || 3,
+        scheduled_at || null, work_start_time || '08:00', work_end_time || '20:00',
+        pause_after || 0, pause_duration_minutes || 30,
+        initStatus,
+      ]
     );
     res.json({ success: true, data: result.rows[0] });
   } catch (error: any) {
@@ -540,7 +597,7 @@ export const startCampaign = async (req: Request, res: Response) => {
 
     const campaign = await pool.query(`SELECT * FROM email_marketing_campaigns WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
     if (!campaign.rows[0]) return res.status(404).json({ success: false, message: 'Campanha não encontrada' });
-    if (!['draft', 'paused'].includes(campaign.rows[0].status)) {
+    if (!['draft', 'paused', 'scheduled'].includes(campaign.rows[0].status)) {
       return res.status(400).json({ success: false, message: 'Campanha não pode ser iniciada no status atual' });
     }
 
@@ -550,7 +607,6 @@ export const startCampaign = async (req: Request, res: Response) => {
         `SELECT email, name FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2 AND status='active'`,
         [campaign.rows[0].list_id, tenantId]
       );
-      // Insere recipients se não existirem
       for (const c of contacts.rows) {
         await pool.query(
           `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
@@ -561,7 +617,7 @@ export const startCampaign = async (req: Request, res: Response) => {
     }
 
     await pool.query(
-      `UPDATE email_marketing_campaigns SET status='sending', started_at=NOW(), updated_at=NOW() WHERE id=$1`,
+      `UPDATE email_marketing_campaigns SET status='sending', started_at=NOW(), sent_in_session=0, pause_started_at=NULL, updated_at=NOW() WHERE id=$1`,
       [id]
     );
 
