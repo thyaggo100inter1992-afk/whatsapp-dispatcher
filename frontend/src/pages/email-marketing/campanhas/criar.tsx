@@ -4,7 +4,8 @@ import Head from 'next/head';
 import {
   FaBullhorn, FaArrowLeft, FaCheckCircle, FaSpinner, FaPlus, FaTrash,
   FaEnvelope, FaRandom, FaClock, FaPause, FaCalendarAlt, FaInfoCircle,
-  FaClipboard, FaUpload, FaListUl, FaFileExcel,
+  FaClipboard, FaUpload, FaListUl, FaFileExcel, FaRocket, FaUsers,
+  FaExclamationTriangle, FaBolt, FaChartLine,
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
@@ -14,21 +15,15 @@ interface EmailList { id: number; name: string; total_contacts: number; }
 interface Template { id: number; name: string; subject: string; body_html: string; }
 interface Sender { from_name: string; from_email: string; }
 
-// Parseia texto de remetentes: aceita "nome,email" ou "email" por linha
 function parseSendersText(text: string): Sender[] {
-  return text.split('\n')
-    .map(l => l.trim())
-    .filter(Boolean)
-    .map(l => {
-      const parts = l.split(',').map(p => p.trim());
-      const email = parts.find(p => p.includes('@')) || '';
-      const name = parts.find(p => !p.includes('@')) || '';
-      return { from_name: name, from_email: email };
-    })
-    .filter(s => s.from_email.includes('@'));
+  return text.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const parts = l.split(',').map(p => p.trim());
+    const email = parts.find(p => p.includes('@')) || '';
+    const name = parts.find(p => !p.includes('@')) || '';
+    return { from_name: name, from_email: email };
+  }).filter(s => s.from_email.includes('@'));
 }
 
-// Parseia texto de assuntos: um por linha
 function parseSubjectsText(text: string): string[] {
   return text.split('\n').map(l => l.trim()).filter(Boolean);
 }
@@ -41,11 +36,11 @@ export default function CriarCampanha() {
   const notification = useNotification();
   const senderFileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
   const [domains, setDomains] = useState<Domain[]>([]);
   const [lists, setLists] = useState<EmailList[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
 
-  // Campos básicos
   const [name, setName] = useState('');
   const [domainId, setDomainId] = useState('');
   const [listId, setListId] = useState('');
@@ -53,29 +48,20 @@ export default function CriarCampanha() {
   const [bodyHtml, setBodyHtml] = useState('');
   const [replyTo, setReplyTo] = useState('');
 
-  // Remetentes
   const [senderMode, setSenderMode] = useState<SenderMode>('manual');
   const [senders, setSenders] = useState<Sender[]>([{ from_name: '', from_email: '' }]);
   const [senderPasteText, setSenderPasteText] = useState('');
 
-  // Assuntos
   const [subjectMode, setSubjectMode] = useState<SubjectMode>('manual');
   const [subjects, setSubjects] = useState<string[]>(['']);
   const [subjectPasteText, setSubjectPasteText] = useState('');
 
-  // Delay
   const [delayMin, setDelayMin] = useState(2);
   const [delayMax, setDelayMax] = useState(5);
-
-  // Agendamento
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
-
-  // Horário de trabalho
   const [workStart, setWorkStart] = useState('08:00');
   const [workEnd, setWorkEnd] = useState('20:00');
-
-  // Pausa automática
   const [pauseAfter, setPauseAfter] = useState(0);
   const [pauseDuration, setPauseDuration] = useState(30);
 
@@ -102,12 +88,10 @@ export default function CriarCampanha() {
     }
   };
 
-  // Upload CSV de remetentes
   const handleSenderCsvUpload = (file: File) => {
     const reader = new FileReader();
     reader.onload = e => {
       const text = (e.target?.result as string) || '';
-      // Remove header se existir
       const lines = text.split('\n').filter(Boolean);
       const dataLines = lines[0]?.toLowerCase().includes('from_name') || lines[0]?.toLowerCase().includes('nome')
         ? lines.slice(1) : lines;
@@ -117,7 +101,6 @@ export default function CriarCampanha() {
     reader.readAsText(file);
   };
 
-  // Download modelo CSV remetentes
   const downloadSenderTemplate = () => {
     const bom = '\uFEFF';
     const content = ['nome,email', 'Empresa A,empresa-a@seudominio.com', 'Empresa B,empresa-b@seudominio.com', 'Suporte,suporte@seudominio.com'].join('\r\n');
@@ -127,37 +110,36 @@ export default function CriarCampanha() {
     URL.revokeObjectURL(url);
   };
 
-  // Computed: remetentes válidos finais
   const finalSenders: Sender[] = senderMode === 'manual'
     ? senders.filter(s => s.from_email.includes('@'))
     : parseSendersText(senderPasteText);
 
-  // Computed: assuntos válidos finais
   const finalSubjects: string[] = subjectMode === 'manual'
     ? subjects.filter(s => s.trim() !== '')
     : parseSubjectsText(subjectPasteText);
 
-  // Handlers manuais remetentes
+  const selectedList = lists.find(l => l.id === parseInt(listId));
+
   const addSender = () => setSenders(s => [...s, { from_name: '', from_email: '' }]);
   const removeSender = (i: number) => setSenders(s => s.filter((_, idx) => idx !== i));
   const updateSender = (i: number, field: keyof Sender, val: string) =>
     setSenders(s => s.map((x, idx) => idx === i ? { ...x, [field]: val } : x));
-
-  // Handlers manuais assuntos
   const addSubject = () => setSubjects(s => [...s, '']);
   const removeSubject = (i: number) => setSubjects(s => s.filter((_, idx) => idx !== i));
   const updateSubject = (i: number, val: string) =>
     setSubjects(s => s.map((x, idx) => idx === i ? val : x));
 
   const handleSave = async () => {
-    if (!name.trim()) { notification.warning('Campo obrigatório', 'Informe o nome da campanha.'); return; }
-    if (finalSenders.length === 0) { notification.warning('Remetente obrigatório', 'Adicione ao menos um e-mail de remetente válido.'); return; }
-    if (finalSubjects.length === 0) { notification.warning('Assunto obrigatório', 'Adicione ao menos um assunto.'); return; }
-    if (!listId) { notification.warning('Lista obrigatória', 'Selecione uma lista de contatos.'); return; }
-    if (delayMin > delayMax) { notification.warning('Delay inválido', 'O delay mínimo não pode ser maior que o máximo.'); return; }
+    const errs: string[] = [];
+    if (!name.trim()) errs.push('Informe o nome da campanha.');
+    if (finalSenders.length === 0) errs.push('Adicione ao menos um e-mail de remetente válido.');
+    if (finalSubjects.length === 0) errs.push('Adicione ao menos um assunto.');
+    if (!listId) errs.push('Selecione uma lista de contatos.');
+    if (delayMin > delayMax) errs.push('O delay mínimo não pode ser maior que o máximo.');
+    if (errs.length > 0) { setErrors(errs); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    setErrors([]);
 
     const scheduledAt = scheduleDate && scheduleTime ? `${scheduleDate}T${scheduleTime}:00` : null;
-
     setSaving(true);
     try {
       await api.post('/email-marketing/campaigns', {
@@ -180,122 +162,201 @@ export default function CriarCampanha() {
         pause_after: pauseAfter,
         pause_duration_minutes: pauseDuration,
       });
-
       notification.success(
         scheduledAt ? 'Campanha agendada!' : 'Campanha criada!',
         scheduledAt ? `Será enviada em ${scheduleDate} às ${scheduleTime}.` : 'Acesse a lista para iniciar o envio.'
       );
       router.push('/email-marketing/campanhas');
     } catch (error: any) {
-      notification.error('Erro ao criar campanha', error.response?.data?.message || error.message);
+      const msg = error.response?.data?.message || error.message;
+      setErrors([msg]);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally { setSaving(false); }
   };
 
-  const inputCls = 'w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-orange-500 focus:outline-none';
-  const labelCls = 'block text-sm font-bold text-gray-300 mb-2';
-  const sectionCls = 'bg-white/5 border border-white/10 rounded-xl p-6 space-y-4';
+  const inputCls = 'w-full px-6 py-4 text-base bg-dark-700/80 backdrop-blur-md border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/30 transition-all duration-200';
+  const labelCls = 'block text-base font-bold mb-3 text-white/90';
 
   const modeTabCls = (active: boolean) =>
-    `px-4 py-2 rounded-lg text-sm font-bold transition-all cursor-pointer ${active ? 'bg-orange-500 text-white' : 'bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white'}`;
+    `px-4 py-2 rounded-lg text-sm font-bold transition-all cursor-pointer ${active ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30' : 'bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white'}`;
+
+  const sectionCls = 'bg-dark-800/60 backdrop-blur-xl border-2 border-orange-500/30 rounded-2xl p-8 shadow-xl hover:border-orange-500/50 transition-all duration-300';
+
+  const StepBadge = ({ n }: { n: number }) => (
+    <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white text-2xl font-black w-14 h-14 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/50 flex-shrink-0">
+      {n}
+    </div>
+  );
 
   return (
     <>
       <Head><title>Criar Campanha | E-mail Marketing</title></Head>
       <notification.NotificationContainer />
-      {/* Input oculto para CSV */}
       <input ref={senderFileRef} type="file" accept=".csv,.txt" className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) handleSenderCsvUpload(f); e.target.value = ''; }} />
 
-      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-12 px-4">
-        <div className="max-w-3xl mx-auto space-y-6">
+      <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
+        <div className="max-w-7xl mx-auto space-y-8">
 
-          {/* Header */}
-          <div className="flex items-center gap-4">
-            <button onClick={() => router.push('/email-marketing/campanhas')}
-              className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all">
-              <FaArrowLeft />
-            </button>
-            <div>
-              <h1 className="text-3xl font-black text-white flex items-center gap-3">
-                <FaBullhorn className="text-orange-400" /> Nova Campanha
-              </h1>
-              <p className="text-gray-400">Configure e crie sua campanha de e-mail</p>
-            </div>
-          </div>
+          {/* ══ HEADER ══ */}
+          <div className="relative overflow-hidden bg-gradient-to-r from-orange-600/30 via-orange-500/20 to-orange-600/30 backdrop-blur-xl border-2 border-orange-500/40 rounded-3xl p-10 shadow-2xl shadow-orange-500/20">
+            <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
+            <div className="relative">
+              <div className="flex items-center gap-6 mb-4">
+                <button onClick={() => router.push('/email-marketing/campanhas')}
+                  className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all">
+                  <FaArrowLeft className="text-xl" />
+                </button>
+                <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 rounded-2xl shadow-lg shadow-orange-500/50">
+                  <FaRocket className="text-5xl text-white" />
+                </div>
+                <div>
+                  <h1 className="text-5xl font-black text-white mb-2 tracking-tight">Nova Campanha de E-mail</h1>
+                  <p className="text-xl text-white/80 font-medium">Configure remetentes, assuntos, agendamento e controles de envio</p>
+                </div>
+              </div>
 
-          {/* ── 1. IDENTIFICAÇÃO ── */}
-          <div className={sectionCls}>
-            <h2 className="text-lg font-black text-white flex items-center gap-2">
-              <FaBullhorn className="text-orange-400" /> Identificação
-            </h2>
-            <div>
-              <label className={labelCls}>Nome da Campanha *</label>
-              <input value={name} onChange={e => setName(e.target.value)}
-                placeholder="Ex: Promoção Black Friday 2026" className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Domínio de Envio</label>
-              <select value={domainId} onChange={e => setDomainId(e.target.value)} className={inputCls}>
-                <option value="">Selecione um domínio ativo</option>
-                {domains.map(d => <option key={d.id} value={d.id}>{d.domain}</option>)}
-              </select>
-              {domains.length === 0 && (
-                <p className="text-yellow-400 text-xs mt-1">⚠️ Nenhum domínio ativo.{' '}
-                  <span className="underline cursor-pointer" onClick={() => router.push('/email-marketing/dominios')}>Configurar</span>
-                </p>
+              {/* Stats rápidas */}
+              {(finalSenders.length > 0 || finalSubjects.length > 0 || selectedList) && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                  <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                    <div className="flex items-center gap-3">
+                      <FaEnvelope className="text-3xl text-orange-300" />
+                      <div>
+                        <div className="text-2xl font-bold text-white">{finalSenders.length}</div>
+                        <div className="text-sm text-white/70">Remetentes</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                    <div className="flex items-center gap-3">
+                      <FaRandom className="text-3xl text-purple-300" />
+                      <div>
+                        <div className="text-2xl font-bold text-white">{finalSubjects.length}</div>
+                        <div className="text-sm text-white/70">Assuntos</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                    <div className="flex items-center gap-3">
+                      <FaUsers className="text-3xl text-green-300" />
+                      <div>
+                        <div className="text-2xl font-bold text-white">{selectedList?.total_contacts ?? 0}</div>
+                        <div className="text-sm text-white/70">Contatos</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                    <div className="flex items-center gap-3">
+                      <FaBolt className="text-3xl text-yellow-300" />
+                      <div>
+                        <div className="text-2xl font-bold text-white">{delayMin}–{delayMax}s</div>
+                        <div className="text-sm text-white/70">Delay</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
-            <div>
-              <label className={labelCls}>Lista de Contatos *</label>
-              <select value={listId} onChange={e => setListId(e.target.value)} className={inputCls}>
-                <option value="">Selecione uma lista</option>
-                {lists.map(l => <option key={l.id} value={l.id}>{l.name} ({l.total_contacts} contatos)</option>)}
-              </select>
+          </div>
+
+          {/* ══ ERROS ══ */}
+          {errors.length > 0 && (
+            <div className="bg-gradient-to-r from-red-500/20 to-red-600/20 backdrop-blur-xl border-2 border-red-500/50 rounded-2xl p-6 shadow-xl shadow-red-500/20">
+              <div className="flex items-start gap-4">
+                <div className="bg-red-500/20 p-4 rounded-xl">
+                  <FaExclamationTriangle className="text-3xl text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-red-300 mb-3">Corrija os erros antes de continuar:</h3>
+                  <ul className="space-y-2">
+                    {errors.map((e, i) => (
+                      <li key={i} className="flex items-start gap-2 text-base text-red-200">
+                        <span className="text-red-400 mt-1">●</span><span>{e}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
             </div>
-            <div>
-              <label className={labelCls}>Responder Para (Reply-To)</label>
-              <input type="email" value={replyTo} onChange={e => setReplyTo(e.target.value)}
-                placeholder="respostas@seudominio.com" className={inputCls} />
+          )}
+
+          {/* ══ 1. IDENTIFICAÇÃO ══ */}
+          <div className={sectionCls}>
+            <div className="flex items-center gap-4 mb-6">
+              <StepBadge n={1} />
+              <h2 className="text-3xl font-black text-white">Identificação da Campanha</h2>
+            </div>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="md:col-span-2">
+                <label className={labelCls}>Nome da Campanha *</label>
+                <input value={name} onChange={e => setName(e.target.value)}
+                  placeholder="Ex: Promoção Black Friday 2026" className={inputCls} />
+                <p className="text-sm text-white/50 mt-2 flex items-center gap-1"><span>💡</span> Dê um nome descritivo para identificar facilmente esta campanha</p>
+              </div>
+              <div>
+                <label className={labelCls}>Domínio de Envio</label>
+                <select value={domainId} onChange={e => setDomainId(e.target.value)} className={inputCls}>
+                  <option value="">Selecione um domínio ativo</option>
+                  {domains.map(d => <option key={d.id} value={d.id}>{d.domain}</option>)}
+                </select>
+                {domains.length === 0 && (
+                  <p className="text-yellow-400 text-sm mt-2">⚠️ Nenhum domínio ativo.{' '}
+                    <span className="underline cursor-pointer" onClick={() => router.push('/email-marketing/dominios')}>Configurar domínio</span>
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className={labelCls}>Lista de Contatos *</label>
+                <select value={listId} onChange={e => setListId(e.target.value)} className={inputCls}>
+                  <option value="">Selecione uma lista</option>
+                  {lists.map(l => <option key={l.id} value={l.id}>{l.name} ({l.total_contacts.toLocaleString('pt-BR')} contatos)</option>)}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className={labelCls}>Responder Para (Reply-To)</label>
+                <input type="email" value={replyTo} onChange={e => setReplyTo(e.target.value)}
+                  placeholder="respostas@seudominio.com" className={inputCls} />
+              </div>
             </div>
           </div>
 
-          {/* ── 2. REMETENTES ── */}
+          {/* ══ 2. REMETENTES ══ */}
           <div className={sectionCls}>
-            <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4 mb-2">
+              <StepBadge n={2} />
               <div>
-                <h2 className="text-lg font-black text-white flex items-center gap-2">
-                  <FaEnvelope className="text-blue-400" /> Remetentes
-                </h2>
-                <p className="text-xs text-gray-500 mt-0.5">O sistema rotaciona automaticamente entre os remetentes</p>
-              </div>
-              {/* Abas de modo */}
-              <div className="flex gap-2">
-                <button onClick={() => setSenderMode('manual')} className={modeTabCls(senderMode === 'manual')}>
-                  <FaListUl className="inline mr-1" /> Manual
-                </button>
-                <button onClick={() => setSenderMode('paste')} className={modeTabCls(senderMode === 'paste')}>
-                  <FaClipboard className="inline mr-1" /> Colar em massa
-                </button>
-                <button onClick={() => setSenderMode('csv')} className={modeTabCls(senderMode === 'csv')}>
-                  <FaUpload className="inline mr-1" /> CSV
-                </button>
+                <h2 className="text-3xl font-black text-white">Remetentes</h2>
+                <p className="text-white/60 text-sm mt-1">O sistema rotaciona automaticamente entre os remetentes a cada envio</p>
               </div>
             </div>
 
-            {/* Modo manual */}
+            {/* Abas modo */}
+            <div className="flex gap-2 mb-6 mt-4">
+              <button onClick={() => setSenderMode('manual')} className={modeTabCls(senderMode === 'manual')}>
+                <FaListUl className="inline mr-1" /> Manual
+              </button>
+              <button onClick={() => setSenderMode('paste')} className={modeTabCls(senderMode === 'paste')}>
+                <FaClipboard className="inline mr-1" /> Colar em massa
+              </button>
+              <button onClick={() => setSenderMode('csv')} className={modeTabCls(senderMode === 'csv')}>
+                <FaUpload className="inline mr-1" /> CSV
+              </button>
+            </div>
+
             {senderMode === 'manual' && (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {senders.map((s, i) => (
-                  <div key={i} className="bg-black/20 rounded-xl p-4 border border-white/10">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs font-bold text-gray-400">Remetente {i + 1}</span>
+                  <div key={i} className="bg-dark-700/60 border border-white/10 rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-sm font-bold text-orange-300 bg-orange-500/10 px-3 py-1 rounded-full">Remetente {i + 1}</span>
                       {senders.length > 1 && (
-                        <button onClick={() => removeSender(i)} className="text-red-400 hover:text-red-300 text-xs flex items-center gap-1">
+                        <button onClick={() => removeSender(i)} className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1 transition-all">
                           <FaTrash /> Remover
                         </button>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className={labelCls}>Nome</label>
                         <input value={s.from_name} onChange={e => updateSender(i, 'from_name', e.target.value)}
@@ -310,112 +371,100 @@ export default function CriarCampanha() {
                   </div>
                 ))}
                 <button onClick={addSender}
-                  className="w-full py-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-dashed border-blue-500/40 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all">
+                  className="w-full py-4 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border-2 border-dashed border-orange-500/40 rounded-xl text-base font-bold flex items-center justify-center gap-2 transition-all">
                   <FaPlus /> Adicionar remetente
                 </button>
               </div>
             )}
 
-            {/* Modo colar */}
             {senderMode === 'paste' && (
-              <div className="space-y-3">
-                <div className="bg-blue-500/10 border border-blue-400/30 rounded-lg p-3 text-xs text-blue-300 space-y-1">
-                  <p><strong>Formato:</strong> Uma linha por remetente. Aceita dois formatos:</p>
-                  <code className="block bg-black/30 rounded p-2 font-mono">
-                    nome,email@dominio.com<br />
+              <div className="space-y-4">
+                <div className="p-5 bg-blue-500/10 border-2 border-blue-500/30 rounded-xl">
+                  <h3 className="text-base font-bold text-blue-300 mb-2">📋 Como colar:</h3>
+                  <p className="text-sm text-white/70 mb-2">Uma linha por remetente no formato <strong>nome,email</strong> ou apenas o e-mail:</p>
+                  <code className="block bg-black/30 rounded-lg p-3 font-mono text-sm text-green-300">
                     Empresa A,empresa-a@dominio.com<br />
-                    Empresa B,empresa-b@dominio.com
-                  </code>
-                  <p className="text-gray-400">Ou apenas o e-mail (sem nome):</p>
-                  <code className="block bg-black/30 rounded p-2 font-mono">
-                    email1@dominio.com<br />
-                    email2@dominio.com
+                    Empresa B,empresa-b@dominio.com<br />
+                    noreply@dominio.com
                   </code>
                 </div>
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-3">
                     <label className={labelCls}>Cole os remetentes aqui</label>
                     {senderPasteText && (
-                      <span className={`text-xs font-bold px-2 py-1 rounded-full ${finalSenders.length > 0 ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                      <span className={`text-sm font-bold px-3 py-1 rounded-full ${finalSenders.length > 0 ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
                         {finalSenders.length} remetente{finalSenders.length !== 1 ? 's' : ''} válido{finalSenders.length !== 1 ? 's' : ''}
                       </span>
                     )}
                   </div>
-                  <textarea
-                    value={senderPasteText}
-                    onChange={e => setSenderPasteText(e.target.value)}
+                  <textarea value={senderPasteText} onChange={e => setSenderPasteText(e.target.value)}
                     placeholder={"Empresa A,empresa-a@dominio.com\nEmpresa B,empresa-b@dominio.com\nnoreply@dominio.com"}
-                    rows={10}
-                    className="w-full px-4 py-3 bg-black/40 border-2 border-white/20 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none resize-y"
-                  />
+                    rows={12}
+                    className="w-full px-5 py-4 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white text-sm font-mono focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 outline-none resize-y transition-all" />
                 </div>
               </div>
             )}
 
-            {/* Modo CSV */}
             {senderMode === 'csv' && (
-              <div className="space-y-3">
-                <div className="flex gap-3">
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
                   <button onClick={downloadSenderTemplate}
-                    className="flex-1 py-3 bg-green-500/10 hover:bg-green-500/20 text-green-300 border border-green-500/30 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all">
+                    className="py-4 bg-green-500/10 hover:bg-green-500/20 text-green-300 border-2 border-green-500/30 rounded-xl text-base font-bold flex items-center justify-center gap-2 transition-all">
                     <FaFileExcel /> Baixar modelo CSV
                   </button>
                   <button onClick={() => senderFileRef.current?.click()}
-                    className="flex-1 py-3 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all">
+                    className="py-4 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border-2 border-blue-500/30 rounded-xl text-base font-bold flex items-center justify-center gap-2 transition-all">
                     <FaUpload /> Selecionar arquivo CSV
                   </button>
                 </div>
                 {finalSenders.length > 0 ? (
-                  <div className="bg-green-500/10 border border-green-400/30 rounded-lg p-3">
-                    <p className="text-green-300 font-bold text-sm">✅ {finalSenders.length} remetentes carregados do CSV</p>
-                    <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
-                      {finalSenders.slice(0, 5).map((s, i) => (
-                        <p key={i} className="text-xs text-gray-400 font-mono">{s.from_name ? `${s.from_name} <${s.from_email}>` : s.from_email}</p>
+                  <div className="bg-green-500/10 border-2 border-green-500/30 rounded-xl p-5">
+                    <p className="text-green-300 font-bold text-base mb-3">✅ {finalSenders.length} remetentes carregados do CSV</p>
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {finalSenders.slice(0, 6).map((s, i) => (
+                        <p key={i} className="text-sm text-gray-400 font-mono">{s.from_name ? `${s.from_name} <${s.from_email}>` : s.from_email}</p>
                       ))}
-                      {finalSenders.length > 5 && <p className="text-xs text-gray-500">...e mais {finalSenders.length - 5}</p>}
+                      {finalSenders.length > 6 && <p className="text-sm text-gray-500">...e mais {finalSenders.length - 6}</p>}
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-white/5 border border-white/10 rounded-lg p-4 text-center text-gray-500 text-sm">
-                    Nenhum arquivo carregado ainda
-                  </div>
+                  <div className="bg-white/5 border-2 border-white/10 rounded-xl p-6 text-center text-gray-500">Nenhum arquivo carregado ainda</div>
                 )}
-                <p className="text-xs text-gray-500">O arquivo CSV deve ter as colunas: <code className="bg-white/10 px-1 rounded">nome</code> e <code className="bg-white/10 px-1 rounded">email</code></p>
               </div>
             )}
 
-            {/* Resumo remetentes */}
             {finalSenders.length > 0 && (
-              <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-400/20 rounded-lg px-3 py-2 text-xs text-blue-300">
-                <FaRandom /> {finalSenders.length} remetente{finalSenders.length > 1 ? 's' : ''} carregado{finalSenders.length > 1 ? 's' : ''} — rotação automática a cada envio
+              <div className="mt-4 p-4 bg-orange-500/10 border-2 border-orange-500/30 rounded-xl">
+                <p className="text-orange-300 font-bold text-sm flex items-center gap-2">
+                  <FaRandom /> {finalSenders.length} remetente{finalSenders.length > 1 ? 's' : ''} cadastrado{finalSenders.length > 1 ? 's' : ''} — rotação automática a cada e-mail enviado
+                </p>
               </div>
             )}
           </div>
 
-          {/* ── 3. ASSUNTOS ── */}
+          {/* ══ 3. ASSUNTOS ══ */}
           <div className={sectionCls}>
-            <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4 mb-2">
+              <StepBadge n={3} />
               <div>
-                <h2 className="text-lg font-black text-white flex items-center gap-2">
-                  <FaRandom className="text-purple-400" /> Assuntos
-                </h2>
-                <p className="text-xs text-gray-500 mt-0.5">O sistema varia o assunto a cada envio — reduz chance de spam</p>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => setSubjectMode('manual')} className={modeTabCls(subjectMode === 'manual')}>
-                  <FaListUl className="inline mr-1" /> Manual
-                </button>
-                <button onClick={() => setSubjectMode('paste')} className={modeTabCls(subjectMode === 'paste')}>
-                  <FaClipboard className="inline mr-1" /> Colar em massa
-                </button>
+                <h2 className="text-3xl font-black text-white">Assuntos</h2>
+                <p className="text-white/60 text-sm mt-1">O sistema varia o assunto a cada envio — reduz chance de cair em spam</p>
               </div>
             </div>
 
-            {/* Manual */}
+            <div className="flex gap-2 mb-6 mt-4">
+              <button onClick={() => setSubjectMode('manual')} className={modeTabCls(subjectMode === 'manual')}>
+                <FaListUl className="inline mr-1" /> Manual
+              </button>
+              <button onClick={() => setSubjectMode('paste')} className={modeTabCls(subjectMode === 'paste')}>
+                <FaClipboard className="inline mr-1" /> Colar em massa
+              </button>
+            </div>
+
             {subjectMode === 'manual' && (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {subjects.map((s, i) => (
-                  <div key={i} className="flex items-end gap-2">
+                  <div key={i} className="flex items-end gap-3">
                     <div className="flex-1">
                       <label className={labelCls}>Assunto {i + 1}{i === 0 ? ' *' : ''}</label>
                       <input value={s} onChange={e => updateSubject(i, e.target.value)}
@@ -423,191 +472,236 @@ export default function CriarCampanha() {
                     </div>
                     {subjects.length > 1 && (
                       <button onClick={() => removeSubject(i)}
-                        className="mb-0.5 p-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 rounded-lg transition-all">
+                        className="mb-1 p-4 bg-red-500/20 hover:bg-red-500/30 text-red-300 border-2 border-red-500/30 rounded-xl transition-all">
                         <FaTrash />
                       </button>
                     )}
                   </div>
                 ))}
                 <button onClick={addSubject}
-                  className="w-full py-2.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-dashed border-purple-500/40 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all">
+                  className="w-full py-4 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border-2 border-dashed border-purple-500/40 rounded-xl text-base font-bold flex items-center justify-center gap-2 transition-all">
                   <FaPlus /> Adicionar assunto
                 </button>
               </div>
             )}
 
-            {/* Colar em massa */}
             {subjectMode === 'paste' && (
-              <div className="space-y-3">
-                <div className="bg-purple-500/10 border border-purple-400/30 rounded-lg p-3 text-xs text-purple-300">
-                  <p><strong>Formato:</strong> Um assunto por linha. Cole quantos quiser.</p>
-                  <code className="block bg-black/30 rounded p-2 font-mono mt-1">
+              <div className="space-y-4">
+                <div className="p-5 bg-purple-500/10 border-2 border-purple-500/30 rounded-xl">
+                  <h3 className="text-base font-bold text-purple-300 mb-2">📋 Como colar:</h3>
+                  <p className="text-sm text-white/70 mb-2">Um assunto por linha. Cole quantos quiser:</p>
+                  <code className="block bg-black/30 rounded-lg p-3 font-mono text-sm text-green-300">
                     Oferta imperdível para você!<br />
                     Não perca essa promoção exclusiva<br />
                     Só hoje: desconto especial para clientes VIP
                   </code>
                 </div>
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-3">
                     <label className={labelCls}>Cole os assuntos aqui</label>
                     {subjectPasteText && (
-                      <span className={`text-xs font-bold px-2 py-1 rounded-full ${finalSubjects.length > 0 ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                      <span className={`text-sm font-bold px-3 py-1 rounded-full ${finalSubjects.length > 0 ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
                         {finalSubjects.length} assunto{finalSubjects.length !== 1 ? 's' : ''}
                       </span>
                     )}
                   </div>
-                  <textarea
-                    value={subjectPasteText}
-                    onChange={e => setSubjectPasteText(e.target.value)}
+                  <textarea value={subjectPasteText} onChange={e => setSubjectPasteText(e.target.value)}
                     placeholder={"Oferta imperdível para você!\nNão perca essa promoção exclusiva\nSó hoje: desconto especial"}
-                    rows={8}
-                    className="w-full px-4 py-3 bg-black/40 border-2 border-white/20 rounded-lg text-white text-sm font-mono focus:border-purple-500 focus:outline-none resize-y"
-                  />
+                    rows={10}
+                    className="w-full px-5 py-4 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white text-sm font-mono focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 outline-none resize-y transition-all" />
                 </div>
               </div>
             )}
 
             {finalSubjects.length > 0 && (
-              <div className="flex items-center gap-2 bg-purple-500/10 border border-purple-400/20 rounded-lg px-3 py-2 text-xs text-purple-300">
-                <FaRandom /> {finalSubjects.length} assunto{finalSubjects.length > 1 ? 's' : ''} — rotação automática
+              <div className="mt-4 p-4 bg-purple-500/10 border-2 border-purple-500/30 rounded-xl">
+                <p className="text-purple-300 font-bold text-sm flex items-center gap-2">
+                  <FaRandom /> {finalSubjects.length} assunto{finalSubjects.length > 1 ? 's' : ''} cadastrado{finalSubjects.length > 1 ? 's' : ''} — rotação automática
+                </p>
               </div>
             )}
           </div>
 
-          {/* ── 4. CONTEÚDO ── */}
+          {/* ══ 4. CONTEÚDO ══ */}
           <div className={sectionCls}>
-            <h2 className="text-lg font-black text-white flex items-center gap-2">📝 Conteúdo do E-mail</h2>
-            <div>
-              <label className={labelCls}>Template (opcional)</label>
-              <select value={templateId} onChange={e => handleTemplateSelect(e.target.value)} className={inputCls}>
-                <option value="">Usar HTML personalizado abaixo</option>
-                {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
+            <div className="flex items-center gap-4 mb-6">
+              <StepBadge n={4} />
+              <h2 className="text-3xl font-black text-white">Conteúdo do E-mail</h2>
             </div>
-            <div>
-              <label className={labelCls}>Corpo do E-mail (HTML)</label>
-              <textarea value={bodyHtml} onChange={e => setBodyHtml(e.target.value)}
-                placeholder="<p>Olá {{nome}},</p><p>Conteúdo da sua campanha...</p>"
-                rows={8}
-                className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-orange-500 focus:outline-none font-mono text-sm resize-y" />
-              <p className="text-xs text-gray-500 mt-1">
-                Use <code className="bg-white/10 px-1 rounded">{'{{nome}}'}</code> e{' '}
-                <code className="bg-white/10 px-1 rounded">{'{{email}}'}</code> para personalização por destinatário.
-              </p>
+            <div className="space-y-6">
+              <div>
+                <label className={labelCls}>Template (opcional)</label>
+                <select value={templateId} onChange={e => handleTemplateSelect(e.target.value)} className={inputCls}>
+                  <option value="">Usar HTML personalizado abaixo</option>
+                  {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Corpo do E-mail (HTML)</label>
+                <textarea value={bodyHtml} onChange={e => setBodyHtml(e.target.value)}
+                  placeholder="<p>Olá {{nome}},</p><p>Conteúdo da sua campanha...</p>"
+                  rows={10}
+                  className="w-full px-5 py-4 text-base bg-dark-700/80 backdrop-blur-md border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/30 transition-all font-mono resize-y" />
+                <p className="text-sm text-white/50 mt-2">
+                  Use <code className="bg-white/10 px-1 rounded">{'{{nome}}'}</code> e{' '}
+                  <code className="bg-white/10 px-1 rounded">{'{{email}}'}</code> para personalização por destinatário.
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* ── 5. AGENDAMENTO ── */}
+          {/* ══ 5. AGENDAMENTO ══ */}
           <div className={sectionCls}>
-            <h2 className="text-lg font-black text-white flex items-center gap-2">
-              <FaCalendarAlt className="text-green-400" /> Agendamento
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Data de início</label>
-                <input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Horário de início</label>
-                <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} className={inputCls} />
-              </div>
+            <div className="flex items-center gap-4 mb-6">
+              <StepBadge n={5} />
+              <h2 className="text-3xl font-black text-white">Agendamento</h2>
             </div>
-            {scheduleDate && scheduleTime ? (
-              <div className="flex items-center gap-2 bg-green-500/10 border border-green-400/30 rounded-lg px-3 py-2 text-sm text-green-300">
-                <FaCalendarAlt /> Campanha agendada para <strong>{scheduleDate} às {scheduleTime}</strong>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-gray-400">
-                <FaInfoCircle /> Sem agendamento: ficará como rascunho para iniciar manualmente
-              </div>
-            )}
-            <div>
-              <label className={labelCls}>
-                <FaClock className="inline mr-1" /> Horário de funcionamento
-                <span className="text-gray-500 font-normal ml-2">(envios somente neste período)</span>
-              </label>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Início</label>
-                  <input type="time" value={workStart} onChange={e => setWorkStart(e.target.value)} className={inputCls} />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Fim</label>
-                  <input type="time" value={workEnd} onChange={e => setWorkEnd(e.target.value)} className={inputCls} />
-                </div>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">Envios somente entre {workStart} e {workEnd}. Fora desse horário o worker aguarda.</p>
-            </div>
-          </div>
 
-          {/* ── 6. DELAY E PAUSA ── */}
-          <div className={sectionCls}>
-            <h2 className="text-lg font-black text-white flex items-center gap-2">
-              <FaPause className="text-yellow-400" /> Controle de Velocidade
-            </h2>
-            <div>
-              <label className={labelCls}>Intervalo entre envios (segundos — valor aleatório entre mín e máx)</label>
+            <div className="mb-6 p-6 bg-purple-500/10 border-2 border-purple-500/30 rounded-xl">
+              <h3 className="text-xl font-bold mb-4 text-purple-300">📅 Data e Hora de Início (Opcional)</h3>
+              <p className="text-sm text-white/70 mb-4">Defina quando a campanha deve começar. Deixe em branco para iniciar manualmente.</p>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Mínimo</label>
-                  <input type="number" min={1} max={300} value={delayMin}
-                    onChange={e => setDelayMin(Math.max(1, parseInt(e.target.value) || 1))} className={inputCls} />
+                  <label className="block text-base font-bold mb-2 text-white/90">Data de Início</label>
+                  <input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)}
+                    className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30 transition-all" />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Máximo</label>
-                  <input type="number" min={1} max={300} value={delayMax}
-                    onChange={e => setDelayMax(Math.max(delayMin, parseInt(e.target.value) || delayMin))} className={inputCls} />
+                  <label className="block text-base font-bold mb-2 text-white/90">Hora de Início</label>
+                  <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)}
+                    className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30 transition-all" />
                 </div>
               </div>
-              <p className="text-xs text-gray-500 mt-1">O sistema aguardará entre {delayMin}s e {delayMax}s aleatório. Recomendado: mín 2s / máx 5s.</p>
-            </div>
-            <div className="border-t border-white/10 pt-4">
-              <label className={labelCls}>
-                <FaPause className="inline mr-1" /> Pausa automática
-                <span className="text-gray-500 font-normal ml-2">(0 = desabilitado)</span>
-              </label>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Pausar após X e-mails</label>
-                  <input type="number" min={0} value={pauseAfter}
-                    onChange={e => setPauseAfter(Math.max(0, parseInt(e.target.value) || 0))}
-                    placeholder="0 = sem pausa" className={inputCls} />
+              {scheduleDate && scheduleTime ? (
+                <div className="mt-4 p-4 bg-green-500/10 border-2 border-green-500/30 rounded-xl">
+                  <p className="text-base text-green-300 font-bold">✅ Campanha iniciará em: <span className="text-white">{scheduleDate} às {scheduleTime}</span></p>
                 </div>
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Duração da pausa (minutos)</label>
-                  <input type="number" min={1} value={pauseDuration}
-                    onChange={e => setPauseDuration(Math.max(1, parseInt(e.target.value) || 30))}
-                    className={`${inputCls} ${pauseAfter === 0 ? 'opacity-40' : ''}`}
-                    disabled={pauseAfter === 0} />
+              ) : (
+                <div className="mt-4 p-4 bg-yellow-500/10 border-2 border-yellow-500/30 rounded-xl">
+                  <p className="text-base text-yellow-300 font-bold">⚡ Campanha ficará como <span className="text-white">RASCUNHO</span> para iniciar manualmente</p>
                 </div>
-              </div>
-              {pauseAfter > 0 && (
-                <p className="text-xs text-yellow-400 mt-1">⏸ Pausa automática a cada {pauseAfter} e-mails por {pauseDuration} minutos.</p>
               )}
             </div>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <h3 className="text-xl font-bold mb-4 text-orange-300">🕐 Horário de Trabalho Diário</h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-base font-bold mb-2 text-white/90">Iniciar às</label>
+                      <input type="time" value={workStart} onChange={e => setWorkStart(e.target.value)}
+                        className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30 transition-all" />
+                    </div>
+                    <div>
+                      <label className="block text-base font-bold mb-2 text-white/90">Pausar às</label>
+                      <input type="time" value={workEnd} onChange={e => setWorkEnd(e.target.value)}
+                        className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30 transition-all" />
+                    </div>
+                  </div>
+                  <div className="p-4 bg-white/5 rounded-xl">
+                    <ul className="text-sm text-white/70 space-y-1">
+                      <li>📌 Envia somente entre {workStart} e {workEnd} todos os dias</li>
+                      <li>⏸ Passou do horário → <span className="text-yellow-300 font-bold">PAUSA automática</span></li>
+                      <li>▶️ Chegou o horário → <span className="text-green-300 font-bold">RETOMA automática</span></li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xl font-bold mb-4 text-orange-300">⚙️ Controle de Velocidade</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-base font-bold mb-2 text-white/90">Intervalo entre envios (segundos)</label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm text-white/70 mb-1">Mínimo</label>
+                        <input type="number" min={1} max={300} value={delayMin}
+                          onChange={e => setDelayMin(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30 transition-all" />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-white/70 mb-1">Máximo</label>
+                        <input type="number" min={1} max={300} value={delayMax}
+                          onChange={e => setDelayMax(Math.max(delayMin, parseInt(e.target.value) || delayMin))}
+                          className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30 transition-all" />
+                      </div>
+                    </div>
+                    <p className="text-sm text-white/50 mt-2">⏱️ Aguardar entre {delayMin}s e {delayMax}s (aleatório) entre cada e-mail</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* ── RESUMO ── */}
-          {(finalSenders.length > 0 || finalSubjects.length > 0) && (
-            <div className="bg-orange-500/10 border border-orange-400/30 rounded-xl p-4 text-sm space-y-1">
-              <p className="font-bold text-orange-300 mb-2">📋 Resumo da Campanha</p>
-              <p className="text-gray-300"><span className="text-gray-500">Remetentes:</span>{' '}{finalSenders.length} cadastrado{finalSenders.length !== 1 ? 's' : ''}</p>
-              <p className="text-gray-300"><span className="text-gray-500">Assuntos:</span>{' '}{finalSubjects.length} cadastrado{finalSubjects.length !== 1 ? 's' : ''}</p>
-              <p className="text-gray-300"><span className="text-gray-500">Delay:</span> {delayMin}s – {delayMax}s aleatório</p>
-              <p className="text-gray-300"><span className="text-gray-500">Horário:</span> {workStart} às {workEnd}</p>
-              {pauseAfter > 0 && <p className="text-gray-300"><span className="text-gray-500">Pausa:</span> a cada {pauseAfter} e-mails por {pauseDuration}min</p>}
-              {scheduleDate && scheduleTime && <p className="text-green-300 font-bold">🗓 Agendada para {scheduleDate} às {scheduleTime}</p>}
+          {/* ══ 6. PAUSA AUTOMÁTICA ══ */}
+          <div className={sectionCls}>
+            <div className="flex items-center gap-4 mb-6">
+              <StepBadge n={6} />
+              <h2 className="text-3xl font-black text-white">Pausa Automática</h2>
+            </div>
+            <div className="p-6 bg-yellow-500/10 border-2 border-yellow-500/30 rounded-xl mb-6">
+              <h3 className="text-xl font-bold mb-3 text-yellow-300">⏸ Como funciona a pausa automática:</h3>
+              <ul className="text-base text-white/90 space-y-2 list-disc list-inside">
+                <li>O sistema envia X e-mails → pausa automaticamente por Y minutos</li>
+                <li>Após a pausa → <span className="text-green-300 font-bold">RETOMA automaticamente</span></li>
+                <li>Útil para evitar bloqueios por excesso de envio em curto período</li>
+                <li>Coloque <strong>0</strong> para desabilitar a pausa automática</li>
+              </ul>
+            </div>
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className={labelCls}>Pausar após X e-mails <span className="text-white/40 font-normal">(0 = desabilitado)</span></label>
+                <input type="number" min={0} value={pauseAfter}
+                  onChange={e => setPauseAfter(Math.max(0, parseInt(e.target.value) || 0))}
+                  placeholder="0" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Duração da pausa (minutos)</label>
+                <input type="number" min={1} value={pauseDuration}
+                  onChange={e => setPauseDuration(Math.max(1, parseInt(e.target.value) || 30))}
+                  className={`${inputCls} ${pauseAfter === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  disabled={pauseAfter === 0} />
+              </div>
+            </div>
+            {pauseAfter > 0 && (
+              <div className="mt-4 p-4 bg-yellow-500/10 border-2 border-yellow-500/30 rounded-xl">
+                <p className="text-yellow-300 font-bold text-base">
+                  ⏸ Sistema pausará automaticamente a cada <span className="text-white">{pauseAfter} e-mails</span> por <span className="text-white">{pauseDuration} minutos</span>
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* ══ RESUMO FINAL ══ */}
+          {(finalSenders.length > 0 && finalSubjects.length > 0 && listId) && (
+            <div className="bg-gradient-to-r from-orange-500/20 to-orange-600/20 backdrop-blur-xl border-2 border-orange-500/40 rounded-2xl p-6 shadow-xl">
+              <h3 className="text-xl font-bold text-orange-300 mb-4 flex items-center gap-2"><FaChartLine /> Resumo da Campanha</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Remetentes:</span><br /><span className="text-white font-bold">{finalSenders.length} cadastrado{finalSenders.length > 1 ? 's' : ''}</span></div>
+                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Assuntos:</span><br /><span className="text-white font-bold">{finalSubjects.length} cadastrado{finalSubjects.length > 1 ? 's' : ''}</span></div>
+                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Contatos:</span><br /><span className="text-white font-bold">{selectedList?.total_contacts.toLocaleString('pt-BR') ?? 0}</span></div>
+                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Delay:</span><br /><span className="text-white font-bold">{delayMin}s – {delayMax}s aleatório</span></div>
+                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Horário:</span><br /><span className="text-white font-bold">{workStart} às {workEnd}</span></div>
+                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Pausa:</span><br /><span className="text-white font-bold">{pauseAfter > 0 ? `A cada ${pauseAfter} por ${pauseDuration}min` : 'Desabilitada'}</span></div>
+              </div>
+              {scheduleDate && scheduleTime && (
+                <div className="mt-3 p-3 bg-green-500/10 border border-green-500/30 rounded-xl">
+                  <p className="text-green-300 font-bold">🗓 Agendada para {scheduleDate} às {scheduleTime}</p>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Botão salvar */}
+          {/* ══ BOTÃO CRIAR ══ */}
           <button onClick={handleSave} disabled={saving}
-            className="w-full py-4 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-black text-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50">
+            className="w-full py-6 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-2xl font-black text-2xl transition-all flex items-center justify-center gap-4 disabled:opacity-50 shadow-2xl shadow-orange-500/30 hover:shadow-orange-500/50 hover:scale-[1.01]">
             {saving
-              ? <><FaSpinner className="animate-spin" /> Criando...</>
+              ? <><FaSpinner className="animate-spin text-2xl" /> Criando campanha...</>
               : scheduleDate && scheduleTime
-                ? <><FaCalendarAlt /> Agendar Campanha</>
-                : <><FaCheckCircle /> Criar Campanha</>}
+                ? <><FaCalendarAlt className="text-2xl" /> Agendar Campanha</>
+                : <><FaRocket className="text-2xl" /> Criar Campanha</>}
           </button>
 
         </div>
