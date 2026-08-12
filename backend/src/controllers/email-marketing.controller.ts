@@ -679,6 +679,34 @@ export const getCampaignStats = async (req: Request, res: Response) => {
   }
 };
 
+export const getCampaignRecipients = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const { id } = req.params;
+    const { status, limit = '500' } = req.query as { status?: string; limit?: string };
+
+    const params: any[] = [id, tenantId];
+    let whereExtra = '';
+    if (status && status !== 'all') {
+      params.push(status);
+      whereExtra = ` AND r.status=$${params.length}`;
+    }
+    params.push(parseInt(limit, 10) || 500);
+
+    const result = await pool.query(
+      `SELECT id, email, name, status, error_message, sent_at, opened_at, clicked_at, updated_at
+       FROM email_marketing_recipients r
+       WHERE campaign_id=$1 AND tenant_id=$2${whereExtra}
+       ORDER BY id DESC LIMIT $${params.length}`,
+      params
+    );
+    res.json({ success: true, data: result.rows, total: result.rowCount });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // =============================================
 // ENVIO ÚNICO
 // =============================================

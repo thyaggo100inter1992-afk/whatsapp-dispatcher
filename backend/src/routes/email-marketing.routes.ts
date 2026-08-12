@@ -38,6 +38,7 @@ router.get('/campaigns', ctrl.getCampaigns);
 router.post('/campaigns', ctrl.createCampaign);
 router.get('/campaigns/:id', ctrl.getCampaignById);
 router.get('/campaigns/:id/stats', ctrl.getCampaignStats);
+router.get('/campaigns/:id/recipients', ctrl.getCampaignRecipients);
 router.post('/campaigns/:id/start', ctrl.startCampaign);
 router.post('/campaigns/:id/pause', ctrl.pauseCampaign);
 router.post('/campaigns/:id/cancel', ctrl.cancelCampaign);
