@@ -651,6 +651,45 @@ export const cancelCampaign = async (req: Request, res: Response) => {
   }
 };
 
+export const updateCampaign = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const { id } = req.params;
+    const {
+      name, work_start_time, work_end_time,
+      delay_seconds_min, delay_seconds_max,
+      pause_after, pause_duration_minutes,
+      scheduled_at
+    } = req.body;
+
+    const sets: string[] = [];
+    const vals: any[] = [];
+    const push = (col: string, val: any) => { vals.push(val); sets.push(`${col}=$${vals.length}`); };
+
+    if (name !== undefined) push('name', name);
+    if (work_start_time !== undefined) push('work_start_time', work_start_time);
+    if (work_end_time !== undefined) push('work_end_time', work_end_time);
+    if (delay_seconds_min !== undefined) push('delay_seconds_min', Number(delay_seconds_min));
+    if (delay_seconds_max !== undefined) push('delay_seconds_max', Number(delay_seconds_max));
+    if (pause_after !== undefined) push('pause_after', Number(pause_after));
+    if (pause_duration_minutes !== undefined) push('pause_duration_minutes', Number(pause_duration_minutes));
+    if (scheduled_at !== undefined) push('scheduled_at', scheduled_at || null);
+
+    if (sets.length === 0) return res.status(400).json({ success: false, message: 'Nenhum campo para atualizar' });
+
+    sets.push(`updated_at=NOW()`);
+    vals.push(id, tenantId);
+    await pool.query(
+      `UPDATE email_marketing_campaigns SET ${sets.join(', ')} WHERE id=$${vals.length - 1} AND tenant_id=$${vals.length}`,
+      vals
+    );
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const deleteCampaign = async (req: Request, res: Response) => {
   try {
     const tenantId = requireTenant(req, res);

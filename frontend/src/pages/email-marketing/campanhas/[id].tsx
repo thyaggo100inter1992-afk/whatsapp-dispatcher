@@ -4,8 +4,8 @@ import Head from 'next/head';
 import {
   FaBullhorn, FaArrowLeft, FaPlay, FaPause, FaBan, FaSpinner, FaSync,
   FaEnvelope, FaEye, FaMousePointer, FaExclamationTriangle, FaFlag,
-  FaCheckDouble, FaCheckCircle, FaTimesCircle, FaClock, FaCalendarAlt,
-  FaUsers, FaListUl, FaTimes, FaSearch
+  FaTimesCircle, FaClock, FaCalendarAlt,
+  FaUsers, FaListUl, FaTimes, FaSearch, FaEdit, FaDownload, FaSave
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
@@ -73,6 +73,13 @@ export default function CampaignDetail() {
   const [countdown, setCountdown] = useState(POLL_INTERVAL);
   const [isPolling, setIsPolling] = useState(false);
   const [showAllContacts, setShowAllContacts] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: '', work_start_time: '', work_end_time: '',
+    delay_seconds_min: 1, delay_seconds_max: 3,
+    pause_after: 0, pause_duration_minutes: 30, scheduled_at: ''
+  });
+  const [saving, setSaving] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -153,6 +160,72 @@ export default function CampaignDetail() {
     catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
   };
 
+  const openEditModal = () => {
+    if (!campaign) return;
+    setEditForm({
+      name: campaign.name,
+      work_start_time: campaign.work_start_time || '08:00',
+      work_end_time: campaign.work_end_time || '20:00',
+      delay_seconds_min: campaign.delay_seconds_min || 1,
+      delay_seconds_max: campaign.delay_seconds_max || 3,
+      pause_after: campaign.pause_after || 0,
+      pause_duration_minutes: campaign.pause_duration_minutes || 30,
+      scheduled_at: campaign.scheduled_at ? campaign.scheduled_at.slice(0, 16) : '',
+    });
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    setSaving(true);
+    try {
+      await api.patch(`/email-marketing/campaigns/${id}`, editForm);
+      notification.success('Campanha atualizada!', '');
+      setShowEditModal(false);
+      loadData();
+    } catch (e: any) {
+      notification.error('Erro ao salvar', e.response?.data?.message || e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const downloadReport = async () => {
+    if (!campaign) return;
+    try {
+      const r = await api.get(`/email-marketing/campaigns/${id}/recipients?limit=100000`);
+      const rows: Recipient[] = r.data.data || [];
+      const headers = ['E-mail', 'Nome', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Erro'];
+      const lines = [
+        `Relatório da Campanha: ${campaign.name}`,
+        `Gerado em: ${new Date().toLocaleString('pt-BR')}`,
+        `Status: ${STATUS_LABELS[campaign.status]}`,
+        `Total: ${campaign.total_contacts} | Enviados: ${campaign.sent_count} | Abertos: ${campaign.opened_count} | Cliques: ${campaign.clicked_count} | Rejeitados: ${campaign.bounced_count} | Spam: ${campaign.complained_count} | Falhos: ${campaign.failed_count}`,
+        '',
+        headers.join(';'),
+        ...rows.map(r2 => [
+          r2.email,
+          r2.name || '',
+          RECIPIENT_STATUS[r2.status]?.label || r2.status,
+          r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : '',
+          r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : '',
+          r2.clicked_at ? new Date(r2.clicked_at).toLocaleString('pt-BR') : '',
+          r2.error_message || '',
+        ].join(';'))
+      ];
+      const bom = '\uFEFF';
+      const blob = new Blob([bom + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `relatorio-${campaign.name.replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      notification.success('Relatório baixado!', '');
+    } catch (e: any) {
+      notification.error('Erro ao gerar relatório', e.message);
+    }
+  };
+
   const formatDt = (v: string | null) =>
     v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
 
@@ -223,6 +296,111 @@ export default function CampaignDetail() {
       <Head><title>{campaign.name} | Detalhes | E-mail Marketing</title></Head>
       <notification.NotificationContainer />
       <ConfirmDialog />
+
+      {/* Modal Editar Campanha */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-dark-800 rounded-2xl shadow-2xl border-2 border-orange-500/40 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gradient-to-r from-orange-600/30 via-orange-500/20 to-orange-600/30 backdrop-blur-xl border-b-2 border-orange-500/40 p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="bg-orange-500/20 p-3 rounded-xl"><FaEdit className="text-3xl text-orange-400" /></div>
+                <div>
+                  <h2 className="text-2xl font-black text-white">Editar Campanha</h2>
+                  <p className="text-white/60 text-sm">As alterações são aplicadas imediatamente, mesmo em andamento</p>
+                </div>
+              </div>
+              <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white"><FaTimes className="text-xl" /></button>
+            </div>
+            <div className="p-6 space-y-6">
+              {/* Nome */}
+              <div>
+                <label className="block text-sm font-bold text-white/80 mb-2">Nome da Campanha</label>
+                <input
+                  value={editForm.name}
+                  onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-orange-500/60"
+                  placeholder="Nome da campanha"
+                />
+              </div>
+              {/* Horário de trabalho */}
+              <div>
+                <label className="block text-sm font-bold text-white/80 mb-2">🕐 Horário de Trabalho</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Início</label>
+                    <input type="time" value={editForm.work_start_time}
+                      onChange={e => setEditForm(f => ({ ...f, work_start_time: e.target.value }))}
+                      className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Fim</label>
+                    <input type="time" value={editForm.work_end_time}
+                      onChange={e => setEditForm(f => ({ ...f, work_end_time: e.target.value }))}
+                      className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                  </div>
+                </div>
+              </div>
+              {/* Delay */}
+              <div>
+                <label className="block text-sm font-bold text-white/80 mb-2">⏱️ Delay entre Envios (segundos)</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Mínimo</label>
+                    <input type="number" min="0" value={editForm.delay_seconds_min}
+                      onChange={e => setEditForm(f => ({ ...f, delay_seconds_min: Number(e.target.value) }))}
+                      className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Máximo</label>
+                    <input type="number" min="0" value={editForm.delay_seconds_max}
+                      onChange={e => setEditForm(f => ({ ...f, delay_seconds_max: Number(e.target.value) }))}
+                      className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                  </div>
+                </div>
+              </div>
+              {/* Pausa automática */}
+              <div>
+                <label className="block text-sm font-bold text-white/80 mb-2">💤 Pausa Automática</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Pausar a cada (envios, 0 = desativado)</label>
+                    <input type="number" min="0" value={editForm.pause_after}
+                      onChange={e => setEditForm(f => ({ ...f, pause_after: Number(e.target.value) }))}
+                      className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Duração da pausa (minutos)</label>
+                    <input type="number" min="1" value={editForm.pause_duration_minutes}
+                      onChange={e => setEditForm(f => ({ ...f, pause_duration_minutes: Number(e.target.value) }))}
+                      className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                  </div>
+                </div>
+              </div>
+              {/* Agendamento (só em draft/scheduled) */}
+              {['draft', 'scheduled'].includes(campaign.status) && (
+                <div>
+                  <label className="block text-sm font-bold text-white/80 mb-2">📅 Data/Hora de Início</label>
+                  <input type="datetime-local" value={editForm.scheduled_at}
+                    onChange={e => setEditForm(f => ({ ...f, scheduled_at: e.target.value }))}
+                    className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                  <p className="text-xs text-gray-500 mt-1">Deixe em branco para iniciar manualmente</p>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-white/10 flex gap-3">
+              <button onClick={() => setShowEditModal(false)}
+                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2">
+                <FaTimes /> Cancelar
+              </button>
+              <button onClick={handleSaveEdit} disabled={saving}
+                className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                {saving ? <FaSpinner className="animate-spin" /> : <FaSave />}
+                Salvar Alterações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Ver Destinatários */}
       {showAllContacts && (
@@ -334,6 +512,14 @@ export default function CampaignDetail() {
                   <button onClick={() => { loadRecipients(); setShowAllContacts(true); }}
                     className="px-5 py-3 bg-white/10 hover:bg-white/20 text-white border-2 border-white/20 rounded-xl font-bold flex items-center gap-2 transition-all">
                     <FaListUl /> Ver Destinatários
+                  </button>
+                  <button onClick={openEditModal}
+                    className="px-5 py-3 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border-2 border-yellow-500/30 rounded-xl font-bold flex items-center gap-2 transition-all">
+                    <FaEdit /> Editar
+                  </button>
+                  <button onClick={downloadReport}
+                    className="px-5 py-3 bg-green-500/20 hover:bg-green-500/30 text-green-300 border-2 border-green-500/30 rounded-xl font-bold flex items-center gap-2 transition-all">
+                    <FaDownload /> Relatório CSV
                   </button>
                   <button onClick={() => loadData()}
                     className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all" title="Atualizar">
