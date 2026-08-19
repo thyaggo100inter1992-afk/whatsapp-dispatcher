@@ -87,6 +87,11 @@ const restrictionListPublicRoutes = require('./public/restriction-list-public.ro
 router.use('/public/restriction-list', restrictionListPublicRoutes);
 console.log('✅ Rota /public/restriction-list registrada (API pública com email+senha)');
 
+// API Pública - Verificação de WhatsApp (1 número + foto)
+const whatsappVerifyPublicRoutes = require('./public/whatsapp-verify-public.routes');
+router.use('/public/whatsapp', whatsappVerifyPublicRoutes);
+console.log('✅ Rota /public/whatsapp registrada (API pública verificação + foto)');
+
 // Screenshots públicos
 const { getPublicScreenshots } = require('../controllers/admin/screenshots.controller');
 router.get('/public/screenshots', getPublicScreenshots);
