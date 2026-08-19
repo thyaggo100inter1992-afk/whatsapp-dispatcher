@@ -77,14 +77,17 @@ async function autenticarUsuario(email, senha) {
   return { usuario };
 }
 
-async function buscarInstanciaConectada(tenantId) {
+// Índice de rodízio por tenant (round-robin entre instâncias conectadas)
+const rotacaoPorTenant = new Map();
+
+async function buscarInstanciasConectadas(tenantId) {
   let result = await pool.query(
     `SELECT ui.id, ui.instance_token, ui.name, p.host, p.port, p.username, p.password
      FROM uaz_instances ui
      LEFT JOIN proxies p ON ui.proxy_id = p.id
      WHERE ui.tenant_id = $1 AND ui.is_active = true AND ui.status = 'connected'
-     ORDER BY ui.id
-     LIMIT 1`,
+       AND ui.instance_token IS NOT NULL
+     ORDER BY ui.id`,
     [tenantId]
   );
 
@@ -94,13 +97,24 @@ async function buscarInstanciaConectada(tenantId) {
        FROM uaz_instances ui
        LEFT JOIN proxies p ON ui.proxy_id = p.id
        WHERE ui.tenant_id = $1 AND ui.is_connected = true
-       ORDER BY ui.id
-       LIMIT 1`,
+         AND ui.instance_token IS NOT NULL
+       ORDER BY ui.id`,
       [tenantId]
     );
   }
 
-  return result.rows[0] || null;
+  return result.rows;
+}
+
+function selecionarInstanciaRodizio(tenantId, instancias) {
+  if (!instancias || instancias.length === 0) return null;
+  if (instancias.length === 1) return instancias[0];
+
+  const indiceAtual = rotacaoPorTenant.get(tenantId) || 0;
+  const instancia = instancias[indiceAtual % instancias.length];
+  rotacaoPorTenant.set(tenantId, (indiceAtual + 1) % instancias.length);
+
+  return instancia;
 }
 
 async function baixarFotoLocal(profilePicUrl, phoneNumber) {
@@ -183,7 +197,9 @@ router.post('/verificar', async (req, res) => {
       });
     }
 
-    const instancia = await buscarInstanciaConectada(tenantId);
+    const instancias = await buscarInstanciasConectadas(tenantId);
+    const instancia = selecionarInstanciaRodizio(tenantId, instancias);
+
     if (!instancia || !instancia.instance_token) {
       return res.status(400).json({
         sucesso: false,
@@ -203,7 +219,10 @@ router.post('/verificar', async (req, res) => {
         }
       : null;
 
-    console.log(`📱 [API Pública] Verificando WhatsApp: ${telefoneNormalizado} (tenant ${tenantId}, instância ${instancia.name})`);
+    console.log(
+      `📱 [API Pública] Verificando WhatsApp: ${telefoneNormalizado} ` +
+      `(tenant ${tenantId}, instância ${instancia.name} — rodízio ${instancias.length} conectada(s))`
+    );
 
     const checkResult = await uazService.checkNumber(
       instancia.instance_token,
@@ -257,6 +276,7 @@ router.post('/verificar', async (req, res) => {
       nome: nomeWhatsapp,
       foto_perfil: fotoPerfil,
       instancia_usada: instancia.name,
+      instancias_disponiveis: instancias.length,
       verificado_em: new Date().toISOString(),
     });
   } catch (error) {
