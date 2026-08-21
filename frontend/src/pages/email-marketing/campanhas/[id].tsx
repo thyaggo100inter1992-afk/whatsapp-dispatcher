@@ -163,18 +163,20 @@ export default function CampaignDetail() {
       const r = await api.get(`/email-marketing/campaigns/${id}`);
       setCampaign(r.data.data);
       setLastUpdated(new Date());
+      // Atualiza log de envio junto com os contadores
+      await loadRecipients(true);
     } catch { }
     finally { if (!silent) setLoading(false); }
   };
 
-  const loadRecipients = async () => {
+  const loadRecipients = async (silent = false) => {
     if (!id) return;
-    setLoadingRecipients(true);
+    if (!silent) setLoadingRecipients(true);
     try {
-      const r = await api.get(`/email-marketing/campaigns/${id}/recipients?limit=1000`);
+      const r = await api.get(`/email-marketing/campaigns/${id}/recipients?limit=5000`);
       setRecipients(r.data.data || []);
     } catch { }
-    finally { setLoadingRecipients(false); }
+    finally { if (!silent) setLoadingRecipients(false); }
   };
 
   const handleStart = async () => {
@@ -1089,7 +1091,7 @@ export default function CampaignDetail() {
             </div>
           )}
 
-          {/* TABELA DE DESTINATÁRIOS RESUMIDA */}
+          {/* DESTINATÁRIOS + LOG DE ENVIO EM TEMPO REAL */}
           <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-white/10 rounded-2xl p-8 shadow-xl">
             <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
               <h3 className="text-3xl font-black text-white flex items-center gap-3">
@@ -1100,11 +1102,11 @@ export default function CampaignDetail() {
                 disabled={loadingRecipients}
                 className="px-6 py-3 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border-2 border-orange-500/40 rounded-xl font-bold flex items-center gap-2 transition-all disabled:opacity-50">
                 {loadingRecipients ? <FaSpinner className="animate-spin" /> : <FaUsers />}
-                Ver Todos os Destinatários
+                Ampliar Lista
               </button>
             </div>
 
-            <div className="grid grid-cols-3 sm:grid-cols-7 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-7 gap-3 mb-8">
               {[
                 { label: 'Pendentes', key: 'pending', color: 'text-yellow-300 border-yellow-500/30 bg-yellow-500/10', icon: <FaClock /> },
                 { label: 'Enviados',  key: 'sent',    color: 'text-blue-300 border-blue-500/30 bg-blue-500/10',      icon: <FaEnvelope /> },
@@ -1123,18 +1125,114 @@ export default function CampaignDetail() {
                   : item.key === 'complained' ? campaign.complained_count
                   : campaign.failed_count;
                 return (
-                  <div key={item.key} className={`rounded-xl p-4 text-center border ${item.color} transition-all`}>
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setFilterStatus(item.key)}
+                    className={`rounded-xl p-4 text-center border ${item.color} transition-all hover:scale-105 ${filterStatus === item.key ? 'ring-2 ring-white/40' : ''}`}>
                     <div className="text-2xl mb-2 flex justify-center">{item.icon}</div>
                     <div className="text-2xl font-black">{val}</div>
                     <div className="text-xs font-bold mt-1 opacity-80">{item.label}</div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
 
-            <p className="text-center text-sm text-gray-500 mt-4">
-              Clique em "Ver Todos os Destinatários" para ver a lista completa com status individual de cada e-mail
-            </p>
+            {/* LOG DE ENVIO EM TEMPO REAL */}
+            <div className="border-t border-white/10 pt-6">
+              <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
+                <h4 className="text-xl font-black text-white flex items-center gap-2">
+                  <FaSync className={isPolling ? 'animate-spin text-orange-400' : 'text-green-400'} />
+                  Log de Envio em Tempo Real
+                  <span className="text-sm font-bold text-white/50">({filteredRecipients.length})</span>
+                </h4>
+                <div className="flex gap-2 flex-wrap">
+                  {(['all', 'pending', 'sent', 'opened', 'clicked', 'failed', 'bounced'] as const).map(s => (
+                    <button key={s} type="button" onClick={() => setFilterStatus(s)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        filterStatus === s
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                      }`}>
+                      {s === 'all' ? `Todos (${recipients.length})` : `${RECIPIENT_STATUS[s]?.label || s} (${recipientCounts[s] || 0})`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="relative mb-3">
+                <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm" />
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Buscar por e-mail ou nome..."
+                  className="w-full pl-9 pr-4 py-2.5 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-orange-500/50"
+                />
+              </div>
+
+              <div className="overflow-x-auto max-h-[520px] overflow-y-auto rounded-xl border border-white/10">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 z-10 bg-gradient-to-r from-orange-600/30 to-orange-700/20 backdrop-blur-md">
+                    <tr>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">E-mail</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Nome</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Status</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Enviado em</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Aberto em</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Motivo do Erro</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingRecipients && recipients.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center py-12 text-gray-400">
+                          <FaSpinner className="animate-spin text-3xl text-orange-400 mx-auto mb-3" />
+                          Carregando log de envio...
+                        </td>
+                      </tr>
+                    ) : filteredRecipients.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center py-12 text-gray-400">
+                          <div className="text-5xl mb-3">📭</div>
+                          Nenhum registro encontrado neste filtro
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredRecipients.map(r => {
+                        const rs = RECIPIENT_STATUS[r.status] || RECIPIENT_STATUS.pending;
+                        return (
+                          <tr key={r.id} className="border-b border-white/5 hover:bg-white/5 transition-all">
+                            <td className="p-3 text-white font-medium">{r.email}</td>
+                            <td className="p-3 text-gray-400">{r.name || '—'}</td>
+                            <td className="p-3">
+                              <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
+                            </td>
+                            <td className="p-3 text-gray-400 text-xs whitespace-nowrap">
+                              {r.sent_at ? new Date(r.sent_at).toLocaleString('pt-BR') : '—'}
+                            </td>
+                            <td className="p-3 text-purple-300 text-xs whitespace-nowrap">
+                              {r.opened_at ? new Date(r.opened_at).toLocaleString('pt-BR') : '—'}
+                            </td>
+                            <td className="p-3 text-xs max-w-[320px]">
+                              {r.error_message ? (
+                                <span className="text-red-400 font-semibold break-words" title={r.error_message}>
+                                  {r.error_message}
+                                </span>
+                              ) : (
+                                <span className="text-white/30">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-center text-xs text-gray-500 mt-3">
+                Atualiza automaticamente a cada {POLL_INTERVAL}s enquanto a campanha estiver ativa
+              </p>
+            </div>
           </div>
 
         </div>
