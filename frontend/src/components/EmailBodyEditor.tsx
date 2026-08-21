@@ -304,7 +304,7 @@ export default function EmailBodyEditor({
             <p className="text-xs text-white/50">O link será inserido como HTML com <code className="text-white/70">&lt;a href&gt;</code>. O Mailgun rastreia o clique automaticamente.</p>
             <div>
               <label className="block text-sm text-white/70 mb-1">Telefone (com DDD)</label>
-              <input value={waPhone} onChange={e => setWaPhone(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-dark-700 border border-white/15 text-white" placeholder="(84) 99660-1515" />
+              <input value={waPhone} onChange={e => setWaPhone(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-dark-700 border border-white/15 text-white" placeholder="(11) 90000-0000" />
             </div>
             <div>
               <label className="block text-sm text-white/70 mb-1">Mensagem pré-preenchida</label>
