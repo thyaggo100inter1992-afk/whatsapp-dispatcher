@@ -41,6 +41,7 @@ const conversationsRoutes = require('./conversations.routes').default;
 // Import rotas de email marketing
 const emailMarketingRoutes = require('./email-marketing.routes').default;
 const adminMailgunCredentialsRoutes = require('./admin/mailgun-credentials.routes').default;
+const adminSendgridCredentialsRoutes = require('./admin/sendgrid-credentials.routes').default;
 
 // Import rotas de administração
 const adminTenantsRoutes = require('./admin/tenants.routes');
@@ -292,10 +293,15 @@ console.log('✅ Rota /admin/email-templates registrada (apenas super_admin)');
 router.use('/admin/mailgun-credentials', authenticate, requireSuperAdmin, adminMailgunCredentialsRoutes);
 console.log('✅ Rota /admin/mailgun-credentials registrada (apenas super_admin)');
 
-// Webhook público do Mailgun (sem autenticação - recebe tracking events)
-const { mailgunWebhook } = require('../controllers/email-marketing.controller');
+router.use('/admin/sendgrid-credentials', authenticate, requireSuperAdmin, adminSendgridCredentialsRoutes);
+console.log('✅ Rota /admin/sendgrid-credentials registrada (apenas super_admin)');
+
+// Webhooks públicos (sem autenticação - tracking events)
+const { mailgunWebhook, sendgridWebhook } = require('../controllers/email-marketing.controller');
 router.post('/webhook/mailgun', mailgunWebhook);
 console.log('✅ Webhook público Mailgun registrado em /webhook/mailgun');
+router.post('/webhook/sendgrid', sendgridWebhook);
+console.log('✅ Webhook público SendGrid registrado em /webhook/sendgrid');
 
 const adminLandingRoutes = require('./admin/landing.routes');
 router.use('/admin/landing', authenticate, requireSuperAdmin, adminLandingRoutes);

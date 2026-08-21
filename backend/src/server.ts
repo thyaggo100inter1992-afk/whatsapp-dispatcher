@@ -74,6 +74,15 @@ app.use('/api/webhook/mailgun', express.text({ type: '*/*', limit: '10mb' }), (r
   next();
 });
 
+// 🔧 MIDDLEWARE: SendGrid Event Webhook
+app.use('/api/webhook/sendgrid', express.text({ type: '*/*', limit: '10mb' }), (req: any, _res, next) => {
+  if (typeof req.body === 'string') {
+    try { req.body = JSON.parse(req.body); } catch { req.body = []; }
+  }
+  if (!req.body) req.body = [];
+  next();
+});
+
 // 🔧 MIDDLEWARE ESPECIAL: Corrigir JSON malformado da UAZAPI
 app.use(['/api/qr-webhook/uaz-event', '/api/webhook/tenant-'], express.raw({ type: 'application/json' }), (req: any, res, next) => {
   try {
@@ -122,7 +131,7 @@ app.use((req, res, next) => {
   express.json({ limit: '500mb' })(req, res, (err: any) => {
     if (err) {
       // Webhook Mailgun: não quebrar se JSON inválido
-      if ((req as any).path?.includes('webhook/mailgun')) {
+      if ((req as any).path?.includes('webhook/mailgun') || (req as any).path?.includes('webhook/sendgrid')) {
         (req as any).body = (req as any).body || {};
         return next();
       }
@@ -159,6 +168,7 @@ app.use((req, res, next) => {
     path.includes('/restriction-lists/bulk-import') ||
     (path.includes('/conversations') && path.includes('/messages/media')) ||
     path.includes('/webhook/mailgun') ||  // ✅ Webhook Mailgun — body já processado pelo express.text
+    path.includes('/webhook/sendgrid') ||  // ✅ Webhook SendGrid
     path.includes('/email-marketing/lists') // ✅ Importação de contatos — usa Multer
   ) {
     console.log('🔄 Rota de upload detectada - pulando express-fileupload (usa Multer)');

@@ -1,13 +1,23 @@
 import { Request, Response } from 'express';
 import { pool } from '../database/connection';
-import FormData from 'form-data';
-import Mailgun from 'mailgun.js';
 import multer from 'multer';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
 import * as dns from 'dns';
 import { promisify } from 'util';
 import { ensureEmailHtml, applyEmailVariables, generateProtocol, detectUsedEmailVars } from '../utils/email-html';
+import {
+  getActiveEmailMarketingProvider,
+  setActiveEmailMarketingProvider,
+  getMailgunApiClient,
+  sendMarketingEmail,
+  createSendGridDomain,
+  validateSendGridDomain,
+  getSendGridDomain,
+  mapSendGridDnsRecords,
+  ensureSendGridEventWebhook,
+  EmailMarketingProviderName,
+} from '../services/email-marketing-provider.service';
 
 const resolveTxt  = promisify(dns.resolveTxt);
 const resolveMx   = promisify(dns.resolveMx);
@@ -30,9 +40,13 @@ function txtMatches(actual: string, expected: string, recName: string): boolean 
   if (a === e) return true;
   if (e && a.includes(e.substring(0, Math.min(40, e.length)))) return true;
 
-  // SPF: aceita qualquer SPF que inclua mailgun.org (~all ou -all)
+  // SPF: aceita Mailgun OU SendGrid
   if (e.includes('v=spf1') || a.includes('v=spf1')) {
-    return a.includes('v=spf1') && a.includes('include:mailgun.org');
+    return a.includes('v=spf1') && (
+      a.includes('include:mailgun.org') ||
+      a.includes('include:sendgrid.net') ||
+      a.includes('_spf.google.com') // tolerante
+    );
   }
   // DKIM
   if ((recName || '').toLowerCase().includes('_domainkey')) {
@@ -63,7 +77,9 @@ async function checkDnsRecord(rec: any, domain: string): Promise<'valid' | 'unkn
       const expected = expectedValue.toLowerCase().replace(/\.$/, '');
       const found = results.some((r: any) => {
         const ex = (r.exchange || '').toLowerCase().replace(/\.$/, '');
-        return ex === expected || (expected.includes('mailgun') && ex.includes('mailgun.org'));
+        return ex === expected ||
+          (expected.includes('mailgun') && ex.includes('mailgun.org')) ||
+          ex.includes('sendgrid.net');
       });
       return found ? 'valid' : 'unknown';
     }
@@ -73,7 +89,7 @@ async function checkDnsRecord(rec: any, domain: string): Promise<'valid' | 'unkn
         const result = await resolveCname(name);
         const resolved = (result[0] || result || '').toString().toLowerCase().replace(/\.$/, '');
         const expected = expectedValue.toLowerCase().replace(/\.$/, '');
-        if (resolved === expected || resolved.endsWith('mailgun.org')) return 'valid';
+        if (resolved === expected || resolved.endsWith('mailgun.org') || resolved.endsWith('sendgrid.net')) return 'valid';
       } catch {
         // Alguns provedores publicam CNAME como A/ALIAS — tenta TXT/resolve genérico
       }
@@ -86,16 +102,9 @@ async function checkDnsRecord(rec: any, domain: string): Promise<'valid' | 'unkn
   }
 }
 
-// Helper para pegar credencial Mailgun ativa
+// Helper — Mailgun (mantido; usado quando provedor ativo = mailgun)
 async function getMailgunClient() {
-  const result = await pool.query(
-    `SELECT api_key, region FROM mailgun_credentials WHERE is_active = TRUE LIMIT 1`
-  );
-  if (!result.rows[0]) throw new Error('Nenhuma credencial Mailgun configurada');
-  const { api_key, region } = result.rows[0];
-  const mailgun = new Mailgun(FormData);
-  const mg = mailgun.client({ username: 'api', key: api_key, url: region === 'eu' ? 'https://api.eu.mailgun.net' : 'https://api.mailgun.net' });
-  return mg;
+  return getMailgunApiClient();
 }
 
 function getTenantId(req: Request): number {
@@ -186,26 +195,47 @@ export const addDomain = async (req: Request, res: Response) => {
     const { domain } = req.body;
     if (!domain) return res.status(400).json({ success: false, message: 'Domínio obrigatório' });
 
+    const provider = await getActiveEmailMarketingProvider();
+
+    // ========== SENDGRID ==========
+    if (provider === 'sendgrid') {
+      const sgDomain = await createSendGridDomain(domain);
+      const dnsRecords = mapSendGridDnsRecords(sgDomain, domain);
+      const sgId = String(sgDomain.id || '');
+      const result = await pool.query(
+        `INSERT INTO email_marketing_domains
+           (tenant_id, domain, mailgun_domain_id, sendgrid_domain_id, smtp_login, smtp_password, status, dns_records, provider)
+         VALUES ($1, $2, NULL, $3, $4, '', 'pending', $5, 'sendgrid')
+         ON CONFLICT (tenant_id, domain) DO UPDATE SET
+           status='pending',
+           dns_records=$5,
+           sendgrid_domain_id=$3,
+           provider='sendgrid',
+           updated_at=NOW()
+         RETURNING *`,
+        [tenantId, domain, sgId, `postmaster@${domain}`, JSON.stringify(dnsRecords)]
+      );
+      ensureSendGridEventWebhook().catch(() => {});
+      return res.json({ success: true, data: result.rows[0], dns_records: dnsRecords, provider: 'sendgrid' });
+    }
+
+    // ========== MAILGUN (legado) ==========
     const mg = await getMailgunClient();
     let mgDomain: any;
 
     try {
       mgDomain = await mg.domains.create({ name: domain }) as any;
     } catch (createError: any) {
-      // O Mailgun coloca "domain already exists" em e.details, não em e.message
       const details = (createError.details || '').toLowerCase();
       const msg = (createError.message || '').toLowerCase();
       const alreadyExists = createError.status === 400 &&
         (details.includes('already exists') || details.includes('already been registered') ||
          msg.includes('already exists') || msg.includes('already been registered'));
       if (!alreadyExists) throw createError;
-      // Domínio já existe no Mailgun — buscar os dados existentes
       mgDomain = await mg.domains.get(domain) as any;
     }
 
     const dnsRecords = (mgDomain.receiving_dns_records || []).concat(mgDomain.sending_dns_records || []);
-
-    // Adicionar registro DMARC (não vem do Mailgun — o tenant deve configurar no DNS)
     const dmarcRecord = {
       record_type: 'TXT',
       name: `_dmarc.${domain}`,
@@ -213,22 +243,21 @@ export const addDomain = async (req: Request, res: Response) => {
       valid: 'unknown',
       _is_dmarc: true
     };
-    // Só adiciona se ainda não existir
     const hasDmarc = dnsRecords.some((r: any) => (r.name || '').startsWith('_dmarc.'));
     if (!hasDmarc) dnsRecords.push(dmarcRecord);
 
     const result = await pool.query(
-      `INSERT INTO email_marketing_domains (tenant_id, domain, mailgun_domain_id, smtp_login, smtp_password, status, dns_records)
-       VALUES ($1, $2, $3, $4, $5, 'pending', $6)
-       ON CONFLICT (tenant_id, domain) DO UPDATE SET status='pending', dns_records=$6, updated_at=NOW()
+      `INSERT INTO email_marketing_domains
+         (tenant_id, domain, mailgun_domain_id, smtp_login, smtp_password, status, dns_records, provider)
+       VALUES ($1, $2, $3, $4, $5, 'pending', $6, 'mailgun')
+       ON CONFLICT (tenant_id, domain) DO UPDATE SET status='pending', dns_records=$6, provider='mailgun', updated_at=NOW()
        RETURNING *`,
       [tenantId, domain, mgDomain.id || mgDomain.domain || domain, mgDomain.smtp_login || `postmaster@${domain}`, mgDomain.smtp_password || '', JSON.stringify(dnsRecords)]
     );
 
-    // Registrar webhooks no Mailgun em background (não bloqueia a resposta)
     registerMailgunWebhooks(domain).catch(() => {});
 
-    res.json({ success: true, data: result.rows[0], dns_records: dnsRecords });
+    res.json({ success: true, data: result.rows[0], dns_records: dnsRecords, provider: 'mailgun' });
   } catch (error: any) {
     console.error('[email-marketing] addDomain error:', error.message, error.status);
     res.status(500).json({ success: false, message: error.message });
@@ -248,7 +277,77 @@ export const verifyDomain = async (req: Request, res: Response) => {
     if (!domainRow.rows[0]) return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
 
     const domainName = domainRow.rows[0].domain;
+    const domainProvider = String(domainRow.rows[0].provider || 'mailgun').toLowerCase();
 
+    // ========== SENDGRID ==========
+    if (domainProvider === 'sendgrid') {
+      let sendgridActive = false;
+      let storedDns: any[] = Array.isArray(domainRow.rows[0].dns_records)
+        ? [...domainRow.rows[0].dns_records]
+        : [];
+      const sgId = domainRow.rows[0].sendgrid_domain_id;
+      try {
+        if (sgId) {
+          const validation = await validateSendGridDomain(sgId);
+          sendgridActive = !!(validation?.valid === true || validation?.validation_results);
+          // validation_results tem mail_cname, dkim1, dkim2 etc.
+          const results = validation?.validation_results || {};
+          storedDns = storedDns.map((rec: any) => {
+            const key = rec._sendgrid_key;
+            if (key && results[key]) {
+              const ok = results[key].valid === true;
+              return { ...rec, valid: ok ? 'valid' : 'unknown' };
+            }
+            return rec;
+          });
+          const fresh = await getSendGridDomain(sgId);
+          if (fresh?.dns) {
+            storedDns = mapSendGridDnsRecords(fresh, domainName).map((rec: any) => {
+              const prev = storedDns.find((p: any) => p._sendgrid_key === rec._sendgrid_key);
+              return { ...rec, valid: prev?.valid || rec.valid };
+            });
+          }
+          // Se API diz valid no domínio
+          if (fresh?.valid === true) sendgridActive = true;
+          if (validation?.valid === true) sendgridActive = true;
+        }
+      } catch (e: any) {
+        console.warn(`[verify-domain] SendGrid validate falhou:`, e?.message || e);
+      }
+
+      let checkedDns = await Promise.all(
+        storedDns.map(async (rec: any) => ({
+          ...rec,
+          valid: rec.valid === 'valid' ? 'valid' : await checkDnsRecord(rec, domainName),
+        }))
+      );
+
+      const essentialOk = checkedDns
+        .filter((r: any) => !r._is_dmarc)
+        .every((r: any) => r.valid === 'valid') || sendgridActive;
+      const canSend = sendgridActive || essentialOk;
+      const newStatus = canSend ? 'active' : 'unverified';
+      await pool.query(
+        `UPDATE email_marketing_domains SET status=$1, dns_records=$3, verified_at=${canSend ? 'NOW()' : 'NULL'}, updated_at=NOW() WHERE id=$2`,
+        [newStatus, id, JSON.stringify(checkedDns)]
+      );
+      if (canSend) ensureSendGridEventWebhook().catch(() => {});
+      const updated = await pool.query(`SELECT * FROM email_marketing_domains WHERE id=$1`, [id]);
+      return res.json({
+        success: true,
+        verified: canSend,
+        allVerified: checkedDns.every((r: any) => r.valid === 'valid'),
+        sendgridActive,
+        provider: 'sendgrid',
+        status: newStatus,
+        message: canSend
+          ? 'Domínio pronto para envio no SendGrid.'
+          : 'Ainda não foi possível confirmar DNS do SendGrid. Verifique CNAME/DKIM e tente de novo.',
+        data: updated.rows[0],
+      });
+    }
+
+    // ========== MAILGUN (legado) ==========
     // 1) Pergunta ao Mailgun (fonte da verdade para envio)
     let mailgunActive = false;
     let mgDns: any[] = [];
@@ -377,11 +476,19 @@ export const registerDomainWebhooks = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const { id } = req.params;
-    const row = await pool.query(`SELECT domain FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
+    const row = await pool.query(
+      `SELECT domain, provider FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`,
+      [id, tenantId]
+    );
     if (!row.rows[0]) return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
 
+    if (String(row.rows[0].provider || '') === 'sendgrid') {
+      await ensureSendGridEventWebhook();
+      return res.json({ success: true, message: 'Webhook SendGrid registrado/atualizado', provider: 'sendgrid' });
+    }
+
     await registerMailgunWebhooks(row.rows[0].domain);
-    res.json({ success: true, message: 'Webhooks registrados com sucesso' });
+    res.json({ success: true, message: 'Webhooks Mailgun registrados com sucesso', provider: 'mailgun' });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -1193,7 +1300,6 @@ export const sendSingle = async (req: Request, res: Response) => {
     let text = body_text || null;
     const recipName = (to_name && String(to_name).trim()) || to_email;
 
-    const mg = await getMailgunClient();
     const prepared = ensureEmailHtml(html, text);
     const used = detectUsedEmailVars(prepared.html, prepared.text, subject);
     const protocol = used.protocolo ? generateProtocol() : null;
@@ -1214,38 +1320,49 @@ export const sendSingle = async (req: Request, res: Response) => {
     const finalText = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
     const finalSubject = applyEmailVariables(subject, recipVars, { escapeValues: false });
     try {
-      const result = await mg.messages.create(domain, {
-        from: `${String(from_name).trim()} <${finalFromEmail}>`,
-        to: [to_name ? `${to_name} <${to_email}>` : to_email],
-        'h:Reply-To': reply_to || finalFromEmail,
+      const sent = await sendMarketingEmail({
+        domain,
+        fromEmail: finalFromEmail,
+        fromName: String(from_name).trim(),
+        toEmail: to_email,
+        toName: to_name,
+        replyTo: reply_to || finalFromEmail,
         subject: finalSubject,
         html: finalHtml,
         text: finalText,
-        'o:tracking': 'yes',
-        'o:tracking-clicks': 'yes',
-        'o:tracking-opens': 'yes',
-      } as any);
+      });
 
       const userId = (req as any).user?.id || (req as any).tenant?.userId || null;
       const userName = (req as any).user?.name || (req as any).user?.username || null;
-      const rawMsgId = (result as any).id || (result as any).message_id || '';
-      const msgId = rawMsgId.replace(/^<|>$/g, '').trim() || null;
-      await pool.query(
-        `INSERT INTO email_marketing_single_sends
-         (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status, body_html, body_text, reply_to, error_message)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'sent',$11,$12,$13,NULL)`,
-        [
-          tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, finalSubject, domain_id, msgId,
-          body_html || null, finalText || null, reply_to || null,
-        ]
-      );
+      const msgId = sent.messageId || null;
+      try {
+        await pool.query(
+          `INSERT INTO email_marketing_single_sends
+           (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, provider_message_id, status, body_html, body_text, reply_to, error_message)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,'sent',$11,$12,$13,NULL)`,
+          [
+            tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, finalSubject, domain_id, msgId,
+            body_html || null, finalText || null, reply_to || null,
+          ]
+        );
+      } catch {
+        await pool.query(
+          `INSERT INTO email_marketing_single_sends
+           (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status, body_html, body_text, reply_to, error_message)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'sent',$11,$12,$13,NULL)`,
+          [
+            tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, finalSubject, domain_id, msgId,
+            body_html || null, finalText || null, reply_to || null,
+          ]
+        );
+      }
 
-      res.json({ success: true, message_id: msgId, message: 'E-mail enviado com sucesso', from: finalFromEmail });
+      res.json({ success: true, message_id: msgId, message: 'E-mail enviado com sucesso', from: finalFromEmail, provider: sent.provider });
     } catch (sendError: any) {
-      const status = sendError?.status || sendError?.statusCode;
+      const status = sendError?.status || sendError?.statusCode || sendError?.code;
       const msg = String(sendError?.message || 'Erro ao enviar');
       const friendly = (status === 403 || /forbidden/i.test(msg))
-        ? `Envio bloqueado (Forbidden). Domínio: ${domain}. Remetente: ${finalFromEmail}. Verifique se o domínio está ativo no Mailgun.`
+        ? `Envio bloqueado (Forbidden). Domínio: ${domain}. Remetente: ${finalFromEmail}. Verifique se o domínio está ativo no provedor.`
         : msg;
       try {
         const userId = (req as any).user?.id || (req as any).tenant?.userId || null;
@@ -1367,40 +1484,54 @@ export const resendSingleSend = async (req: Request, res: Response) => {
     const finalText = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
     const finalSubject = applyEmailVariables(subject, recipVars, { escapeValues: false });
 
-    const mg = await getMailgunClient();
     try {
-      const result = await mg.messages.create(domain, {
-        from: `${String(from_name || '').trim()} <${finalFromEmail}>`,
-        to: [to_name ? `${to_name} <${to_email}>` : to_email],
-        'h:Reply-To': reply_to || finalFromEmail,
+      const sent = await sendMarketingEmail({
+        domain,
+        fromEmail: finalFromEmail,
+        fromName: String(from_name || '').trim(),
+        toEmail: to_email,
+        toName: to_name,
+        replyTo: reply_to || finalFromEmail,
         subject: finalSubject,
         html: finalHtml,
         text: finalText,
-        'o:tracking': 'yes',
-        'o:tracking-clicks': 'yes',
-        'o:tracking-opens': 'yes',
-      } as any);
+      });
 
-      const rawMsgId = (result as any).id || (result as any).message_id || '';
-      const msgId = rawMsgId.replace(/^<|>$/g, '').trim() || null;
+      const msgId = sent.messageId || null;
 
-      await pool.query(
-        `UPDATE email_marketing_single_sends SET
-           to_email=$1, to_name=$2, from_email=$3, from_name=$4, subject=$5,
-           domain_id=$6, reply_to=$7, body_html=$8, body_text=$9,
-           mailgun_message_id=$10, status='sent', error_message=NULL,
-           opened_at=NULL, clicked_at=NULL, updated_at=NOW()
-         WHERE id=$11 AND tenant_id=$12`,
-        [
-          to_email, to_name || null, finalFromEmail, from_name || null, finalSubject,
-          domain_id, reply_to || null, body_html || null, finalText || null,
-          msgId, id, tenantId,
-        ]
-      );
+      try {
+        await pool.query(
+          `UPDATE email_marketing_single_sends SET
+             to_email=$1, to_name=$2, from_email=$3, from_name=$4, subject=$5,
+             domain_id=$6, reply_to=$7, body_html=$8, body_text=$9,
+             mailgun_message_id=$10, provider_message_id=$10, status='sent', error_message=NULL,
+             opened_at=NULL, clicked_at=NULL, updated_at=NOW()
+           WHERE id=$11 AND tenant_id=$12`,
+          [
+            to_email, to_name || null, finalFromEmail, from_name || null, finalSubject,
+            domain_id, reply_to || null, body_html || null, finalText || null,
+            msgId, id, tenantId,
+          ]
+        );
+      } catch {
+        await pool.query(
+          `UPDATE email_marketing_single_sends SET
+             to_email=$1, to_name=$2, from_email=$3, from_name=$4, subject=$5,
+             domain_id=$6, reply_to=$7, body_html=$8, body_text=$9,
+             mailgun_message_id=$10, status='sent', error_message=NULL,
+             opened_at=NULL, clicked_at=NULL, updated_at=NOW()
+           WHERE id=$11 AND tenant_id=$12`,
+          [
+            to_email, to_name || null, finalFromEmail, from_name || null, finalSubject,
+            domain_id, reply_to || null, body_html || null, finalText || null,
+            msgId, id, tenantId,
+          ]
+        );
+      }
 
-      res.json({ success: true, message_id: msgId, message: 'E-mail reenviado com sucesso', from: finalFromEmail });
+      res.json({ success: true, message_id: msgId, message: 'E-mail reenviado com sucesso', from: finalFromEmail, provider: sent.provider });
     } catch (sendError: any) {
-      const status = sendError?.status || sendError?.statusCode;
+      const status = sendError?.status || sendError?.statusCode || sendError?.code;
       const msg = String(sendError?.message || 'Erro ao reenviar');
       const friendly = (status === 403 || /forbidden/i.test(msg))
         ? `Envio bloqueado (Forbidden). Domínio: ${domain}. Remetente: ${finalFromEmail}.`
@@ -1674,7 +1805,7 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
     const current = await pool.query(
       `SELECT id, campaign_id, status, opened_at, clicked_at
        FROM email_marketing_recipients
-       WHERE mailgun_message_id=$1 AND email=$2
+       WHERE email=$2 AND (mailgun_message_id=$1 OR provider_message_id=$1)
        LIMIT 1`,
       [messageId, recipient]
     );
@@ -1778,7 +1909,8 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
            opened_at = CASE WHEN $3 = 'opened' OR $3 = 'clicked' THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
            clicked_at = CASE WHEN $3 = 'clicked' THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
            updated_at = NOW()
-         WHERE mailgun_message_id = $4 OR mailgun_message_id = $5`,
+         WHERE mailgun_message_id = $4 OR mailgun_message_id = $5
+            OR provider_message_id = $4 OR provider_message_id = $5`,
         [newStatus, deliveryError, eventType, messageId, msgIdWithBrackets]
       );
     } else {
@@ -1794,7 +1926,8 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
            opened_at = CASE WHEN $2 = 'opened' OR $2 = 'clicked' THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
            clicked_at = CASE WHEN $2 = 'clicked' THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
            updated_at = NOW()
-         WHERE mailgun_message_id = $3 OR mailgun_message_id = $4`,
+         WHERE mailgun_message_id = $3 OR mailgun_message_id = $4
+            OR provider_message_id = $3 OR provider_message_id = $4`,
         [newStatus, eventType, messageId, msgIdWithBrackets]
       );
     }
@@ -1841,5 +1974,233 @@ export const deleteMailgunCredential = async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// =============================================
+// ADMIN: CREDENCIAL SENDGRID + PROVEDOR ATIVO
+// =============================================
+
+export const getEmailMarketingProviderSettings = async (_req: Request, res: Response) => {
+  try {
+    const active = await getActiveEmailMarketingProvider();
+    const mg = await pool.query(`SELECT id, region, is_active, created_at FROM mailgun_credentials WHERE is_active=TRUE LIMIT 1`);
+    const sg = await pool.query(`SELECT id, is_active, created_at FROM sendgrid_credentials WHERE is_active=TRUE LIMIT 1`);
+    res.json({
+      success: true,
+      data: {
+        active_provider: active,
+        mailgun_configured: mg.rows.length > 0,
+        sendgrid_configured: sg.rows.length > 0,
+        mailgun: mg.rows[0] || null,
+        sendgrid: sg.rows[0] || null,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const saveEmailMarketingProviderSettings = async (req: Request, res: Response) => {
+  try {
+    const provider = String(req.body?.active_provider || '').toLowerCase() as EmailMarketingProviderName;
+    if (provider !== 'mailgun' && provider !== 'sendgrid') {
+      return res.status(400).json({ success: false, message: 'Provedor inválido (mailgun|sendgrid)' });
+    }
+    if (provider === 'sendgrid') {
+      const sg = await pool.query(`SELECT id FROM sendgrid_credentials WHERE is_active=TRUE LIMIT 1`);
+      if (!sg.rows[0]) {
+        return res.status(400).json({ success: false, message: 'Salve a chave SendGrid antes de ativar o provedor' });
+      }
+    }
+    if (provider === 'mailgun') {
+      const mg = await pool.query(`SELECT id FROM mailgun_credentials WHERE is_active=TRUE LIMIT 1`);
+      if (!mg.rows[0]) {
+        return res.status(400).json({ success: false, message: 'Salve a chave Mailgun antes de ativar o provedor' });
+      }
+    }
+    await setActiveEmailMarketingProvider(provider);
+    if (provider === 'sendgrid') {
+      ensureSendGridEventWebhook().catch(() => {});
+    }
+    res.json({ success: true, message: `Provedor ativo: ${provider}`, active_provider: provider });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getSendGridCredential = async (_req: Request, res: Response) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, is_active, created_at, updated_at FROM sendgrid_credentials WHERE is_active=TRUE LIMIT 1`
+    );
+    res.json({ success: true, data: result.rows[0] || null, configured: result.rows.length > 0 });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const saveSendGridCredential = async (req: Request, res: Response) => {
+  try {
+    const { api_key, activate } = req.body;
+    if (!api_key) return res.status(400).json({ success: false, message: 'Chave API obrigatória' });
+    await pool.query(`UPDATE sendgrid_credentials SET is_active=FALSE`);
+    await pool.query(
+      `INSERT INTO sendgrid_credentials (api_key, is_active) VALUES ($1, TRUE)`,
+      [api_key]
+    );
+    if (activate !== false) {
+      await setActiveEmailMarketingProvider('sendgrid');
+      ensureSendGridEventWebhook().catch(() => {});
+    }
+    res.json({
+      success: true,
+      message: 'Credencial SendGrid salva com sucesso',
+      active_provider: activate === false ? await getActiveEmailMarketingProvider() : 'sendgrid',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteSendGridCredential = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await pool.query(`DELETE FROM sendgrid_credentials WHERE id=$1`, [id]);
+    const active = await getActiveEmailMarketingProvider();
+    if (active === 'sendgrid') {
+      await setActiveEmailMarketingProvider('mailgun');
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Webhook de eventos SendGrid (array de eventos).
+ * URL: POST /api/webhook/sendgrid
+ */
+export const sendgridWebhook = async (req: Request, res: Response) => {
+  try {
+    let rawBody = req.body;
+    if (Buffer.isBuffer(rawBody)) {
+      try { rawBody = JSON.parse(rawBody.toString('utf8')); } catch { rawBody = []; }
+    } else if (typeof rawBody === 'string') {
+      try { rawBody = JSON.parse(rawBody); } catch { rawBody = []; }
+    }
+
+    const events = Array.isArray(rawBody) ? rawBody : (rawBody ? [rawBody] : []);
+    console.log(`[webhook-sendgrid] ${events.length} evento(s)`);
+
+    const statusMap: Record<string, string> = {
+      delivered: 'sent',
+      open: 'opened',
+      click: 'clicked',
+      bounce: 'bounced',
+      dropped: 'failed',
+      spamreport: 'complained',
+      unsubscribe: 'complained',
+    };
+
+    for (const ev of events) {
+      const eventType = String(ev?.event || '').toLowerCase();
+      const newStatus = statusMap[eventType];
+      if (!newStatus) continue;
+
+      const messageId = String(ev?.sg_message_id || ev?.['smtp-id'] || '').replace(/^<|>$/g, '').trim();
+      const recipient = String(ev?.email || '').trim();
+      if (!messageId || !recipient) continue;
+
+      const deliveryError =
+        eventType === 'bounce' || eventType === 'dropped'
+          ? String(ev?.reason || ev?.response || ev?.type || 'Falha no envio').slice(0, 500)
+          : null;
+
+      // Reusa a mesma lógica do Mailgun: busca recipient e atualiza
+      const current = await pool.query(
+        `SELECT id, campaign_id, status, opened_at, clicked_at
+         FROM email_marketing_recipients
+         WHERE email=$2 AND (provider_message_id=$1 OR mailgun_message_id=$1 OR provider_message_id LIKE $3 OR mailgun_message_id LIKE $3)
+         LIMIT 1`,
+        [messageId, recipient, `${messageId}%`]
+      );
+
+      if (current.rows[0]) {
+        const row = current.rows[0];
+        const prev = String(row.status || 'pending');
+        const alreadyClicked = !!row.clicked_at || prev === 'clicked';
+        let effectiveStatus = newStatus;
+        if (eventType === 'open' && alreadyClicked) effectiveStatus = 'clicked';
+        if (eventType === 'click') effectiveStatus = 'clicked';
+
+        const shouldUpdateStatus =
+          recipientStatusRank(effectiveStatus) >= recipientStatusRank(prev) ||
+          (['failed', 'bounced', 'complained'].includes(newStatus) && ['pending', 'sent'].includes(prev));
+        const skipDeliveredDowngrade =
+          eventType === 'delivered' &&
+          (['opened', 'clicked', 'failed', 'bounced', 'complained'].includes(prev) || alreadyClicked);
+
+        if (shouldUpdateStatus && !skipDeliveredDowngrade) {
+          await pool.query(
+            `UPDATE email_marketing_recipients
+             SET status=$1,
+                 error_message=COALESCE($2, error_message),
+                 opened_at=CASE WHEN $3::boolean THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
+                 clicked_at=CASE WHEN $4::boolean THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
+                 updated_at=NOW()
+             WHERE id=$5`,
+            [
+              effectiveStatus,
+              deliveryError,
+              eventType === 'open' || eventType === 'click',
+              eventType === 'click',
+              row.id,
+            ]
+          );
+        } else if (eventType === 'open' && !row.opened_at) {
+          await pool.query(
+            `UPDATE email_marketing_recipients SET opened_at=COALESCE(opened_at, NOW()), updated_at=NOW() WHERE id=$1`,
+            [row.id]
+          );
+        }
+        await recalculateCampaignCounters(row.campaign_id);
+      }
+
+      // single sends
+      if (deliveryError) {
+        await pool.query(
+          `UPDATE email_marketing_single_sends
+           SET status=$1, error_message=$2,
+               opened_at=CASE WHEN $3 IN ('open','click') THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
+               clicked_at=CASE WHEN $3='click' THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
+               updated_at=NOW()
+           WHERE mailgun_message_id=$4 OR provider_message_id=$4
+              OR mailgun_message_id LIKE $5 OR provider_message_id LIKE $5`,
+          [newStatus, deliveryError, eventType, messageId, `${messageId}%`]
+        );
+      } else {
+        await pool.query(
+          `UPDATE email_marketing_single_sends
+           SET status=CASE
+                 WHEN $1='opened' AND (clicked_at IS NOT NULL OR status='clicked') THEN 'clicked'
+                 WHEN $1='clicked' THEN 'clicked'
+                 WHEN status='clicked' AND $1 IN ('sent','opened') THEN 'clicked'
+                 ELSE $1
+               END,
+               opened_at=CASE WHEN $2 IN ('open','click') THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
+               clicked_at=CASE WHEN $2='click' THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
+               updated_at=NOW()
+           WHERE mailgun_message_id=$3 OR provider_message_id=$3
+              OR mailgun_message_id LIKE $4 OR provider_message_id LIKE $4`,
+          [newStatus, eventType, messageId, `${messageId}%`]
+        );
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('[webhook-sendgrid] erro:', error.message);
+    res.status(500).json({ success: false });
   }
 };

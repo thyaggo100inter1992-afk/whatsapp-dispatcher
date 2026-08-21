@@ -1,21 +1,8 @@
 import { pool } from '../database/connection';
-import FormData from 'form-data';
-import Mailgun from 'mailgun.js';
 import { ensureEmailHtml, applyEmailVariables, generateProtocol, detectUsedEmailVars } from '../utils/email-html';
+import { sendMarketingEmail } from '../services/email-marketing-provider.service';
 
 let isRunning = false;
-
-async function getMailgunClient() {
-  const result = await pool.query(`SELECT api_key, region FROM mailgun_credentials WHERE is_active=TRUE LIMIT 1`);
-  if (!result.rows[0]) throw new Error('Nenhuma credencial Mailgun configurada');
-  const { api_key, region } = result.rows[0];
-  const mailgun = new Mailgun(FormData);
-  return mailgun.client({
-    username: 'api',
-    key: api_key,
-    url: region === 'eu' ? 'https://api.eu.mailgun.net' : 'https://api.mailgun.net',
-  });
-}
 
 /** Monta e-mail remetente sempre no domínio de envio (local@dominio) */
 function buildFromEmail(rawFrom: string, domain: string): string {
@@ -285,22 +272,27 @@ async function processCampaigns() {
         fromEmail = buildFromEmail(fromEmail, domain);
 
         try {
-          const mg = await getMailgunClient();
-          const result = await mg.messages.create(domain, {
-            from: `${fromName} <${fromEmail}>`,
-            to: [recipient.name ? `${recipient.name} <${recipient.email}>` : recipient.email],
-            'h:Reply-To': campaign.reply_to || fromEmail,
+          const sent = await sendMarketingEmail({
+            domain,
+            fromEmail,
+            fromName,
+            toEmail: recipient.email,
+            toName: recipient.name,
+            replyTo: campaign.reply_to || fromEmail,
             subject,
-            html: html || undefined,
+            html,
             text: text || 'Por favor, habilite HTML para visualizar este e-mail.',
-            'o:tracking': 'yes',
-            'o:tracking-clicks': 'yes',
-            'o:tracking-opens': 'yes',
           });
 
-          const msgId = (result.id || '').replace(/^<|>$/g, '');
+          const msgId = sent.messageId;
           await pool.query(
-            `UPDATE email_marketing_recipients SET status='sent', mailgun_message_id=$1, sent_at=NOW(), updated_at=NOW() WHERE id=$2`,
+            `UPDATE email_marketing_recipients
+             SET status='sent',
+                 mailgun_message_id=$1,
+                 provider_message_id=$1,
+                 sent_at=NOW(),
+                 updated_at=NOW()
+             WHERE id=$2`,
             [msgId, recipient.id]
           );
           await pool.query(

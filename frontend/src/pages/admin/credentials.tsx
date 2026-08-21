@@ -63,7 +63,7 @@ export default function AdminCredentials() {
   const notification = useNotification();
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'uazap' | 'novavida' | 'asaas' | 'mailgun'>('uazap');
+  const [activeTab, setActiveTab] = useState<'uazap' | 'novavida' | 'asaas' | 'mailgun' | 'sendgrid'>('uazap');
   const [uazapCredentials, setUazapCredentials] = useState<UazapCredential[]>([]);
   const [novaVidaCredentials, setNovaVidaCredentials] = useState<NovaVidaCredential[]>([]);
   const [asaasCredentials, setAsaasCredentials] = useState<AsaasCredential[]>([]);
@@ -162,6 +162,8 @@ export default function AdminCredentials() {
   useEffect(() => {
     loadCredentials();
     loadMailgunCredential();
+    loadSendGridCredential();
+    loadEmailProviderSettings();
   }, []);
 
   const loadCredentials = async () => {
@@ -451,10 +453,33 @@ export default function AdminCredentials() {
   const [mailgunConfigured, setMailgunConfigured] = useState(false);
   const [savingMailgun, setSavingMailgun] = useState(false);
 
+  const [sendgridForm, setSendgridForm] = useState({ api_key: '' });
+  const [sendgridConfigured, setSendgridConfigured] = useState(false);
+  const [savingSendgrid, setSavingSendgrid] = useState(false);
+  const [activeEmailProvider, setActiveEmailProvider] = useState<'mailgun' | 'sendgrid'>('mailgun');
+  const [savingProvider, setSavingProvider] = useState(false);
+
   const loadMailgunCredential = async () => {
     try {
       const res = await api.get('/admin/mailgun-credentials');
       setMailgunConfigured(res.data.configured);
+    } catch {}
+  };
+
+  const loadSendGridCredential = async () => {
+    try {
+      const res = await api.get('/admin/sendgrid-credentials');
+      setSendgridConfigured(!!res.data.configured);
+    } catch {}
+  };
+
+  const loadEmailProviderSettings = async () => {
+    try {
+      const res = await api.get('/admin/sendgrid-credentials/settings/active');
+      const d = res.data?.data;
+      if (d?.active_provider) setActiveEmailProvider(d.active_provider);
+      if (typeof d?.mailgun_configured === 'boolean') setMailgunConfigured(d.mailgun_configured);
+      if (typeof d?.sendgrid_configured === 'boolean') setSendgridConfigured(d.sendgrid_configured);
     } catch {}
   };
 
@@ -469,10 +494,44 @@ export default function AdminCredentials() {
       notification.success('Mailgun configurado!', 'Chave API salva com sucesso.');
       setMailgunConfigured(true);
       setMailgunForm({ api_key: '', region: 'us' });
+      await loadEmailProviderSettings();
     } catch (error: any) {
       notification.error('Erro ao salvar', error.response?.data?.message || error.message);
     } finally {
       setSavingMailgun(false);
+    }
+  };
+
+  const handleSaveSendgrid = async () => {
+    if (!sendgridForm.api_key) {
+      notification.warning('Campo obrigatório', 'Informe a chave API do SendGrid (Twilio)');
+      return;
+    }
+    setSavingSendgrid(true);
+    try {
+      const res = await api.post('/admin/sendgrid-credentials', { api_key: sendgridForm.api_key, activate: true });
+      notification.success('SendGrid configurado!', 'Chave salva e provedor ativado.');
+      setSendgridConfigured(true);
+      setSendgridForm({ api_key: '' });
+      setActiveEmailProvider(res.data?.active_provider || 'sendgrid');
+      await loadEmailProviderSettings();
+    } catch (error: any) {
+      notification.error('Erro ao salvar', error.response?.data?.message || error.message);
+    } finally {
+      setSavingSendgrid(false);
+    }
+  };
+
+  const handleSetActiveProvider = async (provider: 'mailgun' | 'sendgrid') => {
+    setSavingProvider(true);
+    try {
+      await api.post('/admin/sendgrid-credentials/settings/active', { active_provider: provider });
+      setActiveEmailProvider(provider);
+      notification.success('Provedor ativo', provider === 'sendgrid' ? 'SendGrid' : 'Mailgun');
+    } catch (error: any) {
+      notification.error('Erro', error.response?.data?.message || error.message);
+    } finally {
+      setSavingProvider(false);
     }
   };
 
@@ -558,6 +617,17 @@ export default function AdminCredentials() {
             }`}
           >
             <FaAt /> Mailgun {mailgunConfigured ? '✅' : '⚠️'}
+          </button>
+          <button
+            onClick={() => setActiveTab('sendgrid')}
+            className={`flex-1 py-4 px-6 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'sendgrid'
+                ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg scale-105'
+                : 'bg-white/10 text-gray-300 hover:bg-white/20'
+            }`}
+          >
+            <FaEnvelope /> SendGrid {sendgridConfigured ? '✅' : '⚠️'}
+            {activeEmailProvider === 'sendgrid' ? ' ★' : ''}
           </button>
         </div>
 
@@ -1301,6 +1371,107 @@ export default function AdminCredentials() {
                     <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> Salvando...</>
                   ) : (
                     <><FaCheckCircle /> {mailgunConfigured ? 'Atualizar Chave API' : 'Salvar Chave API'}</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SENDGRID Content */}
+        {activeTab === 'sendgrid' && (
+          <div className="space-y-6">
+            <div className={`rounded-2xl p-6 border-2 ${
+              activeEmailProvider === 'sendgrid'
+                ? 'bg-blue-500/10 border-blue-500/40'
+                : sendgridConfigured
+                  ? 'bg-green-500/10 border-green-500/40'
+                  : 'bg-yellow-500/10 border-yellow-500/40'
+            }`}>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-xl bg-blue-500/20">
+                    <FaEnvelope className="text-2xl text-blue-300" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-white">
+                      {sendgridConfigured ? 'SendGrid (Twilio) configurado' : 'SendGrid não configurado'}
+                    </h3>
+                    <p className="text-gray-400 text-sm">
+                      Provedor ativo agora: <strong className="text-white">{activeEmailProvider === 'sendgrid' ? 'SendGrid' : 'Mailgun'}</strong>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={savingProvider || !mailgunConfigured}
+                    onClick={() => handleSetActiveProvider('mailgun')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold border ${
+                      activeEmailProvider === 'mailgun'
+                        ? 'bg-red-500/30 border-red-400 text-white'
+                        : 'border-white/20 text-white/70 hover:bg-white/10'
+                    }`}
+                  >
+                    Usar Mailgun
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingProvider || !sendgridConfigured}
+                    onClick={() => handleSetActiveProvider('sendgrid')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold border ${
+                      activeEmailProvider === 'sendgrid'
+                        ? 'bg-blue-500/30 border-blue-400 text-white'
+                        : 'border-white/20 text-white/70 hover:bg-white/10'
+                    }`}
+                  >
+                    Usar SendGrid
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-8 border-2 border-blue-500/30">
+              <h2 className="text-2xl font-black text-white mb-2 flex items-center gap-3">
+                <FaEnvelope className="text-blue-400" />
+                Configurar chave API SendGrid
+              </h2>
+              <p className="text-gray-400 text-sm mb-6">
+                Mailgun continua no sistema. Ao salvar a chave SendGrid, o provedor ativo passa a ser o SendGrid.
+                Domínios novos usam DNS do SendGrid. Webhook: <code className="text-blue-300">/api/webhook/sendgrid</code>
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-300 mb-2">API Key do SendGrid *</label>
+                  <input
+                    type="password"
+                    value={sendgridForm.api_key}
+                    onChange={(e) => setSendgridForm({ api_key: e.target.value })}
+                    placeholder="SG.xxxxxxxx..."
+                    className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-blue-500 focus:outline-none font-mono"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Twilio SendGrid → Settings → API Keys → Create API Key (Full Access ou Mail Send + Domain Auth + Event Webhook)
+                  </p>
+                </div>
+
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 text-sm text-blue-300">
+                  <strong>Como usar:</strong><br />
+                  1) Salve a chave aqui<br />
+                  2) Em E-mail Marketing → Domínios, cadastre o domínio de novo (DNS SendGrid)<br />
+                  3) Verifique o domínio e teste um envio único
+                </div>
+
+                <button
+                  onClick={handleSaveSendgrid}
+                  disabled={savingSendgrid}
+                  className="w-full py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {savingSendgrid ? (
+                    <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> Salvando...</>
+                  ) : (
+                    <><FaCheckCircle /> {sendgridConfigured ? 'Atualizar e ativar SendGrid' : 'Salvar e ativar SendGrid'}</>
                   )}
                 </button>
               </div>
