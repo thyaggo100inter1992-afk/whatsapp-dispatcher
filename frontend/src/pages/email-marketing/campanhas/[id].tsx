@@ -10,6 +10,7 @@ import {
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
+import * as XLSX from 'xlsx';
 
 interface Campaign {
   id: number; name: string; subject: string; subjects?: string[];
@@ -274,6 +275,31 @@ export default function CampaignDetail() {
     }
   };
 
+  const htmlToReadableText = (html: string): string => {
+    if (!html) return '';
+    return html
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<\/tr>/gi, '\n')
+      .replace(/<\/h[1-6]>/gi, '\n\n')
+      .replace(/<li[^>]*>/gi, '• ')
+      .replace(/<\/li>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  };
+
   const downloadReport = async () => {
     if (!campaign) return;
     try {
@@ -283,74 +309,125 @@ export default function CampaignDetail() {
         ? campaign.from_senders
         : [{ from_name: campaign.from_name, from_email: campaign.from_email }];
       const subjectsList = campaign.subjects?.length ? campaign.subjects : [campaign.subject];
-      const htmlPlain = (campaign.body_html || '')
-        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+      const msgTexto = campaign.body_text?.trim() || htmlToReadableText(campaign.body_html || '') || '(sem conteúdo)';
+      const msgHtml = campaign.body_html || '(sem HTML)';
 
-      const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const wb = XLSX.utils.book_new();
 
-      const lines = [
-        '========== RELATÓRIO COMPLETO DA CAMPANHA ==========',
-        `Nome;${esc(campaign.name)}`,
-        `Status;${esc(STATUS_LABELS[campaign.status] || campaign.status)}`,
-        `Gerado em;${esc(new Date().toLocaleString('pt-BR'))}`,
-        `Criada em;${esc(formatDt(campaign.created_at))}`,
-        `Agendada;${esc(formatDt(campaign.scheduled_at))}`,
-        `Iniciada;${esc(formatDt(campaign.started_at))}`,
-        `Concluída;${esc(formatDt(campaign.completed_at))}`,
-        '',
-        '========== CONFIGURAÇÕES ==========',
-        `Domínio;${esc(campaign.domain_name || '')}`,
-        `Lista de contatos;${esc(campaign.list_name || '')}`,
-        `Template;${esc(campaign.template_name || '')}`,
-        `Reply-To;${esc(campaign.reply_to || '')}`,
-        `Horário de trabalho;${esc(`${campaign.work_start_time || '00:00'} - ${campaign.work_end_time || '23:59'}`)}`,
-        `Delay entre envios;${esc(`${campaign.delay_seconds_min || 1}s - ${campaign.delay_seconds_max || 3}s`)}`,
-        `Pausa automática;${esc((campaign.pause_after || 0) > 0 ? `A cada ${campaign.pause_after} envios por ${campaign.pause_duration_minutes} min` : 'Desativada')}`,
-        '',
-        '========== REMETENTES ==========',
-        'Nome;E-mail',
-        ...sendersList.map(s => `${esc(s.from_name)};${esc(s.from_email)}`),
-        '',
-        '========== ASSUNTOS ==========',
-        ...subjectsList.map((s, i) => `Assunto ${i + 1};${esc(s)}`),
-        '',
-        '========== MENSAGEM / MODELO ==========',
-        `Mensagem (texto);${esc(campaign.body_text || htmlPlain || '(sem conteúdo)')}`,
-        `Mensagem (HTML);${esc(campaign.body_html || '(sem HTML)')}`,
-        '',
-        '========== ESTATÍSTICAS ==========',
-        `Total;${campaign.total_contacts}`,
-        `Enviados;${campaign.sent_count}`,
-        `Abertos;${campaign.opened_count}`,
-        `Cliques;${campaign.clicked_count}`,
-        `Rejeitados;${campaign.bounced_count}`,
-        `Spam;${campaign.complained_count}`,
-        `Falhos;${campaign.failed_count}`,
-        '',
-        '========== DESTINATÁRIOS ==========',
-        'E-mail;Nome;Status;Enviado em;Aberto em;Clicado em;Motivo do erro',
-        ...rows.map(r2 => [
-          esc(r2.email),
-          esc(r2.name || ''),
-          esc(RECIPIENT_STATUS[r2.status]?.label || r2.status),
-          esc(r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : ''),
-          esc(r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : ''),
-          esc(r2.clicked_at ? new Date(r2.clicked_at).toLocaleString('pt-BR') : ''),
-          esc(r2.error_message || ''),
-        ].join(';')),
+      // Aba 1 — Resumo
+      const resumo = [
+        ['RELATÓRIO COMPLETO DA CAMPANHA'],
+        [],
+        ['Campo', 'Valor'],
+        ['Nome', campaign.name],
+        ['Status', STATUS_LABELS[campaign.status] || campaign.status],
+        ['Gerado em', new Date().toLocaleString('pt-BR')],
+        ['Criada em', formatDt(campaign.created_at)],
+        ['Agendada', formatDt(campaign.scheduled_at)],
+        ['Iniciada', formatDt(campaign.started_at)],
+        ['Concluída', formatDt(campaign.completed_at)],
+        ['Domínio', campaign.domain_name || ''],
+        ['Lista de contatos', campaign.list_name || ''],
+        ['Template', campaign.template_name || ''],
+        ['Reply-To', campaign.reply_to || ''],
       ];
-      const bom = '\uFEFF';
-      const blob = new Blob([bom + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `relatorio-completo-${campaign.name.replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-      notification.success('Relatório completo baixado!', '');
+      const wsResumo = XLSX.utils.aoa_to_sheet(resumo);
+      wsResumo['!cols'] = [{ wch: 28 }, { wch: 60 }];
+      XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+
+      // Aba 2 — Configurações
+      const config = [
+        ['CONFIGURAÇÕES DE ENVIO'],
+        [],
+        ['Campo', 'Valor'],
+        ['Horário de trabalho', `${campaign.work_start_time || '00:00'} - ${campaign.work_end_time || '23:59'}`],
+        ['Delay mínimo (segundos)', campaign.delay_seconds_min || 1],
+        ['Delay máximo (segundos)', campaign.delay_seconds_max || 3],
+        ['Pausa a cada (envios)', campaign.pause_after || 0],
+        ['Duração da pausa (minutos)', campaign.pause_duration_minutes || 0],
+        ['Pausa automática', (campaign.pause_after || 0) > 0
+          ? `A cada ${campaign.pause_after} envios por ${campaign.pause_duration_minutes} min`
+          : 'Desativada'],
+      ];
+      const wsConfig = XLSX.utils.aoa_to_sheet(config);
+      wsConfig['!cols'] = [{ wch: 32 }, { wch: 50 }];
+      XLSX.utils.book_append_sheet(wb, wsConfig, 'Configuracoes');
+
+      // Aba 3 — Remetentes
+      const remetentes = [
+        ['Nome', 'E-mail'],
+        ...sendersList.map(s => [s.from_name || '', s.from_email || '']),
+      ];
+      const wsRem = XLSX.utils.aoa_to_sheet(remetentes);
+      wsRem['!cols'] = [{ wch: 40 }, { wch: 45 }];
+      XLSX.utils.book_append_sheet(wb, wsRem, 'Remetentes');
+
+      // Aba 4 — Assuntos
+      const assuntos = [
+        ['#', 'Assunto'],
+        ...subjectsList.map((s, i) => [i + 1, s || '']),
+      ];
+      const wsAss = XLSX.utils.aoa_to_sheet(assuntos);
+      wsAss['!cols'] = [{ wch: 6 }, { wch: 80 }];
+      XLSX.utils.book_append_sheet(wb, wsAss, 'Assuntos');
+
+      // Aba 5 — Mensagem (texto legível completo, uma célula com quebras de linha)
+      const mensagem = [
+        ['Tipo', 'Conteúdo'],
+        ['Mensagem (texto legível)', msgTexto],
+        ['Mensagem (HTML completo)', msgHtml],
+      ];
+      const wsMsg = XLSX.utils.aoa_to_sheet(mensagem);
+      wsMsg['!cols'] = [{ wch: 28 }, { wch: 100 }];
+      if (wsMsg['B2']) wsMsg['B2'].z = '@';
+      if (wsMsg['B3']) wsMsg['B3'].z = '@';
+      // Altura das linhas para facilitar leitura
+      wsMsg['!rows'] = [{ hpt: 20 }, { hpt: 220 }, { hpt: 220 }];
+      XLSX.utils.book_append_sheet(wb, wsMsg, 'Mensagem');
+
+      // Aba 6 — Estatísticas
+      const stats = [
+        ['Métrica', 'Quantidade'],
+        ['Total', campaign.total_contacts],
+        ['Enviados', campaign.sent_count],
+        ['Abertos', campaign.opened_count],
+        ['Cliques', campaign.clicked_count],
+        ['Rejeitados', campaign.bounced_count],
+        ['Spam', campaign.complained_count],
+        ['Falhos', campaign.failed_count],
+        ['Pendentes', Math.max(0, campaign.total_contacts - campaign.sent_count - campaign.failed_count)],
+        [],
+        ['Taxa de Abertura (%)', campaign.sent_count > 0 ? ((campaign.opened_count / campaign.sent_count) * 100).toFixed(1) : '0.0'],
+        ['Taxa de Cliques (%)', campaign.sent_count > 0 ? ((campaign.clicked_count / campaign.sent_count) * 100).toFixed(1) : '0.0'],
+        ['Taxa de Falha (%)', campaign.total_contacts > 0 ? ((campaign.failed_count / campaign.total_contacts) * 100).toFixed(1) : '0.0'],
+      ];
+      const wsStats = XLSX.utils.aoa_to_sheet(stats);
+      wsStats['!cols'] = [{ wch: 28 }, { wch: 16 }];
+      XLSX.utils.book_append_sheet(wb, wsStats, 'Estatisticas');
+
+      // Aba 7 — Destinatários
+      const destinatarios = [
+        ['E-mail', 'Nome', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Motivo do erro'],
+        ...rows.map(r2 => [
+          r2.email || '',
+          r2.name || '',
+          RECIPIENT_STATUS[r2.status]?.label || r2.status,
+          r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : '',
+          r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : '',
+          r2.clicked_at ? new Date(r2.clicked_at).toLocaleString('pt-BR') : '',
+          r2.error_message || '',
+        ]),
+      ];
+      const wsDest = XLSX.utils.aoa_to_sheet(destinatarios);
+      wsDest['!cols'] = [
+        { wch: 35 }, { wch: 25 }, { wch: 12 },
+        { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 60 },
+      ];
+      XLSX.utils.book_append_sheet(wb, wsDest, 'Destinatarios');
+
+      const fileName = `relatorio-${campaign.name.replace(/[^\w\-]+/g, '-').replace(/-+/g, '-').slice(0, 40)}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      notification.success('Relatório Excel baixado!', 'Arquivo organizado em abas');
     } catch (e: any) {
       notification.error('Erro ao gerar relatório', e.message);
     }
@@ -764,7 +841,7 @@ export default function CampaignDetail() {
                   </button>
                   <button onClick={downloadReport}
                     className="px-5 py-3 bg-green-500/20 hover:bg-green-500/30 text-green-300 border-2 border-green-500/30 rounded-xl font-bold flex items-center gap-2 transition-all">
-                    <FaDownload /> Relatório CSV
+                    <FaDownload /> Relatório Excel
                   </button>
                   {(campaign.failed_count || 0) > 0 && (
                     <button onClick={handleResendFailed} disabled={resending}
