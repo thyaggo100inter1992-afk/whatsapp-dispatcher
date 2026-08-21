@@ -12,30 +12,71 @@ const resolveTxt  = promisify(dns.resolveTxt);
 const resolveMx   = promisify(dns.resolveMx);
 const resolveCname = promisify(dns.resolveCname);
 
-// Verifica o status real de cada registro DNS diretamente (independente da API do provedor)
+/** Normaliza hostname do registro DNS (Mailgun às vezes manda só o prefixo) */
+function dnsHost(name: string | undefined, domain: string): string {
+  const n = String(name || domain || '').trim().replace(/\.$/, '');
+  if (!n || n === '@') return domain;
+  if (n.toLowerCase().endsWith(`.${domain.toLowerCase()}`) || n.toLowerCase() === domain.toLowerCase()) return n;
+  if (n.includes('.')) return n;
+  return `${n}.${domain}`;
+}
+
+/** Compara valores TXT de forma flexível (SPF ~all/-all, DMARC parcial, DKIM) */
+function txtMatches(actual: string, expected: string, recName: string): boolean {
+  const a = actual.toLowerCase().replace(/\s+/g, ' ').trim();
+  const e = expected.toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!a) return false;
+  if (a === e) return true;
+  if (e && a.includes(e.substring(0, Math.min(40, e.length)))) return true;
+
+  // SPF: aceita qualquer SPF que inclua mailgun.org (~all ou -all)
+  if (e.includes('v=spf1') || a.includes('v=spf1')) {
+    return a.includes('v=spf1') && a.includes('include:mailgun.org');
+  }
+  // DKIM
+  if ((recName || '').toLowerCase().includes('_domainkey')) {
+    return a.includes('k=rsa') || a.includes('p=');
+  }
+  // DMARC: qualquer política DMARC válida no host
+  if ((recName || '').toLowerCase().includes('_dmarc') || e.includes('v=dmarc1')) {
+    return a.startsWith('v=dmarc1');
+  }
+  return false;
+}
+
+// Verifica o status real de cada registro DNS diretamente
 async function checkDnsRecord(rec: any, domain: string): Promise<'valid' | 'unknown'> {
   try {
     const type = (rec.record_type || rec.type || '').toUpperCase();
-    const name = rec.name || domain;
-    const expectedValue = (rec.value || '').toLowerCase().trim();
+    const name = dnsHost(rec.name, domain);
+    const expectedValue = String(rec.value || '').trim();
 
     if (type === 'TXT') {
       const results = await resolveTxt(name);
-      const flat = results.map((r: string[]) => r.join('').toLowerCase().trim());
-      return flat.some((v: string) => v === expectedValue || v.includes(expectedValue.substring(0, 20))) ? 'valid' : 'unknown';
+      const flat = results.map((r: string[]) => r.join('').trim());
+      return flat.some((v: string) => txtMatches(v, expectedValue, name)) ? 'valid' : 'unknown';
     }
 
     if (type === 'MX') {
       const results = await resolveMx(domain);
-      const found = results.some((r: any) => (r.exchange || '').toLowerCase().replace(/\.$/, '') === expectedValue.replace(/\.$/, ''));
+      const expected = expectedValue.toLowerCase().replace(/\.$/, '');
+      const found = results.some((r: any) => {
+        const ex = (r.exchange || '').toLowerCase().replace(/\.$/, '');
+        return ex === expected || (expected.includes('mailgun') && ex.includes('mailgun.org'));
+      });
       return found ? 'valid' : 'unknown';
     }
 
     if (type === 'CNAME') {
-      const result = await resolveCname(name);
-      const resolved = (result[0] || result || '').toString().toLowerCase().replace(/\.$/, '');
-      const expected = expectedValue.replace(/\.$/, '');
-      return resolved === expected ? 'valid' : 'unknown';
+      try {
+        const result = await resolveCname(name);
+        const resolved = (result[0] || result || '').toString().toLowerCase().replace(/\.$/, '');
+        const expected = expectedValue.toLowerCase().replace(/\.$/, '');
+        if (resolved === expected || resolved.endsWith('mailgun.org')) return 'valid';
+      } catch {
+        // Alguns provedores publicam CNAME como A/ALIAS — tenta TXT/resolve genérico
+      }
+      return 'unknown';
     }
 
     return 'unknown';
@@ -207,11 +248,37 @@ export const verifyDomain = async (req: Request, res: Response) => {
 
     const domainName = domainRow.rows[0].domain;
 
-    // Buscar registros DNS atuais do banco
-    let storedDns: any[] = domainRow.rows[0].dns_records || [];
+    // 1) Pergunta ao Mailgun (fonte da verdade para envio)
+    let mailgunActive = false;
+    let mgDns: any[] = [];
+    try {
+      const mg = await getMailgunClient();
+      try { await mg.domains.verify(domainName); } catch { /* ok */ }
+      const mgDomain: any = await mg.domains.get(domainName);
+      const state = String(mgDomain?.domain?.state || mgDomain?.state || '').toLowerCase();
+      mailgunActive = state === 'active';
+      mgDns = []
+        .concat(mgDomain?.receiving_dns_records || mgDomain?.domain?.receiving_dns_records || [])
+        .concat(mgDomain?.sending_dns_records || mgDomain?.domain?.sending_dns_records || []);
+      console.log(`[verify-domain] ${domainName} mailgun state=${state} active=${mailgunActive}`);
+    } catch (e: any) {
+      console.warn(`[verify-domain] Mailgun get/verify falhou:`, e?.message || e);
+    }
 
-    // Garantir que o registro DMARC sempre está na lista
-    const hasDmarc = storedDns.some((r: any) => (r.name || '').startsWith('_dmarc.'));
+    // 2) Monta lista de registros (prioriza os do Mailgun se vierem atualizados)
+    let storedDns: any[] = Array.isArray(domainRow.rows[0].dns_records) ? [...domainRow.rows[0].dns_records] : [];
+    if (mgDns.length > 0) {
+      // Mantém flags valid locais quando possível; atualiza value/name do provedor
+      const byKey = (r: any) =>
+        `${(r.record_type || r.type || '').toUpperCase()}|${(r.name || '').toLowerCase()}|${String(r.value || '').slice(0, 30).toLowerCase()}`;
+      const map = new Map(storedDns.map((r: any) => [byKey(r), r]));
+      storedDns = mgDns.map((r: any) => {
+        const prev = map.get(byKey(r));
+        return { ...r, valid: prev?.valid || r.valid || 'unknown' };
+      });
+    }
+
+    const hasDmarc = storedDns.some((r: any) => (r.name || '').toLowerCase().includes('_dmarc'));
     if (!hasDmarc) {
       storedDns.push({
         record_type: 'TXT',
@@ -222,35 +289,58 @@ export const verifyDomain = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar cada registro DNS diretamente (sem depender da API do provedor)
-    const checkedDns = await Promise.all(
+    // 3) Checagem DNS local (flexível)
+    let checkedDns = await Promise.all(
       storedDns.map(async (rec: any) => ({
         ...rec,
         valid: await checkDnsRecord(rec, domainName)
       }))
     );
 
-    // Domínio está ativo quando os registros ESSENCIAIS de envio estão válidos:
-    // SPF (TXT com v=spf1) + DKIM (TXT com smtp._domainkey)
+    // Se Mailgun já marcou o registro como valid no payload, respeita
+    checkedDns = checkedDns.map((rec: any) => {
+      const fromMg = mgDns.find((m: any) =>
+        String(m.name || '').toLowerCase() === String(rec.name || '').toLowerCase() &&
+        String(m.record_type || m.type || '').toUpperCase() === String(rec.record_type || rec.type || '').toUpperCase()
+      );
+      if (fromMg && String(fromMg.valid || '').toLowerCase() === 'valid') {
+        return { ...rec, valid: 'valid' };
+      }
+      return rec;
+    });
+
+    // Se o Mailgun confirma domínio ativo, marca SPF/DKIM essenciais como válidos
+    if (mailgunActive) {
+      checkedDns = checkedDns.map((r: any) => {
+        const type = (r.record_type || r.type || '').toUpperCase();
+        const n = (r.name || '').toLowerCase();
+        const v = String(r.value || '').toLowerCase();
+        const isSpf = type === 'TXT' && v.includes('v=spf1');
+        const isDkim = type === 'TXT' && (n.includes('_domainkey') || v.includes('k=rsa'));
+        const isMx = type === 'MX';
+        if (isSpf || isDkim || isMx) return { ...r, valid: 'valid' };
+        return r;
+      });
+    }
+
     const spfOk = checkedDns.some((r: any) =>
       (r.record_type || r.type || '').toUpperCase() === 'TXT' &&
-      !(r.name || '').includes('_domainkey') &&
+      String(r.value || '').toLowerCase().includes('v=spf1') &&
+      r.valid === 'valid'
+    ) || checkedDns.some((r: any) =>
+      (r.record_type || r.type || '').toUpperCase() === 'TXT' &&
+      !(r.name || '').toLowerCase().includes('_domainkey') &&
+      !(r.name || '').toLowerCase().includes('_dmarc') &&
       r.valid === 'valid'
     );
     const dkimOk = checkedDns.some((r: any) =>
       (r.record_type || r.type || '').toUpperCase() === 'TXT' &&
-      (r.name || '').includes('_domainkey') &&
+      (r.name || '').toLowerCase().includes('_domainkey') &&
       r.valid === 'valid'
     );
     const allVerified = checkedDns.every((r: any) => r.valid === 'valid');
-    const canSend = spfOk && dkimOk;
-    const newStatus = allVerified ? 'active' : (canSend ? 'active' : 'unverified');
-
-    // Também notificar o provedor da verificação (best-effort, erros ignorados)
-    try {
-      const mg = await getMailgunClient();
-      await mg.domains.verify(domainName);
-    } catch { /* ignorar erros do provedor */ }
+    const canSend = mailgunActive || (spfOk && dkimOk);
+    const newStatus = canSend ? (allVerified ? 'active' : 'active') : 'unverified';
 
     const dnsToSave = JSON.stringify(checkedDns);
     await pool.query(
@@ -258,13 +348,24 @@ export const verifyDomain = async (req: Request, res: Response) => {
       [newStatus, id, dnsToSave]
     );
 
-    // Quando o domínio está ativo, garantir que webhooks estejam registrados
     if (canSend) {
       registerMailgunWebhooks(domainName).catch(() => {});
     }
 
     const updated = await pool.query(`SELECT * FROM email_marketing_domains WHERE id=$1`, [id]);
-    res.json({ success: true, verified: canSend, allVerified, status: newStatus, data: updated.rows[0] });
+    res.json({
+      success: true,
+      verified: canSend,
+      allVerified,
+      mailgunActive,
+      status: newStatus,
+      message: canSend
+        ? (allVerified
+          ? 'Domínio verificado (todos os registros OK).'
+          : 'Domínio pronto para envio (Mailgun/SPF+DKIM OK). CNAME/DMARC podem ficar pendentes.')
+        : 'Ainda não foi possível confirmar SPF/DKIM. Clique em Verificar novamente em alguns minutos.',
+      data: updated.rows[0]
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

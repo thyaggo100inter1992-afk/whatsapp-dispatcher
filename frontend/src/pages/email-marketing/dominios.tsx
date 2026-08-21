@@ -120,8 +120,18 @@ export default function Dominios() {
       const r = await api.post(`/email-marketing/domains/${id}/verify`);
       setLastChecked(new Date());
       if (r.data.data) setShowDns(prev => prev?.id === id ? r.data.data : prev);
-      if (r.data.verified) { notification.success('Domínio verificado!', 'Verificação concluída!'); await loadDomains(); }
-      else { notification.warning('DNS não propagado ainda', 'O sistema continua verificando em segundo plano.'); await loadDomains(); }
+      if (r.data.verified) {
+        notification.success(
+          r.data.allVerified ? 'Domínio totalmente verificado!' : 'Domínio pronto para envio!',
+          r.data.message || (r.data.mailgunActive
+            ? 'Mailgun confirmou o domínio. CNAME de tracking pode ficar pendente.'
+            : 'SPF e DKIM OK.')
+        );
+        await loadDomains();
+      } else {
+        notification.warning('Ainda não verificado', r.data.message || 'O sistema continua verificando em segundo plano.');
+        await loadDomains();
+      }
     } catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
     finally { setVerifying(null); }
   };
