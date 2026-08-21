@@ -1,9 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { FaPaperPlane, FaArrowLeft, FaSpinner, FaExclamationTriangle } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
+
+const EmailBodyEditor = dynamic(() => import('@/components/EmailBodyEditor'), { ssr: false });
 
 interface Domain { id: number; domain: string; status: string; }
 
@@ -199,15 +202,13 @@ export default function EnvioUnico() {
               </div>
               <div>
                 <label className={labelCls}>Corpo do E-mail *</label>
-                <textarea value={form.body_html} onChange={e => setForm({ ...form, body_html: e.target.value })}
-                  placeholder={'Olá {{nome}}!\n\nSeu texto aqui...\n\n(Pode colar texto normal — as quebras de linha são preservadas)'}
-                  rows={12}
-                  className="w-full px-6 py-4 text-base bg-dark-700/80 backdrop-blur-md border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/30 transition-all font-mono resize-y" />
-                <p className="text-sm text-white/50 mt-2">
-                  Pode colar texto normal (Enter = nova linha). Use{' '}
-                  <code className="bg-white/10 px-1 rounded">{'{{nome}}'}</code> e{' '}
-                  <code className="bg-white/10 px-1 rounded">{'{{email}}'}</code> para personalização.
-                </p>
+                <EmailBodyEditor
+                  value={form.body_html}
+                  onChange={html => setForm({ ...form, body_html: html })}
+                  accent="blue"
+                  minHeight={320}
+                  placeholder="Digite ou cole o texto do e-mail. Use a barra para formatar e inserir link do WhatsApp."
+                />
               </div>
             </div>
           </div>

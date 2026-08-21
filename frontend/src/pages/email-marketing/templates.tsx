@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { FaFileAlt, FaArrowLeft, FaPlus, FaEdit, FaTrash, FaSpinner, FaCheckCircle, FaTimes, FaEye } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
+
+const EmailBodyEditor = dynamic(() => import('@/components/EmailBodyEditor'), { ssr: false });
 
 interface Template { id: number; name: string; subject: string; body_html: string; body_text: string; created_at: string; }
 
@@ -81,14 +84,14 @@ export default function Templates() {
                 placeholder="Assunto do e-mail" className={inputCls} />
             </div>
             <div>
-              <label className={labelCls}>Corpo HTML</label>
-              <textarea value={form.body_html} onChange={e => setForm({ ...form, body_html: e.target.value })}
-                placeholder="<p>Olá {{nome}},</p><p>Conteúdo do template...</p>"
-                rows={14}
-                className="w-full px-5 py-4 text-base bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-purple-500 focus:ring-4 focus:ring-purple-500/30 transition-all font-mono resize-y" />
-              <p className="text-sm text-white/50 mt-2">
-                Variáveis: <code className="bg-white/10 px-1 rounded">{'{{nome}}'}</code> e <code className="bg-white/10 px-1 rounded">{'{{email}}'}</code>
-              </p>
+              <label className={labelCls}>Corpo do E-mail</label>
+              <EmailBodyEditor
+                value={form.body_html}
+                onChange={html => setForm({ ...form, body_html: html })}
+                accent="purple"
+                minHeight={320}
+                placeholder="Digite ou cole o conteúdo do template..."
+              />
             </div>
             <div className="flex gap-3 pt-2">
               <button onClick={handleSave} disabled={saving}

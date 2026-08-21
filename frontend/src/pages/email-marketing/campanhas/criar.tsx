@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import {
@@ -9,6 +10,8 @@ import {
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
+
+const EmailBodyEditor = dynamic(() => import('@/components/EmailBodyEditor'), { ssr: false });
 
 interface Domain { id: number; domain: string; status: string; }
 interface EmailList { id: number; name: string; total_contacts: number; }
@@ -586,15 +589,14 @@ export default function CriarCampanha() {
                 </select>
               </div>
               <div>
-                <label className={labelCls}>Corpo do E-mail (HTML)</label>
-                <textarea value={bodyHtml} onChange={e => setBodyHtml(e.target.value)}
-                  placeholder="<p>Olá {{nome}},</p><p>Conteúdo da sua campanha...</p>"
-                  rows={10}
-                  className="w-full px-5 py-4 text-base bg-dark-700/80 backdrop-blur-md border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/30 transition-all font-mono resize-y" />
-                <p className="text-sm text-white/50 mt-2">
-                  Use <code className="bg-white/10 px-1 rounded">{'{{nome}}'}</code> e{' '}
-                  <code className="bg-white/10 px-1 rounded">{'{{email}}'}</code> para personalização por destinatário.
-                </p>
+                <label className={labelCls}>Corpo do E-mail</label>
+                <EmailBodyEditor
+                  value={bodyHtml}
+                  onChange={setBodyHtml}
+                  accent="orange"
+                  minHeight={300}
+                  placeholder="Digite ou cole o conteúdo. Use a barra para formatar e inserir WhatsApp."
+                />
               </div>
             </div>
           </div>

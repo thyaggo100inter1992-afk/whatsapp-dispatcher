@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import {
@@ -11,6 +12,8 @@ import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
 import * as XLSX from 'xlsx';
+
+const EmailBodyEditor = dynamic(() => import('@/components/EmailBodyEditor'), { ssr: false });
 
 interface Campaign {
   id: number; name: string; subject: string; subjects?: string[];
@@ -715,12 +718,14 @@ export default function CampaignDetail() {
 
               {/* Mensagem */}
               <div>
-                <label className="block text-sm font-bold text-white/80 mb-2">✉️ Mensagem / Modelo (HTML)</label>
-                <textarea value={editForm.body_html}
-                  onChange={e => setEditForm(f => ({ ...f, body_html: e.target.value }))}
-                  rows={8}
-                  placeholder="Cole ou edite o HTML da mensagem..."
-                  className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-orange-500/60 resize-y" />
+                <label className="block text-sm font-bold text-white/80 mb-2">✉️ Mensagem / Modelo</label>
+                <EmailBodyEditor
+                  value={editForm.body_html}
+                  onChange={html => setEditForm(f => ({ ...f, body_html: html }))}
+                  accent="orange"
+                  minHeight={260}
+                  placeholder="Edite o conteúdo da mensagem..."
+                />
               </div>
 
               {/* Horário */}
