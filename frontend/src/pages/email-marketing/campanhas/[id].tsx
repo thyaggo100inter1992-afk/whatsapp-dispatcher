@@ -133,13 +133,25 @@ export default function CampaignDetail() {
 
     setCountdown(POLL_INTERVAL);
     countdownTimerRef.current = setInterval(() => {
-      setCountdown(prev => (prev <= 1 ? POLL_INTERVAL : prev - 1));
+      setCountdown(prev => Math.max(0, prev - 1));
     }, 1000);
+
     pollTimerRef.current = setTimeout(async () => {
       pollTimerRef.current = null;
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
       setIsPolling(true);
-      await loadData(true);
-      setIsPolling(false);
+      try {
+        await loadData(true);
+      } finally {
+        setIsPolling(false);
+        // Continua o loop em tempo real enquanto a campanha estiver ativa
+        if (isActive(campaignRef.current)) {
+          schedulePoll();
+        }
+      }
     }, POLL_INTERVAL * 1000);
   };
 

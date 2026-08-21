@@ -86,9 +86,17 @@ export default function Campanhas() {
 
     pollTimerRef.current = setTimeout(async () => {
       pollTimerRef.current = null;
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
       setIsPolling(true);
-      await loadCampaigns(true);
-      setIsPolling(false);
+      try {
+        await loadCampaigns(true);
+      } finally {
+        setIsPolling(false);
+        schedulePoll();
+      }
     }, interval * 1000);
   };
 
