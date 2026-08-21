@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from '
 import {
   FaBold, FaItalic, FaUnderline, FaListUl, FaListOl, FaLink, FaUnlink,
   FaAlignLeft, FaAlignCenter, FaAlignRight, FaWhatsapp, FaEye, FaCode,
-  FaUndo, FaRedo, FaEraser, FaTimes,
+  FaUndo, FaRedo, FaEraser, FaTimes, FaHighlighter,
 } from 'react-icons/fa';
 
 type Accent = 'blue' | 'orange' | 'purple';
@@ -76,6 +76,8 @@ export default function EmailBodyEditor({
   const [waPhone, setWaPhone] = useState('');
   const [waMessage, setWaMessage] = useState('');
   const [waLabel, setWaLabel] = useState('Falar no WhatsApp');
+  const [textColor, setTextColor] = useState('#111111');
+  const [highlightColor, setHighlightColor] = useState('#fff59d');
   const colors = ACCENT[accent];
 
   const readEditorHtml = () => {
@@ -163,6 +165,60 @@ export default function EmailBodyEditor({
   const insertHtml = (html: string) => {
     focusEditor();
     document.execCommand('insertHTML', false, html);
+    emit();
+    saveSelection();
+  };
+
+  /** Aplica cor/estilo na seleção (com fallback por span inline — melhor p/ e-mail) */
+  const applyInlineStyle = (cssProp: 'color' | 'background-color', value: string) => {
+    restoreSelection();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (range.collapsed) return; // precisa selecionar o texto
+
+    // Destaque: preferir span com background (mais estável em e-mail / Chrome)
+    if (cssProp === 'background-color') {
+      const span = document.createElement('span');
+      span.style.backgroundColor = value;
+      try {
+        range.surroundContents(span);
+      } catch {
+        const frag = range.extractContents();
+        span.appendChild(frag);
+        range.insertNode(span);
+      }
+      // Reposiciona seleção no span
+      try {
+        const next = document.createRange();
+        next.selectNodeContents(span);
+        sel.removeAllRanges();
+        sel.addRange(next);
+      } catch { /* ignore */ }
+      emit();
+      saveSelection();
+      return;
+    }
+
+    try {
+      document.execCommand('styleWithCSS', false, 'true');
+    } catch { /* ignore */ }
+    document.execCommand('foreColor', false, value);
+
+    // Converte <font color> → <span style="color"> (melhor p/ clientes de e-mail)
+    const el = editorRef.current;
+    if (el) {
+      el.querySelectorAll('font[color]').forEach(font => {
+        const f = font as HTMLFontElement;
+        const c = f.getAttribute('color');
+        if (!c) return;
+        const span = document.createElement('span');
+        span.style.color = c;
+        while (f.firstChild) span.appendChild(f.firstChild);
+        f.parentNode?.replaceChild(span, f);
+      });
+    }
+
     emit();
     saveSelection();
   };
@@ -303,21 +359,54 @@ export default function EmailBodyEditor({
           <option value="6">Enorme</option>
           <option value="7">Máximo</option>
         </select>
-        <input
-          type="color"
+        <label
           title="Cor do texto"
-          defaultValue="#111111"
-          className="w-8 h-8 bg-transparent cursor-pointer rounded border border-white/20"
-          onFocus={saveSelection}
+          className="relative w-8 h-8 rounded border border-white/20 cursor-pointer overflow-hidden flex items-center justify-center bg-white/10"
           onMouseDown={() => saveSelection()}
-          onChange={e => {
-            const color = e.target.value;
-            restoreSelection();
-            document.execCommand('foreColor', false, color);
-            emit();
-            saveSelection();
-          }}
-        />
+        >
+          <span className="text-[10px] font-black text-white leading-none pointer-events-none" aria-hidden>A</span>
+          <span
+            className="absolute bottom-0 left-0 right-0 h-1.5 pointer-events-none"
+            style={{ background: textColor }}
+          />
+          <input
+            type="color"
+            aria-label="Cor do texto"
+            value={textColor}
+            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+            onFocus={saveSelection}
+            onMouseDown={() => saveSelection()}
+            onChange={e => {
+              const color = e.target.value;
+              setTextColor(color);
+              applyInlineStyle('color', color);
+            }}
+          />
+        </label>
+        <label
+          title="Marcar texto (destaque)"
+          className="relative w-8 h-8 rounded border border-white/20 cursor-pointer overflow-hidden flex items-center justify-center bg-white/10"
+          onMouseDown={() => saveSelection()}
+        >
+          <FaHighlighter className="text-yellow-300 text-sm pointer-events-none" />
+          <span
+            className="absolute bottom-0 left-0 right-0 h-1.5 pointer-events-none"
+            style={{ background: highlightColor }}
+          />
+          <input
+            type="color"
+            aria-label="Marcar texto"
+            value={highlightColor}
+            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+            onFocus={saveSelection}
+            onMouseDown={() => saveSelection()}
+            onChange={e => {
+              const color = e.target.value;
+              setHighlightColor(color);
+              applyInlineStyle('background-color', color);
+            }}
+          />
+        </label>
         <span className="w-px h-5 bg-white/15 mx-1" />
         <ToolBtn title="Inserir link" onClick={() => { setShowLink(true); setLinkText(''); }}><FaLink /></ToolBtn>
         <ToolBtn title="Remover link" onClick={() => run('unlink')}><FaUnlink /></ToolBtn>
@@ -485,11 +574,11 @@ export default function EmailBodyEditor({
           color: #9ca3af;
           pointer-events: none;
         }
-        .email-body-editor,
-        .email-body-editor * {
-          color: inherit;
+        /* NÃO forçar color:inherit nos filhos — isso anulava foreColor / destaque */
+        .email-body-editor {
+          color: #111111;
         }
-        .email-body-editor a { color: #2563eb !important; text-decoration: underline; }
+        .email-body-editor a { color: #2563eb; text-decoration: underline; }
         .email-body-editor ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
         .email-body-editor ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
         .email-body-editor p { margin: 0.5rem 0; }
