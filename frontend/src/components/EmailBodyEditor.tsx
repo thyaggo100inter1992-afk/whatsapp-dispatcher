@@ -118,30 +118,83 @@ export default function EmailBodyEditor({
     lastEmitted.current = incoming;
   }, [value]);
 
-  const focusEditor = () => {
+  const savedRange = useRef<Range | null>(null);
+  const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const saveSelection = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
+      savedRange.current = sel.getRangeAt(0).cloneRange();
+    }
+  };
+
+  const restoreSelection = () => {
     const el = editorRef.current;
     if (!el) return;
     el.focus();
+    const sel = window.getSelection();
+    if (!sel) return;
+    if (savedRange.current) {
+      try {
+        sel.removeAllRanges();
+        sel.addRange(savedRange.current);
+        return;
+      } catch { /* range inválido */ }
+    }
+    // Sem seleção salva: vai para o final
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  };
+
+  const focusEditor = () => {
+    restoreSelection();
   };
 
   const run = (cmd: string, val?: string) => {
     focusEditor();
     document.execCommand(cmd, false, val);
     emit();
+    saveSelection();
   };
 
   const insertHtml = (html: string) => {
     focusEditor();
     document.execCommand('insertHTML', false, html);
     emit();
+    saveSelection();
   };
 
   const insertVariable = (token: string) => {
-    focusEditor();
-    // insertText evita quebrar {{nome}} com tags HTML no meio
+    if (mode === 'html') {
+      const ta = htmlTextareaRef.current;
+      if (!ta) {
+        setHtmlSource(prev => `${prev}${token} `);
+        return;
+      }
+      const start = ta.selectionStart ?? ta.value.length;
+      const end = ta.selectionEnd ?? start;
+      const next = `${ta.value.slice(0, start)}${token} ${ta.value.slice(end)}`;
+      setHtmlSource(next);
+      lastEmitted.current = next;
+      onChange(next);
+      requestAnimationFrame(() => {
+        ta.focus();
+        const pos = start + token.length + 1;
+        ta.setSelectionRange(pos, pos);
+      });
+      return;
+    }
+    if (mode === 'preview') {
+      setMode('visual');
+    }
+    restoreSelection();
     const ok = document.execCommand('insertText', false, `${token} `);
     if (!ok) insertHtml(`${token}&nbsp;`);
     else emit();
+    saveSelection();
   };
 
   const applyLink = () => {
@@ -251,25 +304,9 @@ export default function EmailBodyEditor({
         <span className="w-px h-5 bg-white/15 mx-1" />
         <ToolBtn title="Inserir link" onClick={() => { setShowLink(true); setLinkText(''); }}><FaLink /></ToolBtn>
         <ToolBtn title="Remover link" onClick={() => run('unlink')}><FaUnlink /></ToolBtn>
-        <ToolBtn title="Link WhatsApp (rastreável)" onClick={() => setShowWa(true)}>
+        <ToolBtn title="Link WhatsApp" onClick={() => setShowWa(true)}>
           <FaWhatsapp className="text-green-400" />
         </ToolBtn>
-        <span className="w-px h-5 bg-white/15 mx-1" />
-        {[
-          '{{nome}}', '{{email}}', '{{cpf}}', '{{telefone}}',
-          '{{var1}}', '{{var2}}', '{{var3}}', '{{var4}}', '{{var5}}',
-          '{{saudacao}}', '{{hora}}', '{{data}}', '{{protocolo}}',
-        ].map(token => (
-          <button
-            key={token}
-            type="button"
-            onMouseDown={e => e.preventDefault()}
-            onClick={() => insertVariable(token)}
-            className={`px-2 py-1.5 rounded-lg text-xs font-mono text-white/80 ${colors.btn}`}
-          >
-            {token}
-          </button>
-        ))}
         <span className="w-px h-5 bg-white/15 mx-1" />
         <ToolBtn title="Desfazer" onClick={() => run('undo')}><FaUndo /></ToolBtn>
         <ToolBtn title="Refazer" onClick={() => run('redo')}><FaRedo /></ToolBtn>
@@ -286,8 +323,10 @@ export default function EmailBodyEditor({
           ref={editorRef}
           contentEditable
           suppressContentEditableWarning
-          onInput={() => emit()}
-          onBlur={() => emit()}
+          onInput={() => { emit(); saveSelection(); }}
+          onKeyUp={saveSelection}
+          onMouseUp={saveSelection}
+          onBlur={() => { saveSelection(); emit(); }}
           data-placeholder={placeholder}
           className="email-body-editor px-4 py-3 text-[15px] leading-relaxed outline-none overflow-y-auto bg-white"
           style={{ minHeight, color: '#111111', caretColor: '#111111' }}
@@ -296,6 +335,7 @@ export default function EmailBodyEditor({
 
       {mode === 'html' && (
         <textarea
+          ref={htmlTextareaRef}
           value={htmlSource}
           onChange={e => {
             setHtmlSource(e.target.value);
@@ -316,9 +356,58 @@ export default function EmailBodyEditor({
         />
       )}
 
-      <div className="px-3 py-2 border-t border-white/10 text-xs text-white/45 flex flex-wrap gap-x-4 gap-y-1">
-        <span>Link WhatsApp usa <code className="text-white/60">wa.me</code> e é rastreado pelo Mailgun (conta em Clicados).</span>
-        <span>Variáveis contato: {'{{nome}}'} {'{{email}}'} {'{{cpf}}'} {'{{telefone}}'} {'{{var1}}'}…{'{{var5}}'} · Sistema: {'{{saudacao}}'} {'{{hora}}'} {'{{data}}'} {'{{protocolo}}'}</span>
+      {/* Variáveis — só embaixo, como botões */}
+      <div className="px-4 py-3 border-t border-white/10 bg-dark-900/40 space-y-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-white/50 mb-2">Contato</p>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { token: '{{nome}}', tip: 'Nome do destinatário' },
+              { token: '{{email}}', tip: 'E-mail do destinatário' },
+              { token: '{{cpf}}', tip: 'CPF' },
+              { token: '{{telefone}}', tip: 'Telefone' },
+              { token: '{{var1}}', tip: 'Variável 1' },
+              { token: '{{var2}}', tip: 'Variável 2' },
+              { token: '{{var3}}', tip: 'Variável 3' },
+              { token: '{{var4}}', tip: 'Variável 4' },
+              { token: '{{var5}}', tip: 'Variável 5' },
+            ].map(({ token, tip }) => (
+              <button
+                key={token}
+                type="button"
+                title={tip}
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => insertVariable(token)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-mono border border-white/15 bg-white/5 text-white/85 transition-all ${colors.btn} hover:border-white/30`}
+              >
+                {token}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-white/50 mb-2">Sistema</p>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { token: '{{saudacao}}', tip: 'Bom dia / Boa tarde / Boa noite' },
+              { token: '{{hora}}', tip: 'Hora:minuto:segundo' },
+              { token: '{{data}}', tip: 'Dia/mês/ano' },
+              { token: '{{protocolo}}', tip: 'Protocolo de 10 dígitos' },
+            ].map(({ token, tip }) => (
+              <button
+                key={token}
+                type="button"
+                title={tip}
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => insertVariable(token)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-mono border border-cyan-500/30 bg-cyan-500/10 text-cyan-200 transition-all hover:bg-cyan-500/20 hover:border-cyan-400/50`}
+              >
+                {token}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-[11px] text-white/40">Clique no botão para inserir no ponto do cursor.</p>
       </div>
 
       {showLink && (
@@ -348,7 +437,6 @@ export default function EmailBodyEditor({
               <h3 className="text-lg font-black text-white flex items-center gap-2"><FaWhatsapp className="text-green-400" /> Link WhatsApp</h3>
               <button type="button" onClick={() => setShowWa(false)} className="text-white/50 hover:text-white"><FaTimes /></button>
             </div>
-            <p className="text-xs text-white/50">O link será inserido como HTML com <code className="text-white/70">&lt;a href&gt;</code>. O Mailgun rastreia o clique automaticamente.</p>
             <div>
               <label className="block text-sm text-white/70 mb-1">Telefone (com DDD)</label>
               <input value={waPhone} onChange={e => setWaPhone(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-dark-700 border border-white/15 text-white" placeholder="(11) 90000-0000" />
