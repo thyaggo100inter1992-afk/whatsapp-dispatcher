@@ -204,7 +204,7 @@ export default function EnvioUnico() {
                 <label className={labelCls}>Corpo do E-mail *</label>
                 <EmailBodyEditor
                   value={form.body_html}
-                  onChange={html => setForm({ ...form, body_html: html })}
+                  onChange={html => setForm(f => ({ ...f, body_html: html }))}
                   accent="blue"
                   minHeight={320}
                   placeholder="Digite ou cole o texto do e-mail. Use a barra para formatar e inserir link do WhatsApp."

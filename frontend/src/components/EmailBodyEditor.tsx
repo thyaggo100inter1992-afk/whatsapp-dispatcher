@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   FaBold, FaItalic, FaUnderline, FaListUl, FaListOl, FaLink, FaUnlink,
   FaAlignLeft, FaAlignCenter, FaAlignRight, FaWhatsapp, FaEye, FaCode,
@@ -65,7 +65,8 @@ export default function EmailBodyEditor({
   accent = 'blue',
 }: EmailBodyEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
-  const lastExternal = useRef<string>('');
+  const lastEmitted = useRef<string>('');
+  const seeded = useRef(false);
   const [mode, setMode] = useState<'visual' | 'html' | 'preview'>('visual');
   const [htmlSource, setHtmlSource] = useState('');
   const [showLink, setShowLink] = useState(false);
@@ -77,30 +78,51 @@ export default function EmailBodyEditor({
   const [waLabel, setWaLabel] = useState('Falar no WhatsApp');
   const colors = ACCENT[accent];
 
-  const emit = useCallback(() => {
+  const readEditorHtml = () => {
     const el = editorRef.current;
-    if (!el) return;
+    if (!el) return '';
     const html = el.innerHTML;
-    lastExternal.current = html;
-    onChange(html);
+    // contentEditable vazio às vezes fica só com <br>
+    if (!html || html === '<br>' || html === '<div><br></div>' || html === '<p><br></p>') return '';
+    return html;
+  };
+
+  const emit = useCallback((html?: string) => {
+    const next = html !== undefined ? html : readEditorHtml();
+    lastEmitted.current = next;
+    onChange(next);
   }, [onChange]);
 
-  // Sincroniza valor externo → editor (sem loop)
-  useEffect(() => {
-    if (mode !== 'visual') return;
+  // Semear conteúdo inicial / externo sem apagar o que o usuário digita
+  useLayoutEffect(() => {
     const el = editorRef.current;
     if (!el) return;
     const incoming = plainToHtml(value || '');
-    if (incoming === lastExternal.current) return;
-    if (el.innerHTML === incoming) {
-      lastExternal.current = incoming;
+
+    // Primeira montagem
+    if (!seeded.current) {
+      el.innerHTML = incoming;
+      lastEmitted.current = incoming;
+      seeded.current = true;
       return;
     }
-    el.innerHTML = incoming || '';
-    lastExternal.current = incoming;
-  }, [value, mode]);
 
-  const focusEditor = () => editorRef.current?.focus();
+    // Atualização externa (ex.: carregar template) — só se o usuário NÃO estiver digitando
+    if (document.activeElement === el) return;
+    if (incoming === lastEmitted.current) return;
+    if (incoming === el.innerHTML) {
+      lastEmitted.current = incoming;
+      return;
+    }
+    el.innerHTML = incoming;
+    lastEmitted.current = incoming;
+  }, [value]);
+
+  const focusEditor = () => {
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+  };
 
   const run = (cmd: string, val?: string) => {
     focusEditor();
@@ -132,7 +154,6 @@ export default function EmailBodyEditor({
     const url = buildWhatsAppLink(waPhone, waMessage);
     if (!url) return;
     const label = (waLabel.trim() || 'Falar no WhatsApp').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    // <a href> direto no HTML → Mailgun com o:tracking-clicks envolve e contabiliza o clique
     insertHtml(
       `<a href="${url}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#25D366;color:#ffffff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:bold">${label}</a>&nbsp;`
     );
@@ -142,22 +163,36 @@ export default function EmailBodyEditor({
     setWaLabel('Falar no WhatsApp');
   };
 
-  const switchMode = (next: 'visual' | 'html' | 'preview') => {
-    if (mode === 'visual' && editorRef.current) {
-      const html = editorRef.current.innerHTML;
+  const flushCurrent = (): string => {
+    if (mode === 'visual') {
+      const html = readEditorHtml();
       setHtmlSource(html);
-      lastExternal.current = html;
-      onChange(html);
+      emit(html);
+      return html;
     }
     if (mode === 'html') {
-      const html = htmlSource;
-      lastExternal.current = html;
-      onChange(html);
+      emit(htmlSource);
+      return htmlSource;
+    }
+    // preview: value já está atualizado
+    return value || lastEmitted.current || '';
+  };
+
+  const switchMode = (next: 'visual' | 'html' | 'preview') => {
+    if (next === mode) return;
+    const html = flushCurrent();
+    if (next === 'html') setHtmlSource(html);
+    if (next === 'visual') {
+      // Garante que o contentEditable (que permanece montado) reflita o HTML atual
+      requestAnimationFrame(() => {
+        const el = editorRef.current;
+        if (!el) return;
+        const incoming = plainToHtml(html || value || '');
+        if (el.innerHTML !== incoming) el.innerHTML = incoming;
+        lastEmitted.current = incoming;
+      });
     }
     setMode(next);
-    if (next === 'html') {
-      setHtmlSource(mode === 'visual' && editorRef.current ? editorRef.current.innerHTML : value || htmlSource);
-    }
   };
 
   const ToolBtn = ({
@@ -176,7 +211,6 @@ export default function EmailBodyEditor({
 
   return (
     <div className={`rounded-xl border-2 border-white/20 bg-dark-700/80 overflow-hidden ${colors.ring}`}>
-      {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 p-2 border-b border-white/10 bg-dark-800/80">
         <ToolBtn title="Negrito" onClick={() => run('bold')}><FaBold /></ToolBtn>
         <ToolBtn title="Itálico" onClick={() => run('italic')}><FaItalic /></ToolBtn>
@@ -205,7 +239,7 @@ export default function EmailBodyEditor({
         <input
           type="color"
           title="Cor do texto"
-          defaultValue="#222222"
+          defaultValue="#111111"
           className="w-8 h-8 bg-transparent cursor-pointer rounded"
           onChange={e => run('foreColor', e.target.value)}
           onMouseDown={e => e.preventDefault()}
@@ -231,26 +265,26 @@ export default function EmailBodyEditor({
         <ToolBtn title="Prévia" active={mode === 'preview'} onClick={() => switchMode('preview')}><FaEye /></ToolBtn>
       </div>
 
-      {/* Área de edição */}
-      {mode === 'visual' && (
+      {/* Mantém o editor montado (display) para não perder o texto ao mudar de modo */}
+      <div style={{ display: mode === 'visual' ? 'block' : 'none' }}>
         <div
           ref={editorRef}
           contentEditable
           suppressContentEditableWarning
-          onInput={emit}
-          onBlur={emit}
+          onInput={() => emit()}
+          onBlur={() => emit()}
           data-placeholder={placeholder}
-          className="email-body-editor px-4 py-3 text-white text-[15px] leading-relaxed outline-none overflow-y-auto bg-white text-gray-900"
-          style={{ minHeight }}
+          className="email-body-editor px-4 py-3 text-[15px] leading-relaxed outline-none overflow-y-auto bg-white"
+          style={{ minHeight, color: '#111111', caretColor: '#111111' }}
         />
-      )}
+      </div>
 
       {mode === 'html' && (
         <textarea
           value={htmlSource}
           onChange={e => {
             setHtmlSource(e.target.value);
-            lastExternal.current = e.target.value;
+            lastEmitted.current = e.target.value;
             onChange(e.target.value);
           }}
           className="w-full px-4 py-3 bg-dark-900 text-green-300 font-mono text-sm outline-none resize-y"
@@ -261,9 +295,9 @@ export default function EmailBodyEditor({
 
       {mode === 'preview' && (
         <div
-          className="px-4 py-3 bg-white text-gray-900 overflow-y-auto"
-          style={{ minHeight }}
-          dangerouslySetInnerHTML={{ __html: value || '<p style="color:#999">Sem conteúdo</p>' }}
+          className="px-4 py-3 bg-white overflow-y-auto prose max-w-none"
+          style={{ minHeight, color: '#111111' }}
+          dangerouslySetInnerHTML={{ __html: value || lastEmitted.current || '<p style="color:#999">Sem conteúdo</p>' }}
         />
       )}
 
@@ -272,7 +306,6 @@ export default function EmailBodyEditor({
         <span>Variáveis: {'{{nome}}'} · {'{{email}}'}</span>
       </div>
 
-      {/* Modal link genérico */}
       {showLink && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className={`bg-dark-800 rounded-2xl border-2 ${colors.modal} w-full max-w-md p-6 space-y-4 shadow-2xl`}>
@@ -293,10 +326,9 @@ export default function EmailBodyEditor({
         </div>
       )}
 
-      {/* Modal WhatsApp */}
       {showWa && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className={`bg-dark-800 rounded-2xl border-2 border-green-500/40 w-full max-w-md p-6 space-y-4 shadow-2xl`}>
+          <div className="bg-dark-800 rounded-2xl border-2 border-green-500/40 w-full max-w-md p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-black text-white flex items-center gap-2"><FaWhatsapp className="text-green-400" /> Link WhatsApp</h3>
               <button type="button" onClick={() => setShowWa(false)} className="text-white/50 hover:text-white"><FaTimes /></button>
@@ -333,7 +365,11 @@ export default function EmailBodyEditor({
           color: #9ca3af;
           pointer-events: none;
         }
-        .email-body-editor a { color: #2563eb; text-decoration: underline; }
+        .email-body-editor,
+        .email-body-editor * {
+          color: inherit;
+        }
+        .email-body-editor a { color: #2563eb !important; text-decoration: underline; }
         .email-body-editor ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
         .email-body-editor ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
         .email-body-editor p { margin: 0.5rem 0; }
