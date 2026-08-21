@@ -13,15 +13,25 @@ import { useNotification } from '@/hooks/useNotification';
 interface Domain { id: number; domain: string; status: string; }
 interface EmailList { id: number; name: string; total_contacts: number; }
 interface Template { id: number; name: string; subject: string; body_html: string; }
-interface Sender { from_name: string; from_email: string; }
+interface Sender { from_name: string; from_email: string; } // from_email = parte local (antes do @)
+
+/** Extrai só a parte antes do @ (remove domínio se o usuário colar e-mail completo) */
+function extractLocalPart(value: string): string {
+  const raw = String(value || '').trim();
+  const local = (raw.includes('@') ? raw.split('@')[0] : raw)
+    .replace(/[^a-zA-Z0-9._+-]/g, '')
+    .toLowerCase();
+  return local;
+}
 
 function parseSendersText(text: string): Sender[] {
   return text.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
-    const parts = l.split(',').map(p => p.trim());
-    const email = parts.find(p => p.includes('@')) || '';
-    const name = parts.find(p => !p.includes('@')) || '';
-    return { from_name: name, from_email: email };
-  }).filter(s => s.from_email.includes('@'));
+    const parts = l.split(',').map(p => p.trim()).filter(Boolean);
+    // Se tiver @ em alguma parte, essa é o "email"; senão a última parte é o local
+    const emailPart = parts.find(p => p.includes('@')) || parts[parts.length - 1] || '';
+    const name = parts.find(p => p !== emailPart && !p.includes('@')) || '';
+    return { from_name: name, from_email: extractLocalPart(emailPart) };
+  }).filter(s => s.from_email.length > 0);
 }
 
 function parseSubjectsText(text: string): string[] {
@@ -103,16 +113,23 @@ export default function CriarCampanha() {
 
   const downloadSenderTemplate = () => {
     const bom = '\uFEFF';
-    const content = ['nome,email', 'Empresa A,empresa-a@seudominio.com', 'Empresa B,empresa-b@seudominio.com', 'Suporte,suporte@seudominio.com'].join('\r\n');
+    const content = ['nome,usuario', 'Empresa A,empresa-a', 'Empresa B,empresa-b', 'Suporte,suporte'].join('\r\n');
     const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'modelo-remetentes.csv'; a.click();
     URL.revokeObjectURL(url);
   };
 
-  const finalSenders: Sender[] = senderMode === 'manual'
-    ? senders.filter(s => s.from_email.includes('@'))
+  const selectedDomainName = domains.find(d => d.id === parseInt(domainId))?.domain || '';
+
+  const rawSenders: Sender[] = senderMode === 'manual'
+    ? senders.map(s => ({ from_name: s.from_name, from_email: extractLocalPart(s.from_email) })).filter(s => s.from_email)
     : parseSendersText(senderPasteText);
+
+  // E-mail final sempre: usuario@dominio_selecionado
+  const finalSenders: Sender[] = selectedDomainName
+    ? rawSenders.map(s => ({ from_name: s.from_name, from_email: `${s.from_email}@${selectedDomainName}` }))
+    : [];
 
   const finalSubjects: string[] = subjectMode === 'manual'
     ? subjects.filter(s => s.trim() !== '')
@@ -123,7 +140,7 @@ export default function CriarCampanha() {
   const addSender = () => setSenders(s => [...s, { from_name: '', from_email: '' }]);
   const removeSender = (i: number) => setSenders(s => s.filter((_, idx) => idx !== i));
   const updateSender = (i: number, field: keyof Sender, val: string) =>
-    setSenders(s => s.map((x, idx) => idx === i ? { ...x, [field]: val } : x));
+    setSenders(s => s.map((x, idx) => idx === i ? { ...x, [field]: field === 'from_email' ? extractLocalPart(val) : val } : x));
   const addSubject = () => setSubjects(s => [...s, '']);
   const removeSubject = (i: number) => setSubjects(s => s.filter((_, idx) => idx !== i));
   const updateSubject = (i: number, val: string) =>
@@ -132,7 +149,8 @@ export default function CriarCampanha() {
   const handleSave = async () => {
     const errs: string[] = [];
     if (!name.trim()) errs.push('Informe o nome da campanha.');
-    if (finalSenders.length === 0) errs.push('Adicione ao menos um e-mail de remetente válido.');
+    if (!domainId) errs.push('Selecione um domínio verificado.');
+    if (finalSenders.length === 0) errs.push('Adicione ao menos um remetente (só a parte antes do @).');
     if (finalSubjects.length === 0) errs.push('Adicione ao menos um assunto.');
     if (!listId) errs.push('Selecione uma lista de contatos.');
     if (delayMin > delayMax) errs.push('O delay mínimo não pode ser maior que o máximo.');
@@ -327,9 +345,19 @@ export default function CriarCampanha() {
               <StepBadge n={2} />
               <div>
                 <h2 className="text-3xl font-black text-white">Remetentes</h2>
-                <p className="text-white/60 text-sm mt-1">O sistema rotaciona automaticamente entre os remetentes a cada envio</p>
+                <p className="text-white/60 text-sm mt-1">Digite só a parte antes do @ — o domínio selecionado é aplicado automaticamente</p>
               </div>
             </div>
+
+            {!selectedDomainName ? (
+              <div className="mt-4 p-4 bg-yellow-500/10 border-2 border-yellow-500/30 rounded-xl text-yellow-300 text-sm font-bold flex items-center gap-2">
+                <FaExclamationTriangle /> Selecione um domínio na seção 1 antes de cadastrar remetentes.
+              </div>
+            ) : (
+              <div className="mt-4 p-4 bg-green-500/10 border-2 border-green-500/30 rounded-xl text-green-300 text-sm">
+                Domínio de envio: <strong className="text-white">@{selectedDomainName}</strong> — o e-mail final será <code className="bg-black/30 px-2 py-0.5 rounded">usuario@{selectedDomainName}</code>
+              </div>
+            )}
 
             {/* Abas modo */}
             <div className="flex gap-2 mb-6 mt-4">
@@ -356,16 +384,30 @@ export default function CriarCampanha() {
                         </button>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className={labelCls}>Nome</label>
+                        <label className={labelCls}>Nome de exibição</label>
                         <input value={s.from_name} onChange={e => updateSender(i, 'from_name', e.target.value)}
                           placeholder="Minha Empresa" className={inputCls} />
                       </div>
                       <div>
-                        <label className={labelCls}>E-mail *</label>
-                        <input type="email" value={s.from_email} onChange={e => updateSender(i, 'from_email', e.target.value)}
-                          placeholder="noreply@seudominio.com" className={inputCls} />
+                        <label className={labelCls}>Usuário do e-mail * (sem @)</label>
+                        <div className="flex items-stretch gap-0">
+                          <input
+                            value={s.from_email}
+                            onChange={e => updateSender(i, 'from_email', e.target.value)}
+                            placeholder="contato"
+                            className={`${inputCls} rounded-r-none border-r-0`}
+                          />
+                          <span className="flex items-center px-4 bg-dark-600 border-2 border-white/20 border-l-0 rounded-r-xl text-orange-300 font-mono text-sm whitespace-nowrap">
+                            @{selectedDomainName || 'dominio.com'}
+                          </span>
+                        </div>
+                        {s.from_email && selectedDomainName && (
+                          <p className="text-xs text-green-400 mt-2">
+                            ✅ Ficará: <strong>{extractLocalPart(s.from_email)}@{selectedDomainName}</strong>
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -381,11 +423,11 @@ export default function CriarCampanha() {
               <div className="space-y-4">
                 <div className="p-5 bg-blue-500/10 border-2 border-blue-500/30 rounded-xl">
                   <h3 className="text-base font-bold text-blue-300 mb-2">📋 Como colar:</h3>
-                  <p className="text-sm text-white/70 mb-2">Uma linha por remetente no formato <strong>nome,email</strong> ou apenas o e-mail:</p>
+                  <p className="text-sm text-white/70 mb-2">Uma linha por remetente: <strong>nome,usuario</strong> (sem @). Se colar e-mail completo, o sistema ignora o domínio e usa o selecionado.</p>
                   <code className="block bg-black/30 rounded-lg p-3 font-mono text-sm text-green-300">
-                    Empresa A,empresa-a@dominio.com<br />
-                    Empresa B,empresa-b@dominio.com<br />
-                    noreply@dominio.com
+                    Empresa A,empresa-a<br />
+                    Empresa B,empresa-b<br />
+                    noreply
                   </code>
                 </div>
                 <div>
@@ -398,10 +440,19 @@ export default function CriarCampanha() {
                     )}
                   </div>
                   <textarea value={senderPasteText} onChange={e => setSenderPasteText(e.target.value)}
-                    placeholder={"Empresa A,empresa-a@dominio.com\nEmpresa B,empresa-b@dominio.com\nnoreply@dominio.com"}
+                    placeholder={"Empresa A,empresa-a\nEmpresa B,empresa-b\nnoreply"}
                     rows={12}
                     className="w-full px-5 py-4 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white text-sm font-mono focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 outline-none resize-y transition-all" />
                 </div>
+                {finalSenders.length > 0 && (
+                  <div className="bg-black/30 rounded-xl p-4 max-h-40 overflow-y-auto">
+                    <p className="text-xs text-gray-400 mb-2 font-bold">Preview dos e-mails finais:</p>
+                    {finalSenders.slice(0, 20).map((s, i) => (
+                      <p key={i} className="text-sm text-green-300 font-mono">{s.from_name ? `${s.from_name} <${s.from_email}>` : s.from_email}</p>
+                    ))}
+                    {finalSenders.length > 20 && <p className="text-xs text-gray-500 mt-1">… e mais {finalSenders.length - 20}</p>}
+                  </div>
+                )}
               </div>
             )}
 
@@ -417,27 +468,25 @@ export default function CriarCampanha() {
                     <FaUpload /> Selecionar arquivo CSV
                   </button>
                 </div>
-                {finalSenders.length > 0 ? (
-                  <div className="bg-green-500/10 border-2 border-green-500/30 rounded-xl p-5">
-                    <p className="text-green-300 font-bold text-base mb-3">✅ {finalSenders.length} remetentes carregados do CSV</p>
-                    <div className="max-h-40 overflow-y-auto space-y-1">
-                      {finalSenders.slice(0, 6).map((s, i) => (
+                <input ref={senderFileRef} type="file" accept=".csv,.txt" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleSenderCsvUpload(f); }} />
+                <p className="text-sm text-white/50">Colunas: <code>nome,usuario</code> — sem @ no usuário. O domínio selecionado será aplicado.</p>
+                {finalSenders.length > 0 && (
+                  <div className="bg-black/30 rounded-xl p-4">
+                    <p className="text-green-300 font-bold text-base mb-3">✅ {finalSenders.length} remetentes prontos</p>
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      {finalSenders.slice(0, 15).map((s, i) => (
                         <p key={i} className="text-sm text-gray-400 font-mono">{s.from_name ? `${s.from_name} <${s.from_email}>` : s.from_email}</p>
                       ))}
-                      {finalSenders.length > 6 && <p className="text-sm text-gray-500">...e mais {finalSenders.length - 6}</p>}
                     </div>
                   </div>
-                ) : (
-                  <div className="bg-white/5 border-2 border-white/10 rounded-xl p-6 text-center text-gray-500">Nenhum arquivo carregado ainda</div>
                 )}
               </div>
             )}
 
             {finalSenders.length > 0 && (
-              <div className="mt-4 p-4 bg-orange-500/10 border-2 border-orange-500/30 rounded-xl">
-                <p className="text-orange-300 font-bold text-sm flex items-center gap-2">
-                  <FaRandom /> {finalSenders.length} remetente{finalSenders.length > 1 ? 's' : ''} cadastrado{finalSenders.length > 1 ? 's' : ''} — rotação automática a cada e-mail enviado
-                </p>
+              <div className="mt-4 p-4 bg-orange-500/10 border border-orange-500/30 rounded-xl text-orange-200 text-sm flex items-center gap-2">
+                <FaRandom /> {finalSenders.length} remetente{finalSenders.length > 1 ? 's' : ''} — rotação automática a cada e-mail enviado
               </div>
             )}
           </div>

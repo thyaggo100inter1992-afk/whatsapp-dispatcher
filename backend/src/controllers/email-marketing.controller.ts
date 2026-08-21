@@ -530,11 +530,36 @@ export const createCampaign = async (req: Request, res: Response) => {
       pause_after, pause_duration_minutes,
     } = req.body;
 
+    if (!domain_id) {
+      return res.status(400).json({ success: false, message: 'Selecione um domínio verificado para envio' });
+    }
+
+    const domainRow = await pool.query(
+      `SELECT domain, status FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`,
+      [domain_id, tenantId]
+    );
+    if (!domainRow.rows[0]) {
+      return res.status(400).json({ success: false, message: 'Domínio não encontrado' });
+    }
+    const domainName = domainRow.rows[0].domain;
+
     // Normaliza remetentes: aceita array novo OU campos legados
-    const sendersArr: { from_name: string; from_email: string }[] =
+    const rawSenders: { from_name: string; from_email: string }[] =
       Array.isArray(from_senders) && from_senders.length > 0
         ? from_senders
         : [{ from_name: from_name || '', from_email: from_email || '' }];
+
+    // Força local@dominio_selecionado (ignora @ de outro domínio digitado)
+    const sendersArr = rawSenders.map((s) => {
+      const raw = String(s.from_email || '').trim();
+      const local = (raw.includes('@') ? raw.split('@')[0] : raw)
+        .replace(/[^a-zA-Z0-9._+-]/g, '')
+        .toLowerCase();
+      return {
+        from_name: (s.from_name || '').trim(),
+        from_email: local ? `${local}@${domainName}` : '',
+      };
+    }).filter((s) => s.from_email.includes('@'));
 
     // Normaliza assuntos: aceita array novo OU campo legado
     const subjectsArr: string[] =
@@ -543,7 +568,7 @@ export const createCampaign = async (req: Request, res: Response) => {
         : [subject || ''];
 
     if (!name || sendersArr.length === 0 || !sendersArr[0].from_email || subjectsArr.length === 0 || !subjectsArr[0]) {
-      return res.status(400).json({ success: false, message: 'Nome, ao menos um remetente e ao menos um assunto são obrigatórios' });
+      return res.status(400).json({ success: false, message: 'Nome, ao menos um remetente (parte antes do @) e ao menos um assunto são obrigatórios' });
     }
 
     // Define status inicial: se agendado para o futuro -> 'scheduled', senão -> 'draft'
@@ -741,6 +766,56 @@ export const getCampaignRecipients = async (req: Request, res: Response) => {
       params
     );
     res.json({ success: true, data: result.rows, total: result.rowCount });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/** Reenvia destinatários com status failed (volta para pending e retoma a campanha) */
+export const resendFailed = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const { id } = req.params;
+
+    const camp = await pool.query(
+      `SELECT id, status, failed_count FROM email_marketing_campaigns WHERE id=$1 AND tenant_id=$2`,
+      [id, tenantId]
+    );
+    if (!camp.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Campanha não encontrada' });
+    }
+
+    const reset = await pool.query(
+      `UPDATE email_marketing_recipients
+       SET status='pending', error_message=NULL, mailgun_message_id=NULL, sent_at=NULL, updated_at=NOW()
+       WHERE campaign_id=$1 AND tenant_id=$2 AND status='failed'
+       RETURNING id`,
+      [id, tenantId]
+    );
+
+    const qtd = reset.rowCount || 0;
+    if (qtd === 0) {
+      return res.status(400).json({ success: false, message: 'Nenhum destinatário com falha para reenviar' });
+    }
+
+    await pool.query(
+      `UPDATE email_marketing_campaigns
+       SET failed_count=0,
+           status=CASE WHEN status IN ('completed','paused','failed','cancelled') THEN 'sending' ELSE status END,
+           completed_at=NULL,
+           pause_started_at=NULL,
+           sent_in_session=0,
+           updated_at=NOW()
+       WHERE id=$1 AND tenant_id=$2`,
+      [id, tenantId]
+    );
+
+    res.json({
+      success: true,
+      message: `${qtd} destinatário(s) com falha recolocados na fila para reenvio`,
+      data: { requeued: qtd },
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

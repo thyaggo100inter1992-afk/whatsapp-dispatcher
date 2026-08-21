@@ -5,7 +5,7 @@ import {
   FaBullhorn, FaArrowLeft, FaPlay, FaPause, FaBan, FaSpinner, FaSync,
   FaEnvelope, FaEye, FaMousePointer, FaExclamationTriangle, FaFlag,
   FaTimesCircle, FaClock, FaCalendarAlt,
-  FaUsers, FaListUl, FaTimes, FaSearch, FaEdit, FaDownload, FaSave
+  FaUsers, FaListUl, FaTimes, FaSearch, FaEdit, FaDownload, FaSave, FaRedo
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
@@ -17,6 +17,7 @@ interface Campaign {
   status: string; total_contacts: number; sent_count: number; failed_count: number;
   opened_count: number; clicked_count: number; bounced_count: number; complained_count: number;
   domain_name: string; list_name: string; template_name: string;
+  body_html?: string | null; body_text?: string | null; reply_to?: string | null;
   created_at: string; started_at: string | null; completed_at: string | null; scheduled_at: string | null;
   work_start_time: string | null; work_end_time: string | null;
   delay_seconds_min: number; delay_seconds_max: number;
@@ -80,6 +81,7 @@ export default function CampaignDetail() {
     pause_after: 0, pause_duration_minutes: 30, scheduled_at: ''
   });
   const [saving, setSaving] = useState(false);
+  const [resending, setResending] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -194,35 +196,101 @@ export default function CampaignDetail() {
     try {
       const r = await api.get(`/email-marketing/campaigns/${id}/recipients?limit=100000`);
       const rows: Recipient[] = r.data.data || [];
-      const headers = ['E-mail', 'Nome', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Erro'];
+      const sendersList = campaign.from_senders?.length
+        ? campaign.from_senders
+        : [{ from_name: campaign.from_name, from_email: campaign.from_email }];
+      const subjectsList = campaign.subjects?.length ? campaign.subjects : [campaign.subject];
+      const htmlPlain = (campaign.body_html || '')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+
       const lines = [
-        `Relatório da Campanha: ${campaign.name}`,
-        `Gerado em: ${new Date().toLocaleString('pt-BR')}`,
-        `Status: ${STATUS_LABELS[campaign.status]}`,
-        `Total: ${campaign.total_contacts} | Enviados: ${campaign.sent_count} | Abertos: ${campaign.opened_count} | Cliques: ${campaign.clicked_count} | Rejeitados: ${campaign.bounced_count} | Spam: ${campaign.complained_count} | Falhos: ${campaign.failed_count}`,
+        '========== RELATÓRIO COMPLETO DA CAMPANHA ==========',
+        `Nome;${esc(campaign.name)}`,
+        `Status;${esc(STATUS_LABELS[campaign.status] || campaign.status)}`,
+        `Gerado em;${esc(new Date().toLocaleString('pt-BR'))}`,
+        `Criada em;${esc(formatDt(campaign.created_at))}`,
+        `Agendada;${esc(formatDt(campaign.scheduled_at))}`,
+        `Iniciada;${esc(formatDt(campaign.started_at))}`,
+        `Concluída;${esc(formatDt(campaign.completed_at))}`,
         '',
-        headers.join(';'),
+        '========== CONFIGURAÇÕES ==========',
+        `Domínio;${esc(campaign.domain_name || '')}`,
+        `Lista de contatos;${esc(campaign.list_name || '')}`,
+        `Template;${esc(campaign.template_name || '')}`,
+        `Reply-To;${esc(campaign.reply_to || '')}`,
+        `Horário de trabalho;${esc(`${campaign.work_start_time || '00:00'} - ${campaign.work_end_time || '23:59'}`)}`,
+        `Delay entre envios;${esc(`${campaign.delay_seconds_min || 1}s - ${campaign.delay_seconds_max || 3}s`)}`,
+        `Pausa automática;${esc((campaign.pause_after || 0) > 0 ? `A cada ${campaign.pause_after} envios por ${campaign.pause_duration_minutes} min` : 'Desativada')}`,
+        '',
+        '========== REMETENTES ==========',
+        'Nome;E-mail',
+        ...sendersList.map(s => `${esc(s.from_name)};${esc(s.from_email)}`),
+        '',
+        '========== ASSUNTOS ==========',
+        ...subjectsList.map((s, i) => `Assunto ${i + 1};${esc(s)}`),
+        '',
+        '========== MENSAGEM / MODELO ==========',
+        `Mensagem (texto);${esc(campaign.body_text || htmlPlain || '(sem conteúdo)')}`,
+        `Mensagem (HTML);${esc(campaign.body_html || '(sem HTML)')}`,
+        '',
+        '========== ESTATÍSTICAS ==========',
+        `Total;${campaign.total_contacts}`,
+        `Enviados;${campaign.sent_count}`,
+        `Abertos;${campaign.opened_count}`,
+        `Cliques;${campaign.clicked_count}`,
+        `Rejeitados;${campaign.bounced_count}`,
+        `Spam;${campaign.complained_count}`,
+        `Falhos;${campaign.failed_count}`,
+        '',
+        '========== DESTINATÁRIOS ==========',
+        'E-mail;Nome;Status;Enviado em;Aberto em;Clicado em;Motivo do erro',
         ...rows.map(r2 => [
-          r2.email,
-          r2.name || '',
-          RECIPIENT_STATUS[r2.status]?.label || r2.status,
-          r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : '',
-          r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : '',
-          r2.clicked_at ? new Date(r2.clicked_at).toLocaleString('pt-BR') : '',
-          r2.error_message || '',
-        ].join(';'))
+          esc(r2.email),
+          esc(r2.name || ''),
+          esc(RECIPIENT_STATUS[r2.status]?.label || r2.status),
+          esc(r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : ''),
+          esc(r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : ''),
+          esc(r2.clicked_at ? new Date(r2.clicked_at).toLocaleString('pt-BR') : ''),
+          esc(r2.error_message || ''),
+        ].join(';')),
       ];
       const bom = '\uFEFF';
       const blob = new Blob([bom + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `relatorio-${campaign.name.replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `relatorio-completo-${campaign.name.replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-      notification.success('Relatório baixado!', '');
+      notification.success('Relatório completo baixado!', '');
     } catch (e: any) {
       notification.error('Erro ao gerar relatório', e.message);
+    }
+  };
+
+  const handleResendFailed = async () => {
+    if (!campaign || (campaign.failed_count || 0) <= 0) return;
+    const ok = await confirm({
+      title: 'Reenviar Falhas',
+      message: `Deseja reenviar os ${campaign.failed_count} e-mails que falharam? Eles voltarão para a fila e a campanha será retomada.`,
+      confirmText: 'Sim, Reenviar',
+      type: 'warning',
+    });
+    if (!ok) return;
+    setResending(true);
+    try {
+      const r = await api.post(`/email-marketing/campaigns/${id}/resend-failed`);
+      notification.success('Reenvio iniciado!', r.data?.message || '');
+      loadData();
+    } catch (e: any) {
+      notification.error('Erro', e.response?.data?.message || e.message);
+    } finally {
+      setResending(false);
     }
   };
 
@@ -521,6 +589,13 @@ export default function CampaignDetail() {
                     className="px-5 py-3 bg-green-500/20 hover:bg-green-500/30 text-green-300 border-2 border-green-500/30 rounded-xl font-bold flex items-center gap-2 transition-all">
                     <FaDownload /> Relatório CSV
                   </button>
+                  {(campaign.failed_count || 0) > 0 && (
+                    <button onClick={handleResendFailed} disabled={resending}
+                      className="px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 border-2 border-red-500/40 rounded-xl font-bold flex items-center gap-2 transition-all disabled:opacity-50">
+                      {resending ? <FaSpinner className="animate-spin" /> : <FaRedo />}
+                      Reenviar Falhas ({campaign.failed_count})
+                    </button>
+                  )}
                   <button onClick={() => loadData()}
                     className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all" title="Atualizar">
                     <FaSync className={`text-lg ${isPolling ? 'animate-spin' : ''}`} />

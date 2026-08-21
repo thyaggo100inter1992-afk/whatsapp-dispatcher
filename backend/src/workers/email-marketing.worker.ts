@@ -16,6 +16,46 @@ async function getMailgunClient() {
   });
 }
 
+/** Monta e-mail remetente sempre no domínio de envio (local@dominio) */
+function buildFromEmail(rawFrom: string, domain: string): string {
+  const raw = String(rawFrom || '').trim();
+  const local = (raw.includes('@') ? raw.split('@')[0] : raw)
+    .replace(/[^a-zA-Z0-9._+-]/g, '')
+    .toLowerCase();
+  if (!local || !domain) return raw;
+  return `${local}@${domain}`;
+}
+
+/** Mensagem de erro legível a partir da resposta do Mailgun */
+function formatSendError(err: any, fromEmail: string, domain: string): string {
+    const status = err?.status || err?.statusCode;
+  const msg = String(err?.message || err?.details || 'Erro desconhecido');
+  const details =
+    typeof err?.details === 'string'
+      ? err.details
+      : err?.details?.message || err?.type || '';
+  const fromDomain = (fromEmail.split('@')[1] || '').toLowerCase();
+  const sendDomain = (domain || '').toLowerCase();
+
+  if (status === 403 || /forbidden/i.test(msg)) {
+    if (fromDomain && sendDomain && fromDomain !== sendDomain) {
+      return `Remetente não autorizado: "${fromEmail}" não pertence ao domínio de envio "${domain}". Use um endereço @${domain}.`;
+    }
+    return `Envio bloqueado (Forbidden). Domínio de envio: ${domain || '—'}. Remetente: ${fromEmail}. Verifique se o domínio está ativo e o remetente é permitido.`;
+  }
+  if (status === 401 || /unauthorized/i.test(msg)) {
+    return `Credencial de envio inválida ou sem permissão (401). Contate o administrador.`;
+  }
+  if (status === 400 || /bad request/i.test(msg)) {
+    return `Requisição inválida ao servidor de e-mail: ${details || msg}`;
+  }
+  if (/rate|limit|too many/i.test(msg + details)) {
+    return `Limite de envio atingido. Aguarde e tente novamente. Detalhe: ${msg}`;
+  }
+  const extra = details && details !== msg ? ` — ${details}` : '';
+  return `${msg}${extra}`.slice(0, 500);
+}
+
 // Verifica se o horário atual está dentro da janela de trabalho
 function isWithinWorkHours(startTime: string, endTime: string): boolean {
   const now = new Date();
@@ -174,12 +214,26 @@ async function processCampaigns() {
           subject = pickRotating(subjectsArr, sentCount) || subject;
         }
 
-        // Resolve domínio de envio
-        let domain = fromEmail.split('@')[1];
+        // Resolve domínio de envio e força remetente no domínio correto
+        let domain = fromEmail.includes('@') ? fromEmail.split('@')[1] : '';
         if (campaign.domain_id) {
           const domainRow = await pool.query(`SELECT domain FROM email_marketing_domains WHERE id=$1`, [campaign.domain_id]);
           if (domainRow.rows[0]) domain = domainRow.rows[0].domain;
         }
+
+        if (!domain) {
+          await pool.query(
+            `UPDATE email_marketing_recipients SET status='failed', error_message=$1, updated_at=NOW() WHERE id=$2`,
+            ['Campanha sem domínio de envio configurado. Selecione um domínio verificado.', recipient.id]
+          );
+          await pool.query(
+            `UPDATE email_marketing_campaigns SET failed_count=failed_count+1, updated_at=NOW() WHERE id=$1`,
+            [campaign.id]
+          );
+          continue;
+        }
+
+        fromEmail = buildFromEmail(fromEmail, domain);
 
         try {
           const mg = await getMailgunClient();
@@ -206,10 +260,11 @@ async function processCampaigns() {
           );
 
         } catch (sendError: any) {
-          console.error(`❌ Erro ao enviar para ${recipient.email}:`, sendError.message);
+          const friendly = formatSendError(sendError, fromEmail, domain);
+          console.error(`❌ Erro ao enviar para ${recipient.email}:`, friendly);
           await pool.query(
             `UPDATE email_marketing_recipients SET status='failed', error_message=$1, updated_at=NOW() WHERE id=$2`,
-            [sendError.message, recipient.id]
+            [friendly, recipient.id]
           );
           await pool.query(
             `UPDATE email_marketing_campaigns SET failed_count=failed_count+1, updated_at=NOW() WHERE id=$1`,
