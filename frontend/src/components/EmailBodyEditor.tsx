@@ -169,58 +169,113 @@ export default function EmailBodyEditor({
     saveSelection();
   };
 
-  /** Aplica cor/estilo na seleção (com fallback por span inline — melhor p/ e-mail) */
-  const applyInlineStyle = (cssProp: 'color' | 'background-color', value: string) => {
+  /** Remove cor ou fundo de um fragmento (e spans vazios), para poder trocar/tirar estilo */
+  const stripPropFromTree = (root: Node, prop: 'color' | 'background-color') => {
+    const toUnwrap: HTMLElement[] = [];
+    const visit = (node: Node) => {
+      if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+        Array.from(node.childNodes).forEach(visit);
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      const el = node as HTMLElement;
+      Array.from(el.childNodes).forEach(visit);
+
+      if (prop === 'color') {
+        el.style?.removeProperty('color');
+        el.removeAttribute('color');
+      } else {
+        el.style?.removeProperty('background-color');
+        el.style?.removeProperty('background');
+      }
+
+      const styleLeft = (el.getAttribute('style') || '').replace(/;+\s*$/, '').trim();
+      if (!styleLeft) el.removeAttribute('style');
+      const isWrapper =
+        (el.tagName === 'SPAN' || el.tagName === 'FONT') &&
+        !el.getAttribute('style') &&
+        !el.getAttribute('class') &&
+        !el.getAttribute('href') &&
+        !el.getAttribute('color') &&
+        !el.getAttribute('size') &&
+        !el.getAttribute('face');
+      if (isWrapper) toUnwrap.push(el);
+    };
+    visit(root);
+    toUnwrap.reverse().forEach(el => {
+      const parent = el.parentNode;
+      if (!parent) return;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      parent.removeChild(el);
+    });
+  };
+
+  /**
+   * Aplica ou remove cor/marca na seleção.
+   * value = null → só remove o estilo (tirar cor / tirar marca)
+   */
+  const applyInlineStyle = (cssProp: 'color' | 'background-color', value: string | null) => {
     restoreSelection();
     const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
-    if (range.collapsed) return; // precisa selecionar o texto
+    const editor = editorRef.current;
+    if (!sel || sel.rangeCount === 0 || !editor) return;
+    let range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) {
+      restoreSelection();
+      if (!sel.rangeCount) return;
+      range = sel.getRangeAt(0);
+    }
+    if (range.collapsed) return;
 
-    // Destaque: preferir span com background (mais estável em e-mail / Chrome)
-    if (cssProp === 'background-color') {
+    // Extrai a seleção, limpa o estilo antigo e reaplica (ou só limpa)
+    const frag = range.extractContents();
+    stripPropFromTree(frag, cssProp);
+
+    if (value) {
       const span = document.createElement('span');
-      span.style.backgroundColor = value;
-      try {
-        range.surroundContents(span);
-      } catch {
-        const frag = range.extractContents();
-        span.appendChild(frag);
-        range.insertNode(span);
-      }
-      // Reposiciona seleção no span
+      if (cssProp === 'color') span.style.color = value;
+      else span.style.backgroundColor = value;
+      span.appendChild(frag);
+      range.insertNode(span);
       try {
         const next = document.createRange();
         next.selectNodeContents(span);
         sel.removeAllRanges();
         sel.addRange(next);
       } catch { /* ignore */ }
-      emit();
-      saveSelection();
-      return;
+    } else {
+      // Insere o fragmento limpo (sem nova cor/marca)
+      const marker = document.createElement('span');
+      marker.appendChild(frag);
+      range.insertNode(marker);
+      try {
+        const next = document.createRange();
+        next.selectNodeContents(marker);
+        sel.removeAllRanges();
+        sel.addRange(next);
+      } catch { /* ignore */ }
+      // Desembrulha o marker temporário
+      const parent = marker.parentNode;
+      if (parent) {
+        while (marker.firstChild) parent.insertBefore(marker.firstChild, marker);
+        parent.removeChild(marker);
+      }
     }
 
-    try {
-      document.execCommand('styleWithCSS', false, 'true');
-    } catch { /* ignore */ }
-    document.execCommand('foreColor', false, value);
-
-    // Converte <font color> → <span style="color"> (melhor p/ clientes de e-mail)
-    const el = editorRef.current;
-    if (el) {
-      el.querySelectorAll('font[color]').forEach(font => {
-        const f = font as HTMLFontElement;
-        const c = f.getAttribute('color');
-        if (!c) return;
-        const span = document.createElement('span');
-        span.style.color = c;
-        while (f.firstChild) span.appendChild(f.firstChild);
-        f.parentNode?.replaceChild(span, f);
-      });
-    }
-
+    // Limpa nodes vazios que o browser deixa
+    editor.normalize();
     emit();
     saveSelection();
+  };
+
+  const clearTextColor = () => {
+    applyInlineStyle('color', null);
+    setTextColor('#111111');
+  };
+
+  const clearHighlight = () => {
+    applyInlineStyle('background-color', null);
+    setHighlightColor('#fff59d');
   };
 
   const insertVariable = (token: string) => {
@@ -359,54 +414,84 @@ export default function EmailBodyEditor({
           <option value="6">Enorme</option>
           <option value="7">Máximo</option>
         </select>
-        <label
-          title="Cor do texto"
-          className="relative w-8 h-8 rounded border border-white/20 cursor-pointer overflow-hidden flex items-center justify-center bg-white/10"
-          onMouseDown={() => saveSelection()}
-        >
-          <span className="text-[10px] font-black text-white leading-none pointer-events-none" aria-hidden>A</span>
-          <span
-            className="absolute bottom-0 left-0 right-0 h-1.5 pointer-events-none"
-            style={{ background: textColor }}
-          />
-          <input
-            type="color"
-            aria-label="Cor do texto"
-            value={textColor}
-            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-            onFocus={saveSelection}
-            onMouseDown={() => saveSelection()}
-            onChange={e => {
-              const color = e.target.value;
-              setTextColor(color);
-              applyInlineStyle('color', color);
-            }}
-          />
-        </label>
-        <label
-          title="Marcar texto (destaque)"
-          className="relative w-8 h-8 rounded border border-white/20 cursor-pointer overflow-hidden flex items-center justify-center bg-white/10"
-          onMouseDown={() => saveSelection()}
-        >
-          <FaHighlighter className="text-yellow-300 text-sm pointer-events-none" />
-          <span
-            className="absolute bottom-0 left-0 right-0 h-1.5 pointer-events-none"
-            style={{ background: highlightColor }}
-          />
-          <input
-            type="color"
-            aria-label="Marcar texto"
-            value={highlightColor}
-            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-            onFocus={saveSelection}
-            onMouseDown={() => saveSelection()}
-            onChange={e => {
-              const color = e.target.value;
-              setHighlightColor(color);
-              applyInlineStyle('background-color', color);
-            }}
-          />
-        </label>
+        <div className="flex items-center gap-0.5" onMouseDown={() => saveSelection()}>
+          <label
+            title="Cor do texto — selecione o texto e escolha a cor"
+            className="relative w-8 h-8 rounded border border-white/20 cursor-pointer overflow-hidden flex items-center justify-center bg-white/10"
+          >
+            <span className="text-[10px] font-black text-white leading-none pointer-events-none" aria-hidden>A</span>
+            <span
+              className="absolute bottom-0 left-0 right-0 h-1.5 pointer-events-none"
+              style={{ background: textColor }}
+            />
+            <input
+              type="color"
+              aria-label="Cor do texto"
+              value={textColor}
+              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+              onFocus={saveSelection}
+              onMouseDown={() => saveSelection()}
+              onInput={e => {
+                const color = (e.target as HTMLInputElement).value;
+                setTextColor(color);
+                applyInlineStyle('color', color);
+              }}
+              onChange={e => {
+                const color = e.target.value;
+                setTextColor(color);
+                applyInlineStyle('color', color);
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            title="Tirar cor do texto"
+            onMouseDown={e => e.preventDefault()}
+            onClick={clearTextColor}
+            className="px-1.5 h-8 rounded text-[10px] font-bold text-white/60 hover:text-white hover:bg-white/10 border border-white/10"
+          >
+            ×A
+          </button>
+        </div>
+        <div className="flex items-center gap-0.5" onMouseDown={() => saveSelection()}>
+          <label
+            title="Marcar texto — selecione e escolha a cor do destaque"
+            className="relative w-8 h-8 rounded border border-white/20 cursor-pointer overflow-hidden flex items-center justify-center bg-white/10"
+          >
+            <FaHighlighter className="text-yellow-300 text-sm pointer-events-none" />
+            <span
+              className="absolute bottom-0 left-0 right-0 h-1.5 pointer-events-none"
+              style={{ background: highlightColor }}
+            />
+            <input
+              type="color"
+              aria-label="Marcar texto"
+              value={highlightColor}
+              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+              onFocus={saveSelection}
+              onMouseDown={() => saveSelection()}
+              onInput={e => {
+                const color = (e.target as HTMLInputElement).value;
+                setHighlightColor(color);
+                applyInlineStyle('background-color', color);
+              }}
+              onChange={e => {
+                const color = e.target.value;
+                setHighlightColor(color);
+                applyInlineStyle('background-color', color);
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            title="Tirar marcador / destaque"
+            onMouseDown={e => e.preventDefault()}
+            onClick={clearHighlight}
+            className="px-1.5 h-8 rounded text-[10px] font-bold text-white/60 hover:text-white hover:bg-white/10 border border-white/10"
+          >
+            ×▮
+          </button>
+        </div>
         <span className="w-px h-5 bg-white/15 mx-1" />
         <ToolBtn title="Inserir link" onClick={() => { setShowLink(true); setLinkText(''); }}><FaLink /></ToolBtn>
         <ToolBtn title="Remover link" onClick={() => run('unlink')}><FaUnlink /></ToolBtn>
@@ -416,7 +501,11 @@ export default function EmailBodyEditor({
         <span className="w-px h-5 bg-white/15 mx-1" />
         <ToolBtn title="Desfazer" onClick={() => run('undo')}><FaUndo /></ToolBtn>
         <ToolBtn title="Refazer" onClick={() => run('redo')}><FaRedo /></ToolBtn>
-        <ToolBtn title="Limpar formatação" onClick={() => run('removeFormat')}><FaEraser /></ToolBtn>
+        <ToolBtn title="Limpar formatação (também tira cor e marca)" onClick={() => {
+          applyInlineStyle('background-color', null);
+          applyInlineStyle('color', null);
+          run('removeFormat');
+        }}><FaEraser /></ToolBtn>
         <div className="flex-1" />
         <ToolBtn title="Visual" active={mode === 'visual'} onClick={() => switchMode('visual')}><span className="text-xs font-bold">VISUAL</span></ToolBtn>
         <ToolBtn title="HTML" active={mode === 'html'} onClick={() => switchMode('html')}><FaCode /></ToolBtn>
