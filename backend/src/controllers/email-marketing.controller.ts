@@ -1022,6 +1022,41 @@ export const getSends = async (req: Request, res: Response) => {
 // WEBHOOK DO MAILGUN (eventos de tracking)
 // =============================================
 
+/** Extrai motivo legível de eventos failed/bounced do Mailgun */
+function formatMailgunDeliveryError(event: any): string | null {
+  if (!event || typeof event !== 'object') return null;
+  const delivery = event['delivery-status'] || event.delivery_status || {};
+  const reason = String(event.reason || '').trim();
+  const severity = String(event.severity || '').trim();
+  const code = delivery.code ?? delivery['code'];
+  const desc = String(
+    delivery.description ||
+    delivery.message ||
+    delivery['enhanced-code'] ||
+    ''
+  ).trim();
+  const parts: string[] = [];
+  if (reason) {
+    const reasonMap: Record<string, string> = {
+      bounce: 'Bounce (rejeitado pelo servidor do destinatário)',
+      'suppress-bounce': 'Suprimido (histórico de bounce)',
+      'suppress-complaint': 'Suprimido (marcado como spam)',
+      'suppress-unsubscribe': 'Suprimido (descadastrado)',
+      espblock: 'Bloqueado pelo provedor de e-mail',
+      blacklist: 'Bloqueado (lista negra)',
+      old: 'Endereço antigo/inativo',
+      softfail: 'Falha temporária',
+      generic: 'Falha genérica de entrega',
+    };
+    parts.push(reasonMap[reason] || `Motivo: ${reason}`);
+  }
+  if (severity) parts.push(severity === 'permanent' ? 'Permanente' : severity === 'temporary' ? 'Temporária' : severity);
+  if (code) parts.push(`Código ${code}`);
+  if (desc) parts.push(desc);
+  const msg = parts.join(' — ').slice(0, 500);
+  return msg || null;
+}
+
 export const mailgunWebhook = async (req: Request, res: Response) => {
   try {
     // Suporta body como objeto (json), Buffer (raw) ou string
@@ -1057,14 +1092,30 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
 
     const openedAt  = eventType === 'opened'  ? 'NOW()' : 'opened_at';
     const clickedAt = eventType === 'clicked' ? 'NOW()' : 'clicked_at';
+    const deliveryError =
+      eventType === 'failed' || eventType === 'bounced'
+        ? formatMailgunDeliveryError(event)
+        : null;
+    if (deliveryError) {
+      console.log(`[webhook-mailgun] motivo: ${deliveryError}`);
+    }
 
-    // 1. Atualizar destinatários de campanhas
-    await pool.query(
-      `UPDATE email_marketing_recipients
-       SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
-       WHERE mailgun_message_id=$2 AND email=$3`,
-      [newStatus, messageId, recipient]
-    );
+    // 1. Atualizar destinatários de campanhas (grava motivo da falha quando vier do Mailgun)
+    if (deliveryError) {
+      await pool.query(
+        `UPDATE email_marketing_recipients
+         SET status=$1, error_message=$2, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
+         WHERE mailgun_message_id=$3 AND email=$4`,
+        [newStatus, deliveryError, messageId, recipient]
+      );
+    } else {
+      await pool.query(
+        `UPDATE email_marketing_recipients
+         SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
+         WHERE mailgun_message_id=$2 AND email=$3`,
+        [newStatus, messageId, recipient]
+      );
+    }
 
     // 2. Atualizar envios únicos — busca com e sem <> para compatibilidade
     const msgIdWithBrackets = `<${messageId}>`;
