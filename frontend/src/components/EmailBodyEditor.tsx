@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   FaBold, FaItalic, FaUnderline, FaListUl, FaListOl, FaLink, FaUnlink,
   FaAlignLeft, FaAlignCenter, FaAlignRight, FaWhatsapp, FaEye, FaCode,
@@ -78,6 +78,14 @@ export default function EmailBodyEditor({
   const [waLabel, setWaLabel] = useState('Falar no WhatsApp');
   const [textColor, setTextColor] = useState('#111111');
   const [highlightColor, setHighlightColor] = useState('#fff59d');
+  /** Marcador ligado = o que digitar sai marcado; desligado = digita sem marca */
+  const [highlightOn, setHighlightOn] = useState(false);
+  const textColorRef = useRef(textColor);
+  const highlightColorRef = useRef(highlightColor);
+  const highlightOnRef = useRef(highlightOn);
+  textColorRef.current = textColor;
+  highlightColorRef.current = highlightColor;
+  highlightOnRef.current = highlightOn;
   const colors = ACCENT[accent];
 
   const readEditorHtml = () => {
@@ -211,23 +219,22 @@ export default function EmailBodyEditor({
   };
 
   /**
-   * Aplica ou remove cor/marca na seleção.
-   * value = null → só remove o estilo (tirar cor / tirar marca)
+   * Aplica ou remove cor/marca na seleção atual (trecho marcado).
+   * value = null → remove o estilo.
    */
-  const applyInlineStyle = (cssProp: 'color' | 'background-color', value: string | null) => {
+  const applyToSelection = (cssProp: 'color' | 'background-color', value: string | null) => {
     restoreSelection();
     const sel = window.getSelection();
     const editor = editorRef.current;
-    if (!sel || sel.rangeCount === 0 || !editor) return;
+    if (!sel || sel.rangeCount === 0 || !editor) return false;
     let range = sel.getRangeAt(0);
     if (!editor.contains(range.commonAncestorContainer)) {
       restoreSelection();
-      if (!sel.rangeCount) return;
+      if (!sel.rangeCount) return false;
       range = sel.getRangeAt(0);
     }
-    if (range.collapsed) return;
+    if (range.collapsed) return false;
 
-    // Extrai a seleção, limpa o estilo antigo e reaplica (ou só limpa)
     const frag = range.extractContents();
     stripPropFromTree(frag, cssProp);
 
@@ -244,7 +251,6 @@ export default function EmailBodyEditor({
         sel.addRange(next);
       } catch { /* ignore */ }
     } else {
-      // Insere o fragmento limpo (sem nova cor/marca)
       const marker = document.createElement('span');
       marker.appendChild(frag);
       range.insertNode(marker);
@@ -254,7 +260,6 @@ export default function EmailBodyEditor({
         sel.removeAllRanges();
         sel.addRange(next);
       } catch { /* ignore */ }
-      // Desembrulha o marker temporário
       const parent = marker.parentNode;
       if (parent) {
         while (marker.firstChild) parent.insertBefore(marker.firstChild, marker);
@@ -262,20 +267,97 @@ export default function EmailBodyEditor({
       }
     }
 
-    // Limpa nodes vazios que o browser deixa
     editor.normalize();
     emit();
     saveSelection();
+    return true;
   };
 
-  const clearTextColor = () => {
-    applyInlineStyle('color', null);
+  /** Monta span com a cor/marca ATIVAS da barra (modo digitação) */
+  const buildTypedSpan = (text: string) => {
+    const span = document.createElement('span');
+    span.style.color = textColorRef.current;
+    if (highlightOnRef.current) {
+      span.style.backgroundColor = highlightColorRef.current;
+    }
+    span.textContent = text;
+    return span;
+  };
+
+  /**
+   * Escolhe a cor ATIVA: o que digitar daqui pra frente sai nessa cor.
+   * Se houver texto selecionado, pinta a seleção também.
+   */
+  const chooseTextColor = (color: string) => {
+    setTextColor(color);
+    textColorRef.current = color;
+    restoreSelection();
+    const sel = window.getSelection();
+    const hasSelection = !!(sel && sel.rangeCount && !sel.getRangeAt(0).collapsed);
+    if (hasSelection) applyToSelection('color', color);
+    else saveSelection();
+  };
+
+  /** Volta a cor ativa para preto e, se houver seleção, remove cor customizada */
+  const resetTextColor = () => {
     setTextColor('#111111');
+    textColorRef.current = '#111111';
+    restoreSelection();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && !sel.getRangeAt(0).collapsed) {
+      applyToSelection('color', '#111111');
+    }
   };
 
-  const clearHighlight = () => {
-    applyInlineStyle('background-color', null);
-    setHighlightColor('#fff59d');
+  /**
+   * Liga o marcador com essa cor: digitar marca; seleção marcada também.
+   */
+  const chooseHighlight = (color: string) => {
+    setHighlightColor(color);
+    setHighlightOn(true);
+    highlightColorRef.current = color;
+    highlightOnRef.current = true;
+    restoreSelection();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && !sel.getRangeAt(0).collapsed) {
+      applyToSelection('background-color', color);
+    }
+  };
+
+  /** Desliga o marcador: digitar sem marca; tira marca da seleção se houver */
+  const turnOffHighlight = () => {
+    setHighlightOn(false);
+    highlightOnRef.current = false;
+    restoreSelection();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && !sel.getRangeAt(0).collapsed) {
+      applyToSelection('background-color', null);
+    }
+  };
+
+  /** Digitação: cada caractere respeita cor e marcador ativos da barra */
+  const handleBeforeInput = (e: FormEvent<HTMLDivElement>) => {
+    const ne = e.nativeEvent as InputEvent;
+    if (ne.isComposing) return;
+    if (ne.inputType !== 'insertText' || !ne.data) return;
+
+    e.preventDefault();
+    const sel = window.getSelection();
+    const editor = editorRef.current;
+    if (!sel || !sel.rangeCount || !editor) return;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return;
+
+    if (!range.collapsed) range.deleteContents();
+
+    const span = buildTypedSpan(ne.data);
+    range.insertNode(span);
+    range.setStartAfter(span);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    emit();
+    saveSelection();
   };
 
   const insertVariable = (token: string) => {
@@ -302,9 +384,27 @@ export default function EmailBodyEditor({
       setMode('visual');
     }
     restoreSelection();
-    const ok = document.execCommand('insertText', false, `${token} `);
-    if (!ok) insertHtml(`${token}&nbsp;`);
-    else emit();
+    const sel = window.getSelection();
+    const editor = editorRef.current;
+    if (!sel || !editor) {
+      insertHtml(`${token}&nbsp;`);
+      return;
+    }
+    if (!sel.rangeCount) {
+      const r = document.createRange();
+      r.selectNodeContents(editor);
+      r.collapse(false);
+      sel.addRange(r);
+    }
+    const range = sel.getRangeAt(0);
+    if (!range.collapsed) range.deleteContents();
+    const span = buildTypedSpan(`${token} `);
+    range.insertNode(span);
+    range.setStartAfter(span);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    emit();
     saveSelection();
   };
 
@@ -416,7 +516,7 @@ export default function EmailBodyEditor({
         </select>
         <div className="flex items-center gap-0.5" onMouseDown={() => saveSelection()}>
           <label
-            title="Cor do texto — selecione o texto e escolha a cor"
+            title="Cor ativa: o que você digitar sai nessa cor. Se marcar um trecho, pinta a seleção."
             className="relative w-8 h-8 rounded border border-white/20 cursor-pointer overflow-hidden flex items-center justify-center bg-white/10"
           >
             <span className="text-[10px] font-black text-white leading-none pointer-events-none" aria-hidden>A</span>
@@ -431,23 +531,15 @@ export default function EmailBodyEditor({
               className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
               onFocus={saveSelection}
               onMouseDown={() => saveSelection()}
-              onInput={e => {
-                const color = (e.target as HTMLInputElement).value;
-                setTextColor(color);
-                applyInlineStyle('color', color);
-              }}
-              onChange={e => {
-                const color = e.target.value;
-                setTextColor(color);
-                applyInlineStyle('color', color);
-              }}
+              onInput={e => setTextColor((e.target as HTMLInputElement).value)}
+              onChange={e => chooseTextColor(e.target.value)}
             />
           </label>
           <button
             type="button"
-            title="Tirar cor do texto"
+            title="Cor ativa = preto"
             onMouseDown={e => e.preventDefault()}
-            onClick={clearTextColor}
+            onClick={resetTextColor}
             className="px-1.5 h-8 rounded text-[10px] font-bold text-white/60 hover:text-white hover:bg-white/10 border border-white/10"
           >
             ×A
@@ -455,13 +547,17 @@ export default function EmailBodyEditor({
         </div>
         <div className="flex items-center gap-0.5" onMouseDown={() => saveSelection()}>
           <label
-            title="Marcar texto — selecione e escolha a cor do destaque"
-            className="relative w-8 h-8 rounded border border-white/20 cursor-pointer overflow-hidden flex items-center justify-center bg-white/10"
+            title={highlightOn
+              ? 'Marcador LIGADO: o que digitar fica marcado. Clique ×▮ para desligar.'
+              : 'Marcador DESLIGADO: escolha uma cor para ligar. Com trecho selecionado, marca a seleção.'}
+            className={`relative w-8 h-8 rounded border cursor-pointer overflow-hidden flex items-center justify-center ${
+              highlightOn ? 'border-yellow-400 bg-yellow-500/20' : 'border-white/20 bg-white/10'
+            }`}
           >
-            <FaHighlighter className="text-yellow-300 text-sm pointer-events-none" />
+            <FaHighlighter className={`text-sm pointer-events-none ${highlightOn ? 'text-yellow-200' : 'text-white/40'}`} />
             <span
               className="absolute bottom-0 left-0 right-0 h-1.5 pointer-events-none"
-              style={{ background: highlightColor }}
+              style={{ background: highlightOn ? highlightColor : 'transparent' }}
             />
             <input
               type="color"
@@ -470,24 +566,20 @@ export default function EmailBodyEditor({
               className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
               onFocus={saveSelection}
               onMouseDown={() => saveSelection()}
-              onInput={e => {
-                const color = (e.target as HTMLInputElement).value;
-                setHighlightColor(color);
-                applyInlineStyle('background-color', color);
-              }}
-              onChange={e => {
-                const color = e.target.value;
-                setHighlightColor(color);
-                applyInlineStyle('background-color', color);
-              }}
+              onInput={e => setHighlightColor((e.target as HTMLInputElement).value)}
+              onChange={e => chooseHighlight(e.target.value)}
             />
           </label>
           <button
             type="button"
-            title="Tirar marcador / destaque"
+            title="Desligar marcador"
             onMouseDown={e => e.preventDefault()}
-            onClick={clearHighlight}
-            className="px-1.5 h-8 rounded text-[10px] font-bold text-white/60 hover:text-white hover:bg-white/10 border border-white/10"
+            onClick={turnOffHighlight}
+            className={`px-1.5 h-8 rounded text-[10px] font-bold border ${
+              highlightOn
+                ? 'text-yellow-200 border-yellow-500/40 hover:bg-yellow-500/20'
+                : 'text-white/40 border-white/10 hover:bg-white/10'
+            }`}
           >
             ×▮
           </button>
@@ -501,9 +593,9 @@ export default function EmailBodyEditor({
         <span className="w-px h-5 bg-white/15 mx-1" />
         <ToolBtn title="Desfazer" onClick={() => run('undo')}><FaUndo /></ToolBtn>
         <ToolBtn title="Refazer" onClick={() => run('redo')}><FaRedo /></ToolBtn>
-        <ToolBtn title="Limpar formatação (também tira cor e marca)" onClick={() => {
-          applyInlineStyle('background-color', null);
-          applyInlineStyle('color', null);
+        <ToolBtn title="Limpar formatação da seleção" onClick={() => {
+          applyToSelection('background-color', null);
+          applyToSelection('color', null);
           run('removeFormat');
         }}><FaEraser /></ToolBtn>
         <div className="flex-1" />
@@ -518,13 +610,14 @@ export default function EmailBodyEditor({
           ref={editorRef}
           contentEditable
           suppressContentEditableWarning
+          onBeforeInput={handleBeforeInput}
           onInput={() => { emit(); saveSelection(); }}
           onKeyUp={saveSelection}
           onMouseUp={saveSelection}
           onBlur={() => { saveSelection(); emit(); }}
           data-placeholder={placeholder}
           className="email-body-editor px-4 py-3 text-[15px] leading-relaxed outline-none overflow-y-auto bg-white"
-          style={{ minHeight, color: '#111111', caretColor: '#111111' }}
+          style={{ minHeight, color: '#111111', caretColor: textColor }}
         />
       </div>
 
