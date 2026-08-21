@@ -1426,13 +1426,21 @@ function formatMailgunDeliveryError(event: any): string | null {
 
 /** Recalcula contadores da campanha só com destinatários DESTA campanha (evita duplicar webhook) */
 async function recalculateCampaignCounters(campaignId: number): Promise<void> {
+  // opened/clicked usam timestamps para não “perder” engajamento se um webhook
+  // posterior (ex.: opened) reescrever o status textual do destinatário
   await pool.query(
     `UPDATE email_marketing_campaigns c SET
        total_contacts = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id), 0),
-       sent_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status IN ('sent','opened','clicked')), 0),
+       sent_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND (
+         r.status IN ('sent','opened','clicked') OR r.opened_at IS NOT NULL OR r.clicked_at IS NOT NULL
+       )), 0),
        failed_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status = 'failed'), 0),
-       opened_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status IN ('opened','clicked')), 0),
-       clicked_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status = 'clicked'), 0),
+       opened_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND (
+         r.opened_at IS NOT NULL OR r.clicked_at IS NOT NULL OR r.status IN ('opened','clicked')
+       )), 0),
+       clicked_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND (
+         r.clicked_at IS NOT NULL OR r.status = 'clicked'
+       )), 0),
        bounced_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status = 'bounced'), 0),
        complained_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status = 'complained'), 0),
        updated_at = NOW()
@@ -1508,38 +1516,55 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
     if (current.rows[0]) {
       const row = current.rows[0];
       const prev = String(row.status || 'pending');
-      const shouldUpdateStatus = recipientStatusRank(newStatus) >= recipientStatusRank(prev)
+      const alreadyClicked = !!row.clicked_at || prev === 'clicked';
+
+      // Nunca rebaixar clique → aberto (nem por race de webhooks)
+      let effectiveStatus = newStatus;
+      if (eventType === 'opened' && alreadyClicked) {
+        effectiveStatus = 'clicked';
+      }
+      if (eventType === 'clicked') {
+        effectiveStatus = 'clicked';
+      }
+
+      const shouldUpdateStatus = recipientStatusRank(effectiveStatus) >= recipientStatusRank(prev)
         // falha/bounce depois de enviado pode “rebaixar” engajamento de sent→failed
         || (['failed', 'bounced', 'complained'].includes(newStatus) && ['pending', 'sent'].includes(prev));
 
       // delivered não deve sobrescrever opened/clicked
-      const skipDeliveredDowngrade = eventType === 'delivered' && ['opened', 'clicked', 'failed', 'bounced', 'complained'].includes(prev);
+      const skipDeliveredDowngrade = eventType === 'delivered' && (
+        ['opened', 'clicked', 'failed', 'bounced', 'complained'].includes(prev) || alreadyClicked
+      );
 
       if (shouldUpdateStatus && !skipDeliveredDowngrade) {
-        const setOpened = eventType === 'opened' || row.opened_at ? true : false;
-        const setClicked = eventType === 'clicked' || row.clicked_at ? true : false;
         if (deliveryError) {
           await pool.query(
             `UPDATE email_marketing_recipients
              SET status=$1,
                  error_message=$2,
-                 opened_at=CASE WHEN $3 THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
-                 clicked_at=CASE WHEN $4 THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
+                 opened_at=CASE WHEN $3::boolean THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
+                 clicked_at=CASE WHEN $4::boolean THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
                  updated_at=NOW()
              WHERE id=$5`,
-            [newStatus, deliveryError, setOpened && eventType === 'opened', setClicked && eventType === 'clicked', row.id]
+            [
+              effectiveStatus,
+              deliveryError,
+              eventType === 'opened' || eventType === 'clicked',
+              eventType === 'clicked',
+              row.id,
+            ]
           );
         } else {
           await pool.query(
             `UPDATE email_marketing_recipients
              SET status=$1,
-                 opened_at=CASE WHEN $2 THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
-                 clicked_at=CASE WHEN $3 THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
+                 opened_at=CASE WHEN $2::boolean THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
+                 clicked_at=CASE WHEN $3::boolean THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
                  updated_at=NOW()
              WHERE id=$4`,
             [
-              newStatus,
-              eventType === 'opened',
+              effectiveStatus,
+              eventType === 'opened' || eventType === 'clicked',
               eventType === 'clicked',
               row.id,
             ]
@@ -1547,12 +1572,22 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
         }
       } else if (eventType === 'opened' && !row.opened_at) {
         await pool.query(
-          `UPDATE email_marketing_recipients SET opened_at=NOW(), updated_at=NOW() WHERE id=$1`,
+          `UPDATE email_marketing_recipients
+           SET opened_at=NOW(),
+               status=CASE WHEN clicked_at IS NOT NULL OR status='clicked' THEN 'clicked' ELSE status END,
+               updated_at=NOW()
+           WHERE id=$1`,
           [row.id]
         );
-      } else if (eventType === 'clicked' && !row.clicked_at) {
+      } else if (eventType === 'clicked') {
+        // Clique sempre grava timestamp + status, mesmo se o rank não avançar
         await pool.query(
-          `UPDATE email_marketing_recipients SET clicked_at=COALESCE(clicked_at,NOW()), opened_at=COALESCE(opened_at,NOW()), updated_at=NOW() WHERE id=$1`,
+          `UPDATE email_marketing_recipients
+           SET clicked_at=COALESCE(clicked_at,NOW()),
+               opened_at=COALESCE(opened_at,NOW()),
+               status='clicked',
+               updated_at=NOW()
+           WHERE id=$1`,
           [row.id]
         );
       }
@@ -1561,23 +1596,40 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
       await recalculateCampaignCounters(row.campaign_id);
     }
 
-    // Envios únicos — busca com e sem <> para compatibilidade
+    // Envios únicos — nunca rebaixa clicked→opened; timestamps são sticky
     const msgIdWithBrackets = `<${messageId}>`;
-    const openedAt  = eventType === 'opened'  ? 'NOW()' : 'opened_at';
-    const clickedAt = eventType === 'clicked' ? 'NOW()' : 'clicked_at';
     if (deliveryError) {
       await pool.query(
         `UPDATE email_marketing_single_sends
-         SET status=$1, error_message=$2, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
-         WHERE mailgun_message_id = $3 OR mailgun_message_id = $4`,
-        [newStatus, deliveryError, messageId, msgIdWithBrackets]
+         SET
+           status = CASE
+             WHEN $1 = 'opened' AND (clicked_at IS NOT NULL OR status = 'clicked') THEN 'clicked'
+             WHEN $1 = 'clicked' THEN 'clicked'
+             WHEN status = 'clicked' AND $1 IN ('sent','opened','delivered') THEN 'clicked'
+             ELSE $1
+           END,
+           error_message = $2,
+           opened_at = CASE WHEN $3 = 'opened' OR $3 = 'clicked' THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
+           clicked_at = CASE WHEN $3 = 'clicked' THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
+           updated_at = NOW()
+         WHERE mailgun_message_id = $4 OR mailgun_message_id = $5`,
+        [newStatus, deliveryError, eventType, messageId, msgIdWithBrackets]
       );
     } else {
       await pool.query(
         `UPDATE email_marketing_single_sends
-         SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
-         WHERE mailgun_message_id = $2 OR mailgun_message_id = $3`,
-        [newStatus, messageId, msgIdWithBrackets]
+         SET
+           status = CASE
+             WHEN $1 = 'opened' AND (clicked_at IS NOT NULL OR status = 'clicked') THEN 'clicked'
+             WHEN $1 = 'clicked' THEN 'clicked'
+             WHEN status = 'clicked' AND $1 IN ('sent','opened','delivered') THEN 'clicked'
+             ELSE $1
+           END,
+           opened_at = CASE WHEN $2 = 'opened' OR $2 = 'clicked' THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
+           clicked_at = CASE WHEN $2 = 'clicked' THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
+           updated_at = NOW()
+         WHERE mailgun_message_id = $3 OR mailgun_message_id = $4`,
+        [newStatus, eventType, messageId, msgIdWithBrackets]
       );
     }
 

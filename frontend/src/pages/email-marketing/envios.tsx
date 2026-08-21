@@ -88,8 +88,8 @@ function getTrackingFlags(s: Send) {
   const st = s.status;
   return {
     delivered:  !['failed', 'bounced', 'pending'].includes(st) && st !== 'draft',
-    opened:     ['opened', 'clicked'].includes(st),
-    clicked:    st === 'clicked',
+    opened:     ['opened', 'clicked'].includes(st) || (s.opened_count || 0) > 0,
+    clicked:    st === 'clicked' || (s.clicked_count || 0) > 0,
     bounced:    st === 'bounced',
     complained: st === 'complained',
     failed:     st === 'failed',
