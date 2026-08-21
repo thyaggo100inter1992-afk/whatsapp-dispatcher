@@ -50,6 +50,8 @@ router.delete('/campaigns/:id', ctrl.deleteCampaign);
 // ENVIO ÚNICO
 // =============================================
 router.post('/send-single', ctrl.sendSingle);
+router.get('/send-single/:id', ctrl.getSingleSend);
+router.post('/send-single/:id/resend', ctrl.resendSingleSend);
 
 // =============================================
 // HISTÓRICO DE ENVIOS (campanhas + envio único)

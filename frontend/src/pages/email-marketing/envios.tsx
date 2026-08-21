@@ -1,13 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import {
   FaEnvelope, FaBullhorn, FaPaperPlane, FaArrowLeft, FaSync,
   FaCheckCircle, FaTimesCircle, FaEye, FaMousePointer,
   FaExclamationTriangle, FaUser, FaClock, FaSearch, FaFilter,
-  FaCheckDouble, FaFlag, FaBan
+  FaCheckDouble, FaFlag, FaBan, FaEdit, FaRedo, FaSpinner, FaTimes, FaSave
 } from 'react-icons/fa';
 import api from '@/services/api';
+import { useNotification } from '@/hooks/useNotification';
+
+const EmailBodyEditor = dynamic(() => import('@/components/EmailBodyEditor'), { ssr: false });
+
+interface Domain { id: number; domain: string; status: string; }
 
 interface Send {
   id: number;
@@ -31,6 +37,17 @@ interface Send {
   to_email: string | null;
   to_name: string | null;
   mailgun_message_id: string | null;
+  error_message?: string | null;
+  domain_id?: number | null;
+  reply_to?: string | null;
+  body_html?: string | null;
+}
+
+function extractLocalPart(value: string): string {
+  const raw = String(value || '').trim();
+  return (raw.includes('@') ? raw.split('@')[0] : raw)
+    .replace(/[^a-zA-Z0-9._+-]/g, '')
+    .toLowerCase();
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: JSX.Element }> = {
@@ -70,7 +87,7 @@ function getTrackingFlags(s: Send) {
   }
   const st = s.status;
   return {
-    delivered:  !['failed', 'bounced'].includes(st),
+    delivered:  !['failed', 'bounced', 'pending'].includes(st) && st !== 'draft',
     opened:     ['opened', 'clicked'].includes(st),
     clicked:    st === 'clicked',
     bounced:    st === 'bounced',
@@ -90,17 +107,94 @@ const TRACKING_ICONS = [
 
 export default function Envios() {
   const router = useRouter();
+  const notification = useNotification();
   const [sends, setSends] = useState<Send[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'campaign' | 'single'>('all');
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [editSend, setEditSend] = useState<Send | null>(null);
+  const [resending, setResending] = useState(false);
+  const [editForm, setEditForm] = useState({
+    domain_id: '',
+    from_name: '',
+    from_email: '',
+    reply_to: '',
+    to_name: '',
+    to_email: '',
+    subject: '',
+    body_html: '',
+  });
 
-  useEffect(() => { loadSends(); }, []);
+  useEffect(() => {
+    loadSends();
+    api.get('/email-marketing/domains').then(r => {
+      setDomains((r.data.data || []).filter((d: Domain) => d.status === 'active'));
+    }).catch(() => {});
+  }, []);
 
   const loadSends = async () => {
     setLoading(true);
     try { const r = await api.get('/email-marketing/sends?limit=200'); setSends(r.data.data || []); }
     catch { } finally { setLoading(false); }
+  };
+
+  const selectedDomain = useMemo(
+    () => domains.find(d => String(d.id) === String(editForm.domain_id))?.domain || '',
+    [domains, editForm.domain_id]
+  );
+
+  const openResendModal = async (s: Send) => {
+    try {
+      const r = await api.get(`/email-marketing/send-single/${s.id}`);
+      const d = r.data.data || s;
+      setEditForm({
+        domain_id: d.domain_id ? String(d.domain_id) : (s.domain_id ? String(s.domain_id) : ''),
+        from_name: d.from_name || '',
+        from_email: extractLocalPart(d.from_email || ''),
+        reply_to: d.reply_to || '',
+        to_name: d.to_name || '',
+        to_email: d.to_email || '',
+        subject: d.subject || '',
+        body_html: d.body_html || '',
+      });
+      setEditSend({ ...s, ...d, type: 'single' });
+    } catch (e: any) {
+      notification.error('Erro', e.response?.data?.message || e.message);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!editSend) return;
+    const local = extractLocalPart(editForm.from_email);
+    if (!editForm.domain_id) return notification.error('Erro', 'Selecione um domínio');
+    if (!local) return notification.error('Erro', 'Informe o usuário do remetente');
+    if (!editForm.to_email) return notification.error('Erro', 'Informe o destinatário');
+    if (!editForm.subject) return notification.error('Erro', 'Informe o assunto');
+    if (!editForm.body_html?.trim()) {
+      return notification.error('Erro', 'Cole ou edite o corpo do e-mail para reenviar');
+    }
+    setResending(true);
+    try {
+      await api.post(`/email-marketing/send-single/${editSend.id}/resend`, {
+        domain_id: Number(editForm.domain_id),
+        from_name: editForm.from_name,
+        from_email: local,
+        reply_to: editForm.reply_to || undefined,
+        to_name: editForm.to_name || undefined,
+        to_email: editForm.to_email,
+        subject: editForm.subject,
+        body_html: editForm.body_html,
+      });
+      notification.success('Reenviado!', 'E-mail reenviado com sucesso');
+      setEditSend(null);
+      await loadSends();
+    } catch (e: any) {
+      notification.error('Falha no reenvio', e.response?.data?.message || e.message);
+      await loadSends();
+    } finally {
+      setResending(false);
+    }
   };
 
   const filtered = sends.filter(s => {
@@ -111,7 +205,8 @@ export default function Envios() {
              (s.from_email || '').toLowerCase().includes(q) ||
              (s.to_email || '').toLowerCase().includes(q) ||
              (s.user_name || '').toLowerCase().includes(q) ||
-             (s.title || '').toLowerCase().includes(q);
+             (s.title || '').toLowerCase().includes(q) ||
+             (s.error_message || '').toLowerCase().includes(q);
     }
     return true;
   });
@@ -121,13 +216,16 @@ export default function Envios() {
   const totalUnicos = sends.filter(s => s.type === 'single').length;
   const totalAbertos = sends.reduce((acc, s) => acc + (s.opened_count || 0), 0);
 
+  const inputCls = 'w-full px-4 py-3 bg-dark-700/80 border border-white/15 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500/50';
+  const labelCls = 'block text-sm font-bold text-white/80 mb-2';
+
   return (
     <>
       <Head><title>Histórico de Envios | E-mail Marketing</title></Head>
+      <notification.NotificationContainer />
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
         <div className="max-w-7xl mx-auto space-y-8">
 
-          {/* HEADER */}
           <div className="relative overflow-hidden bg-gradient-to-r from-red-600/30 via-red-500/20 to-red-600/30 backdrop-blur-xl border-2 border-red-500/40 rounded-3xl p-10 shadow-2xl shadow-red-500/20">
             <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
             <div className="relative">
@@ -149,7 +247,6 @@ export default function Envios() {
                 </button>
               </div>
 
-              {/* Stats topo */}
               {totalEnvios > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
                   {[
@@ -171,7 +268,6 @@ export default function Envios() {
             </div>
           </div>
 
-          {/* Filtros */}
           <div className="flex flex-wrap gap-3">
             <div className="flex-1 min-w-[200px] relative">
               <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -190,7 +286,6 @@ export default function Envios() {
             </div>
           </div>
 
-          {/* Lista */}
           {loading ? (
             <div className="text-center py-20 text-gray-400">
               <FaSync className="animate-spin text-5xl text-red-400 mx-auto mb-4" />
@@ -210,6 +305,7 @@ export default function Envios() {
                 const st = STATUS_CONFIG[s.status] || STATUS_CONFIG['sent'];
                 const isCampaign = s.type === 'campaign';
                 const flags = getTrackingFlags(s);
+                const canResend = !isCampaign && ['failed', 'bounced'].includes(s.status);
                 return (
                   <div key={`${s.type}-${s.id}`}
                     className={`bg-dark-800/60 backdrop-blur-xl rounded-2xl p-6 border-2 transition-all duration-300 shadow-xl
@@ -219,7 +315,6 @@ export default function Envios() {
                     onClick={() => isCampaign && router.push(`/email-marketing/campanhas/${s.id}`)}>
 
                     <div className="flex items-start justify-between gap-4 flex-wrap">
-                      {/* Esquerda */}
                       <div className="flex items-start gap-4 flex-1 min-w-0">
                         <div className={`p-3 rounded-xl flex-shrink-0 ${isCampaign ? 'bg-orange-500/20' : 'bg-blue-500/20'}`}>
                           {isCampaign
@@ -250,7 +345,6 @@ export default function Envios() {
                             )}
                           </div>
 
-                          {/* Ícones de rastreamento */}
                           <div className="flex items-center gap-1.5 mt-3 flex-wrap">
                             {TRACKING_ICONS.map(({ key, label, icon, activeColor }) => {
                               const active = flags[key as keyof typeof flags];
@@ -264,14 +358,29 @@ export default function Envios() {
                               );
                             })}
                           </div>
+
+                          {!isCampaign && s.error_message && (
+                            <div className="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-sm break-words">
+                              <strong className="text-red-300">Motivo:</strong> {s.error_message}
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      {/* Direita */}
                       <div className="flex flex-col items-end gap-2 flex-shrink-0">
                         <span className="text-gray-500 text-sm flex items-center gap-1">
                           <FaClock className="text-xs" /> {formatDateTime(s.sent_at || s.created_at)}
                         </span>
+
+                        {canResend && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openResendModal(s); }}
+                            className="mt-1 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold flex items-center gap-2"
+                          >
+                            <FaEdit /> Editar e Reenviar
+                          </button>
+                        )}
 
                         {isCampaign && (
                           <div className="flex items-center gap-3">
@@ -320,7 +429,6 @@ export default function Envios() {
                       </div>
                     </div>
 
-                    {/* Barra de progresso campanhas em envio */}
                     {isCampaign && s.status === 'sending' && s.total_contacts > 0 && (
                       <div className="mt-4 pt-4 border-t border-white/10">
                         <div className="flex justify-between text-xs text-gray-400 mb-1">
@@ -342,6 +450,89 @@ export default function Envios() {
           )}
         </div>
       </div>
+
+      {/* Modal editar + reenviar envio único */}
+      {editSend && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => !resending && setEditSend(null)}>
+          <div className="bg-dark-800 rounded-2xl border-2 border-orange-500/40 max-w-3xl w-full max-h-[92vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 flex items-center justify-between p-5 border-b border-white/10 bg-gradient-to-r from-orange-600/30 to-orange-500/10 backdrop-blur-xl">
+              <h2 className="text-xl font-black text-white flex items-center gap-2"><FaRedo className="text-orange-400" /> Editar e Reenviar</h2>
+              <button type="button" disabled={resending} onClick={() => setEditSend(null)} className="p-2 text-gray-400 hover:text-white"><FaTimes /></button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {editSend.error_message && (
+                <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-sm">
+                  <strong>Último erro:</strong> {editSend.error_message}
+                </div>
+              )}
+
+              <div>
+                <label className={labelCls}>Domínio *</label>
+                <select value={editForm.domain_id} onChange={e => setEditForm(f => ({ ...f, domain_id: e.target.value }))} className={inputCls}>
+                  <option value="">Selecione...</option>
+                  {domains.map(d => <option key={d.id} value={d.id}>{d.domain}</option>)}
+                </select>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Nome remetente *</label>
+                  <input value={editForm.from_name} onChange={e => setEditForm(f => ({ ...f, from_name: e.target.value }))} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Usuário remetente * (sem @)</label>
+                  <div className="flex gap-2">
+                    <input value={editForm.from_email} onChange={e => setEditForm(f => ({ ...f, from_email: extractLocalPart(e.target.value) }))} className={inputCls} />
+                    {selectedDomain && <span className="px-3 flex items-center rounded-xl bg-dark-700 border border-white/15 text-white/70 text-sm whitespace-nowrap">@{selectedDomain}</span>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Nome destinatário</label>
+                  <input value={editForm.to_name} onChange={e => setEditForm(f => ({ ...f, to_name: e.target.value }))} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>E-mail destinatário *</label>
+                  <input value={editForm.to_email} onChange={e => setEditForm(f => ({ ...f, to_email: e.target.value }))} className={inputCls} />
+                </div>
+              </div>
+
+              <div>
+                <label className={labelCls}>Assunto *</label>
+                <input value={editForm.subject} onChange={e => setEditForm(f => ({ ...f, subject: e.target.value }))} className={inputCls} />
+              </div>
+
+              <div>
+                <label className={labelCls}>Corpo do e-mail *</label>
+                <EmailBodyEditor
+                  value={editForm.body_html}
+                  onChange={html => setEditForm(f => ({ ...f, body_html: html }))}
+                  accent="orange"
+                  minHeight={240}
+                />
+                {!editForm.body_html && (
+                  <p className="text-yellow-300 text-xs mt-2">Este envio antigo pode não ter o HTML salvo. Cole o conteúdo novamente antes de reenviar.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 p-5 border-t border-white/10 bg-dark-800 flex gap-3">
+              <button type="button" disabled={resending} onClick={() => setEditSend(null)}
+                className="flex-1 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold flex items-center justify-center gap-2">
+                <FaTimes /> Cancelar
+              </button>
+              <button type="button" disabled={resending} onClick={handleResend}
+                className="flex-1 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+                {resending ? <FaSpinner className="animate-spin" /> : <FaSave />}
+                Salvar e Reenviar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

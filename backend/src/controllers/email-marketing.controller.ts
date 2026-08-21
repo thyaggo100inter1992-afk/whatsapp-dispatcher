@@ -1081,22 +1081,169 @@ export const sendSingle = async (req: Request, res: Response) => {
       const msgId = rawMsgId.replace(/^<|>$/g, '').trim() || null;
       await pool.query(
         `INSERT INTO email_marketing_single_sends
-         (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'sent')`,
-        [tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, finalSubject, domain_id, msgId]
+         (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status, body_html, body_text, reply_to, error_message)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'sent',$11,$12,$13,NULL)`,
+        [
+          tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, finalSubject, domain_id, msgId,
+          body_html || null, finalText || null, reply_to || null,
+        ]
       );
 
       res.json({ success: true, message_id: msgId, message: 'E-mail enviado com sucesso', from: finalFromEmail });
     } catch (sendError: any) {
       const status = sendError?.status || sendError?.statusCode;
       const msg = String(sendError?.message || 'Erro ao enviar');
-      if (status === 403 || /forbidden/i.test(msg)) {
-        return res.status(400).json({
-          success: false,
-          message: `Envio bloqueado (Forbidden). Domínio: ${domain}. Remetente: ${finalFromEmail}. Verifique se o domínio está ativo no Mailgun.`,
-        });
-      }
-      return res.status(500).json({ success: false, message: msg });
+      const friendly = (status === 403 || /forbidden/i.test(msg))
+        ? `Envio bloqueado (Forbidden). Domínio: ${domain}. Remetente: ${finalFromEmail}. Verifique se o domínio está ativo no Mailgun.`
+        : msg;
+      try {
+        const userId = (req as any).user?.id || (req as any).tenant?.userId || null;
+        const userName = (req as any).user?.name || (req as any).user?.username || null;
+        await pool.query(
+          `INSERT INTO email_marketing_single_sends
+           (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status, body_html, body_text, reply_to, error_message)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,'failed',$10,$11,$12,$13)`,
+          [
+            tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, subject, domain_id,
+            body_html || null, finalText || null, reply_to || null, friendly.slice(0, 500),
+          ]
+        );
+      } catch (_) { /* histórico opcional */ }
+      return res.status(status === 403 ? 400 : 500).json({ success: false, message: friendly });
+    }
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/** Detalhe de um envio único (para editar/reenviar) */
+export const getSingleSend = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const { id } = req.params;
+    const result = await pool.query(
+      `SELECT id, to_email, to_name, from_email, from_name, subject, domain_id, reply_to,
+              body_html, body_text, status, error_message, mailgun_message_id, created_at, updated_at
+       FROM email_marketing_single_sends
+       WHERE id=$1 AND tenant_id=$2`,
+      [id, tenantId]
+    );
+    if (!result.rows[0]) return res.status(404).json({ success: false, message: 'Envio não encontrado' });
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/** Reenvia (com edição opcional) um envio único que falhou */
+export const resendSingleSend = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const { id } = req.params;
+
+    const existing = await pool.query(
+      `SELECT * FROM email_marketing_single_sends WHERE id=$1 AND tenant_id=$2`,
+      [id, tenantId]
+    );
+    if (!existing.rows[0]) return res.status(404).json({ success: false, message: 'Envio não encontrado' });
+    const row = existing.rows[0];
+
+    const to_email = req.body.to_email ?? row.to_email;
+    const to_name = req.body.to_name !== undefined ? req.body.to_name : row.to_name;
+    const from_name = req.body.from_name ?? row.from_name;
+    let from_email = req.body.from_email ?? row.from_email;
+    const reply_to = req.body.reply_to !== undefined ? req.body.reply_to : row.reply_to;
+    const subject = req.body.subject ?? row.subject;
+    const body_html = req.body.body_html !== undefined ? req.body.body_html : row.body_html;
+    const body_text = req.body.body_text !== undefined ? req.body.body_text : row.body_text;
+    const domain_id = req.body.domain_id ?? row.domain_id;
+
+    if (!to_email || !from_email || !subject) {
+      return res.status(400).json({ success: false, message: 'Destinatário, remetente e assunto obrigatórios' });
+    }
+    if (!domain_id) {
+      return res.status(400).json({ success: false, message: 'Domínio obrigatório para reenvio' });
+    }
+    if (!body_html && !body_text) {
+      return res.status(400).json({
+        success: false,
+        message: 'Este envio não tem o corpo salvo (foi enviado antes da atualização). Cole o HTML novamente para reenviar.',
+      });
+    }
+
+    const domainRow = await pool.query(
+      `SELECT id, domain, status FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`,
+      [domain_id, tenantId]
+    );
+    if (!domainRow.rows[0]) {
+      return res.status(400).json({ success: false, message: 'Domínio não encontrado neste tenant' });
+    }
+    if (domainRow.rows[0].status !== 'active') {
+      return res.status(400).json({ success: false, message: 'Domínio ainda não está ativo/verificado.' });
+    }
+
+    const domain = domainRow.rows[0].domain as string;
+    const local = String(from_email || '')
+      .trim()
+      .split('@')[0]
+      .replace(/[^a-zA-Z0-9._+-]/g, '')
+      .toLowerCase();
+    if (!local) {
+      return res.status(400).json({ success: false, message: 'Usuário do remetente inválido' });
+    }
+    const finalFromEmail = `${local}@${domain}`;
+    const recipName = (to_name && String(to_name).trim()) || to_email;
+
+    const prepared = ensureEmailHtml(body_html, body_text);
+    const finalHtml = applyEmailVariables(prepared.html, { nome: recipName, email: to_email });
+    const finalText = applyEmailVariables(prepared.text, { nome: recipName, email: to_email }, { escapeValues: false });
+    const finalSubject = applyEmailVariables(subject, { nome: recipName, email: to_email }, { escapeValues: false });
+
+    const mg = await getMailgunClient();
+    try {
+      const result = await mg.messages.create(domain, {
+        from: `${String(from_name || '').trim()} <${finalFromEmail}>`,
+        to: [to_name ? `${to_name} <${to_email}>` : to_email],
+        'h:Reply-To': reply_to || finalFromEmail,
+        subject: finalSubject,
+        html: finalHtml,
+        text: finalText,
+        'o:tracking': 'yes',
+        'o:tracking-clicks': 'yes',
+        'o:tracking-opens': 'yes',
+      } as any);
+
+      const rawMsgId = (result as any).id || (result as any).message_id || '';
+      const msgId = rawMsgId.replace(/^<|>$/g, '').trim() || null;
+
+      await pool.query(
+        `UPDATE email_marketing_single_sends SET
+           to_email=$1, to_name=$2, from_email=$3, from_name=$4, subject=$5,
+           domain_id=$6, reply_to=$7, body_html=$8, body_text=$9,
+           mailgun_message_id=$10, status='sent', error_message=NULL,
+           opened_at=NULL, clicked_at=NULL, updated_at=NOW()
+         WHERE id=$11 AND tenant_id=$12`,
+        [
+          to_email, to_name || null, finalFromEmail, from_name || null, finalSubject,
+          domain_id, reply_to || null, body_html || null, finalText || null,
+          msgId, id, tenantId,
+        ]
+      );
+
+      res.json({ success: true, message_id: msgId, message: 'E-mail reenviado com sucesso', from: finalFromEmail });
+    } catch (sendError: any) {
+      const status = sendError?.status || sendError?.statusCode;
+      const msg = String(sendError?.message || 'Erro ao reenviar');
+      const friendly = (status === 403 || /forbidden/i.test(msg))
+        ? `Envio bloqueado (Forbidden). Domínio: ${domain}. Remetente: ${finalFromEmail}.`
+        : msg;
+      await pool.query(
+        `UPDATE email_marketing_single_sends SET status='failed', error_message=$1, updated_at=NOW() WHERE id=$2 AND tenant_id=$3`,
+        [friendly.slice(0, 500), id, tenantId]
+      );
+      return res.status(400).json({ success: false, message: friendly });
     }
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -1136,13 +1283,20 @@ export const getSends = async (req: Request, res: Response) => {
         s.id, 'single' as type, s.subject as title, s.subject,
         s.from_email, s.from_name,
         s.user_id, s.user_name,
-        s.status, 1 as total_contacts, 1 as sent_count, 0 as failed_count,
-        CASE WHEN s.opened_at IS NOT NULL THEN 1 ELSE 0 END as opened_count,
-        CASE WHEN s.clicked_at IS NOT NULL THEN 1 ELSE 0 END as clicked_count,
-        0 as bounced_count, 0 as complained_count,
+        s.status, 1 as total_contacts,
+        CASE WHEN s.status IN ('failed','bounced') THEN 0 ELSE 1 END as sent_count,
+        CASE WHEN s.status = 'failed' THEN 1 ELSE 0 END as failed_count,
+        CASE WHEN s.opened_at IS NOT NULL OR s.status IN ('opened','clicked') THEN 1 ELSE 0 END as opened_count,
+        CASE WHEN s.clicked_at IS NOT NULL OR s.status = 'clicked' THEN 1 ELSE 0 END as clicked_count,
+        CASE WHEN s.status = 'bounced' THEN 1 ELSE 0 END as bounced_count,
+        CASE WHEN s.status = 'complained' THEN 1 ELSE 0 END as complained_count,
         s.created_at as sent_at, s.created_at,
         s.to_email, s.to_name,
-        s.mailgun_message_id
+        s.mailgun_message_id,
+        s.error_message,
+        s.domain_id,
+        s.reply_to,
+        s.body_html
        FROM email_marketing_single_sends s
        WHERE s.tenant_id = $1
        ORDER BY s.created_at DESC`,
@@ -1411,12 +1565,21 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
     const msgIdWithBrackets = `<${messageId}>`;
     const openedAt  = eventType === 'opened'  ? 'NOW()' : 'opened_at';
     const clickedAt = eventType === 'clicked' ? 'NOW()' : 'clicked_at';
-    await pool.query(
-      `UPDATE email_marketing_single_sends
-       SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
-       WHERE mailgun_message_id = $2 OR mailgun_message_id = $3`,
-      [newStatus, messageId, msgIdWithBrackets]
-    );
+    if (deliveryError) {
+      await pool.query(
+        `UPDATE email_marketing_single_sends
+         SET status=$1, error_message=$2, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
+         WHERE mailgun_message_id = $3 OR mailgun_message_id = $4`,
+        [newStatus, deliveryError, messageId, msgIdWithBrackets]
+      );
+    } else {
+      await pool.query(
+        `UPDATE email_marketing_single_sends
+         SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
+         WHERE mailgun_message_id = $2 OR mailgun_message_id = $3`,
+        [newStatus, messageId, msgIdWithBrackets]
+      );
+    }
 
     res.json({ success: true });
   } catch (error: any) {
