@@ -7,6 +7,7 @@ import csv from 'csv-parser';
 import { Readable } from 'stream';
 import * as dns from 'dns';
 import { promisify } from 'util';
+import { ensureEmailHtml } from '../utils/email-html';
 
 const resolveTxt  = promisify(dns.resolveTxt);
 const resolveMx   = promisify(dns.resolveMx);
@@ -1029,14 +1030,14 @@ export const sendSingle = async (req: Request, res: Response) => {
     }
 
     const mg = await getMailgunClient();
-    const htmlBody = body_html || (body_text ? `<div style="font-family:Arial,sans-serif">${body_text.replace(/\n/g,'<br>')}</div>` : undefined);
+    const prepared = ensureEmailHtml(body_html, body_text);
     const result = await mg.messages.create(domain, {
       from: `${from_name} <${from_email}>`,
       to: [to_name ? `${to_name} <${to_email}>` : to_email],
       'h:Reply-To': reply_to || from_email,
       subject,
-      html: htmlBody,
-      text: body_text || 'Por favor, habilite HTML para visualizar este e-mail.',
+      html: prepared.html,
+      text: prepared.text,
       'o:tracking': 'yes',
       'o:tracking-clicks': 'yes',
       'o:tracking-opens': 'yes',

@@ -1,6 +1,7 @@
 import { pool } from '../database/connection';
 import FormData from 'form-data';
 import Mailgun from 'mailgun.js';
+import { ensureEmailHtml } from '../utils/email-html';
 
 let isRunning = false;
 
@@ -197,6 +198,11 @@ async function processCampaigns() {
         const recipName = recipient.name || recipient.email;
         if (html) html = html.replace(/\{\{nome\}\}/gi, recipName).replace(/\{\{email\}\}/gi, recipient.email);
         if (text) text = text.replace(/\{\{nome\}\}/gi, recipName).replace(/\{\{email\}\}/gi, recipient.email);
+
+        // Texto simples → HTML com quebras de linha (evita e-mail “tudo numa linha” no Gmail)
+        const prepared = ensureEmailHtml(html, text);
+        html = prepared.html;
+        text = prepared.text;
 
         // === ROTAÇÃO DE REMETENTES ===
         const sentCount = campaign.sent_count || 0;
