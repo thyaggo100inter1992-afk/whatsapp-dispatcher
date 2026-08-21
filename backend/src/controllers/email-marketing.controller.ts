@@ -7,7 +7,7 @@ import csv from 'csv-parser';
 import { Readable } from 'stream';
 import * as dns from 'dns';
 import { promisify } from 'util';
-import { ensureEmailHtml } from '../utils/email-html';
+import { ensureEmailHtml, applyEmailVariables } from '../utils/email-html';
 
 const resolveTxt  = promisify(dns.resolveTxt);
 const resolveMx   = promisify(dns.resolveMx);
@@ -1055,20 +1055,21 @@ export const sendSingle = async (req: Request, res: Response) => {
 
     let html = body_html || null;
     let text = body_text || null;
-    const recipName = to_name || to_email;
-    if (html) html = String(html).replace(/\{\{nome\}\}/gi, recipName).replace(/\{\{email\}\}/gi, to_email);
-    if (text) text = String(text).replace(/\{\{nome\}\}/gi, recipName).replace(/\{\{email\}\}/gi, to_email);
+    const recipName = (to_name && String(to_name).trim()) || to_email;
 
     const mg = await getMailgunClient();
     const prepared = ensureEmailHtml(html, text);
+    const finalHtml = applyEmailVariables(prepared.html, { nome: recipName, email: to_email });
+    const finalText = applyEmailVariables(prepared.text, { nome: recipName, email: to_email }, { escapeValues: false });
+    const finalSubject = applyEmailVariables(subject, { nome: recipName, email: to_email }, { escapeValues: false });
     try {
       const result = await mg.messages.create(domain, {
         from: `${String(from_name).trim()} <${finalFromEmail}>`,
         to: [to_name ? `${to_name} <${to_email}>` : to_email],
         'h:Reply-To': reply_to || finalFromEmail,
-        subject,
-        html: prepared.html,
-        text: prepared.text,
+        subject: finalSubject,
+        html: finalHtml,
+        text: finalText,
         'o:tracking': 'yes',
         'o:tracking-clicks': 'yes',
         'o:tracking-opens': 'yes',
@@ -1082,7 +1083,7 @@ export const sendSingle = async (req: Request, res: Response) => {
         `INSERT INTO email_marketing_single_sends
          (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'sent')`,
-        [tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, subject, domain_id, msgId]
+        [tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, finalSubject, domain_id, msgId]
       );
 
       res.json({ success: true, message_id: msgId, message: 'E-mail enviado com sucesso', from: finalFromEmail });

@@ -1,7 +1,7 @@
 import { pool } from '../database/connection';
 import FormData from 'form-data';
 import Mailgun from 'mailgun.js';
-import { ensureEmailHtml } from '../utils/email-html';
+import { ensureEmailHtml, applyEmailVariables } from '../utils/email-html';
 
 let isRunning = false;
 
@@ -194,15 +194,14 @@ async function processCampaigns() {
           }
         }
 
-        // Substitui variáveis básicas
-        const recipName = recipient.name || recipient.email;
-        if (html) html = html.replace(/\{\{nome\}\}/gi, recipName).replace(/\{\{email\}\}/gi, recipient.email);
-        if (text) text = text.replace(/\{\{nome\}\}/gi, recipName).replace(/\{\{email\}\}/gi, recipient.email);
+        // Substitui variáveis (nome/e-mail do DESTINATÁRIO) — após montar HTML final também
+        const recipName = (recipient.name && String(recipient.name).trim()) || recipient.email;
+        const recipEmail = recipient.email;
 
-        // Texto simples → HTML com quebras de linha (evita e-mail “tudo numa linha” no Gmail)
+        // Texto simples → HTML com quebras de linha
         const prepared = ensureEmailHtml(html, text);
-        html = prepared.html;
-        text = prepared.text;
+        html = applyEmailVariables(prepared.html, { nome: recipName, email: recipEmail });
+        text = applyEmailVariables(prepared.text, { nome: recipName, email: recipEmail }, { escapeValues: false });
 
         // === ROTAÇÃO DE REMETENTES ===
         const sentCount = campaign.sent_count || 0;
@@ -226,6 +225,7 @@ async function processCampaigns() {
         if (Array.isArray(subjectsArr) && subjectsArr.length > 0) {
           subject = pickRotating(subjectsArr, sentCount) || subject;
         }
+        subject = applyEmailVariables(subject, { nome: recipName, email: recipEmail }, { escapeValues: false });
 
         // Resolve domínio de envio e força remetente no domínio correto
         let domain = fromEmail.includes('@') ? fromEmail.split('@')[1] : '';

@@ -137,7 +137,11 @@ export default function EmailBodyEditor({
   };
 
   const insertVariable = (token: string) => {
-    insertHtml(`<span>${token}</span>&nbsp;`);
+    focusEditor();
+    // insertText evita quebrar {{nome}} com tags HTML no meio
+    const ok = document.execCommand('insertText', false, `${token} `);
+    if (!ok) insertHtml(`${token}&nbsp;`);
+    else emit();
   };
 
   const applyLink = () => {

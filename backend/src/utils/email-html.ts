@@ -11,6 +11,44 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/** Remove caracteres invisíveis que o editor rico às vezes coloca */
+function stripInvisible(s: string): string {
+  return s.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '');
+}
+
+/**
+ * Substitui {{nome}} / {{email}} de forma robusta (espaços, tags no meio, case).
+ * Deve ser chamado no HTML final antes do envio.
+ */
+export function applyEmailVariables(
+  content: string | null | undefined,
+  vars: { nome?: string | null; email?: string | null },
+  opts?: { escapeValues?: boolean }
+): string {
+  if (content == null || content === '') return '';
+  let s = stripInvisible(String(content));
+
+  const nomeRaw = String(vars.nome || vars.email || '').trim();
+  const emailRaw = String(vars.email || '').trim();
+  const nome = opts?.escapeValues === false ? nomeRaw : escapeHtml(nomeRaw);
+  const email = opts?.escapeValues === false ? emailRaw : escapeHtml(emailRaw);
+
+  // {{nome}} / {{ nome }} / {{<span>nome</span>}} / com zero-width
+  const nomeRe = /\{\{(?:\s|<[^>]*>)*nome(?:\s|<[^>]*>)*\}\}/gi;
+  const nameRe = /\{\{(?:\s|<[^>]*>)*name(?:\s|<[^>]*>)*\}\}/gi;
+  const emailRe = /\{\{(?:\s|<[^>]*>)*e-?mail(?:\s|<[^>]*>)*\}\}/gi;
+
+  s = s.replace(nomeRe, nome);
+  s = s.replace(nameRe, nome);
+  s = s.replace(emailRe, email);
+
+  // Fallback: se ainda restar {{nome}} “quebrado” por spans em volta das chaves
+  s = s.replace(/\{\{[\s\u200B]*n[\s\u200B]*o[\s\u200B]*m[\s\u200B]*e[\s\u200B]*\}\}/gi, nome);
+  s = s.replace(/\{\{[\s\u200B]*e[\s\u200B]*m[\s\u200B]*a[\s\u200B]*i[\s\u200B]*l[\s\u200B]*\}\}/gi, email);
+
+  return s;
+}
+
 /**
  * Garante corpo HTML com quebras de linha preservadas.
  * Texto colado sem tags vira HTML com <br>; HTML real permanece.
