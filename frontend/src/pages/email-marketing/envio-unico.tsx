@@ -1,11 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaPaperPlane, FaArrowLeft, FaCheckCircle, FaSpinner, FaEnvelope, FaUser, FaExclamationTriangle } from 'react-icons/fa';
+import { FaPaperPlane, FaArrowLeft, FaSpinner, FaExclamationTriangle } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 
 interface Domain { id: number; domain: string; status: string; }
+
+function extractLocalPart(value: string): string {
+  const raw = String(value || '').trim();
+  const local = (raw.includes('@') ? raw.split('@')[0] : raw)
+    .replace(/[^a-zA-Z0-9._+-]/g, '')
+    .toLowerCase();
+  return local;
+}
 
 export default function EnvioUnico() {
   const router = useRouter();
@@ -20,23 +28,44 @@ export default function EnvioUnico() {
 
   useEffect(() => {
     api.get('/email-marketing/domains').then(r => {
+      // Aceita ativos (prontos para envio); mesma regra das campanhas
       setDomains((r.data.data || []).filter((d: Domain) => d.status === 'active'));
     }).catch(() => {});
   }, []);
 
+  const selectedDomain = useMemo(
+    () => domains.find(d => String(d.id) === String(form.domain_id))?.domain || '',
+    [domains, form.domain_id]
+  );
+
+  const fromLocal = extractLocalPart(form.from_email);
+  const fromFull = selectedDomain && fromLocal ? `${fromLocal}@${selectedDomain}` : '';
+
   const handleSend = async () => {
     const errs: string[] = [];
+    if (!form.domain_id) errs.push('Selecione um domínio verificado.');
+    if (!form.from_name.trim()) errs.push('Informe o nome do remetente.');
+    if (!fromLocal) errs.push('Informe o usuário do remetente (parte antes do @).');
     if (!form.to_email) errs.push('Informe o e-mail do destinatário.');
-    if (!form.from_email) errs.push('Informe o e-mail do remetente.');
     if (!form.subject) errs.push('Informe o assunto.');
-    if (!form.body_html) errs.push('Informe o corpo do e-mail (HTML).');
+    if (!form.body_html.trim()) errs.push('Informe o corpo do e-mail.');
+    if (domains.length === 0) errs.push('Nenhum domínio ativo. Configure e verifique um domínio antes de enviar.');
     if (errs.length > 0) { setErrors(errs); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     setErrors([]);
     setSending(true);
     try {
-      await api.post('/email-marketing/send-single', { ...form, domain_id: form.domain_id || undefined });
+      await api.post('/email-marketing/send-single', {
+        to_email: form.to_email.trim(),
+        to_name: form.to_name.trim() || undefined,
+        from_name: form.from_name.trim(),
+        from_email: fromLocal, // só a parte local — backend monta @domínio
+        reply_to: form.reply_to.trim() || undefined,
+        subject: form.subject.trim(),
+        body_html: form.body_html,
+        domain_id: Number(form.domain_id),
+      });
       notification.success('E-mail enviado!', `Enviado com sucesso para ${form.to_email}`);
-      setForm({ to_email: '', to_name: '', from_name: '', from_email: '', reply_to: '', subject: '', body_html: '', domain_id: '' });
+      setForm({ to_email: '', to_name: '', from_name: '', from_email: '', reply_to: '', subject: '', body_html: '', domain_id: form.domain_id });
     } catch (error: any) {
       setErrors([error.response?.data?.message || error.message]);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -58,7 +87,6 @@ export default function EnvioUnico() {
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
         <div className="max-w-5xl mx-auto space-y-8">
 
-          {/* HEADER */}
           <div className="relative overflow-hidden bg-gradient-to-r from-blue-600/30 via-blue-500/20 to-blue-600/30 backdrop-blur-xl border-2 border-blue-500/40 rounded-3xl p-10 shadow-2xl shadow-blue-500/20">
             <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
             <div className="relative flex items-center gap-6">
@@ -75,7 +103,6 @@ export default function EnvioUnico() {
             </div>
           </div>
 
-          {/* ERROS */}
           {errors.length > 0 && (
             <div className="bg-gradient-to-r from-red-500/20 to-red-600/20 backdrop-blur-xl border-2 border-red-500/50 rounded-2xl p-6 shadow-xl">
               <div className="flex items-start gap-4">
@@ -88,44 +115,64 @@ export default function EnvioUnico() {
             </div>
           )}
 
-          {/* 1. DOMÍNIO */}
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-6"><StepBadge n={1} /><h2 className="text-3xl font-black text-white">Domínio de Envio</h2></div>
-            <label className={labelCls}>Selecione o domínio</label>
+            <label className={labelCls}>Domínio verificado *</label>
             <select value={form.domain_id} onChange={e => setForm({ ...form, domain_id: e.target.value })} className={inputCls}>
-              <option value="">Automático (usa o domínio do remetente)</option>
+              <option value="">Selecione o domínio...</option>
               {domains.map(d => <option key={d.id} value={d.id}>{d.domain}</option>)}
             </select>
-            {domains.length === 0 && (
+            {domains.length === 0 ? (
               <p className="text-yellow-400 text-sm mt-3">⚠️ Nenhum domínio ativo.{' '}
                 <span className="underline cursor-pointer" onClick={() => router.push('/email-marketing/dominios')}>Configurar domínio</span>
               </p>
+            ) : (
+              <p className="text-sm text-white/50 mt-3">O remetente será obrigatoriamente <strong className="text-white/80">@domínio selecionado</strong> (igual às campanhas).</p>
             )}
           </div>
 
-          {/* 2. REMETENTE */}
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-6"><StepBadge n={2} /><h2 className="text-3xl font-black text-white">Remetente</h2></div>
+            {!form.domain_id && (
+              <div className="mb-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-yellow-200 text-sm flex items-center gap-2">
+                <FaExclamationTriangle /> Selecione um domínio na seção 1 antes de informar o remetente.
+              </div>
+            )}
             <div className="grid md:grid-cols-2 gap-6">
               <div>
                 <label className={labelCls}>Nome do Remetente *</label>
                 <input type="text" value={form.from_name} onChange={e => setForm({ ...form, from_name: e.target.value })}
-                  placeholder="Minha Empresa" className={inputCls} />
+                  placeholder="Minha Empresa" className={inputCls} disabled={!form.domain_id} />
               </div>
               <div>
-                <label className={labelCls}>E-mail Remetente *</label>
-                <input type="email" value={form.from_email} onChange={e => setForm({ ...form, from_email: e.target.value })}
-                  placeholder="contato@seudominio.com" className={inputCls} />
+                <label className={labelCls}>Usuário do Remetente * (sem @)</label>
+                <div className="flex items-stretch gap-2">
+                  <input
+                    type="text"
+                    value={form.from_email}
+                    onChange={e => setForm({ ...form, from_email: extractLocalPart(e.target.value) })}
+                    placeholder="contato"
+                    className={inputCls}
+                    disabled={!form.domain_id}
+                  />
+                  {selectedDomain && (
+                    <span className="px-4 flex items-center bg-dark-700/80 border-2 border-white/20 rounded-xl text-white/80 font-mono whitespace-nowrap">
+                      @{selectedDomain}
+                    </span>
+                  )}
+                </div>
+                {fromFull && (
+                  <p className="text-sm text-green-300 mt-2">✅ Ficará: <strong>{fromFull}</strong></p>
+                )}
               </div>
               <div className="md:col-span-2">
                 <label className={labelCls}>Responder Para (Reply-To)</label>
                 <input type="email" value={form.reply_to} onChange={e => setForm({ ...form, reply_to: e.target.value })}
-                  placeholder="respostas@seudominio.com" className={inputCls} />
+                  placeholder={fromFull || 'respostas@seudominio.com'} className={inputCls} disabled={!form.domain_id} />
               </div>
             </div>
           </div>
 
-          {/* 3. DESTINATÁRIO */}
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-6"><StepBadge n={3} /><h2 className="text-3xl font-black text-white">Destinatário</h2></div>
             <div className="grid md:grid-cols-2 gap-6">
@@ -142,7 +189,6 @@ export default function EnvioUnico() {
             </div>
           </div>
 
-          {/* 4. MENSAGEM */}
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-6"><StepBadge n={4} /><h2 className="text-3xl font-black text-white">Mensagem</h2></div>
             <div className="space-y-6">
@@ -152,25 +198,25 @@ export default function EnvioUnico() {
                   placeholder="Assunto do e-mail" className={inputCls} />
               </div>
               <div>
-                <label className={labelCls}>Corpo do E-mail (HTML) *</label>
+                <label className={labelCls}>Corpo do E-mail *</label>
                 <textarea value={form.body_html} onChange={e => setForm({ ...form, body_html: e.target.value })}
-                  placeholder="<p>Olá {{nome}},</p><p>Seu conteúdo aqui...</p>"
+                  placeholder={'Olá {{nome}}!\n\nSeu texto aqui...\n\n(Pode colar texto normal — as quebras de linha são preservadas)'}
                   rows={12}
                   className="w-full px-6 py-4 text-base bg-dark-700/80 backdrop-blur-md border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/30 transition-all font-mono resize-y" />
                 <p className="text-sm text-white/50 mt-2">
-                  Use <code className="bg-white/10 px-1 rounded">{'{{nome}}'}</code> e{' '}
+                  Pode colar texto normal (Enter = nova linha). Use{' '}
+                  <code className="bg-white/10 px-1 rounded">{'{{nome}}'}</code> e{' '}
                   <code className="bg-white/10 px-1 rounded">{'{{email}}'}</code> para personalização.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* BOTÃO */}
-          <button onClick={handleSend} disabled={sending}
+          <button onClick={handleSend} disabled={sending || domains.length === 0}
             className="w-full py-6 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-2xl font-black text-2xl transition-all flex items-center justify-center gap-4 disabled:opacity-50 shadow-2xl shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-[1.01]">
             {sending
               ? <><FaSpinner className="animate-spin text-2xl" /> Enviando...</>
-              : <><FaPaperPlane className="text-2xl" /> Enviar E-mail</>}
+              : <><FaPaperPlane className="text-2xl" /> Enviar E-mail{fromFull ? ` como ${fromFull}` : ''}</>}
           </button>
 
         </div>

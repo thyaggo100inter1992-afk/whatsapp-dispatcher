@@ -1021,42 +1021,82 @@ export const sendSingle = async (req: Request, res: Response) => {
     if (!to_email || !from_email || !subject) {
       return res.status(400).json({ success: false, message: 'Destinatário, remetente e assunto obrigatórios' });
     }
-
-    // Busca domínio do tenant
-    let domain = from_email.split('@')[1];
-    if (domain_id) {
-      const domainRow = await pool.query(`SELECT domain FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`, [domain_id, tenantId]);
-      if (domainRow.rows[0]) domain = domainRow.rows[0].domain;
+    if (!domain_id) {
+      return res.status(400).json({ success: false, message: 'Selecione um domínio verificado para envio' });
+    }
+    if (!from_name || !String(from_name).trim()) {
+      return res.status(400).json({ success: false, message: 'Nome do remetente obrigatório' });
     }
 
-    const mg = await getMailgunClient();
-    const prepared = ensureEmailHtml(body_html, body_text);
-    const result = await mg.messages.create(domain, {
-      from: `${from_name} <${from_email}>`,
-      to: [to_name ? `${to_name} <${to_email}>` : to_email],
-      'h:Reply-To': reply_to || from_email,
-      subject,
-      html: prepared.html,
-      text: prepared.text,
-      'o:tracking': 'yes',
-      'o:tracking-clicks': 'yes',
-      'o:tracking-opens': 'yes',
-    } as any);
-
-    // Salvar no histórico de envios
-    const userId = (req as any).user?.id || (req as any).tenant?.userId || null;
-    const userName = (req as any).user?.name || (req as any).user?.username || null;
-    // Normalizar message ID removendo < > para consistência com o webhook
-    const rawMsgId = (result as any).id || (result as any).message_id || '';
-    const msgId = rawMsgId.replace(/^<|>$/g, '').trim() || null;
-    await pool.query(
-      `INSERT INTO email_marketing_single_sends
-       (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'sent')`,
-      [tenantId, userId, userName, to_email, to_name || null, from_email, from_name || null, subject, domain_id || null, msgId]
+    const domainRow = await pool.query(
+      `SELECT id, domain, status FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`,
+      [domain_id, tenantId]
     );
+    if (!domainRow.rows[0]) {
+      return res.status(400).json({ success: false, message: 'Domínio não encontrado neste tenant' });
+    }
+    if (domainRow.rows[0].status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        message: 'Domínio ainda não está ativo/verificado. Verifique o DNS em Domínios antes de enviar.',
+      });
+    }
 
-    res.json({ success: true, message_id: msgId, message: 'E-mail enviado com sucesso' });
+    const domain = domainRow.rows[0].domain as string;
+    const local = String(from_email || '')
+      .trim()
+      .split('@')[0]
+      .replace(/[^a-zA-Z0-9._+-]/g, '')
+      .toLowerCase();
+    if (!local) {
+      return res.status(400).json({ success: false, message: 'Usuário do remetente inválido (use só a parte antes do @)' });
+    }
+    const finalFromEmail = `${local}@${domain}`;
+
+    let html = body_html || null;
+    let text = body_text || null;
+    const recipName = to_name || to_email;
+    if (html) html = String(html).replace(/\{\{nome\}\}/gi, recipName).replace(/\{\{email\}\}/gi, to_email);
+    if (text) text = String(text).replace(/\{\{nome\}\}/gi, recipName).replace(/\{\{email\}\}/gi, to_email);
+
+    const mg = await getMailgunClient();
+    const prepared = ensureEmailHtml(html, text);
+    try {
+      const result = await mg.messages.create(domain, {
+        from: `${String(from_name).trim()} <${finalFromEmail}>`,
+        to: [to_name ? `${to_name} <${to_email}>` : to_email],
+        'h:Reply-To': reply_to || finalFromEmail,
+        subject,
+        html: prepared.html,
+        text: prepared.text,
+        'o:tracking': 'yes',
+        'o:tracking-clicks': 'yes',
+        'o:tracking-opens': 'yes',
+      } as any);
+
+      const userId = (req as any).user?.id || (req as any).tenant?.userId || null;
+      const userName = (req as any).user?.name || (req as any).user?.username || null;
+      const rawMsgId = (result as any).id || (result as any).message_id || '';
+      const msgId = rawMsgId.replace(/^<|>$/g, '').trim() || null;
+      await pool.query(
+        `INSERT INTO email_marketing_single_sends
+         (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'sent')`,
+        [tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, subject, domain_id, msgId]
+      );
+
+      res.json({ success: true, message_id: msgId, message: 'E-mail enviado com sucesso', from: finalFromEmail });
+    } catch (sendError: any) {
+      const status = sendError?.status || sendError?.statusCode;
+      const msg = String(sendError?.message || 'Erro ao enviar');
+      if (status === 403 || /forbidden/i.test(msg)) {
+        return res.status(400).json({
+          success: false,
+          message: `Envio bloqueado (Forbidden). Domínio: ${domain}. Remetente: ${finalFromEmail}. Verifique se o domínio está ativo no Mailgun.`,
+        });
+      }
+      return res.status(500).json({ success: false, message: msg });
+    }
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
