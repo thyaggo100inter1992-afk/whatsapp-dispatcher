@@ -281,25 +281,42 @@ export default function EmailBodyEditor({
         <ToolBtn title="Lista numerada" onClick={() => run('insertOrderedList')}><FaListOl /></ToolBtn>
         <span className="w-px h-5 bg-white/15 mx-1" />
         <select
-          title="Tamanho"
-          className="bg-dark-700 text-white/80 text-xs rounded-lg px-2 py-1.5 border border-white/10"
+          title="Tamanho do texto"
+          aria-label="Tamanho do texto"
+          className="bg-dark-700 text-white text-xs rounded-lg px-2.5 py-1.5 border border-white/20 cursor-pointer min-w-[110px] hover:border-white/40 focus:outline-none focus:border-orange-500/50"
           defaultValue="3"
-          onChange={e => run('fontSize', e.target.value)}
-          onMouseDown={e => e.preventDefault()}
+          onFocus={saveSelection}
+          onMouseDown={() => saveSelection()}
+          onChange={e => {
+            const size = e.target.value;
+            restoreSelection();
+            document.execCommand('fontSize', false, size);
+            emit();
+            saveSelection();
+          }}
         >
+          <option value="1">Muito pequeno</option>
           <option value="2">Pequeno</option>
           <option value="3">Normal</option>
           <option value="4">Grande</option>
           <option value="5">Maior</option>
           <option value="6">Enorme</option>
+          <option value="7">Máximo</option>
         </select>
         <input
           type="color"
           title="Cor do texto"
           defaultValue="#111111"
-          className="w-8 h-8 bg-transparent cursor-pointer rounded"
-          onChange={e => run('foreColor', e.target.value)}
-          onMouseDown={e => e.preventDefault()}
+          className="w-8 h-8 bg-transparent cursor-pointer rounded border border-white/20"
+          onFocus={saveSelection}
+          onMouseDown={() => saveSelection()}
+          onChange={e => {
+            const color = e.target.value;
+            restoreSelection();
+            document.execCommand('foreColor', false, color);
+            emit();
+            saveSelection();
+          }}
         />
         <span className="w-px h-5 bg-white/15 mx-1" />
         <ToolBtn title="Inserir link" onClick={() => { setShowLink(true); setLinkText(''); }}><FaLink /></ToolBtn>
