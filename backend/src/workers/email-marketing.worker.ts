@@ -56,12 +56,19 @@ function formatSendError(err: any, fromEmail: string, domain: string): string {
   return `${msg}${extra}`.slice(0, 500);
 }
 
-// Verifica se o horário atual está dentro da janela de trabalho
+// Verifica se o horário atual (America/Sao_Paulo) está dentro da janela de trabalho
 function isWithinWorkHours(startTime: string, endTime: string): boolean {
-  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const hour = Number(parts.find(p => p.type === 'hour')?.value || 0);
+  const minute = Number(parts.find(p => p.type === 'minute')?.value || 0);
   const [startH, startM] = (startTime || '08:00').split(':').map(Number);
   const [endH, endM] = (endTime || '20:00').split(':').map(Number);
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const currentMinutes = hour * 60 + minute;
   const startMinutes = startH * 60 + startM;
   const endMinutes = endH * 60 + endM;
   return currentMinutes >= startMinutes && currentMinutes < endMinutes;

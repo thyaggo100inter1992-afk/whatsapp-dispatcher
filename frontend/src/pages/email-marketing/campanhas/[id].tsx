@@ -1188,9 +1188,19 @@ export default function CampaignDetail() {
                   <FaSync className={isPolling ? 'animate-spin text-orange-400' : 'text-green-400'} />
                   Log de Envio em Tempo Real
                   <span className="text-sm font-bold text-white/50">({filteredRecipients.length})</span>
-                  {isActive(campaign) && (
+                  {campaign.status === 'sending' && (
                     <span className="text-xs font-bold text-green-400 bg-green-500/10 border border-green-500/30 px-2 py-0.5 rounded-lg">
                       {isPolling ? 'Atualizando...' : `ao vivo · ${countdown}s`}
+                    </span>
+                  )}
+                  {campaign.status === 'paused' && (
+                    <span className="text-xs font-bold text-yellow-300 bg-yellow-500/10 border border-yellow-500/30 px-2 py-0.5 rounded-lg">
+                      pausada — sem novos envios
+                    </span>
+                  )}
+                  {campaign.status === 'scheduled' && (
+                    <span className="text-xs font-bold text-purple-300 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded-lg">
+                      agendada
                     </span>
                   )}
                 </h4>
@@ -1288,11 +1298,13 @@ export default function CampaignDetail() {
               </div>
               <p className="text-center text-xs text-gray-500 mt-3">
                 Mostra só o que já foi processado (enviado ou com erro), do mais novo para o mais antigo.
-                {isActive(campaign)
-                  ? ` Atualiza a cada ${POLL_INTERVAL}s enquanto a campanha estiver ativa.`
-                  : lastUpdated
-                    ? ` Última atualização: ${lastUpdated.toLocaleTimeString('pt-BR')}`
-                    : ''}
+                {campaign.status === 'sending'
+                  ? ` Atualiza a cada ${POLL_INTERVAL}s enquanto estiver enviando.`
+                  : campaign.status === 'paused'
+                    ? ' Campanha pausada — clique em Continuar/Iniciar para voltar a enviar.'
+                    : lastUpdated
+                      ? ` Última atualização: ${lastUpdated.toLocaleTimeString('pt-BR')}`
+                      : ''}
               </p>
             </div>
           </div>
