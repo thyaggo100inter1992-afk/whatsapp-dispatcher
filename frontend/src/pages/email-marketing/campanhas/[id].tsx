@@ -68,6 +68,37 @@ const RECIPIENT_STATUS: Record<string, { label: string; color: string }> = {
 const POLL_INTERVAL = 3;
 const PROCESSED_STATUSES = new Set(['sent', 'failed', 'opened', 'clicked', 'bounced', 'complained']);
 
+/** Exibe motivo de falha em português (traduz textos comuns do Mailgun/SMTP) */
+function formatErrorPt(raw: string | null | undefined): string {
+  if (!raw) return '';
+  let text = String(raw);
+  const lower = text.toLowerCase();
+  if (/does not exist|no such user|user unknown|recipient address rejected|mailbox not found|unknown user/i.test(lower)) {
+    const code = text.match(/Código\s+(\d+)/i)?.[1];
+    const prefix = text.includes('—') ? text.split('—').slice(0, -1).join('—').replace(/Bounce\s*\(/i, 'Rejeitado pelo servidor do destinatário (').trim() : '';
+    const body = 'A conta de e-mail do destinatário não existe ou foi rejeitada (usuário desconhecido). Verifique se o endereço está correto.';
+    if (prefix && /rejeitado|suprimido|código|permanente|temporária/i.test(prefix)) {
+      return `${prefix.replace(/Bounce \(rejeitado pelo servidor do destinatário\)/i, 'Rejeitado pelo servidor do destinatário (bounce)')} — ${body}`.slice(0, 500);
+    }
+    return (code ? `Código ${code} — ${body}` : body);
+  }
+  if (/mailbox full|over quota|quota exceeded/i.test(lower)) {
+    return 'A caixa de e-mail do destinatário está cheia (sem espaço).';
+  }
+  text = text
+    .replace(/Bounce \(rejeitado pelo servidor do destinatário\)/gi, 'Rejeitado pelo servidor do destinatário (bounce)')
+    .replace(/The email account that you tried to reach does not exist\.?/gi, 'A conta de e-mail que você tentou alcançar não existe.')
+    .replace(/Please try\s*(?:\d+(?:\.\d+){2}\s*)*double-checking the recipient'?s? email address for typos or\s*(?:\d+(?:\.\d+){2}\s*)*unnecessary spaces\.?/gi, 'Verifique se o endereço não tem erros de digitação ou espaços.')
+    .replace(/For more information,? go to\s+https?:\/\/\S+/gi, '')
+    .replace(/Recipient address rejected:?\s*/gi, 'Endereço do destinatário rejeitado: ')
+    .replace(/User unknown in virtual mailbox table\.?/gi, 'usuário desconhecido na caixa de e-mail.')
+    .replace(/\b5\.\d\.\d\b/g, ' ')
+    .replace(/\[[^\]]*\]\s*-?\s*gsmtp/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return text;
+}
+
 export default function CampaignDetail() {
   const router = useRouter();
   const { id } = router.query;
@@ -824,7 +855,7 @@ export default function CampaignDetail() {
                           <td className="py-3 px-3 text-gray-500 text-xs">{when ? new Date(when).toLocaleString('pt-BR') : '—'}</td>
                           <td className="py-3 px-3 text-purple-400 text-xs">{r.opened_at ? new Date(r.opened_at).toLocaleString('pt-BR') : '—'}</td>
                           <td className="py-3 px-3 text-indigo-400 text-xs">{r.clicked_at ? new Date(r.clicked_at).toLocaleString('pt-BR') : '—'}</td>
-                          <td className="py-3 px-3 text-red-400 text-xs max-w-[180px] truncate">{r.error_message || '—'}</td>
+                          <td className="py-3 px-3 text-red-400 text-xs max-w-[180px] truncate">{r.error_message ? formatErrorPt(r.error_message) : '—'}</td>
                         </tr>
                       );
                     })}
@@ -1282,8 +1313,8 @@ export default function CampaignDetail() {
                             </td>
                             <td className="p-3 text-xs max-w-[320px]">
                               {r.error_message ? (
-                                <span className="text-red-400 font-semibold break-words" title={r.error_message}>
-                                  {r.error_message}
+                                <span className="text-red-400 font-semibold break-words" title={formatErrorPt(r.error_message)}>
+                                  {formatErrorPt(r.error_message)}
                                 </span>
                               ) : (
                                 <span className="text-white/30">—</span>

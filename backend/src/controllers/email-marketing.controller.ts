@@ -1022,6 +1022,75 @@ export const getSends = async (req: Request, res: Response) => {
 // WEBHOOK DO MAILGUN (eventos de tracking)
 // =============================================
 
+/** Traduz e limpa mensagens técnicas de entrega (Mailgun/SMTP) para português */
+function translateDeliveryDetail(raw: string): string {
+  let text = String(raw || '').trim();
+  if (!text) return '';
+
+  // Remove códigos SMTP repetidos no meio do texto e IDs técnicos do Gmail
+  text = text
+    .replace(/\b5\.\d\.\d\b/g, ' ')
+    .replace(/\[[^\]]*\]\s*-?\s*gsmtp/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  const lower = text.toLowerCase();
+
+  // Casos mais comuns — mensagens curtas e claras em PT
+  if (/does not exist|no such user|user unknown|recipient address rejected|mailbox unavailable|mailbox not found|unknown user|endereço.*n[aã]o exist/i.test(lower)) {
+    return 'A conta de e-mail do destinatário não existe ou foi rejeitada (usuário desconhecido). Verifique se o endereço está correto.';
+  }
+  if (/mailbox full|over quota|quota exceeded|insufficient storage/i.test(lower)) {
+    return 'A caixa de e-mail do destinatário está cheia (sem espaço).';
+  }
+  if (/blocked|blacklist|listed|spamhaus|barracuda/i.test(lower) && /spam|block|list/i.test(lower)) {
+    return 'Mensagem bloqueada por filtro antispam ou lista negra do provedor.';
+  }
+  if (/relay access denied|relaying denied|not allowed to relay/i.test(lower)) {
+    return 'Envio rejeitado: acesso de relay negado pelo servidor do destinatário.';
+  }
+  if (/invalid domain|domain not found|nxdomain|no mx/i.test(lower)) {
+    return 'Domínio do e-mail inválido ou sem servidor de recebimento (MX).';
+  }
+  if (/timeout|timed out|connection timed out|temporarily unavailable|try again later|greylist/i.test(lower)) {
+    return 'Falha temporária de entrega. O provedor pediu para tentar novamente mais tarde.';
+  }
+  if (/message too large|size limit|exceeded.*size/i.test(lower)) {
+    return 'Mensagem rejeitada por exceder o tamanho máximo permitido.';
+  }
+  if (/policy rejection|content rejected|spam message rejected|rejected as spam/i.test(lower)) {
+    return 'Mensagem rejeitada pela política antispam do destinatário.';
+  }
+  if (/authentication required|spf|dkim|dmarc/i.test(lower)) {
+    return 'Falha de autenticação de e-mail (SPF/DKIM/DMARC). Verifique o DNS do domínio.';
+  }
+  if (/inactive|disabled|account disabled|account closed/i.test(lower)) {
+    return 'A conta de e-mail do destinatário está inativa ou desativada.';
+  }
+
+  // Traduções pontuais de trechos frequentes (quando não casou regra acima)
+  const replacements: Array<[RegExp, string]> = [
+    [/The email account that you tried to reach does not exist\.?/gi, 'A conta de e-mail que você tentou alcançar não existe.'],
+    [/Please try\s+double-checking the recipient'?s? email address for typos or\s+unnecessary spaces\.?/gi, 'Verifique se o endereço do destinatário não tem erros de digitação ou espaços.'],
+    [/For more information,? go to\s+https?:\/\/\S+/gi, ''],
+    [/Recipient address rejected:?\s*/gi, 'Endereço do destinatário rejeitado: '],
+    [/User unknown in virtual mailbox table\.?/gi, 'usuário desconhecido na caixa de e-mail.'],
+    [/Mailbox unavailable\.?/gi, 'Caixa de e-mail indisponível.'],
+    [/Permanent failure\.?/gi, 'Falha permanente.'],
+    [/Temporary failure\.?/gi, 'Falha temporária.'],
+    [/Message rejected\.?/gi, 'Mensagem rejeitada.'],
+    [/Delivery failed\.?/gi, 'Falha na entrega.'],
+  ];
+  for (const [re, pt] of replacements) text = text.replace(re, pt);
+  text = text.replace(/\s{2,}/g, ' ').replace(/\s+([.,;:])/g, '$1').trim();
+
+  // Se ainda restou muito inglês genérico, resume
+  if (/^[A-Za-z0-9<>@._\-\s:()\/]+$/.test(text) && /\b(the|recipient|address|rejected|failed|please|try)\b/i.test(text)) {
+    return 'Falha na entrega reportada pelo provedor do destinatário. Detalhe técnico: ' + text.slice(0, 280);
+  }
+  return text.slice(0, 400);
+}
+
 /** Extrai motivo legível de eventos failed/bounced do Mailgun */
 function formatMailgunDeliveryError(event: any): string | null {
   if (!event || typeof event !== 'object') return null;
@@ -1029,16 +1098,17 @@ function formatMailgunDeliveryError(event: any): string | null {
   const reason = String(event.reason || '').trim();
   const severity = String(event.severity || '').trim();
   const code = delivery.code ?? delivery['code'];
-  const desc = String(
+  const descRaw = String(
     delivery.description ||
     delivery.message ||
     delivery['enhanced-code'] ||
     ''
   ).trim();
+  const desc = translateDeliveryDetail(descRaw);
   const parts: string[] = [];
   if (reason) {
     const reasonMap: Record<string, string> = {
-      bounce: 'Bounce (rejeitado pelo servidor do destinatário)',
+      bounce: 'Rejeitado pelo servidor do destinatário (bounce)',
       'suppress-bounce': 'Suprimido (histórico de bounce)',
       'suppress-complaint': 'Suprimido (marcado como spam)',
       'suppress-unsubscribe': 'Suprimido (descadastrado)',
