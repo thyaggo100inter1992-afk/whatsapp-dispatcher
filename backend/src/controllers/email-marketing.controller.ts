@@ -685,7 +685,10 @@ export const updateCampaign = async (req: Request, res: Response) => {
       name, work_start_time, work_end_time,
       delay_seconds_min, delay_seconds_max,
       pause_after, pause_duration_minutes,
-      scheduled_at
+      scheduled_at,
+      domain_id, from_senders, from_name, from_email,
+      subjects, subject, reply_to,
+      body_html, body_text,
     } = req.body;
 
     const sets: string[] = [];
@@ -700,6 +703,82 @@ export const updateCampaign = async (req: Request, res: Response) => {
     if (pause_after !== undefined) push('pause_after', Number(pause_after));
     if (pause_duration_minutes !== undefined) push('pause_duration_minutes', Number(pause_duration_minutes));
     if (scheduled_at !== undefined) push('scheduled_at', scheduled_at || null);
+    if (reply_to !== undefined) push('reply_to', reply_to || null);
+    if (body_html !== undefined) push('body_html', body_html || null);
+    if (body_text !== undefined) push('body_text', body_text || null);
+
+    // Domínio + remetentes (sempre força local@dominio)
+    let domainName: string | null = null;
+
+    if (domain_id !== undefined) {
+      if (!domain_id) {
+        return res.status(400).json({ success: false, message: 'Selecione um domínio verificado' });
+      }
+      const domainRow = await pool.query(
+        `SELECT domain FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`,
+        [domain_id, tenantId]
+      );
+      if (!domainRow.rows[0]) {
+        return res.status(400).json({ success: false, message: 'Domínio não encontrado' });
+      }
+      domainName = domainRow.rows[0].domain;
+      push('domain_id', domain_id);
+    } else if (from_senders !== undefined || from_email !== undefined) {
+      // Precisa do domínio atual da campanha para normalizar remetentes
+      const cur = await pool.query(
+        `SELECT c.domain_id, d.domain
+         FROM email_marketing_campaigns c
+         LEFT JOIN email_marketing_domains d ON d.id = c.domain_id
+         WHERE c.id=$1 AND c.tenant_id=$2`,
+        [id, tenantId]
+      );
+      domainName = cur.rows[0]?.domain || null;
+    }
+
+    if (from_senders !== undefined || from_email !== undefined) {
+      if (!domainName) {
+        return res.status(400).json({
+          success: false,
+          message: 'Campanha sem domínio. Selecione um domínio verificado antes de alterar remetentes.',
+        });
+      }
+
+      const rawSenders: { from_name: string; from_email: string }[] =
+        Array.isArray(from_senders) && from_senders.length > 0
+          ? from_senders
+          : [{ from_name: from_name || '', from_email: from_email || '' }];
+
+      const sendersArr = rawSenders.map((s) => {
+        const raw = String(s.from_email || '').trim();
+        const local = (raw.includes('@') ? raw.split('@')[0] : raw)
+          .replace(/[^a-zA-Z0-9._+-]/g, '')
+          .toLowerCase();
+        return {
+          from_name: (s.from_name || '').trim(),
+          from_email: local ? `${local}@${domainName}` : '',
+        };
+      }).filter((s) => s.from_email.includes('@'));
+
+      if (sendersArr.length === 0) {
+        return res.status(400).json({ success: false, message: 'Informe ao menos um remetente válido (parte antes do @)' });
+      }
+
+      push('from_senders', JSON.stringify(sendersArr));
+      push('from_name', sendersArr[0].from_name);
+      push('from_email', sendersArr[0].from_email);
+    }
+
+    if (subjects !== undefined || subject !== undefined) {
+      const subjectsArr: string[] =
+        Array.isArray(subjects) && subjects.length > 0
+          ? subjects.map((s: string) => String(s || '').trim()).filter(Boolean)
+          : [String(subject || '').trim()].filter(Boolean);
+      if (subjectsArr.length === 0) {
+        return res.status(400).json({ success: false, message: 'Informe ao menos um assunto' });
+      }
+      push('subjects', JSON.stringify(subjectsArr));
+      push('subject', subjectsArr[0]);
+    }
 
     if (sets.length === 0) return res.status(400).json({ success: false, message: 'Nenhum campo para atualizar' });
 

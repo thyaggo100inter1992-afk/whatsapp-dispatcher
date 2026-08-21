@@ -5,7 +5,7 @@ import {
   FaBullhorn, FaArrowLeft, FaPlay, FaPause, FaBan, FaSpinner, FaSync,
   FaEnvelope, FaEye, FaMousePointer, FaExclamationTriangle, FaFlag,
   FaTimesCircle, FaClock, FaCalendarAlt,
-  FaUsers, FaListUl, FaTimes, FaSearch, FaEdit, FaDownload, FaSave, FaRedo
+  FaUsers, FaListUl, FaTimes, FaSearch, FaEdit, FaDownload, FaSave, FaRedo, FaPlus, FaTrash
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
@@ -16,6 +16,7 @@ interface Campaign {
   from_name: string; from_email: string; from_senders?: Array<{ from_name: string; from_email: string }>;
   status: string; total_contacts: number; sent_count: number; failed_count: number;
   opened_count: number; clicked_count: number; bounced_count: number; complained_count: number;
+  domain_id?: number | null;
   domain_name: string; list_name: string; template_name: string;
   body_html?: string | null; body_text?: string | null; reply_to?: string | null;
   created_at: string; started_at: string | null; completed_at: string | null; scheduled_at: string | null;
@@ -23,6 +24,13 @@ interface Campaign {
   delay_seconds_min: number; delay_seconds_max: number;
   pause_after: number; pause_duration_minutes: number;
   pause_started_at: string | null; sent_in_session: number;
+}
+
+interface DomainOpt { id: number; domain: string; status: string; }
+
+function extractLocal(email: string): string {
+  const raw = String(email || '').trim();
+  return (raw.includes('@') ? raw.split('@')[0] : raw).replace(/[^a-zA-Z0-9._+-]/g, '').toLowerCase();
 }
 
 interface Recipient {
@@ -75,10 +83,21 @@ export default function CampaignDetail() {
   const [isPolling, setIsPolling] = useState(false);
   const [showAllContacts, setShowAllContacts] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [domains, setDomains] = useState<DomainOpt[]>([]);
   const [editForm, setEditForm] = useState({
-    name: '', work_start_time: '', work_end_time: '',
-    delay_seconds_min: 1, delay_seconds_max: 3,
-    pause_after: 0, pause_duration_minutes: 30, scheduled_at: ''
+    name: '',
+    domain_id: '' as string | number,
+    reply_to: '',
+    senders: [{ from_name: '', from_email: '' }] as Array<{ from_name: string; from_email: string }>,
+    subjects: [''] as string[],
+    body_html: '',
+    work_start_time: '',
+    work_end_time: '',
+    delay_seconds_min: 1,
+    delay_seconds_max: 3,
+    pause_after: 0,
+    pause_duration_minutes: 30,
+    scheduled_at: '',
   });
   const [saving, setSaving] = useState(false);
   const [resending, setResending] = useState(false);
@@ -162,10 +181,27 @@ export default function CampaignDetail() {
     catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
   };
 
-  const openEditModal = () => {
+  const openEditModal = async () => {
     if (!campaign) return;
+    try {
+      const d = await api.get('/email-marketing/domains');
+      setDomains((d.data.data || []).filter((x: DomainOpt) => x.status === 'active'));
+    } catch { setDomains([]); }
+
+    const rawSenders = campaign.from_senders?.length
+      ? campaign.from_senders
+      : [{ from_name: campaign.from_name || '', from_email: campaign.from_email || '' }];
+
     setEditForm({
       name: campaign.name,
+      domain_id: campaign.domain_id || '',
+      reply_to: campaign.reply_to || '',
+      senders: rawSenders.map(s => ({
+        from_name: s.from_name || '',
+        from_email: extractLocal(s.from_email || ''),
+      })),
+      subjects: (campaign.subjects?.length ? campaign.subjects : [campaign.subject || '']).map(String),
+      body_html: campaign.body_html || '',
       work_start_time: campaign.work_start_time || '08:00',
       work_end_time: campaign.work_end_time || '20:00',
       delay_seconds_min: campaign.delay_seconds_min || 1,
@@ -177,11 +213,46 @@ export default function CampaignDetail() {
     setShowEditModal(true);
   };
 
+  const editDomainName = domains.find(d => d.id === Number(editForm.domain_id))?.domain
+    || campaign?.domain_name
+    || '';
+
   const handleSaveEdit = async () => {
+    if (!editForm.domain_id) {
+      notification.error('Erro', 'Selecione um domínio verificado');
+      return;
+    }
+    const locals = editForm.senders
+      .map(s => ({ from_name: s.from_name.trim(), from_email: extractLocal(s.from_email) }))
+      .filter(s => s.from_email);
+    if (locals.length === 0) {
+      notification.error('Erro', 'Informe ao menos um remetente (parte antes do @)');
+      return;
+    }
+    const subjectsClean = editForm.subjects.map(s => s.trim()).filter(Boolean);
+    if (subjectsClean.length === 0) {
+      notification.error('Erro', 'Informe ao menos um assunto');
+      return;
+    }
+
     setSaving(true);
     try {
-      await api.patch(`/email-marketing/campaigns/${id}`, editForm);
-      notification.success('Campanha atualizada!', '');
+      await api.patch(`/email-marketing/campaigns/${id}`, {
+        name: editForm.name,
+        domain_id: Number(editForm.domain_id),
+        reply_to: editForm.reply_to || null,
+        from_senders: locals,
+        subjects: subjectsClean,
+        body_html: editForm.body_html || null,
+        work_start_time: editForm.work_start_time,
+        work_end_time: editForm.work_end_time,
+        delay_seconds_min: editForm.delay_seconds_min,
+        delay_seconds_max: editForm.delay_seconds_max,
+        pause_after: editForm.pause_after,
+        pause_duration_minutes: editForm.pause_duration_minutes,
+        scheduled_at: editForm.scheduled_at || null,
+      });
+      notification.success('Campanha atualizada!', 'Remetente, domínio e demais dados foram salvos.');
       setShowEditModal(false);
       loadData();
     } catch (e: any) {
@@ -277,7 +348,7 @@ export default function CampaignDetail() {
     if (!campaign || (campaign.failed_count || 0) <= 0) return;
     const ok = await confirm({
       title: 'Reenviar Falhas',
-      message: `Deseja reenviar os ${campaign.failed_count} e-mails que falharam? Eles voltarão para a fila e a campanha será retomada.`,
+      message: `Antes de reenviar, confira se o remetente/domínio já foram corrigidos em Editar. Deseja reenviar os ${campaign.failed_count} e-mails que falharam?`,
       confirmText: 'Sim, Reenviar',
       type: 'warning',
     });
@@ -365,97 +436,191 @@ export default function CampaignDetail() {
       <notification.NotificationContainer />
       <ConfirmDialog />
 
-      {/* Modal Editar Campanha */}
+      {/* Modal Editar Campanha — edição completa */}
       {showEditModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-dark-800 rounded-2xl shadow-2xl border-2 border-orange-500/40 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gradient-to-r from-orange-600/30 via-orange-500/20 to-orange-600/30 backdrop-blur-xl border-b-2 border-orange-500/40 p-6 flex items-center justify-between">
+          <div className="bg-dark-800 rounded-2xl shadow-2xl border-2 border-orange-500/40 max-w-3xl w-full max-h-[92vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 bg-gradient-to-r from-orange-600/30 via-orange-500/20 to-orange-600/30 backdrop-blur-xl border-b-2 border-orange-500/40 p-6 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="bg-orange-500/20 p-3 rounded-xl"><FaEdit className="text-3xl text-orange-400" /></div>
                 <div>
                   <h2 className="text-2xl font-black text-white">Editar Campanha</h2>
-                  <p className="text-white/60 text-sm">As alterações são aplicadas imediatamente, mesmo em andamento</p>
+                  <p className="text-white/60 text-sm">Altere domínio, remetente, assuntos, mensagem e configurações — inclusive com a campanha em andamento</p>
                 </div>
               </div>
               <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white"><FaTimes className="text-xl" /></button>
             </div>
+
             <div className="p-6 space-y-6">
               {/* Nome */}
               <div>
                 <label className="block text-sm font-bold text-white/80 mb-2">Nome da Campanha</label>
-                <input
-                  value={editForm.name}
-                  onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-                  className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-orange-500/60"
-                  placeholder="Nome da campanha"
-                />
+                <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
               </div>
-              {/* Horário de trabalho */}
+
+              {/* Domínio */}
+              <div>
+                <label className="block text-sm font-bold text-white/80 mb-2">🌐 Domínio de Envio *</label>
+                <select value={editForm.domain_id} onChange={e => setEditForm(f => ({ ...f, domain_id: e.target.value }))}
+                  className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60">
+                  <option value="">Selecione um domínio ativo</option>
+                  {domains.map(d => <option key={d.id} value={d.id}>{d.domain}</option>)}
+                </select>
+                {editDomainName && (
+                  <p className="text-xs text-green-400 mt-2">Os remetentes usarão: <strong>@{editDomainName}</strong></p>
+                )}
+              </div>
+
+              {/* Remetentes */}
+              <div>
+                <label className="block text-sm font-bold text-white/80 mb-2">👤 Remetentes * (só a parte antes do @)</label>
+                <div className="space-y-3">
+                  {editForm.senders.map((s, i) => (
+                    <div key={i} className="bg-dark-700/50 border border-white/10 rounded-xl p-4">
+                      <div className="flex justify-between mb-2">
+                        <span className="text-xs font-bold text-orange-300">Remetente {i + 1}</span>
+                        {editForm.senders.length > 1 && (
+                          <button type="button" onClick={() => setEditForm(f => ({ ...f, senders: f.senders.filter((_, idx) => idx !== i) }))}
+                            className="text-red-400 text-xs flex items-center gap-1"><FaTrash /> Remover</button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input value={s.from_name}
+                          onChange={e => setEditForm(f => ({ ...f, senders: f.senders.map((x, idx) => idx === i ? { ...x, from_name: e.target.value } : x) }))}
+                          placeholder="Nome de exibição"
+                          className="w-full px-3 py-2.5 bg-dark-800 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                        <div>
+                          <div className="flex">
+                            <input value={s.from_email}
+                              onChange={e => setEditForm(f => ({
+                                ...f,
+                                senders: f.senders.map((x, idx) => idx === i ? { ...x, from_email: extractLocal(e.target.value) } : x),
+                              }))}
+                              placeholder="usuario"
+                              className="flex-1 px-3 py-2.5 bg-dark-800 border border-white/10 rounded-l-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                            <span className="px-3 py-2.5 bg-dark-600 border border-l-0 border-white/10 rounded-r-xl text-orange-300 text-sm font-mono whitespace-nowrap">
+                              @{editDomainName || 'dominio.com'}
+                            </span>
+                          </div>
+                          {s.from_email && editDomainName && (
+                            <p className="text-xs text-green-400 mt-1">✅ {extractLocal(s.from_email)}@{editDomainName}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <button type="button"
+                    onClick={() => setEditForm(f => ({ ...f, senders: [...f.senders, { from_name: '', from_email: '' }] }))}
+                    className="w-full py-2.5 border border-dashed border-orange-500/40 text-orange-300 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
+                    <FaPlus /> Adicionar remetente
+                  </button>
+                </div>
+              </div>
+
+              {/* Reply-To */}
+              <div>
+                <label className="block text-sm font-bold text-white/80 mb-2">Responder Para (Reply-To)</label>
+                <input type="email" value={editForm.reply_to}
+                  onChange={e => setEditForm(f => ({ ...f, reply_to: e.target.value }))}
+                  placeholder="opcional@email.com"
+                  className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+              </div>
+
+              {/* Assuntos */}
+              <div>
+                <label className="block text-sm font-bold text-white/80 mb-2">📝 Assuntos *</label>
+                <div className="space-y-2">
+                  {editForm.subjects.map((s, i) => (
+                    <div key={i} className="flex gap-2">
+                      <input value={s}
+                        onChange={e => setEditForm(f => ({ ...f, subjects: f.subjects.map((x, idx) => idx === i ? e.target.value : x) }))}
+                        placeholder={`Assunto ${i + 1}`}
+                        className="flex-1 px-4 py-2.5 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                      {editForm.subjects.length > 1 && (
+                        <button type="button" onClick={() => setEditForm(f => ({ ...f, subjects: f.subjects.filter((_, idx) => idx !== i) }))}
+                          className="px-3 text-red-400"><FaTrash /></button>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button"
+                    onClick={() => setEditForm(f => ({ ...f, subjects: [...f.subjects, ''] }))}
+                    className="text-sm text-orange-300 font-bold flex items-center gap-1"><FaPlus /> Adicionar assunto</button>
+                </div>
+              </div>
+
+              {/* Mensagem */}
+              <div>
+                <label className="block text-sm font-bold text-white/80 mb-2">✉️ Mensagem / Modelo (HTML)</label>
+                <textarea value={editForm.body_html}
+                  onChange={e => setEditForm(f => ({ ...f, body_html: e.target.value }))}
+                  rows={8}
+                  placeholder="Cole ou edite o HTML da mensagem..."
+                  className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-orange-500/60 resize-y" />
+              </div>
+
+              {/* Horário */}
               <div>
                 <label className="block text-sm font-bold text-white/80 mb-2">🕐 Horário de Trabalho</label>
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Início</label>
-                    <input type="time" value={editForm.work_start_time}
-                      onChange={e => setEditForm(f => ({ ...f, work_start_time: e.target.value }))}
-                      className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Fim</label>
-                    <input type="time" value={editForm.work_end_time}
-                      onChange={e => setEditForm(f => ({ ...f, work_end_time: e.target.value }))}
-                      className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
-                  </div>
+                  <input type="time" value={editForm.work_start_time}
+                    onChange={e => setEditForm(f => ({ ...f, work_start_time: e.target.value }))}
+                    className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                  <input type="time" value={editForm.work_end_time}
+                    onChange={e => setEditForm(f => ({ ...f, work_end_time: e.target.value }))}
+                    className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
                 </div>
               </div>
+
               {/* Delay */}
               <div>
                 <label className="block text-sm font-bold text-white/80 mb-2">⏱️ Delay entre Envios (segundos)</label>
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Mínimo</label>
-                    <input type="number" min="0" value={editForm.delay_seconds_min}
-                      onChange={e => setEditForm(f => ({ ...f, delay_seconds_min: Number(e.target.value) }))}
-                      className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Máximo</label>
-                    <input type="number" min="0" value={editForm.delay_seconds_max}
-                      onChange={e => setEditForm(f => ({ ...f, delay_seconds_max: Number(e.target.value) }))}
-                      className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
-                  </div>
+                  <input type="number" min="0" value={editForm.delay_seconds_min}
+                    onChange={e => setEditForm(f => ({ ...f, delay_seconds_min: Number(e.target.value) }))}
+                    className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
+                  <input type="number" min="0" value={editForm.delay_seconds_max}
+                    onChange={e => setEditForm(f => ({ ...f, delay_seconds_max: Number(e.target.value) }))}
+                    className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
                 </div>
               </div>
-              {/* Pausa automática */}
+
+              {/* Pausa */}
               <div>
                 <label className="block text-sm font-bold text-white/80 mb-2">💤 Pausa Automática</label>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Pausar a cada (envios, 0 = desativado)</label>
+                    <label className="block text-xs text-gray-400 mb-1">A cada (envios, 0 = off)</label>
                     <input type="number" min="0" value={editForm.pause_after}
                       onChange={e => setEditForm(f => ({ ...f, pause_after: Number(e.target.value) }))}
                       className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Duração da pausa (minutos)</label>
+                    <label className="block text-xs text-gray-400 mb-1">Duração (min)</label>
                     <input type="number" min="1" value={editForm.pause_duration_minutes}
                       onChange={e => setEditForm(f => ({ ...f, pause_duration_minutes: Number(e.target.value) }))}
                       className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
                   </div>
                 </div>
               </div>
-              {/* Agendamento (só em draft/scheduled) */}
+
               {['draft', 'scheduled'].includes(campaign.status) && (
                 <div>
                   <label className="block text-sm font-bold text-white/80 mb-2">📅 Data/Hora de Início</label>
                   <input type="datetime-local" value={editForm.scheduled_at}
                     onChange={e => setEditForm(f => ({ ...f, scheduled_at: e.target.value }))}
                     className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
-                  <p className="text-xs text-gray-500 mt-1">Deixe em branco para iniciar manualmente</p>
+                </div>
+              )}
+
+              {(campaign.failed_count || 0) > 0 && (
+                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-200 text-sm">
+                  Esta campanha tem <strong>{campaign.failed_count}</strong> falhas. Depois de corrigir o remetente/domínio, salve e use <strong>Reenviar Falhas</strong>.
                 </div>
               )}
             </div>
-            <div className="p-6 border-t border-white/10 flex gap-3">
+
+            <div className="sticky bottom-0 p-6 border-t border-white/10 bg-dark-800 flex gap-3">
               <button onClick={() => setShowEditModal(false)}
                 className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2">
                 <FaTimes /> Cancelar
