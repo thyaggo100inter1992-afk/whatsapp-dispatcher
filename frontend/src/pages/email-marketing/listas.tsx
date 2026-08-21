@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { FaList, FaArrowLeft, FaPlus, FaTrash, FaUpload, FaUsers, FaSpinner, FaCheckCircle, FaClipboard, FaFileExcel, FaTimesCircle, FaTimes } from 'react-icons/fa';
+import * as XLSX from 'xlsx';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -55,9 +56,23 @@ export default function Listas() {
 
   const handleImport = async (listId: number, file: File) => {
     setImporting(listId);
-    const formData = new FormData();
-    formData.append('file', file);
     try {
+      let uploadFile = file;
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+        if (!rows.length) throw new Error('Planilha vazia');
+        // Normaliza cabeçalho e gera CSV com ; (Excel BR)
+        const csvText = rows.map(r =>
+          [r[0], r[1], r[2], r[3]].map(c => String(c ?? '').replace(/"/g, '""')).map(c => `"${c}"`).join(';')
+        ).join('\n');
+        uploadFile = new File([csvText], 'contatos.csv', { type: 'text/csv' });
+      }
+      const formData = new FormData();
+      formData.append('file', uploadFile);
       const r = await api.post(`/email-marketing/lists/${listId}/import`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       notification.success('Importação concluída!', `${r.data.imported} contatos importados de ${r.data.total}.`);
       loadLists();
@@ -69,7 +84,7 @@ export default function Listas() {
     if (!pasteListId || !pasteText.trim()) { notification.warning('Atenção', 'Cole ao menos um e-mail.'); return; }
     const lines = pasteText.split(/[\n;]/).map(l => l.trim()).filter(Boolean);
     if (lines.length === 0) { notification.warning('Atenção', 'Nenhum e-mail encontrado.'); return; }
-    const csvLines = ['email,nome,cpf,telefone'];
+    const csvLines = ['email;nome;cpf;telefone'];
     for (const line of lines) {
       if (/^email\b/i.test(line) && !line.includes('@')) continue;
       const parts = line.split(/[,;\t]/).map(p => p.trim());
@@ -80,7 +95,7 @@ export default function Listas() {
       const name = others[0] || '';
       const cpf = others[1] || '';
       const phone = others[2] || '';
-      csvLines.push([email, name, cpf, phone].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+      csvLines.push([email, name, cpf, phone].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
     }
     if (csvLines.length <= 1) { notification.warning('Nenhum e-mail válido', 'Verifique se os endereços contêm "@".'); return; }
     const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' });
@@ -97,25 +112,25 @@ export default function Listas() {
   };
 
   const downloadExcelTemplate = () => {
-    const bom = '\uFEFF';
-    const content = [
-      'email,nome,cpf,telefone',
-      'joao.silva@email.com,João Silva,123.456.789-00,(11) 98888-7777',
-      'maria.santos@email.com,Maria Santos,,',
-      'pedro.oliveira@gmail.com,Pedro Oliveira,98765432100,11999998888',
-      'ana.costa@hotmail.com,Ana Costa,,11988887777',
-      'carlos.mendes@empresa.com.br,Carlos Mendes,11144477735,',
-    ].join('\r\n');
-    const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'modelo-lista-contatos.csv'; a.click();
-    URL.revokeObjectURL(url);
-    notification.success('Download iniciado!', 'Abra o arquivo no Excel para ver o modelo.');
+    const rows = [
+      ['email', 'nome', 'cpf', 'telefone'],
+      ['joao.silva@email.com', 'João Silva', '123.456.789-00', '(11) 98888-7777'],
+      ['maria.santos@email.com', 'Maria Santos', '', ''],
+      ['pedro.oliveira@gmail.com', 'Pedro Oliveira', '98765432100', '11999998888'],
+      ['ana.costa@hotmail.com', 'Ana Costa', '', '11988887777'],
+      ['carlos.mendes@empresa.com.br', 'Carlos Mendes', '11144477735', ''],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 32 }, { wch: 22 }, { wch: 16 }, { wch: 18 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Contatos');
+    XLSX.writeFile(wb, 'modelo-lista-contatos.xlsx');
+    notification.success('Download iniciado!', 'Abra no Excel: cada campo já vem em uma coluna.');
   };
 
   const openPasteModal = (id: number, name: string) => { setPasteListId(id); setPasteListName(name); setPasteText(''); setShowPaste(true); };
 
-  const validEmailCount = pasteText.split(/[\n;]/).map(l => l.trim().split(',')[0].trim()).filter(e => e.includes('@')).length;
+  const validEmailCount = pasteText.split(/\r?\n/).map(l => l.trim()).filter(l => l.includes('@')).length;
 
   const inputCls = 'w-full px-6 py-4 text-base bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-green-500 focus:ring-4 focus:ring-green-500/30 transition-all';
   const labelCls = 'block text-base font-bold mb-3 text-white/90';
@@ -125,7 +140,7 @@ export default function Listas() {
       <Head><title>Listas de Contatos | E-mail Marketing</title></Head>
       <notification.NotificationContainer />
       <ConfirmDialog />
-      <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={e => {
+      <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={e => {
         const file = e.target.files?.[0];
         if (file && selectedListId) handleImport(selectedListId, file);
         e.target.value = '';
@@ -246,8 +261,7 @@ export default function Listas() {
 
           {/* Info CSV */}
           <div className="bg-blue-500/10 border-2 border-blue-500/30 rounded-2xl p-5 text-sm text-blue-300">
-            <strong>📋 Formato do arquivo CSV:</strong> Colunas <code className="bg-white/10 px-1 rounded">email</code> (obrigatório), <code className="bg-white/10 px-1 rounded">nome</code>, <code className="bg-white/10 px-1 rounded">cpf</code> e <code className="bg-white/10 px-1 rounded">telefone</code> (opcionais). Também pode colar com o botão &quot;Colar&quot;.
-            <code className="block mt-2 bg-black/30 rounded-lg p-3 font-mono text-xs">email,nome,cpf,telefone<br />joao@email.com,João Silva,123.456.789-00,(11) 98888-7777<br />maria@email.com,Maria,,</code>
+            <strong>📋 Modelo Excel:</strong> Baixe o modelo — as colunas já vêm separadas (<code className="bg-white/10 px-1 rounded">email</code> | <code className="bg-white/10 px-1 rounded">nome</code> | <code className="bg-white/10 px-1 rounded">cpf</code> | <code className="bg-white/10 px-1 rounded">telefone</code>). CPF e telefone são opcionais. Aceita <strong>.xlsx</strong> ou <strong>.csv</strong>.
           </div>
 
           {/* LISTA */}
@@ -290,7 +304,7 @@ export default function Listas() {
                       </button>
                       <button onClick={() => { setSelectedListId(l.id); fileRef.current?.click(); }} disabled={importing === l.id}
                         className="px-4 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 rounded-xl font-bold text-sm flex items-center gap-2 disabled:opacity-50 transition-all">
-                        {importing === l.id ? <FaSpinner className="animate-spin" /> : <FaUpload />} Importar CSV
+                        {importing === l.id ? <FaSpinner className="animate-spin" /> : <FaUpload />} Importar Excel/CSV
                       </button>
                       <button onClick={() => handleDelete(l.id, l.name)}
                         className="px-4 py-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded-xl font-bold text-sm flex items-center gap-2 transition-all">

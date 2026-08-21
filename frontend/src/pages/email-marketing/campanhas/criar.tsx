@@ -8,6 +8,7 @@ import {
   FaClipboard, FaUpload, FaListUl, FaFileExcel, FaRocket, FaUsers,
   FaExclamationTriangle, FaBolt, FaChartLine,
 } from 'react-icons/fa';
+import * as XLSX from 'xlsx';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 
@@ -158,31 +159,41 @@ export default function CriarCampanha() {
     URL.revokeObjectURL(url);
   };
 
-  const handleRecipientCsvUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const text = (e.target?.result as string) || '';
+  const handleRecipientCsvUpload = async (file: File) => {
+    try {
+      const lower = file.name.toLowerCase();
+      let text = '';
+      if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+        text = rows.map(r => [r[0], r[1], r[2], r[3]].map(c => String(c ?? '').trim()).join(',')).join('\n');
+      } else {
+        text = await file.text();
+      }
       const lines = text.split(/\r?\n/).filter(Boolean);
       const dataLines = lines[0]?.toLowerCase().includes('email') && !lines[0].includes('@')
         ? lines.slice(1) : lines;
       setRecipientPasteText(dataLines.join('\n'));
       setRecipientSource('paste');
-    };
-    reader.readAsText(file);
+    } catch (e: any) {
+      notification.error('Erro ao ler arquivo', e.message || 'Não foi possível ler o arquivo');
+    }
   };
 
   const downloadRecipientTemplate = () => {
-    const bom = '\uFEFF';
-    const content = [
-      'email,nome,cpf,telefone',
-      'joao.silva@email.com,João Silva,123.456.789-00,(11) 98888-7777',
-      'maria.santos@email.com,Maria Santos,,',
-      'pedro@empresa.com.br,Pedro Oliveira,98765432100,11999998888',
-    ].join('\r\n');
-    const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'modelo-destinatarios.csv'; a.click();
-    URL.revokeObjectURL(url);
+    const rows = [
+      ['email', 'nome', 'cpf', 'telefone'],
+      ['joao.silva@email.com', 'João Silva', '123.456.789-00', '(11) 98888-7777'],
+      ['maria.santos@email.com', 'Maria Santos', '', ''],
+      ['pedro@empresa.com.br', 'Pedro Oliveira', '98765432100', '11999998888'],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 32 }, { wch: 22 }, { wch: 16 }, { wch: 18 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Destinatarios');
+    XLSX.writeFile(wb, 'modelo-destinatarios.xlsx');
   };
 
   const selectedDomainName = domains.find(d => d.id === parseInt(domainId))?.domain || '';
@@ -306,7 +317,7 @@ export default function CriarCampanha() {
       <notification.NotificationContainer />
       <input ref={senderFileRef} type="file" accept=".csv,.txt" className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) handleSenderCsvUpload(f); e.target.value = ''; }} />
-      <input ref={recipientFileRef} type="file" accept=".csv,.txt" className="hidden"
+      <input ref={recipientFileRef} type="file" accept=".csv,.xlsx,.xls,.txt" className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) handleRecipientCsvUpload(f); e.target.value = ''; }} />
 
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
@@ -518,22 +529,18 @@ export default function CriarCampanha() {
             {(recipientSource === 'paste' || recipientSource === 'csv') && (
               <div className="space-y-4">
                 <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300 space-y-2">
-                  <p><strong>Formato:</strong> <code className="bg-black/30 px-1 rounded">email,nome,cpf,telefone</code> — um por linha. CPF e telefone são opcionais.</p>
-                  <code className="block font-mono text-xs bg-black/30 rounded-lg p-3">
-                    joao@email.com,João Silva,123.456.789-00,(11) 98888-7777<br />
-                    maria@email.com,Maria Santos<br />
-                    pedro@email.com
-                  </code>
+                  <p><strong>Modelo Excel:</strong> baixe o arquivo — colunas separadas (email | nome | cpf | telefone). CPF e telefone opcionais. Aceita <strong>.xlsx</strong> ou CSV.</p>
+                  <p className="text-xs text-blue-200/80">Ao colar texto, use: <code className="bg-black/30 px-1 rounded">email,nome,cpf,telefone</code> (um por linha).</p>
                 </div>
                 {recipientSource === 'csv' && (
                   <div className="flex flex-wrap gap-3">
                     <button type="button" onClick={() => recipientFileRef.current?.click()}
                       className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold flex items-center gap-2">
-                      <FaUpload /> Selecionar arquivo CSV
+                      <FaUpload /> Selecionar Excel/CSV
                     </button>
                     <button type="button" onClick={downloadRecipientTemplate}
                       className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold flex items-center gap-2">
-                      <FaFileExcel /> Baixar modelo
+                      <FaFileExcel /> Baixar modelo Excel
                     </button>
                   </div>
                 )}

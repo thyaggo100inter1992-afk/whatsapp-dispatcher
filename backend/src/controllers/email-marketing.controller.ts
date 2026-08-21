@@ -458,7 +458,12 @@ export const importContacts = async (req: Request, res: Response) => {
     if (!file) return res.status(400).json({ success: false, message: 'Arquivo CSV obrigatório' });
 
     const contacts: { email: string; name?: string; cpf?: string; phone?: string }[] = [];
-    const stream = Readable.from(file.buffer);
+    const rawText = file.buffer.toString('utf8').replace(/^\uFEFF/, '');
+    const firstLine = (rawText.split(/\r?\n/).find((l: string) => l.trim()) || '');
+    const semicolonCount = (firstLine.match(/;/g) || []).length;
+    const commaCount = (firstLine.match(/,/g) || []).length;
+    const separator = semicolonCount > commaCount ? ';' : ',';
+    const stream = Readable.from(Buffer.from(rawText, 'utf8'));
 
     const pick = (row: any, keys: string[]) => {
       for (const k of keys) {
@@ -478,7 +483,7 @@ export const importContacts = async (req: Request, res: Response) => {
     };
 
     await new Promise<void>((resolve, reject) => {
-      stream.pipe(csv())
+      stream.pipe(csv({ separator }))
         .on('data', (row) => {
           const email = pick(row, ['email', 'e-mail', 'mail']);
           if (email && email.includes('@')) {
