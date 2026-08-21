@@ -626,7 +626,7 @@ export const startCampaign = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Campanha não pode ser iniciada no status atual' });
     }
 
-    // Carrega contatos da lista
+    // Carrega contatos da lista (sem duplicar — unique em campaign_id+email)
     if (campaign.rows[0].list_id) {
       const contacts = await pool.query(
         `SELECT email, name FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2 AND status='active'`,
@@ -634,11 +634,17 @@ export const startCampaign = async (req: Request, res: Response) => {
       );
       for (const c of contacts.rows) {
         await pool.query(
-          `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+          `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name)
+           VALUES ($1,$2,$3,$4)
+           ON CONFLICT (campaign_id, email) DO NOTHING`,
           [tenantId, id, c.email, c.name]
         );
       }
-      await pool.query(`UPDATE email_marketing_campaigns SET total_contacts=$1 WHERE id=$2`, [contacts.rows.length, id]);
+      const total = await pool.query(
+        `SELECT COUNT(*)::int as total FROM email_marketing_recipients WHERE campaign_id=$1`,
+        [id]
+      );
+      await pool.query(`UPDATE email_marketing_campaigns SET total_contacts=$1 WHERE id=$2`, [total.rows[0].total, id]);
     }
 
     await pool.query(
@@ -841,7 +847,8 @@ export const getCampaignRecipients = async (req: Request, res: Response) => {
       `SELECT id, email, name, status, error_message, sent_at, opened_at, clicked_at, updated_at
        FROM email_marketing_recipients r
        WHERE campaign_id=$1 AND tenant_id=$2${whereExtra}
-       ORDER BY id DESC LIMIT $${params.length}`,
+       ORDER BY COALESCE(sent_at, updated_at, created_at) DESC NULLS LAST, id DESC
+       LIMIT $${params.length}`,
       params
     );
     res.json({ success: true, data: result.rows, total: result.rowCount });

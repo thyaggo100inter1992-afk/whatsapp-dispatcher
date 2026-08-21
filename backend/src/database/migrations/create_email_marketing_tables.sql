@@ -120,5 +120,6 @@ CREATE INDEX IF NOT EXISTS idx_em_contacts_list ON email_marketing_contacts(list
 CREATE INDEX IF NOT EXISTS idx_em_contacts_tenant ON email_marketing_contacts(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_em_templates_tenant ON email_marketing_templates(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_em_campaigns_tenant ON email_marketing_campaigns(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_em_recipients_campaign ON email_marketing_recipients(campaign_id);
-CREATE INDEX IF NOT EXISTS idx_em_recipients_status ON email_marketing_recipients(status);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_em_recipients_campaign_email ON email_marketing_recipients(campaign_id, email);
+  CREATE INDEX IF NOT EXISTS idx_em_recipients_campaign ON email_marketing_recipients(campaign_id);
+  CREATE INDEX IF NOT EXISTS idx_em_recipients_status ON email_marketing_recipients(status);

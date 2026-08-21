@@ -488,14 +488,21 @@ export default function CampaignDetail() {
   const openRate = campaign && campaign.sent_count > 0 ? ((campaign.opened_count / campaign.sent_count) * 100).toFixed(1) : '0.0';
   const clickRate = campaign && campaign.sent_count > 0 ? ((campaign.clicked_count / campaign.sent_count) * 100).toFixed(1) : '0.0';
 
-  const filteredRecipients = recipients.filter(r => {
-    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return (r.email || '').toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q);
-    }
-    return true;
-  });
+  const filteredRecipients = recipients
+    .filter(r => {
+      if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        return (r.email || '').toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q);
+      }
+      return true;
+    })
+    .slice()
+    .sort((a, b) => {
+      const ta = new Date(a.sent_at || a.updated_at || 0).getTime();
+      const tb = new Date(b.sent_at || b.updated_at || 0).getTime();
+      return tb - ta; // mais novo em cima
+    });
 
   const recipientCounts: Record<string, number> = { all: recipients.length };
   for (const r of recipients) recipientCounts[r.status] = (recipientCounts[r.status] || 0) + 1;
