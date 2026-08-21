@@ -457,15 +457,37 @@ export const importContacts = async (req: Request, res: Response) => {
     const file = (req as any).file;
     if (!file) return res.status(400).json({ success: false, message: 'Arquivo CSV obrigatório' });
 
-    const contacts: { email: string; name?: string }[] = [];
+    const contacts: { email: string; name?: string; cpf?: string; phone?: string }[] = [];
     const stream = Readable.from(file.buffer);
+
+    const pick = (row: any, keys: string[]) => {
+      for (const k of keys) {
+        const v = row[k] ?? row[k.toLowerCase()] ?? row[k.toUpperCase()];
+        if (v != null && String(v).trim() !== '') return String(v).trim();
+      }
+      // case-insensitive fallback
+      const map: Record<string, string> = {};
+      for (const [key, val] of Object.entries(row || {})) {
+        map[String(key).toLowerCase().trim()] = String(val ?? '').trim();
+      }
+      for (const k of keys) {
+        const v = map[k.toLowerCase()];
+        if (v) return v;
+      }
+      return '';
+    };
 
     await new Promise<void>((resolve, reject) => {
       stream.pipe(csv())
         .on('data', (row) => {
-          const email = row.email || row.Email || row.EMAIL;
+          const email = pick(row, ['email', 'e-mail', 'mail']);
           if (email && email.includes('@')) {
-            contacts.push({ email: email.trim().toLowerCase(), name: row.name || row.Name || row.nome || '' });
+            contacts.push({
+              email: email.toLowerCase(),
+              name: pick(row, ['name', 'nome', 'nome_completo', 'cliente']) || undefined,
+              cpf: pick(row, ['cpf', 'documento', 'doc']) || undefined,
+              phone: pick(row, ['phone', 'telefone', 'celular', 'whatsapp', 'tel']) || undefined,
+            });
           }
         })
         .on('end', resolve)
@@ -475,11 +497,18 @@ export const importContacts = async (req: Request, res: Response) => {
     let inserted = 0;
     for (const c of contacts) {
       try {
-        await pool.query(
-          `INSERT INTO email_marketing_contacts (tenant_id, list_id, email, name) VALUES ($1,$2,$3,$4) ON CONFLICT (list_id, email) DO NOTHING`,
-          [tenantId, list_id, c.email, c.name || null]
+        const r = await pool.query(
+          `INSERT INTO email_marketing_contacts (tenant_id, list_id, email, name, cpf, phone)
+           VALUES ($1,$2,$3,$4,$5,$6)
+           ON CONFLICT (list_id, email) DO UPDATE SET
+             name = COALESCE(NULLIF(EXCLUDED.name, ''), email_marketing_contacts.name),
+             cpf = COALESCE(NULLIF(EXCLUDED.cpf, ''), email_marketing_contacts.cpf),
+             phone = COALESCE(NULLIF(EXCLUDED.phone, ''), email_marketing_contacts.phone),
+             updated_at = NOW()
+           RETURNING id`,
+          [tenantId, list_id, c.email, c.name || null, c.cpf || null, c.phone || null]
         );
-        inserted++;
+        if (r.rowCount) inserted++;
       } catch (_) {}
     }
 
@@ -502,7 +531,7 @@ export const getContacts = async (req: Request, res: Response) => {
 
     const total = await pool.query(`SELECT COUNT(*) FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2`, [list_id, tenantId]);
     const result = await pool.query(
-      `SELECT id, email, name, status, created_at FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+      `SELECT id, email, name, cpf, phone, status, created_at FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
       [list_id, tenantId, limit, offset]
     );
 
@@ -626,6 +655,7 @@ export const createCampaign = async (req: Request, res: Response) => {
       // Novos campos avançados
       from_senders,    // [{ from_name, from_email }]
       subjects,        // ["Assunto A", "Assunto B"]
+      recipients,      // [{ email, name?, cpf?, phone? }] — destinatários manuais/colar/CSV
       delay_seconds_min, delay_seconds_max,
       scheduled_at,
       work_start_time, work_end_time,
@@ -673,6 +703,36 @@ export const createCampaign = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Nome, ao menos um remetente (parte antes do @) e ao menos um assunto são obrigatórios' });
     }
 
+    const inlineRecipients: { email: string; name?: string | null; cpf?: string | null; phone?: string | null }[] =
+      Array.isArray(recipients)
+        ? recipients
+            .map((r: any) => ({
+              email: String(r?.email || '').trim().toLowerCase(),
+              name: r?.name ? String(r.name).trim() : (r?.nome ? String(r.nome).trim() : null),
+              cpf: r?.cpf ? String(r.cpf).trim() : null,
+              phone: r?.phone || r?.telefone
+                ? String(r.phone || r.telefone).trim()
+                : null,
+            }))
+            .filter((r) => r.email.includes('@'))
+        : [];
+
+    // Dedup por e-mail
+    const seen = new Set<string>();
+    const uniqueInline = inlineRecipients.filter((r) => {
+      if (seen.has(r.email)) return false;
+      seen.add(r.email);
+      return true;
+    });
+
+    const hasList = !!list_id;
+    if (!hasList && uniqueInline.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selecione uma lista de contatos ou adicione destinatários (manual / colar / CSV)',
+      });
+    }
+
     // Define status inicial: se agendado para o futuro -> 'scheduled', senão -> 'draft'
     const initStatus = scheduled_at && new Date(scheduled_at) > new Date() ? 'scheduled' : 'draft';
 
@@ -686,7 +746,7 @@ export const createCampaign = async (req: Request, res: Response) => {
          delay_seconds, delay_seconds_min, delay_seconds_max,
          scheduled_at, work_start_time, work_end_time,
          pause_after, pause_duration_minutes,
-         status
+         status, total_contacts
        ) VALUES (
          $1,$2,
          $3,$4,$5,
@@ -696,20 +756,47 @@ export const createCampaign = async (req: Request, res: Response) => {
          $14,$15,$16,
          $17,$18,$19,
          $20,$21,
-         $22
+         $22,$23
        ) RETURNING *`,
       [
         tenantId, name,
         subjectsArr[0], sendersArr[0].from_name, sendersArr[0].from_email,
         JSON.stringify(sendersArr), JSON.stringify(subjectsArr),
-        reply_to || null, domain_id || null, list_id || null, template_id || null,
+        reply_to || null, domain_id || null, hasList ? list_id : null, template_id || null,
         body_html || null, body_text || null,
         delay_seconds_min || 1, delay_seconds_min || 1, delay_seconds_max || 3,
         scheduled_at || null, work_start_time || '08:00', work_end_time || '20:00',
         pause_after || 0, pause_duration_minutes || 30,
         initStatus,
+        uniqueInline.length,
       ]
     );
+
+    const campaignId = result.rows[0].id;
+
+    // Destinatários manuais/colar/CSV — já entram na fila da campanha
+    for (const r of uniqueInline) {
+      await pool.query(
+        `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name, cpf, phone)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (campaign_id, email) DO UPDATE SET
+           name = COALESCE(NULLIF(EXCLUDED.name, ''), email_marketing_recipients.name),
+           cpf = COALESCE(NULLIF(EXCLUDED.cpf, ''), email_marketing_recipients.cpf),
+           phone = COALESCE(NULLIF(EXCLUDED.phone, ''), email_marketing_recipients.phone),
+           updated_at = NOW()`,
+        [tenantId, campaignId, r.email, r.name || null, r.cpf || null, r.phone || null]
+      );
+    }
+
+    if (uniqueInline.length > 0) {
+      const total = await pool.query(
+        `SELECT COUNT(*)::int as total FROM email_marketing_recipients WHERE campaign_id=$1`,
+        [campaignId]
+      );
+      await pool.query(`UPDATE email_marketing_campaigns SET total_contacts=$1 WHERE id=$2`, [total.rows[0].total, campaignId]);
+      result.rows[0].total_contacts = total.rows[0].total;
+    }
+
     res.json({ success: true, data: result.rows[0] });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -731,23 +818,31 @@ export const startCampaign = async (req: Request, res: Response) => {
     // Carrega contatos da lista (sem duplicar — unique em campaign_id+email)
     if (campaign.rows[0].list_id) {
       const contacts = await pool.query(
-        `SELECT email, name FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2 AND status='active'`,
+        `SELECT email, name, cpf, phone FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2 AND status='active'`,
         [campaign.rows[0].list_id, tenantId]
       );
       for (const c of contacts.rows) {
         await pool.query(
-          `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name)
-           VALUES ($1,$2,$3,$4)
-           ON CONFLICT (campaign_id, email) DO NOTHING`,
-          [tenantId, id, c.email, c.name]
+          `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name, cpf, phone)
+           VALUES ($1,$2,$3,$4,$5,$6)
+           ON CONFLICT (campaign_id, email) DO UPDATE SET
+             name = COALESCE(NULLIF(EXCLUDED.name, ''), email_marketing_recipients.name),
+             cpf = COALESCE(NULLIF(EXCLUDED.cpf, ''), email_marketing_recipients.cpf),
+             phone = COALESCE(NULLIF(EXCLUDED.phone, ''), email_marketing_recipients.phone),
+             updated_at = NOW()`,
+          [tenantId, id, c.email, c.name, c.cpf || null, c.phone || null]
         );
       }
-      const total = await pool.query(
-        `SELECT COUNT(*)::int as total FROM email_marketing_recipients WHERE campaign_id=$1`,
-        [id]
-      );
-      await pool.query(`UPDATE email_marketing_campaigns SET total_contacts=$1 WHERE id=$2`, [total.rows[0].total, id]);
     }
+
+    const total = await pool.query(
+      `SELECT COUNT(*)::int as total FROM email_marketing_recipients WHERE campaign_id=$1`,
+      [id]
+    );
+    if (!total.rows[0].total) {
+      return res.status(400).json({ success: false, message: 'Campanha sem destinatários. Adicione uma lista ou contatos manuais.' });
+    }
+    await pool.query(`UPDATE email_marketing_campaigns SET total_contacts=$1 WHERE id=$2`, [total.rows[0].total, id]);
 
     await pool.query(
       `UPDATE email_marketing_campaigns SET status='sending', started_at=NOW(), sent_in_session=0, pause_started_at=NULL, updated_at=NOW() WHERE id=$1`,
@@ -946,7 +1041,7 @@ export const getCampaignRecipients = async (req: Request, res: Response) => {
     params.push(parseInt(limit, 10) || 500);
 
     const result = await pool.query(
-      `SELECT id, email, name, status, error_message, sent_at, opened_at, clicked_at, updated_at
+      `SELECT id, email, name, cpf, phone, status, error_message, sent_at, opened_at, clicked_at, updated_at
        FROM email_marketing_recipients r
        WHERE campaign_id=$1 AND tenant_id=$2${whereExtra}
        ORDER BY COALESCE(sent_at, updated_at, created_at) DESC NULLS LAST, id DESC

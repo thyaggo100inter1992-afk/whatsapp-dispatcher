@@ -39,6 +39,7 @@ function extractLocal(email: string): string {
 
 interface Recipient {
   id: number; email: string; name: string | null; status: string;
+  cpf?: string | null; phone?: string | null;
   error_message: string | null; sent_at: string | null;
   opened_at: string | null; clicked_at: string | null; updated_at: string;
 }
@@ -462,10 +463,12 @@ export default function CampaignDetail() {
 
       // Aba 7 — Destinatários
       const destinatarios = [
-        ['E-mail', 'Nome', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Motivo do erro'],
+        ['E-mail', 'Nome', 'CPF', 'Telefone', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Motivo do erro'],
         ...rows.map(r2 => [
           r2.email || '',
           r2.name || '',
+          r2.cpf || '',
+          r2.phone || '',
           RECIPIENT_STATUS[r2.status]?.label || r2.status,
           r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : '',
           r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : '',
@@ -475,7 +478,7 @@ export default function CampaignDetail() {
       ];
       const wsDest = XLSX.utils.aoa_to_sheet(destinatarios);
       wsDest['!cols'] = [
-        { wch: 35 }, { wch: 25 }, { wch: 12 },
+        { wch: 35 }, { wch: 25 }, { wch: 16 }, { wch: 16 }, { wch: 12 },
         { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 60 },
       ];
       XLSX.utils.book_append_sheet(wb, wsDest, 'Destinatarios');
@@ -547,7 +550,10 @@ export default function CampaignDetail() {
   const matchesSearch = (r: Recipient) => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return (r.email || '').toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q);
+    return (r.email || '').toLowerCase().includes(q)
+      || (r.name || '').toLowerCase().includes(q)
+      || (r.cpf || '').toLowerCase().includes(q)
+      || (r.phone || '').toLowerCase().includes(q);
   };
 
   // Log em tempo real = o que já foi processado (enviado/erro/aberto...). Pendentes só no filtro "Pendente".
@@ -841,7 +847,7 @@ export default function CampaignDetail() {
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-dark-800/90 backdrop-blur-md">
                     <tr>
-                      {['E-mail', 'Nome', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Erro'].map(h => (
+                      {['E-mail', 'Nome', 'CPF', 'Telefone', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Erro'].map(h => (
                         <th key={h} className="text-left py-3 px-3 text-xs font-bold text-gray-400 uppercase">{h}</th>
                       ))}
                     </tr>
@@ -854,6 +860,8 @@ export default function CampaignDetail() {
                         <tr key={r.id} className="border-b border-white/5 hover:bg-white/5">
                           <td className="py-3 px-3 text-white font-medium">{r.email}</td>
                           <td className="py-3 px-3 text-gray-400">{r.name || '—'}</td>
+                          <td className="py-3 px-3 text-gray-400 text-xs">{r.cpf || '—'}</td>
+                          <td className="py-3 px-3 text-gray-400 text-xs">{r.phone || '—'}</td>
                           <td className="py-3 px-3">
                             <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
                           </td>
@@ -1259,7 +1267,7 @@ export default function CampaignDetail() {
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder="Buscar por e-mail ou nome..."
+                  placeholder="Buscar por e-mail, nome, CPF ou telefone..."
                   className="w-full pl-9 pr-4 py-2.5 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-orange-500/50"
                 />
               </div>
@@ -1270,6 +1278,8 @@ export default function CampaignDetail() {
                     <tr>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">E-mail</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Nome</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">CPF</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Telefone</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Status</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Data / Hora</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Aberto em</th>
@@ -1279,14 +1289,14 @@ export default function CampaignDetail() {
                   <tbody>
                     {loadingRecipients && recipients.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center py-12 text-gray-400">
+                        <td colSpan={8} className="text-center py-12 text-gray-400">
                           <FaSpinner className="animate-spin text-3xl text-orange-400 mx-auto mb-3" />
                           Carregando log de envio...
                         </td>
                       </tr>
                     ) : filteredRecipients.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center py-12 text-gray-400">
+                        <td colSpan={8} className="text-center py-12 text-gray-400">
                           <div className="text-5xl mb-3">📭</div>
                           {filterStatus === 'all'
                             ? 'Aguardando envios... Assim que sair um e-mail (sucesso ou erro), aparece aqui no topo.'
@@ -1307,6 +1317,8 @@ export default function CampaignDetail() {
                           >
                             <td className="p-3 text-white font-medium">{r.email}</td>
                             <td className="p-3 text-gray-400">{r.name || '—'}</td>
+                            <td className="p-3 text-gray-400 text-xs whitespace-nowrap">{r.cpf || '—'}</td>
+                            <td className="p-3 text-gray-400 text-xs whitespace-nowrap">{r.phone || '—'}</td>
                             <td className="p-3">
                               <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
                             </td>

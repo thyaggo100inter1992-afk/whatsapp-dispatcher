@@ -22,7 +22,7 @@ function stripInvisible(s: string): string {
  */
 export function applyEmailVariables(
   content: string | null | undefined,
-  vars: { nome?: string | null; email?: string | null },
+  vars: { nome?: string | null; email?: string | null; cpf?: string | null; telefone?: string | null; phone?: string | null },
   opts?: { escapeValues?: boolean }
 ): string {
   if (content == null || content === '') return '';
@@ -30,17 +30,25 @@ export function applyEmailVariables(
 
   const nomeRaw = String(vars.nome || vars.email || '').trim();
   const emailRaw = String(vars.email || '').trim();
+  const cpfRaw = String(vars.cpf || '').trim();
+  const phoneRaw = String(vars.telefone || vars.phone || '').trim();
   const nome = opts?.escapeValues === false ? nomeRaw : escapeHtml(nomeRaw);
   const email = opts?.escapeValues === false ? emailRaw : escapeHtml(emailRaw);
+  const cpf = opts?.escapeValues === false ? cpfRaw : escapeHtml(cpfRaw);
+  const telefone = opts?.escapeValues === false ? phoneRaw : escapeHtml(phoneRaw);
 
   // {{nome}} / {{ nome }} / {{<span>nome</span>}} / com zero-width
   const nomeRe = /\{\{(?:\s|<[^>]*>)*nome(?:\s|<[^>]*>)*\}\}/gi;
   const nameRe = /\{\{(?:\s|<[^>]*>)*name(?:\s|<[^>]*>)*\}\}/gi;
   const emailRe = /\{\{(?:\s|<[^>]*>)*e-?mail(?:\s|<[^>]*>)*\}\}/gi;
+  const cpfRe = /\{\{(?:\s|<[^>]*>)*cpf(?:\s|<[^>]*>)*\}\}/gi;
+  const telRe = /\{\{(?:\s|<[^>]*>)*(?:telefone|phone|celular)(?:\s|<[^>]*>)*\}\}/gi;
 
   s = s.replace(nomeRe, nome);
   s = s.replace(nameRe, nome);
   s = s.replace(emailRe, email);
+  s = s.replace(cpfRe, cpf);
+  s = s.replace(telRe, telefone);
 
   // Fallback: se ainda restar {{nome}} “quebrado” por spans em volta das chaves
   s = s.replace(/\{\{[\s\u200B]*n[\s\u200B]*o[\s\u200B]*m[\s\u200B]*e[\s\u200B]*\}\}/gi, nome);

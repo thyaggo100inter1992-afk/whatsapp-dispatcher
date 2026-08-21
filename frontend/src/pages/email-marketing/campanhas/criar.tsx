@@ -43,11 +43,40 @@ function parseSubjectsText(text: string): string[] {
 
 type SenderMode = 'manual' | 'paste' | 'csv';
 type SubjectMode = 'manual' | 'paste';
+type RecipientSource = 'list' | 'manual' | 'paste' | 'csv';
+
+interface RecipientRow { email: string; name: string; cpf: string; phone: string; }
+
+/** Formato: email,nome,cpf,telefone (cpf e telefone opcionais). Aceita ; ou tab. */
+function parseRecipientsText(text: string): RecipientRow[] {
+  const seen = new Set<string>();
+  const out: RecipientRow[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (/^email\b/i.test(line) && !line.includes('@')) continue;
+    const parts = line.split(/[,;\t]/).map(p => p.trim()).filter(Boolean);
+    const emailIdx = parts.findIndex(p => p.includes('@'));
+    if (emailIdx < 0) continue;
+    const email = parts[emailIdx].toLowerCase();
+    if (seen.has(email)) continue;
+    seen.add(email);
+    const others = parts.filter((_, i) => i !== emailIdx);
+    out.push({
+      email,
+      name: others[0] || '',
+      cpf: others[1] || '',
+      phone: others[2] || '',
+    });
+  }
+  return out;
+}
 
 export default function CriarCampanha() {
   const router = useRouter();
   const notification = useNotification();
   const senderFileRef = useRef<HTMLInputElement>(null);
+  const recipientFileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [domains, setDomains] = useState<Domain[]>([]);
@@ -60,6 +89,12 @@ export default function CriarCampanha() {
   const [templateId, setTemplateId] = useState('');
   const [bodyHtml, setBodyHtml] = useState('');
   const [replyTo, setReplyTo] = useState('');
+
+  const [recipientSource, setRecipientSource] = useState<RecipientSource>('list');
+  const [manualRecipients, setManualRecipients] = useState<RecipientRow[]>([
+    { email: '', name: '', cpf: '', phone: '' },
+  ]);
+  const [recipientPasteText, setRecipientPasteText] = useState('');
 
   const [senderMode, setSenderMode] = useState<SenderMode>('manual');
   const [senders, setSenders] = useState<Sender[]>([{ from_name: '', from_email: '' }]);
@@ -123,6 +158,33 @@ export default function CriarCampanha() {
     URL.revokeObjectURL(url);
   };
 
+  const handleRecipientCsvUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = (e.target?.result as string) || '';
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      const dataLines = lines[0]?.toLowerCase().includes('email') && !lines[0].includes('@')
+        ? lines.slice(1) : lines;
+      setRecipientPasteText(dataLines.join('\n'));
+      setRecipientSource('paste');
+    };
+    reader.readAsText(file);
+  };
+
+  const downloadRecipientTemplate = () => {
+    const bom = '\uFEFF';
+    const content = [
+      'email,nome,cpf,telefone',
+      'joao.silva@email.com,João Silva,123.456.789-00,(11) 98888-7777',
+      'maria.santos@email.com,Maria Santos,,',
+      'pedro@empresa.com.br,Pedro Oliveira,98765432100,11999998888',
+    ].join('\r\n');
+    const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'modelo-destinatarios.csv'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const selectedDomainName = domains.find(d => d.id === parseInt(domainId))?.domain || '';
 
   const rawSenders: Sender[] = senderMode === 'manual'
@@ -140,6 +202,21 @@ export default function CriarCampanha() {
 
   const selectedList = lists.find(l => l.id === parseInt(listId));
 
+  const finalRecipients: RecipientRow[] = recipientSource === 'list'
+    ? []
+    : recipientSource === 'manual'
+      ? manualRecipients.filter(r => r.email.includes('@')).map(r => ({
+          email: r.email.trim().toLowerCase(),
+          name: r.name.trim(),
+          cpf: r.cpf.trim(),
+          phone: r.phone.trim(),
+        }))
+      : parseRecipientsText(recipientPasteText);
+
+  const recipientCount = recipientSource === 'list'
+    ? (selectedList?.total_contacts ?? 0)
+    : finalRecipients.length;
+
   const addSender = () => setSenders(s => [...s, { from_name: '', from_email: '' }]);
   const removeSender = (i: number) => setSenders(s => s.filter((_, idx) => idx !== i));
   const updateSender = (i: number, field: keyof Sender, val: string) =>
@@ -149,13 +226,21 @@ export default function CriarCampanha() {
   const updateSubject = (i: number, val: string) =>
     setSubjects(s => s.map((x, idx) => idx === i ? val : x));
 
+  const addRecipient = () => setManualRecipients(r => [...r, { email: '', name: '', cpf: '', phone: '' }]);
+  const removeRecipient = (i: number) => setManualRecipients(r => r.filter((_, idx) => idx !== i));
+  const updateRecipient = (i: number, field: keyof RecipientRow, val: string) =>
+    setManualRecipients(r => r.map((x, idx) => idx === i ? { ...x, [field]: val } : x));
+
   const handleSave = async () => {
     const errs: string[] = [];
     if (!name.trim()) errs.push('Informe o nome da campanha.');
     if (!domainId) errs.push('Selecione um domínio verificado.');
     if (finalSenders.length === 0) errs.push('Adicione ao menos um remetente (só a parte antes do @).');
     if (finalSubjects.length === 0) errs.push('Adicione ao menos um assunto.');
-    if (!listId) errs.push('Selecione uma lista de contatos.');
+    if (recipientSource === 'list' && !listId) errs.push('Selecione uma lista de contatos.');
+    if (recipientSource !== 'list' && finalRecipients.length === 0) {
+      errs.push('Adicione ao menos um destinatário (e-mail válido).');
+    }
     if (delayMin > delayMax) errs.push('O delay mínimo não pode ser maior que o máximo.');
     if (errs.length > 0) { setErrors(errs); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     setErrors([]);
@@ -172,7 +257,13 @@ export default function CriarCampanha() {
         subject: finalSubjects[0],
         reply_to: replyTo || null,
         domain_id: domainId || null,
-        list_id: listId,
+        list_id: recipientSource === 'list' ? listId : null,
+        recipients: recipientSource === 'list' ? undefined : finalRecipients.map(r => ({
+          email: r.email,
+          name: r.name || null,
+          cpf: r.cpf || null,
+          phone: r.phone || null,
+        })),
         template_id: templateId || null,
         body_html: bodyHtml || null,
         delay_seconds_min: delayMin,
@@ -215,6 +306,8 @@ export default function CriarCampanha() {
       <notification.NotificationContainer />
       <input ref={senderFileRef} type="file" accept=".csv,.txt" className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) handleSenderCsvUpload(f); e.target.value = ''; }} />
+      <input ref={recipientFileRef} type="file" accept=".csv,.txt" className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleRecipientCsvUpload(f); e.target.value = ''; }} />
 
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
         <div className="max-w-7xl mx-auto space-y-8">
@@ -262,7 +355,7 @@ export default function CriarCampanha() {
                     <div className="flex items-center gap-3">
                       <FaUsers className="text-3xl text-green-300" />
                       <div>
-                        <div className="text-2xl font-bold text-white">{selectedList?.total_contacts ?? 0}</div>
+                        <div className="text-2xl font-bold text-white">{recipientCount.toLocaleString('pt-BR')}</div>
                         <div className="text-sm text-white/70">Contatos</div>
                       </div>
                     </div>
@@ -328,13 +421,6 @@ export default function CriarCampanha() {
                 )}
               </div>
               <div>
-                <label className={labelCls}>Lista de Contatos *</label>
-                <select value={listId} onChange={e => setListId(e.target.value)} className={inputCls}>
-                  <option value="">Selecione uma lista</option>
-                  {lists.map(l => <option key={l.id} value={l.id}>{l.name} ({l.total_contacts.toLocaleString('pt-BR')} contatos)</option>)}
-                </select>
-              </div>
-              <div className="md:col-span-2">
                 <label className={labelCls}>Responder Para (Reply-To)</label>
                 <input type="email" value={replyTo} onChange={e => setReplyTo(e.target.value)}
                   placeholder="respostas@seudominio.com" className={inputCls} />
@@ -342,10 +428,131 @@ export default function CriarCampanha() {
             </div>
           </div>
 
-          {/* ══ 2. REMETENTES ══ */}
+          {/* ══ DESTINATÁRIOS ══ */}
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-2">
               <StepBadge n={2} />
+              <div>
+                <h2 className="text-3xl font-black text-white">Destinatários</h2>
+                <p className="text-white/60 text-sm mt-1">Lista pronta, digitação manual, colar em massa ou CSV — CPF e telefone opcionais</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-6 mt-4">
+              <button type="button" onClick={() => setRecipientSource('list')} className={modeTabCls(recipientSource === 'list')}>
+                <FaUsers className="inline mr-1" /> Lista pronta
+              </button>
+              <button type="button" onClick={() => setRecipientSource('manual')} className={modeTabCls(recipientSource === 'manual')}>
+                <FaListUl className="inline mr-1" /> Manual
+              </button>
+              <button type="button" onClick={() => setRecipientSource('paste')} className={modeTabCls(recipientSource === 'paste')}>
+                <FaClipboard className="inline mr-1" /> Colar em massa
+              </button>
+              <button type="button" onClick={() => setRecipientSource('csv')} className={modeTabCls(recipientSource === 'csv')}>
+                <FaUpload className="inline mr-1" /> CSV
+              </button>
+            </div>
+
+            {recipientSource === 'list' && (
+              <div>
+                <label className={labelCls}>Lista de Contatos *</label>
+                <select value={listId} onChange={e => setListId(e.target.value)} className={inputCls}>
+                  <option value="">Selecione uma lista</option>
+                  {lists.map(l => <option key={l.id} value={l.id}>{l.name} ({l.total_contacts.toLocaleString('pt-BR')} contatos)</option>)}
+                </select>
+                {lists.length === 0 && (
+                  <p className="text-yellow-400 text-sm mt-2">Nenhuma lista.{' '}
+                    <span className="underline cursor-pointer" onClick={() => router.push('/email-marketing/listas')}>Criar lista</span>
+                  </p>
+                )}
+                {selectedList && (
+                  <p className="text-green-400 text-sm mt-2 font-bold">{selectedList.total_contacts.toLocaleString('pt-BR')} contatos nesta lista</p>
+                )}
+              </div>
+            )}
+
+            {recipientSource === 'manual' && (
+              <div className="space-y-4">
+                {manualRecipients.map((r, i) => (
+                  <div key={i} className="bg-dark-700/60 border border-white/10 rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-sm font-bold text-orange-300 bg-orange-500/10 px-3 py-1 rounded-full">Contato {i + 1}</span>
+                      {manualRecipients.length > 1 && (
+                        <button type="button" onClick={() => removeRecipient(i)} className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1">
+                          <FaTrash /> Remover
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelCls}>E-mail *</label>
+                        <input value={r.email} onChange={e => updateRecipient(i, 'email', e.target.value)}
+                          placeholder="cliente@email.com" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Nome</label>
+                        <input value={r.name} onChange={e => updateRecipient(i, 'name', e.target.value)}
+                          placeholder="Nome do cliente" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>CPF <span className="text-white/40 font-normal">(opcional)</span></label>
+                        <input value={r.cpf} onChange={e => updateRecipient(i, 'cpf', e.target.value)}
+                          placeholder="000.000.000-00" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Telefone <span className="text-white/40 font-normal">(opcional)</span></label>
+                        <input value={r.phone} onChange={e => updateRecipient(i, 'phone', e.target.value)}
+                          placeholder="(11) 99999-0000" className={inputCls} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button type="button" onClick={addRecipient}
+                  className="w-full py-4 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border-2 border-dashed border-orange-500/40 rounded-xl text-base font-bold flex items-center justify-center gap-2">
+                  <FaPlus /> Adicionar contato
+                </button>
+                <p className="text-sm text-green-400 font-bold">{finalRecipients.length} destinatário(s) válido(s)</p>
+              </div>
+            )}
+
+            {(recipientSource === 'paste' || recipientSource === 'csv') && (
+              <div className="space-y-4">
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300 space-y-2">
+                  <p><strong>Formato:</strong> <code className="bg-black/30 px-1 rounded">email,nome,cpf,telefone</code> — um por linha. CPF e telefone são opcionais.</p>
+                  <code className="block font-mono text-xs bg-black/30 rounded-lg p-3">
+                    joao@email.com,João Silva,123.456.789-00,(11) 98888-7777<br />
+                    maria@email.com,Maria Santos<br />
+                    pedro@email.com
+                  </code>
+                </div>
+                {recipientSource === 'csv' && (
+                  <div className="flex flex-wrap gap-3">
+                    <button type="button" onClick={() => recipientFileRef.current?.click()}
+                      className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold flex items-center gap-2">
+                      <FaUpload /> Selecionar arquivo CSV
+                    </button>
+                    <button type="button" onClick={downloadRecipientTemplate}
+                      className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold flex items-center gap-2">
+                      <FaFileExcel /> Baixar modelo
+                    </button>
+                  </div>
+                )}
+                <textarea
+                  value={recipientPasteText}
+                  onChange={e => setRecipientPasteText(e.target.value)}
+                  placeholder="email,nome,cpf,telefone"
+                  rows={10}
+                  className="w-full px-5 py-4 text-sm bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-orange-500 font-mono resize-y"
+                />
+                <p className="text-sm text-green-400 font-bold">{finalRecipients.length} destinatário(s) válido(s)</p>
+              </div>
+            )}
+          </div>
+
+          {/* ══ REMETENTES ══ */}
+          <div className={sectionCls}>
+            <div className="flex items-center gap-4 mb-2">
+              <StepBadge n={3} />
               <div>
                 <h2 className="text-3xl font-black text-white">Remetentes</h2>
                 <p className="text-white/60 text-sm mt-1">Digite só a parte antes do @ — o domínio selecionado é aplicado automaticamente</p>
@@ -494,10 +701,10 @@ export default function CriarCampanha() {
             )}
           </div>
 
-          {/* ══ 3. ASSUNTOS ══ */}
+          {/* ══ 4. ASSUNTOS ══ */}
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-2">
-              <StepBadge n={3} />
+              <StepBadge n={4} />
               <div>
                 <h2 className="text-3xl font-black text-white">Assuntos</h2>
                 <p className="text-white/60 text-sm mt-1">O sistema varia o assunto a cada envio — reduz chance de cair em spam</p>
@@ -574,10 +781,10 @@ export default function CriarCampanha() {
             )}
           </div>
 
-          {/* ══ 4. CONTEÚDO ══ */}
+          {/* ══ 5. CONTEÚDO ══ */}
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-6">
-              <StepBadge n={4} />
+              <StepBadge n={5} />
               <h2 className="text-3xl font-black text-white">Conteúdo do E-mail</h2>
             </div>
             <div className="space-y-6">
@@ -601,10 +808,10 @@ export default function CriarCampanha() {
             </div>
           </div>
 
-          {/* ══ 5. AGENDAMENTO ══ */}
+          {/* ══ 6. AGENDAMENTO ══ */}
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-6">
-              <StepBadge n={5} />
+              <StepBadge n={6} />
               <h2 className="text-3xl font-black text-white">Agendamento</h2>
             </div>
 
@@ -686,10 +893,10 @@ export default function CriarCampanha() {
             </div>
           </div>
 
-          {/* ══ 6. PAUSA AUTOMÁTICA ══ */}
+          {/* ══ 7. PAUSA AUTOMÁTICA ══ */}
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-6">
-              <StepBadge n={6} />
+              <StepBadge n={7} />
               <h2 className="text-3xl font-black text-white">Pausa Automática</h2>
             </div>
             <div className="p-6 bg-yellow-500/10 border-2 border-yellow-500/30 rounded-xl mb-6">
@@ -726,13 +933,13 @@ export default function CriarCampanha() {
           </div>
 
           {/* ══ RESUMO FINAL ══ */}
-          {(finalSenders.length > 0 && finalSubjects.length > 0 && listId) && (
+          {(finalSenders.length > 0 && finalSubjects.length > 0 && recipientCount > 0) && (
             <div className="bg-gradient-to-r from-orange-500/20 to-orange-600/20 backdrop-blur-xl border-2 border-orange-500/40 rounded-2xl p-6 shadow-xl">
               <h3 className="text-xl font-bold text-orange-300 mb-4 flex items-center gap-2"><FaChartLine /> Resumo da Campanha</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Remetentes:</span><br /><span className="text-white font-bold">{finalSenders.length} cadastrado{finalSenders.length > 1 ? 's' : ''}</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Assuntos:</span><br /><span className="text-white font-bold">{finalSubjects.length} cadastrado{finalSubjects.length > 1 ? 's' : ''}</span></div>
-                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Contatos:</span><br /><span className="text-white font-bold">{selectedList?.total_contacts.toLocaleString('pt-BR') ?? 0}</span></div>
+                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Contatos:</span><br /><span className="text-white font-bold">{recipientCount.toLocaleString('pt-BR')}</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Delay:</span><br /><span className="text-white font-bold">{delayMin}s – {delayMax}s aleatório</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Horário:</span><br /><span className="text-white font-bold">{workStart} às {workEnd}</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Pausa:</span><br /><span className="text-white font-bold">{pauseAfter > 0 ? `A cada ${pauseAfter} por ${pauseDuration}min` : 'Desabilitada'}</span></div>

@@ -200,8 +200,15 @@ async function processCampaigns() {
 
         // Texto simples → HTML com quebras de linha
         const prepared = ensureEmailHtml(html, text);
-        html = applyEmailVariables(prepared.html, { nome: recipName, email: recipEmail });
-        text = applyEmailVariables(prepared.text, { nome: recipName, email: recipEmail }, { escapeValues: false });
+        const recipVars = {
+          nome: recipName,
+          email: recipEmail,
+          cpf: recipient.cpf || '',
+          telefone: recipient.phone || '',
+          phone: recipient.phone || '',
+        };
+        html = applyEmailVariables(prepared.html, recipVars);
+        text = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
 
         // === ROTAÇÃO DE REMETENTES ===
         const sentCount = campaign.sent_count || 0;
@@ -225,7 +232,7 @@ async function processCampaigns() {
         if (Array.isArray(subjectsArr) && subjectsArr.length > 0) {
           subject = pickRotating(subjectsArr, sentCount) || subject;
         }
-        subject = applyEmailVariables(subject, { nome: recipName, email: recipEmail }, { escapeValues: false });
+        subject = applyEmailVariables(subject, recipVars, { escapeValues: false });
 
         // Resolve domínio de envio e força remetente no domínio correto
         let domain = fromEmail.includes('@') ? fromEmail.split('@')[1] : '';

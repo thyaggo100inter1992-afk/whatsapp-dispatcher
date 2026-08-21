@@ -69,12 +69,18 @@ export default function Listas() {
     if (!pasteListId || !pasteText.trim()) { notification.warning('Atenção', 'Cole ao menos um e-mail.'); return; }
     const lines = pasteText.split(/[\n;]/).map(l => l.trim()).filter(Boolean);
     if (lines.length === 0) { notification.warning('Atenção', 'Nenhum e-mail encontrado.'); return; }
-    const csvLines = ['email,name'];
+    const csvLines = ['email,nome,cpf,telefone'];
     for (const line of lines) {
-      const parts = line.split(',').map(p => p.trim());
-      const email = parts[0]; const name = parts[1] || '';
-      if (!email.includes('@')) continue;
-      csvLines.push(`${email},${name}`);
+      if (/^email\b/i.test(line) && !line.includes('@')) continue;
+      const parts = line.split(/[,;\t]/).map(p => p.trim());
+      const emailIdx = parts.findIndex(p => p.includes('@'));
+      if (emailIdx < 0) continue;
+      const email = parts[emailIdx];
+      const others = parts.filter((_, i) => i !== emailIdx);
+      const name = others[0] || '';
+      const cpf = others[1] || '';
+      const phone = others[2] || '';
+      csvLines.push([email, name, cpf, phone].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
     }
     if (csvLines.length <= 1) { notification.warning('Nenhum e-mail válido', 'Verifique se os endereços contêm "@".'); return; }
     const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' });
@@ -92,7 +98,14 @@ export default function Listas() {
 
   const downloadExcelTemplate = () => {
     const bom = '\uFEFF';
-    const content = ['email,name', 'joao.silva@email.com,João Silva', 'maria.santos@email.com,Maria Santos', 'pedro.oliveira@gmail.com,Pedro Oliveira', 'ana.costa@hotmail.com,Ana Costa', 'carlos.mendes@empresa.com.br,Carlos Mendes'].join('\r\n');
+    const content = [
+      'email,nome,cpf,telefone',
+      'joao.silva@email.com,João Silva,123.456.789-00,(11) 98888-7777',
+      'maria.santos@email.com,Maria Santos,,',
+      'pedro.oliveira@gmail.com,Pedro Oliveira,98765432100,11999998888',
+      'ana.costa@hotmail.com,Ana Costa,,11988887777',
+      'carlos.mendes@empresa.com.br,Carlos Mendes,11144477735,',
+    ].join('\r\n');
     const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'modelo-lista-contatos.csv'; a.click();
@@ -163,11 +176,11 @@ export default function Listas() {
             </div>
             <p className="text-gray-400">Lista: <span className="text-white font-bold">{pasteListName}</span></p>
             <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300 space-y-2">
-              <p><strong>Como colar:</strong> Um e-mail por linha, ou <code className="bg-black/30 px-1 rounded">email,nome</code> por linha.</p>
+              <p><strong>Como colar:</strong> Um contato por linha no formato <code className="bg-black/30 px-1 rounded">email,nome,cpf,telefone</code>. CPF e telefone são opcionais.</p>
               <code className="block font-mono text-xs bg-black/30 rounded-lg p-3">
-                joao@email.com,João Silva<br />
-                maria@email.com<br />
-                pedro@email.com,Pedro
+                joao@email.com,João Silva,123.456.789-00,(11) 98888-7777<br />
+                maria@email.com,Maria Santos<br />
+                pedro@email.com
               </code>
             </div>
             <div>
@@ -179,8 +192,8 @@ export default function Listas() {
                   </span>
                 )}
               </div>
-              <textarea value={pasteText} onChange={e => setPasteText(e.target.value)}
-                placeholder="joao@email.com,João Silva&#10;maria@email.com&#10;pedro@email.com,Pedro"
+                  <textarea value={pasteText} onChange={e => setPasteText(e.target.value)}
+                placeholder="joao@email.com,João Silva,123.456.789-00,(11) 98888-7777&#10;maria@email.com,Maria&#10;pedro@email.com"
                 rows={10}
                 className="w-full px-5 py-4 text-sm bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-purple-500 focus:ring-4 focus:ring-purple-500/30 font-mono resize-y transition-all" />
             </div>
@@ -233,8 +246,8 @@ export default function Listas() {
 
           {/* Info CSV */}
           <div className="bg-blue-500/10 border-2 border-blue-500/30 rounded-2xl p-5 text-sm text-blue-300">
-            <strong>📋 Formato do arquivo CSV:</strong> O arquivo deve ter as colunas <code className="bg-white/10 px-1 rounded">email</code> (obrigatório) e <code className="bg-white/10 px-1 rounded">name</code> (nome, opcional). Você também pode colar os e-mails diretamente usando o botão "Colar".
-            <code className="block mt-2 bg-black/30 rounded-lg p-3 font-mono text-xs">email,name<br />joao@email.com,João Silva<br />maria@email.com,Maria</code>
+            <strong>📋 Formato do arquivo CSV:</strong> Colunas <code className="bg-white/10 px-1 rounded">email</code> (obrigatório), <code className="bg-white/10 px-1 rounded">nome</code>, <code className="bg-white/10 px-1 rounded">cpf</code> e <code className="bg-white/10 px-1 rounded">telefone</code> (opcionais). Também pode colar com o botão &quot;Colar&quot;.
+            <code className="block mt-2 bg-black/30 rounded-lg p-3 font-mono text-xs">email,nome,cpf,telefone<br />joao@email.com,João Silva,123.456.789-00,(11) 98888-7777<br />maria@email.com,Maria,,</code>
           </div>
 
           {/* LISTA */}
