@@ -65,7 +65,8 @@ const RECIPIENT_STATUS: Record<string, { label: string; color: string }> = {
   complained:{ label: 'Spam',      color: 'bg-red-500/20 text-red-300 border-red-500/30' },
 };
 
-const POLL_INTERVAL = 6;
+const POLL_INTERVAL = 3;
+const PROCESSED_STATUSES = new Set(['sent', 'failed', 'opened', 'clicked', 'bounced', 'complained']);
 
 export default function CampaignDetail() {
   const router = useRouter();
@@ -82,6 +83,8 @@ export default function CampaignDetail() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [countdown, setCountdown] = useState(POLL_INTERVAL);
   const [isPolling, setIsPolling] = useState(false);
+  const [recentIds, setRecentIds] = useState<Set<number>>(new Set());
+  const prevRecipientsRef = useRef<Map<number, string>>(new Map());
   const [showAllContacts, setShowAllContacts] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [domains, setDomains] = useState<DomainOpt[]>([]);
@@ -174,7 +177,23 @@ export default function CampaignDetail() {
     if (!silent) setLoadingRecipients(true);
     try {
       const r = await api.get(`/email-marketing/campaigns/${id}/recipients?limit=5000`);
-      setRecipients(r.data.data || []);
+      const list: Recipient[] = r.data.data || [];
+      const prev = prevRecipientsRef.current;
+      const changed = new Set<number>();
+      for (const row of list) {
+        const before = prev.get(row.id);
+        if (before !== undefined && before !== row.status && PROCESSED_STATUSES.has(row.status)) {
+          changed.add(row.id);
+        } else if (before === undefined && PROCESSED_STATUSES.has(row.status) && silent) {
+          changed.add(row.id);
+        }
+      }
+      prevRecipientsRef.current = new Map(list.map(row => [row.id, row.status]));
+      if (changed.size > 0) {
+        setRecentIds(changed);
+        setTimeout(() => setRecentIds(new Set()), 4000);
+      }
+      setRecipients(list);
     } catch { }
     finally { if (!silent) setLoadingRecipients(false); }
   };
@@ -488,23 +507,39 @@ export default function CampaignDetail() {
   const openRate = campaign && campaign.sent_count > 0 ? ((campaign.opened_count / campaign.sent_count) * 100).toFixed(1) : '0.0';
   const clickRate = campaign && campaign.sent_count > 0 ? ((campaign.clicked_count / campaign.sent_count) * 100).toFixed(1) : '0.0';
 
+  const activityTime = (r: Recipient) =>
+    new Date(r.sent_at || r.updated_at || 0).getTime();
+
+  const matchesSearch = (r: Recipient) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (r.email || '').toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q);
+  };
+
+  // Log em tempo real = o que já foi processado (enviado/erro/aberto...). Pendentes só no filtro "Pendente".
   const filteredRecipients = recipients
     .filter(r => {
-      if (filterStatus !== 'all' && r.status !== filterStatus) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        return (r.email || '').toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q);
+      if (filterStatus === 'all') {
+        if (!PROCESSED_STATUSES.has(r.status)) return false;
+      } else if (r.status !== filterStatus) {
+        return false;
       }
-      return true;
+      return matchesSearch(r);
     })
     .slice()
-    .sort((a, b) => {
-      const ta = new Date(a.sent_at || a.updated_at || 0).getTime();
-      const tb = new Date(b.sent_at || b.updated_at || 0).getTime();
-      return tb - ta; // mais novo em cima
-    });
+    .sort((a, b) => activityTime(b) - activityTime(a));
 
-  const recipientCounts: Record<string, number> = { all: recipients.length };
+  // Modal de destinatários: "Todos" inclui pendentes
+  const modalRecipients = recipients
+    .filter(r => {
+      if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+      return matchesSearch(r);
+    })
+    .slice()
+    .sort((a, b) => activityTime(b) - activityTime(a));
+
+  const processedCount = recipients.filter(r => PROCESSED_STATUSES.has(r.status)).length;
+  const recipientCounts: Record<string, number> = { all: processedCount };
   for (const r of recipients) recipientCounts[r.status] = (recipientCounts[r.status] || 0) + 1;
 
   if (loading) return (
@@ -764,7 +799,7 @@ export default function CampaignDetail() {
             <div className="flex-1 overflow-y-auto p-4">
               {loadingRecipients ? (
                 <div className="text-center py-12"><FaSpinner className="animate-spin text-4xl text-orange-400 mx-auto mb-3" /></div>
-              ) : filteredRecipients.length === 0 ? (
+              ) : modalRecipients.length === 0 ? (
                 <div className="text-center py-12 text-gray-400"><FaUsers className="text-5xl mx-auto mb-4 text-gray-600" /><p>Nenhum destinatário encontrado</p></div>
               ) : (
                 <table className="w-full text-sm">
@@ -776,8 +811,9 @@ export default function CampaignDetail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredRecipients.map(r => {
+                    {modalRecipients.map(r => {
                       const rs = RECIPIENT_STATUS[r.status] || RECIPIENT_STATUS.pending;
+                      const when = r.sent_at || (PROCESSED_STATUSES.has(r.status) ? r.updated_at : null);
                       return (
                         <tr key={r.id} className="border-b border-white/5 hover:bg-white/5">
                           <td className="py-3 px-3 text-white font-medium">{r.email}</td>
@@ -785,7 +821,7 @@ export default function CampaignDetail() {
                           <td className="py-3 px-3">
                             <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
                           </td>
-                          <td className="py-3 px-3 text-gray-500 text-xs">{r.sent_at ? new Date(r.sent_at).toLocaleString('pt-BR') : '—'}</td>
+                          <td className="py-3 px-3 text-gray-500 text-xs">{when ? new Date(when).toLocaleString('pt-BR') : '—'}</td>
                           <td className="py-3 px-3 text-purple-400 text-xs">{r.opened_at ? new Date(r.opened_at).toLocaleString('pt-BR') : '—'}</td>
                           <td className="py-3 px-3 text-indigo-400 text-xs">{r.clicked_at ? new Date(r.clicked_at).toLocaleString('pt-BR') : '—'}</td>
                           <td className="py-3 px-3 text-red-400 text-xs max-w-[180px] truncate">{r.error_message || '—'}</td>
@@ -1152,16 +1188,21 @@ export default function CampaignDetail() {
                   <FaSync className={isPolling ? 'animate-spin text-orange-400' : 'text-green-400'} />
                   Log de Envio em Tempo Real
                   <span className="text-sm font-bold text-white/50">({filteredRecipients.length})</span>
+                  {isActive(campaign) && (
+                    <span className="text-xs font-bold text-green-400 bg-green-500/10 border border-green-500/30 px-2 py-0.5 rounded-lg">
+                      {isPolling ? 'Atualizando...' : `ao vivo · ${countdown}s`}
+                    </span>
+                  )}
                 </h4>
                 <div className="flex gap-2 flex-wrap">
-                  {(['all', 'pending', 'sent', 'opened', 'clicked', 'failed', 'bounced'] as const).map(s => (
+                  {(['all', 'sent', 'failed', 'opened', 'clicked', 'bounced', 'pending'] as const).map(s => (
                     <button key={s} type="button" onClick={() => setFilterStatus(s)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                         filterStatus === s
                           ? 'bg-orange-500 text-white'
                           : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
                       }`}>
-                      {s === 'all' ? `Todos (${recipients.length})` : `${RECIPIENT_STATUS[s]?.label || s} (${recipientCounts[s] || 0})`}
+                      {s === 'all' ? `Processados (${processedCount})` : `${RECIPIENT_STATUS[s]?.label || s} (${recipientCounts[s] || 0})`}
                     </button>
                   ))}
                 </div>
@@ -1184,7 +1225,7 @@ export default function CampaignDetail() {
                       <th className="text-left p-3 text-xs font-black text-white uppercase">E-mail</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Nome</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Status</th>
-                      <th className="text-left p-3 text-xs font-black text-white uppercase">Enviado em</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Data / Hora</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Aberto em</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Motivo do Erro</th>
                     </tr>
@@ -1201,21 +1242,30 @@ export default function CampaignDetail() {
                       <tr>
                         <td colSpan={6} className="text-center py-12 text-gray-400">
                           <div className="text-5xl mb-3">📭</div>
-                          Nenhum registro encontrado neste filtro
+                          {filterStatus === 'all'
+                            ? 'Aguardando envios... Assim que sair um e-mail (sucesso ou erro), aparece aqui no topo.'
+                            : 'Nenhum registro encontrado neste filtro'}
                         </td>
                       </tr>
                     ) : (
                       filteredRecipients.map(r => {
                         const rs = RECIPIENT_STATUS[r.status] || RECIPIENT_STATUS.pending;
+                        const when = r.sent_at || r.updated_at;
+                        const isNew = recentIds.has(r.id);
                         return (
-                          <tr key={r.id} className="border-b border-white/5 hover:bg-white/5 transition-all">
+                          <tr
+                            key={r.id}
+                            className={`border-b border-white/5 transition-all ${
+                              isNew ? 'bg-orange-500/20 animate-pulse' : 'hover:bg-white/5'
+                            }`}
+                          >
                             <td className="p-3 text-white font-medium">{r.email}</td>
                             <td className="p-3 text-gray-400">{r.name || '—'}</td>
                             <td className="p-3">
                               <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
                             </td>
-                            <td className="p-3 text-gray-400 text-xs whitespace-nowrap">
-                              {r.sent_at ? new Date(r.sent_at).toLocaleString('pt-BR') : '—'}
+                            <td className="p-3 text-xs whitespace-nowrap font-semibold text-white">
+                              {when ? new Date(when).toLocaleString('pt-BR') : '—'}
                             </td>
                             <td className="p-3 text-purple-300 text-xs whitespace-nowrap">
                               {r.opened_at ? new Date(r.opened_at).toLocaleString('pt-BR') : '—'}
@@ -1237,7 +1287,12 @@ export default function CampaignDetail() {
                 </table>
               </div>
               <p className="text-center text-xs text-gray-500 mt-3">
-                Atualiza automaticamente a cada {POLL_INTERVAL}s enquanto a campanha estiver ativa
+                Mostra só o que já foi processado (enviado ou com erro), do mais novo para o mais antigo.
+                {isActive(campaign)
+                  ? ` Atualiza a cada ${POLL_INTERVAL}s enquanto a campanha estiver ativa.`
+                  : lastUpdated
+                    ? ` Última atualização: ${lastUpdated.toLocaleTimeString('pt-BR')}`
+                    : ''}
               </p>
             </div>
           </div>

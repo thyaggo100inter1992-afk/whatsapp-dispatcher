@@ -223,7 +223,7 @@ async function processCampaigns() {
 
         if (!domain) {
           await pool.query(
-            `UPDATE email_marketing_recipients SET status='failed', error_message=$1, updated_at=NOW() WHERE id=$2`,
+            `UPDATE email_marketing_recipients SET status='failed', error_message=$1, sent_at=NOW(), updated_at=NOW() WHERE id=$2`,
             ['Campanha sem domínio de envio configurado. Selecione um domínio verificado.', recipient.id]
           );
           await pool.query(
@@ -263,7 +263,7 @@ async function processCampaigns() {
           const friendly = formatSendError(sendError, fromEmail, domain);
           console.error(`❌ Erro ao enviar para ${recipient.email}:`, friendly);
           await pool.query(
-            `UPDATE email_marketing_recipients SET status='failed', error_message=$1, updated_at=NOW() WHERE id=$2`,
+            `UPDATE email_marketing_recipients SET status='failed', error_message=$1, sent_at=NOW(), updated_at=NOW() WHERE id=$2`,
             [friendly, recipient.id]
           );
           await pool.query(
