@@ -1,7 +1,7 @@
 import { pool } from '../database/connection';
 import FormData from 'form-data';
 import Mailgun from 'mailgun.js';
-import { ensureEmailHtml, applyEmailVariables, generateProtocol } from '../utils/email-html';
+import { ensureEmailHtml, applyEmailVariables, generateProtocol, detectUsedEmailVars } from '../utils/email-html';
 
 let isRunning = false;
 
@@ -194,14 +194,33 @@ async function processCampaigns() {
           }
         }
 
-        // Substitui variáveis (contato + sistema) — protocolo único por envio
+        // Substitui variáveis (contato + sistema) — protocolo só se {{protocolo}} estiver no e-mail
         const recipName = (recipient.name && String(recipient.name).trim()) || recipient.email;
         const recipEmail = recipient.email;
-        const protocol = generateProtocol();
-        await pool.query(
-          `UPDATE email_marketing_recipients SET protocol=$1, updated_at=NOW() WHERE id=$2`,
-          [protocol, recipient.id]
+
+        const subjectsPreview = campaign.subjects
+          ? (typeof campaign.subjects === 'string' ? JSON.parse(campaign.subjects) : campaign.subjects)
+          : [campaign.subject];
+        const used = detectUsedEmailVars(
+          html,
+          text,
+          campaign.subject,
+          ...(Array.isArray(subjectsPreview) ? subjectsPreview : [])
         );
+
+        let protocol: string | null = null;
+        if (used.protocolo) {
+          protocol = generateProtocol();
+          await pool.query(
+            `UPDATE email_marketing_recipients SET protocol=$1, updated_at=NOW() WHERE id=$2`,
+            [protocol, recipient.id]
+          );
+        } else {
+          await pool.query(
+            `UPDATE email_marketing_recipients SET protocol=NULL, updated_at=NOW() WHERE id=$1`,
+            [recipient.id]
+          );
+        }
 
         const prepared = ensureEmailHtml(html, text);
         const recipVars = {
@@ -215,7 +234,7 @@ async function processCampaigns() {
           var3: recipient.var3 || '',
           var4: recipient.var4 || '',
           var5: recipient.var5 || '',
-          protocolo: protocol,
+          protocolo: protocol || '',
         };
         html = applyEmailVariables(prepared.html, recipVars);
         text = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });

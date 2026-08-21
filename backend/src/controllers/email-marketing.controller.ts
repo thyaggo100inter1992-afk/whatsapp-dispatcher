@@ -7,7 +7,7 @@ import csv from 'csv-parser';
 import { Readable } from 'stream';
 import * as dns from 'dns';
 import { promisify } from 'util';
-import { ensureEmailHtml, applyEmailVariables, generateProtocol } from '../utils/email-html';
+import { ensureEmailHtml, applyEmailVariables, generateProtocol, detectUsedEmailVars } from '../utils/email-html';
 
 const resolveTxt  = promisify(dns.resolveTxt);
 const resolveMx   = promisify(dns.resolveMx);
@@ -1195,7 +1195,8 @@ export const sendSingle = async (req: Request, res: Response) => {
 
     const mg = await getMailgunClient();
     const prepared = ensureEmailHtml(html, text);
-    const protocol = generateProtocol();
+    const used = detectUsedEmailVars(prepared.html, prepared.text, subject);
+    const protocol = used.protocolo ? generateProtocol() : null;
     const recipVars = {
       nome: recipName,
       email: to_email,
@@ -1207,7 +1208,7 @@ export const sendSingle = async (req: Request, res: Response) => {
       var3: req.body.var3 || '',
       var4: req.body.var4 || '',
       var5: req.body.var5 || '',
-      protocolo: protocol,
+      protocolo: protocol || '',
     };
     const finalHtml = applyEmailVariables(prepared.html, recipVars);
     const finalText = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
@@ -1347,7 +1348,8 @@ export const resendSingleSend = async (req: Request, res: Response) => {
     const recipName = (to_name && String(to_name).trim()) || to_email;
 
     const prepared = ensureEmailHtml(body_html, body_text);
-    const protocol = generateProtocol();
+    const used = detectUsedEmailVars(prepared.html, prepared.text, subject);
+    const protocol = used.protocolo ? generateProtocol() : null;
     const recipVars = {
       nome: recipName,
       email: to_email,
@@ -1359,7 +1361,7 @@ export const resendSingleSend = async (req: Request, res: Response) => {
       var3: req.body.var3 || '',
       var4: req.body.var4 || '',
       var5: req.body.var5 || '',
-      protocolo: protocol,
+      protocolo: protocol || '',
     };
     const finalHtml = applyEmailVariables(prepared.html, recipVars);
     const finalText = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });

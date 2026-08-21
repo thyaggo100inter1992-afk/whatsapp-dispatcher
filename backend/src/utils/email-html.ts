@@ -41,6 +41,50 @@ export function generateProtocol(): string {
   return s;
 }
 
+/** Detecta se o conteúdo referencia uma variável {{nome}} (tolerante a espaços/tags) */
+export function contentUsesEmailVar(content: string | null | undefined, varKey: string): boolean {
+  if (!content) return false;
+  const key = String(varKey || '').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!key) return false;
+  const re = new RegExp(`\\{\\{(?:\\s|<[^>]*>)*${key}(?:\\s|<[^>]*>)*\\}\\}`, 'i');
+  return re.test(String(content));
+}
+
+/** Quais chaves de variável aparecem no texto (html/assunto/etc.) */
+export function detectUsedEmailVars(...parts: Array<string | null | undefined>): {
+  protocolo: boolean;
+  var1: boolean;
+  var2: boolean;
+  var3: boolean;
+  var4: boolean;
+  var5: boolean;
+  cpf: boolean;
+  telefone: boolean;
+  nome: boolean;
+  email: boolean;
+  saudacao: boolean;
+  hora: boolean;
+  data: boolean;
+} {
+  const blob = parts.map(p => String(p || '')).join('\n');
+  const has = (k: string) => contentUsesEmailVar(blob, k);
+  return {
+    protocolo: has('protocolo'),
+    var1: has('var1') || has('variavel1'),
+    var2: has('var2') || has('variavel2'),
+    var3: has('var3') || has('variavel3'),
+    var4: has('var4') || has('variavel4'),
+    var5: has('var5') || has('variavel5'),
+    cpf: has('cpf'),
+    telefone: has('telefone') || has('phone') || has('celular'),
+    nome: has('nome') || has('name'),
+    email: has('email') || has('e-mail'),
+    saudacao: has('saudacao') || has('dia'),
+    hora: has('hora'),
+    data: has('data'),
+  };
+}
+
 /** Data/hora/saudação no fuso de Brasília */
 export function buildSystemEmailVars(now = new Date(), protocol?: string | null): {
   hora: string;

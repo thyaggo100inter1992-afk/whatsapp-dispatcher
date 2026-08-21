@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
@@ -35,6 +35,28 @@ interface DomainOpt { id: number; domain: string; status: string; }
 function extractLocal(email: string): string {
   const raw = String(email || '').trim();
   return (raw.includes('@') ? raw.split('@')[0] : raw).replace(/[^a-zA-Z0-9._+-]/g, '').toLowerCase();
+}
+
+/** Detecta se o corpo/assunto da campanha usa {{chave}} */
+function contentUsesVar(blob: string, key: string): boolean {
+  const k = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\{\\{(?:\\s|<[^>]*>)*${k}(?:\\s|<[^>]*>)*\\}\\}`, 'i').test(blob);
+}
+
+function detectCampaignUsedVars(c: Campaign | null) {
+  const subjects = [
+    c?.subject || '',
+    ...((c?.subjects || []).map(String)),
+  ].join('\n');
+  const blob = `${c?.body_html || ''}\n${c?.body_text || ''}\n${subjects}`;
+  return {
+    protocolo: contentUsesVar(blob, 'protocolo'),
+    var1: contentUsesVar(blob, 'var1') || contentUsesVar(blob, 'variavel1'),
+    var2: contentUsesVar(blob, 'var2') || contentUsesVar(blob, 'variavel2'),
+    var3: contentUsesVar(blob, 'var3') || contentUsesVar(blob, 'variavel3'),
+    var4: contentUsesVar(blob, 'var4') || contentUsesVar(blob, 'variavel4'),
+    var5: contentUsesVar(blob, 'var5') || contentUsesVar(blob, 'variavel5'),
+  };
 }
 
 interface Recipient {
@@ -463,33 +485,44 @@ export default function CampaignDetail() {
       wsStats['!cols'] = [{ wch: 28 }, { wch: 16 }];
       XLSX.utils.book_append_sheet(wb, wsStats, 'Estatisticas');
 
-      // Aba 7 — Destinatários
+      // Aba 7 — Destinatários (var/protocolo só se usados no e-mail)
+      const used = detectCampaignUsedVars(campaign);
+      const destHeader = ['E-mail', 'Nome', 'CPF', 'Telefone'];
+      if (used.var1) destHeader.push('Var1');
+      if (used.var2) destHeader.push('Var2');
+      if (used.var3) destHeader.push('Var3');
+      if (used.var4) destHeader.push('Var4');
+      if (used.var5) destHeader.push('Var5');
+      if (used.protocolo) destHeader.push('Protocolo');
+      destHeader.push('Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Motivo do erro');
+
       const destinatarios = [
-        ['E-mail', 'Nome', 'CPF', 'Telefone', 'Var1', 'Var2', 'Var3', 'Var4', 'Var5', 'Protocolo', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Motivo do erro'],
-        ...rows.map(r2 => [
-          r2.email || '',
-          r2.name || '',
-          r2.cpf || '',
-          r2.phone || '',
-          r2.var1 || '',
-          r2.var2 || '',
-          r2.var3 || '',
-          r2.var4 || '',
-          r2.var5 || '',
-          r2.protocol || '',
-          RECIPIENT_STATUS[r2.status]?.label || r2.status,
-          r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : '',
-          r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : '',
-          r2.clicked_at ? new Date(r2.clicked_at).toLocaleString('pt-BR') : '',
-          r2.error_message || '',
-        ]),
+        destHeader,
+        ...rows.map(r2 => {
+          const row: (string | number)[] = [
+            r2.email || '',
+            r2.name || '',
+            r2.cpf || '',
+            r2.phone || '',
+          ];
+          if (used.var1) row.push(r2.var1 || '');
+          if (used.var2) row.push(r2.var2 || '');
+          if (used.var3) row.push(r2.var3 || '');
+          if (used.var4) row.push(r2.var4 || '');
+          if (used.var5) row.push(r2.var5 || '');
+          if (used.protocolo) row.push(r2.protocol || '');
+          row.push(
+            RECIPIENT_STATUS[r2.status]?.label || r2.status,
+            r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : '',
+            r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : '',
+            r2.clicked_at ? new Date(r2.clicked_at).toLocaleString('pt-BR') : '',
+            r2.error_message || '',
+          );
+          return row;
+        }),
       ];
       const wsDest = XLSX.utils.aoa_to_sheet(destinatarios);
-      wsDest['!cols'] = [
-        { wch: 32 }, { wch: 20 }, { wch: 14 }, { wch: 14 },
-        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-        { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 50 },
-      ];
+      wsDest['!cols'] = destHeader.map(() => ({ wch: 16 }));
       XLSX.utils.book_append_sheet(wb, wsDest, 'Destinatarios');
 
       const fileName = `relatorio-${campaign.name.replace(/[^\w\-]+/g, '-').replace(/-+/g, '-').slice(0, 40)}-${new Date().toISOString().slice(0, 10)}.xlsx`;
@@ -572,6 +605,17 @@ export default function CampaignDetail() {
   };
 
   // Log em tempo real = o que já foi processado (enviado/erro/aberto...). Pendentes só no filtro "Pendente".
+  const usedVars = useMemo(() => detectCampaignUsedVars(campaign), [campaign]);
+
+  const displayVar = (r: Recipient, key: 'var1' | 'var2' | 'var3' | 'var4' | 'var5' | 'protocol') => {
+    if (key === 'protocol') {
+      if (!usedVars.protocolo) return null;
+      return r.protocol || null;
+    }
+    if (!usedVars[key]) return null;
+    return r[key] || null;
+  };
+
   const filteredRecipients = recipients
     .filter(r => {
       if (filterStatus === 'all') {
@@ -862,9 +906,19 @@ export default function CampaignDetail() {
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-dark-800/90 backdrop-blur-md">
                     <tr>
-                      {['E-mail', 'Nome', 'CPF', 'Telefone', 'Var1', 'Var2', 'Var3', 'Var4', 'Var5', 'Protocolo', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Erro'].map(h => (
-                        <th key={h} className="text-left py-3 px-3 text-xs font-bold text-gray-400 uppercase">{h}</th>
-                      ))}
+                      {(() => {
+                        const headers = ['E-mail', 'Nome', 'CPF', 'Telefone'];
+                        if (usedVars.var1) headers.push('Var1');
+                        if (usedVars.var2) headers.push('Var2');
+                        if (usedVars.var3) headers.push('Var3');
+                        if (usedVars.var4) headers.push('Var4');
+                        if (usedVars.var5) headers.push('Var5');
+                        if (usedVars.protocolo) headers.push('Protocolo');
+                        headers.push('Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Erro');
+                        return headers.map(h => (
+                          <th key={h} className="text-left py-3 px-3 text-xs font-bold text-gray-400 uppercase">{h}</th>
+                        ));
+                      })()}
                     </tr>
                   </thead>
                   <tbody>
@@ -877,12 +931,12 @@ export default function CampaignDetail() {
                           <td className="py-3 px-3 text-gray-400">{r.name || '—'}</td>
                           <td className="py-3 px-3 text-gray-400 text-xs">{r.cpf || '—'}</td>
                           <td className="py-3 px-3 text-gray-400 text-xs">{r.phone || '—'}</td>
-                          <td className="py-3 px-3 text-gray-400 text-xs">{r.var1 || '—'}</td>
-                          <td className="py-3 px-3 text-gray-400 text-xs">{r.var2 || '—'}</td>
-                          <td className="py-3 px-3 text-gray-400 text-xs">{r.var3 || '—'}</td>
-                          <td className="py-3 px-3 text-gray-400 text-xs">{r.var4 || '—'}</td>
-                          <td className="py-3 px-3 text-gray-400 text-xs">{r.var5 || '—'}</td>
-                          <td className="py-3 px-3 text-cyan-300 text-xs font-mono">{r.protocol || '—'}</td>
+                          {usedVars.var1 && <td className="py-3 px-3 text-gray-400 text-xs">{displayVar(r, 'var1') || '—'}</td>}
+                          {usedVars.var2 && <td className="py-3 px-3 text-gray-400 text-xs">{displayVar(r, 'var2') || '—'}</td>}
+                          {usedVars.var3 && <td className="py-3 px-3 text-gray-400 text-xs">{displayVar(r, 'var3') || '—'}</td>}
+                          {usedVars.var4 && <td className="py-3 px-3 text-gray-400 text-xs">{displayVar(r, 'var4') || '—'}</td>}
+                          {usedVars.var5 && <td className="py-3 px-3 text-gray-400 text-xs">{displayVar(r, 'var5') || '—'}</td>}
+                          {usedVars.protocolo && <td className="py-3 px-3 text-cyan-300 text-xs font-mono">{displayVar(r, 'protocol') || '—'}</td>}
                           <td className="py-3 px-3">
                             <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
                           </td>
@@ -1301,8 +1355,12 @@ export default function CampaignDetail() {
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Nome</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">CPF</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Telefone</th>
-                      <th className="text-left p-3 text-xs font-black text-white uppercase">Var1</th>
-                      <th className="text-left p-3 text-xs font-black text-white uppercase">Protocolo</th>
+                      {usedVars.var1 && <th className="text-left p-3 text-xs font-black text-white uppercase">Var1</th>}
+                      {usedVars.var2 && <th className="text-left p-3 text-xs font-black text-white uppercase">Var2</th>}
+                      {usedVars.var3 && <th className="text-left p-3 text-xs font-black text-white uppercase">Var3</th>}
+                      {usedVars.var4 && <th className="text-left p-3 text-xs font-black text-white uppercase">Var4</th>}
+                      {usedVars.var5 && <th className="text-left p-3 text-xs font-black text-white uppercase">Var5</th>}
+                      {usedVars.protocolo && <th className="text-left p-3 text-xs font-black text-white uppercase">Protocolo</th>}
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Status</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Data / Hora</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Aberto em</th>
@@ -1312,14 +1370,14 @@ export default function CampaignDetail() {
                   <tbody>
                     {loadingRecipients && recipients.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="text-center py-12 text-gray-400">
+                        <td colSpan={8 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
                           <FaSpinner className="animate-spin text-3xl text-orange-400 mx-auto mb-3" />
                           Carregando log de envio...
                         </td>
                       </tr>
                     ) : filteredRecipients.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="text-center py-12 text-gray-400">
+                        <td colSpan={8 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
                           <div className="text-5xl mb-3">📭</div>
                           {filterStatus === 'all'
                             ? 'Aguardando envios... Assim que sair um e-mail (sucesso ou erro), aparece aqui no topo.'
@@ -1342,10 +1400,14 @@ export default function CampaignDetail() {
                             <td className="p-3 text-gray-400">{r.name || '—'}</td>
                             <td className="p-3 text-gray-400 text-xs whitespace-nowrap">{r.cpf || '—'}</td>
                             <td className="p-3 text-gray-400 text-xs whitespace-nowrap">{r.phone || '—'}</td>
-                            <td className="p-3 text-gray-400 text-xs" title={[r.var1, r.var2, r.var3, r.var4, r.var5].filter(Boolean).join(' | ') || ''}>
-                              {r.var1 || '—'}
-                            </td>
-                            <td className="p-3 text-cyan-300 text-xs font-mono">{r.protocol || '—'}</td>
+                            {usedVars.var1 && <td className="p-3 text-gray-400 text-xs">{displayVar(r, 'var1') || '—'}</td>}
+                            {usedVars.var2 && <td className="p-3 text-gray-400 text-xs">{displayVar(r, 'var2') || '—'}</td>}
+                            {usedVars.var3 && <td className="p-3 text-gray-400 text-xs">{displayVar(r, 'var3') || '—'}</td>}
+                            {usedVars.var4 && <td className="p-3 text-gray-400 text-xs">{displayVar(r, 'var4') || '—'}</td>}
+                            {usedVars.var5 && <td className="p-3 text-gray-400 text-xs">{displayVar(r, 'var5') || '—'}</td>}
+                            {usedVars.protocolo && (
+                              <td className="p-3 text-cyan-300 text-xs font-mono">{displayVar(r, 'protocol') || '—'}</td>
+                            )}
                             <td className="p-3">
                               <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
                             </td>
