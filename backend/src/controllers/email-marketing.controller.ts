@@ -989,8 +989,7 @@ export const resendFailed = async (req: Request, res: Response) => {
 
     await pool.query(
       `UPDATE email_marketing_campaigns
-       SET failed_count=0,
-           status=CASE WHEN status IN ('completed','paused','failed','cancelled') THEN 'sending' ELSE status END,
+       SET status=CASE WHEN status IN ('completed','paused','failed','cancelled') THEN 'sending' ELSE status END,
            completed_at=NULL,
            pause_started_at=NULL,
            sent_in_session=0,
@@ -998,6 +997,7 @@ export const resendFailed = async (req: Request, res: Response) => {
        WHERE id=$1 AND tenant_id=$2`,
       [id, tenantId]
     );
+    await recalculateCampaignCounters(Number(id));
 
     res.json({
       success: true,
@@ -1229,6 +1229,37 @@ function formatMailgunDeliveryError(event: any): string | null {
   return msg || null;
 }
 
+/** Recalcula contadores da campanha só com destinatários DESTA campanha (evita duplicar webhook) */
+async function recalculateCampaignCounters(campaignId: number): Promise<void> {
+  await pool.query(
+    `UPDATE email_marketing_campaigns c SET
+       total_contacts = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id), 0),
+       sent_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status IN ('sent','opened','clicked')), 0),
+       failed_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status = 'failed'), 0),
+       opened_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status IN ('opened','clicked')), 0),
+       clicked_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status = 'clicked'), 0),
+       bounced_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status = 'bounced'), 0),
+       complained_count = COALESCE((SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id = c.id AND r.status = 'complained'), 0),
+       updated_at = NOW()
+     WHERE c.id = $1`,
+    [campaignId]
+  );
+}
+
+/** Ordem de prioridade do status do destinatário (não rebaixa engajamento) */
+function recipientStatusRank(status: string): number {
+  switch (status) {
+    case 'clicked': return 50;
+    case 'opened': return 40;
+    case 'complained': return 35;
+    case 'bounced': return 30;
+    case 'failed': return 30;
+    case 'sent': return 20;
+    case 'pending': return 10;
+    default: return 0;
+  }
+}
+
 export const mailgunWebhook = async (req: Request, res: Response) => {
   try {
     // Suporta body como objeto (json), Buffer (raw) ou string
@@ -1262,8 +1293,6 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
     const newStatus = statusMap[eventType];
     if (!newStatus) return res.json({ success: true });
 
-    const openedAt  = eventType === 'opened'  ? 'NOW()' : 'opened_at';
-    const clickedAt = eventType === 'clicked' ? 'NOW()' : 'clicked_at';
     const deliveryError =
       eventType === 'failed' || eventType === 'bounced'
         ? formatMailgunDeliveryError(event)
@@ -1272,49 +1301,81 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
       console.log(`[webhook-mailgun] motivo: ${deliveryError}`);
     }
 
-    // 1. Atualizar destinatários de campanhas (grava motivo da falha quando vier do Mailgun)
-    if (deliveryError) {
-      await pool.query(
-        `UPDATE email_marketing_recipients
-         SET status=$1, error_message=$2, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
-         WHERE mailgun_message_id=$3 AND email=$4`,
-        [newStatus, deliveryError, messageId, recipient]
-      );
-    } else {
-      await pool.query(
-        `UPDATE email_marketing_recipients
-         SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
-         WHERE mailgun_message_id=$2 AND email=$3`,
-        [newStatus, messageId, recipient]
-      );
+    // Destinatário atual da campanha (para não rebaixar status e recalcular só esta campanha)
+    const current = await pool.query(
+      `SELECT id, campaign_id, status, opened_at, clicked_at
+       FROM email_marketing_recipients
+       WHERE mailgun_message_id=$1 AND email=$2
+       LIMIT 1`,
+      [messageId, recipient]
+    );
+
+    if (current.rows[0]) {
+      const row = current.rows[0];
+      const prev = String(row.status || 'pending');
+      const shouldUpdateStatus = recipientStatusRank(newStatus) >= recipientStatusRank(prev)
+        // falha/bounce depois de enviado pode “rebaixar” engajamento de sent→failed
+        || (['failed', 'bounced', 'complained'].includes(newStatus) && ['pending', 'sent'].includes(prev));
+
+      // delivered não deve sobrescrever opened/clicked
+      const skipDeliveredDowngrade = eventType === 'delivered' && ['opened', 'clicked', 'failed', 'bounced', 'complained'].includes(prev);
+
+      if (shouldUpdateStatus && !skipDeliveredDowngrade) {
+        const setOpened = eventType === 'opened' || row.opened_at ? true : false;
+        const setClicked = eventType === 'clicked' || row.clicked_at ? true : false;
+        if (deliveryError) {
+          await pool.query(
+            `UPDATE email_marketing_recipients
+             SET status=$1,
+                 error_message=$2,
+                 opened_at=CASE WHEN $3 THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
+                 clicked_at=CASE WHEN $4 THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
+                 updated_at=NOW()
+             WHERE id=$5`,
+            [newStatus, deliveryError, setOpened && eventType === 'opened', setClicked && eventType === 'clicked', row.id]
+          );
+        } else {
+          await pool.query(
+            `UPDATE email_marketing_recipients
+             SET status=$1,
+                 opened_at=CASE WHEN $2 THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
+                 clicked_at=CASE WHEN $3 THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
+                 updated_at=NOW()
+             WHERE id=$4`,
+            [
+              newStatus,
+              eventType === 'opened',
+              eventType === 'clicked',
+              row.id,
+            ]
+          );
+        }
+      } else if (eventType === 'opened' && !row.opened_at) {
+        await pool.query(
+          `UPDATE email_marketing_recipients SET opened_at=NOW(), updated_at=NOW() WHERE id=$1`,
+          [row.id]
+        );
+      } else if (eventType === 'clicked' && !row.clicked_at) {
+        await pool.query(
+          `UPDATE email_marketing_recipients SET clicked_at=COALESCE(clicked_at,NOW()), opened_at=COALESCE(opened_at,NOW()), updated_at=NOW() WHERE id=$1`,
+          [row.id]
+        );
+      }
+
+      // Contadores SEMPRE recalculados só desta campanha (nunca +1 cego / nunca mistura outras)
+      await recalculateCampaignCounters(row.campaign_id);
     }
 
-    // 2. Atualizar envios únicos — busca com e sem <> para compatibilidade
+    // Envios únicos — busca com e sem <> para compatibilidade
     const msgIdWithBrackets = `<${messageId}>`;
+    const openedAt  = eventType === 'opened'  ? 'NOW()' : 'opened_at';
+    const clickedAt = eventType === 'clicked' ? 'NOW()' : 'clicked_at';
     await pool.query(
       `UPDATE email_marketing_single_sends
        SET status=$1, opened_at=${openedAt}, clicked_at=${clickedAt}, updated_at=NOW()
        WHERE mailgun_message_id = $2 OR mailgun_message_id = $3`,
       [newStatus, messageId, msgIdWithBrackets]
     );
-
-    // 3. Atualizar contadores da campanha
-    const counterField: Record<string, string> = {
-      sent: 'sent_count', opened: 'opened_count', clicked: 'clicked_count',
-      bounced: 'bounced_count', complained: 'complained_count', failed: 'failed_count',
-    };
-    if (counterField[newStatus]) {
-      const recip = await pool.query(
-        `SELECT campaign_id FROM email_marketing_recipients WHERE mailgun_message_id=$1 AND email=$2 LIMIT 1`,
-        [messageId, recipient]
-      );
-      if (recip.rows[0]) {
-        await pool.query(
-          `UPDATE email_marketing_campaigns SET ${counterField[newStatus]}=${counterField[newStatus]}+1, updated_at=NOW() WHERE id=$1`,
-          [recip.rows[0].campaign_id]
-        );
-      }
-    }
 
     res.json({ success: true });
   } catch (error: any) {

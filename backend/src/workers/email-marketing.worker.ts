@@ -268,7 +268,12 @@ async function processCampaigns() {
             [msgId, recipient.id]
           );
           await pool.query(
-            `UPDATE email_marketing_campaigns SET sent_count=sent_count+1, sent_in_session=COALESCE(sent_in_session,0)+1, updated_at=NOW() WHERE id=$1`,
+            `UPDATE email_marketing_campaigns c SET
+               sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked')),
+               failed_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status='failed'),
+               sent_in_session = COALESCE(sent_in_session,0)+1,
+               updated_at = NOW()
+             WHERE c.id=$1`,
             [campaign.id]
           );
 
@@ -280,7 +285,11 @@ async function processCampaigns() {
             [friendly, recipient.id]
           );
           await pool.query(
-            `UPDATE email_marketing_campaigns SET failed_count=failed_count+1, updated_at=NOW() WHERE id=$1`,
+            `UPDATE email_marketing_campaigns c SET
+               sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked')),
+               failed_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status='failed'),
+               updated_at = NOW()
+             WHERE c.id=$1`,
             [campaign.id]
           );
         }
