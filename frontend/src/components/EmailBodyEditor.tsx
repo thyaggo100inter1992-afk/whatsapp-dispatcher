@@ -255,10 +255,21 @@ export default function EmailBodyEditor({
           <FaWhatsapp className="text-green-400" />
         </ToolBtn>
         <span className="w-px h-5 bg-white/15 mx-1" />
-        <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => insertVariable('{{nome}}')}
-          className={`px-2 py-1.5 rounded-lg text-xs font-mono text-white/80 ${colors.btn}`}>{'{{nome}}'}</button>
-        <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => insertVariable('{{email}}')}
-          className={`px-2 py-1.5 rounded-lg text-xs font-mono text-white/80 ${colors.btn}`}>{'{{email}}'}</button>
+        {[
+          '{{nome}}', '{{email}}', '{{cpf}}', '{{telefone}}',
+          '{{var1}}', '{{var2}}', '{{var3}}', '{{var4}}', '{{var5}}',
+          '{{saudacao}}', '{{hora}}', '{{data}}', '{{protocolo}}',
+        ].map(token => (
+          <button
+            key={token}
+            type="button"
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => insertVariable(token)}
+            className={`px-2 py-1.5 rounded-lg text-xs font-mono text-white/80 ${colors.btn}`}
+          >
+            {token}
+          </button>
+        ))}
         <span className="w-px h-5 bg-white/15 mx-1" />
         <ToolBtn title="Desfazer" onClick={() => run('undo')}><FaUndo /></ToolBtn>
         <ToolBtn title="Refazer" onClick={() => run('redo')}><FaRedo /></ToolBtn>
@@ -307,7 +318,7 @@ export default function EmailBodyEditor({
 
       <div className="px-3 py-2 border-t border-white/10 text-xs text-white/45 flex flex-wrap gap-x-4 gap-y-1">
         <span>Link WhatsApp usa <code className="text-white/60">wa.me</code> e é rastreado pelo Mailgun (conta em Clicados).</span>
-        <span>Variáveis: {'{{nome}}'} · {'{{email}}'}</span>
+        <span>Variáveis contato: {'{{nome}}'} {'{{email}}'} {'{{cpf}}'} {'{{telefone}}'} {'{{var1}}'}…{'{{var5}}'} · Sistema: {'{{saudacao}}'} {'{{hora}}'} {'{{data}}'} {'{{protocolo}}'}</span>
       </div>
 
       {showLink && (

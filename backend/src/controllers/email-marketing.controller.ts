@@ -7,7 +7,7 @@ import csv from 'csv-parser';
 import { Readable } from 'stream';
 import * as dns from 'dns';
 import { promisify } from 'util';
-import { ensureEmailHtml, applyEmailVariables } from '../utils/email-html';
+import { ensureEmailHtml, applyEmailVariables, generateProtocol } from '../utils/email-html';
 
 const resolveTxt  = promisify(dns.resolveTxt);
 const resolveMx   = promisify(dns.resolveMx);
@@ -457,7 +457,7 @@ export const importContacts = async (req: Request, res: Response) => {
     const file = (req as any).file;
     if (!file) return res.status(400).json({ success: false, message: 'Arquivo CSV obrigatório' });
 
-    const contacts: { email: string; name?: string; cpf?: string; phone?: string }[] = [];
+    const contacts: { email: string; name?: string; cpf?: string; phone?: string; var1?: string; var2?: string; var3?: string; var4?: string; var5?: string }[] = [];
     const rawText = file.buffer.toString('utf8').replace(/^\uFEFF/, '');
     const firstLine = (rawText.split(/\r?\n/).find((l: string) => l.trim()) || '');
     const semicolonCount = (firstLine.match(/;/g) || []).length;
@@ -470,7 +470,6 @@ export const importContacts = async (req: Request, res: Response) => {
         const v = row[k] ?? row[k.toLowerCase()] ?? row[k.toUpperCase()];
         if (v != null && String(v).trim() !== '') return String(v).trim();
       }
-      // case-insensitive fallback
       const map: Record<string, string> = {};
       for (const [key, val] of Object.entries(row || {})) {
         map[String(key).toLowerCase().trim()] = String(val ?? '').trim();
@@ -492,6 +491,11 @@ export const importContacts = async (req: Request, res: Response) => {
               name: pick(row, ['name', 'nome', 'nome_completo', 'cliente']) || undefined,
               cpf: pick(row, ['cpf', 'documento', 'doc']) || undefined,
               phone: pick(row, ['phone', 'telefone', 'celular', 'whatsapp', 'tel']) || undefined,
+              var1: pick(row, ['var1', 'variavel1', 'variável1', 'variavel_1', 'campo1']) || undefined,
+              var2: pick(row, ['var2', 'variavel2', 'variável2', 'variavel_2', 'campo2']) || undefined,
+              var3: pick(row, ['var3', 'variavel3', 'variável3', 'variavel_3', 'campo3']) || undefined,
+              var4: pick(row, ['var4', 'variavel4', 'variável4', 'variavel_4', 'campo4']) || undefined,
+              var5: pick(row, ['var5', 'variavel5', 'variável5', 'variavel_5', 'campo5']) || undefined,
             });
           }
         })
@@ -503,15 +507,23 @@ export const importContacts = async (req: Request, res: Response) => {
     for (const c of contacts) {
       try {
         const r = await pool.query(
-          `INSERT INTO email_marketing_contacts (tenant_id, list_id, email, name, cpf, phone)
-           VALUES ($1,$2,$3,$4,$5,$6)
+          `INSERT INTO email_marketing_contacts (tenant_id, list_id, email, name, cpf, phone, var1, var2, var3, var4, var5)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
            ON CONFLICT (list_id, email) DO UPDATE SET
              name = COALESCE(NULLIF(EXCLUDED.name, ''), email_marketing_contacts.name),
              cpf = COALESCE(NULLIF(EXCLUDED.cpf, ''), email_marketing_contacts.cpf),
              phone = COALESCE(NULLIF(EXCLUDED.phone, ''), email_marketing_contacts.phone),
+             var1 = COALESCE(NULLIF(EXCLUDED.var1, ''), email_marketing_contacts.var1),
+             var2 = COALESCE(NULLIF(EXCLUDED.var2, ''), email_marketing_contacts.var2),
+             var3 = COALESCE(NULLIF(EXCLUDED.var3, ''), email_marketing_contacts.var3),
+             var4 = COALESCE(NULLIF(EXCLUDED.var4, ''), email_marketing_contacts.var4),
+             var5 = COALESCE(NULLIF(EXCLUDED.var5, ''), email_marketing_contacts.var5),
              updated_at = NOW()
            RETURNING id`,
-          [tenantId, list_id, c.email, c.name || null, c.cpf || null, c.phone || null]
+          [
+            tenantId, list_id, c.email, c.name || null, c.cpf || null, c.phone || null,
+            c.var1 || null, c.var2 || null, c.var3 || null, c.var4 || null, c.var5 || null,
+          ]
         );
         if (r.rowCount) inserted++;
       } catch (_) {}
@@ -536,7 +548,7 @@ export const getContacts = async (req: Request, res: Response) => {
 
     const total = await pool.query(`SELECT COUNT(*) FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2`, [list_id, tenantId]);
     const result = await pool.query(
-      `SELECT id, email, name, cpf, phone, status, created_at FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+      `SELECT id, email, name, cpf, phone, var1, var2, var3, var4, var5, status, created_at FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
       [list_id, tenantId, limit, offset]
     );
 
@@ -708,7 +720,10 @@ export const createCampaign = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Nome, ao menos um remetente (parte antes do @) e ao menos um assunto são obrigatórios' });
     }
 
-    const inlineRecipients: { email: string; name?: string | null; cpf?: string | null; phone?: string | null }[] =
+    const inlineRecipients: {
+      email: string; name?: string | null; cpf?: string | null; phone?: string | null;
+      var1?: string | null; var2?: string | null; var3?: string | null; var4?: string | null; var5?: string | null;
+    }[] =
       Array.isArray(recipients)
         ? recipients
             .map((r: any) => ({
@@ -718,6 +733,11 @@ export const createCampaign = async (req: Request, res: Response) => {
               phone: r?.phone || r?.telefone
                 ? String(r.phone || r.telefone).trim()
                 : null,
+              var1: r?.var1 || r?.variavel1 ? String(r.var1 || r.variavel1).trim() : null,
+              var2: r?.var2 || r?.variavel2 ? String(r.var2 || r.variavel2).trim() : null,
+              var3: r?.var3 || r?.variavel3 ? String(r.var3 || r.variavel3).trim() : null,
+              var4: r?.var4 || r?.variavel4 ? String(r.var4 || r.variavel4).trim() : null,
+              var5: r?.var5 || r?.variavel5 ? String(r.var5 || r.variavel5).trim() : null,
             }))
             .filter((r) => r.email.includes('@'))
         : [];
@@ -782,14 +802,22 @@ export const createCampaign = async (req: Request, res: Response) => {
     // Destinatários manuais/colar/CSV — já entram na fila da campanha
     for (const r of uniqueInline) {
       await pool.query(
-        `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name, cpf, phone)
-         VALUES ($1,$2,$3,$4,$5,$6)
+        `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name, cpf, phone, var1, var2, var3, var4, var5)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (campaign_id, email) DO UPDATE SET
            name = COALESCE(NULLIF(EXCLUDED.name, ''), email_marketing_recipients.name),
            cpf = COALESCE(NULLIF(EXCLUDED.cpf, ''), email_marketing_recipients.cpf),
            phone = COALESCE(NULLIF(EXCLUDED.phone, ''), email_marketing_recipients.phone),
+           var1 = COALESCE(NULLIF(EXCLUDED.var1, ''), email_marketing_recipients.var1),
+           var2 = COALESCE(NULLIF(EXCLUDED.var2, ''), email_marketing_recipients.var2),
+           var3 = COALESCE(NULLIF(EXCLUDED.var3, ''), email_marketing_recipients.var3),
+           var4 = COALESCE(NULLIF(EXCLUDED.var4, ''), email_marketing_recipients.var4),
+           var5 = COALESCE(NULLIF(EXCLUDED.var5, ''), email_marketing_recipients.var5),
            updated_at = NOW()`,
-        [tenantId, campaignId, r.email, r.name || null, r.cpf || null, r.phone || null]
+        [
+          tenantId, campaignId, r.email, r.name || null, r.cpf || null, r.phone || null,
+          r.var1 || null, r.var2 || null, r.var3 || null, r.var4 || null, r.var5 || null,
+        ]
       );
     }
 
@@ -823,19 +851,27 @@ export const startCampaign = async (req: Request, res: Response) => {
     // Carrega contatos da lista (sem duplicar — unique em campaign_id+email)
     if (campaign.rows[0].list_id) {
       const contacts = await pool.query(
-        `SELECT email, name, cpf, phone FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2 AND status='active'`,
+        `SELECT email, name, cpf, phone, var1, var2, var3, var4, var5 FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2 AND status='active'`,
         [campaign.rows[0].list_id, tenantId]
       );
       for (const c of contacts.rows) {
         await pool.query(
-          `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name, cpf, phone)
-           VALUES ($1,$2,$3,$4,$5,$6)
+          `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name, cpf, phone, var1, var2, var3, var4, var5)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
            ON CONFLICT (campaign_id, email) DO UPDATE SET
              name = COALESCE(NULLIF(EXCLUDED.name, ''), email_marketing_recipients.name),
              cpf = COALESCE(NULLIF(EXCLUDED.cpf, ''), email_marketing_recipients.cpf),
              phone = COALESCE(NULLIF(EXCLUDED.phone, ''), email_marketing_recipients.phone),
+             var1 = COALESCE(NULLIF(EXCLUDED.var1, ''), email_marketing_recipients.var1),
+             var2 = COALESCE(NULLIF(EXCLUDED.var2, ''), email_marketing_recipients.var2),
+             var3 = COALESCE(NULLIF(EXCLUDED.var3, ''), email_marketing_recipients.var3),
+             var4 = COALESCE(NULLIF(EXCLUDED.var4, ''), email_marketing_recipients.var4),
+             var5 = COALESCE(NULLIF(EXCLUDED.var5, ''), email_marketing_recipients.var5),
              updated_at = NOW()`,
-          [tenantId, id, c.email, c.name, c.cpf || null, c.phone || null]
+          [
+            tenantId, id, c.email, c.name, c.cpf || null, c.phone || null,
+            c.var1 || null, c.var2 || null, c.var3 || null, c.var4 || null, c.var5 || null,
+          ]
         );
       }
     }
@@ -1046,7 +1082,7 @@ export const getCampaignRecipients = async (req: Request, res: Response) => {
     params.push(parseInt(limit, 10) || 500);
 
     const result = await pool.query(
-      `SELECT id, email, name, cpf, phone, status, error_message, sent_at, opened_at, clicked_at, updated_at
+      `SELECT id, email, name, cpf, phone, var1, var2, var3, var4, var5, protocol, status, error_message, sent_at, opened_at, clicked_at, updated_at
        FROM email_marketing_recipients r
        WHERE campaign_id=$1 AND tenant_id=$2${whereExtra}
        ORDER BY COALESCE(sent_at, updated_at, created_at) DESC NULLS LAST, id DESC
@@ -1159,9 +1195,23 @@ export const sendSingle = async (req: Request, res: Response) => {
 
     const mg = await getMailgunClient();
     const prepared = ensureEmailHtml(html, text);
-    const finalHtml = applyEmailVariables(prepared.html, { nome: recipName, email: to_email });
-    const finalText = applyEmailVariables(prepared.text, { nome: recipName, email: to_email }, { escapeValues: false });
-    const finalSubject = applyEmailVariables(subject, { nome: recipName, email: to_email }, { escapeValues: false });
+    const protocol = generateProtocol();
+    const recipVars = {
+      nome: recipName,
+      email: to_email,
+      cpf: req.body.cpf || '',
+      telefone: req.body.telefone || req.body.phone || '',
+      phone: req.body.phone || req.body.telefone || '',
+      var1: req.body.var1 || '',
+      var2: req.body.var2 || '',
+      var3: req.body.var3 || '',
+      var4: req.body.var4 || '',
+      var5: req.body.var5 || '',
+      protocolo: protocol,
+    };
+    const finalHtml = applyEmailVariables(prepared.html, recipVars);
+    const finalText = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
+    const finalSubject = applyEmailVariables(subject, recipVars, { escapeValues: false });
     try {
       const result = await mg.messages.create(domain, {
         from: `${String(from_name).trim()} <${finalFromEmail}>`,
@@ -1297,9 +1347,23 @@ export const resendSingleSend = async (req: Request, res: Response) => {
     const recipName = (to_name && String(to_name).trim()) || to_email;
 
     const prepared = ensureEmailHtml(body_html, body_text);
-    const finalHtml = applyEmailVariables(prepared.html, { nome: recipName, email: to_email });
-    const finalText = applyEmailVariables(prepared.text, { nome: recipName, email: to_email }, { escapeValues: false });
-    const finalSubject = applyEmailVariables(subject, { nome: recipName, email: to_email }, { escapeValues: false });
+    const protocol = generateProtocol();
+    const recipVars = {
+      nome: recipName,
+      email: to_email,
+      cpf: req.body.cpf || '',
+      telefone: req.body.telefone || req.body.phone || '',
+      phone: req.body.phone || req.body.telefone || '',
+      var1: req.body.var1 || '',
+      var2: req.body.var2 || '',
+      var3: req.body.var3 || '',
+      var4: req.body.var4 || '',
+      var5: req.body.var5 || '',
+      protocolo: protocol,
+    };
+    const finalHtml = applyEmailVariables(prepared.html, recipVars);
+    const finalText = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
+    const finalSubject = applyEmailVariables(subject, recipVars, { escapeValues: false });
 
     const mg = await getMailgunClient();
     try {

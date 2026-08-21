@@ -40,6 +40,8 @@ function extractLocal(email: string): string {
 interface Recipient {
   id: number; email: string; name: string | null; status: string;
   cpf?: string | null; phone?: string | null;
+  var1?: string | null; var2?: string | null; var3?: string | null; var4?: string | null; var5?: string | null;
+  protocol?: string | null;
   error_message: string | null; sent_at: string | null;
   opened_at: string | null; clicked_at: string | null; updated_at: string;
 }
@@ -463,12 +465,18 @@ export default function CampaignDetail() {
 
       // Aba 7 — Destinatários
       const destinatarios = [
-        ['E-mail', 'Nome', 'CPF', 'Telefone', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Motivo do erro'],
+        ['E-mail', 'Nome', 'CPF', 'Telefone', 'Var1', 'Var2', 'Var3', 'Var4', 'Var5', 'Protocolo', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Motivo do erro'],
         ...rows.map(r2 => [
           r2.email || '',
           r2.name || '',
           r2.cpf || '',
           r2.phone || '',
+          r2.var1 || '',
+          r2.var2 || '',
+          r2.var3 || '',
+          r2.var4 || '',
+          r2.var5 || '',
+          r2.protocol || '',
           RECIPIENT_STATUS[r2.status]?.label || r2.status,
           r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : '',
           r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : '',
@@ -478,8 +486,9 @@ export default function CampaignDetail() {
       ];
       const wsDest = XLSX.utils.aoa_to_sheet(destinatarios);
       wsDest['!cols'] = [
-        { wch: 35 }, { wch: 25 }, { wch: 16 }, { wch: 16 }, { wch: 12 },
-        { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 60 },
+        { wch: 32 }, { wch: 20 }, { wch: 14 }, { wch: 14 },
+        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+        { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 50 },
       ];
       XLSX.utils.book_append_sheet(wb, wsDest, 'Destinatarios');
 
@@ -553,7 +562,13 @@ export default function CampaignDetail() {
     return (r.email || '').toLowerCase().includes(q)
       || (r.name || '').toLowerCase().includes(q)
       || (r.cpf || '').toLowerCase().includes(q)
-      || (r.phone || '').toLowerCase().includes(q);
+      || (r.phone || '').toLowerCase().includes(q)
+      || (r.var1 || '').toLowerCase().includes(q)
+      || (r.var2 || '').toLowerCase().includes(q)
+      || (r.var3 || '').toLowerCase().includes(q)
+      || (r.var4 || '').toLowerCase().includes(q)
+      || (r.var5 || '').toLowerCase().includes(q)
+      || (r.protocol || '').toLowerCase().includes(q);
   };
 
   // Log em tempo real = o que já foi processado (enviado/erro/aberto...). Pendentes só no filtro "Pendente".
@@ -847,7 +862,7 @@ export default function CampaignDetail() {
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-dark-800/90 backdrop-blur-md">
                     <tr>
-                      {['E-mail', 'Nome', 'CPF', 'Telefone', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Erro'].map(h => (
+                      {['E-mail', 'Nome', 'CPF', 'Telefone', 'Var1', 'Var2', 'Var3', 'Var4', 'Var5', 'Protocolo', 'Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Erro'].map(h => (
                         <th key={h} className="text-left py-3 px-3 text-xs font-bold text-gray-400 uppercase">{h}</th>
                       ))}
                     </tr>
@@ -862,6 +877,12 @@ export default function CampaignDetail() {
                           <td className="py-3 px-3 text-gray-400">{r.name || '—'}</td>
                           <td className="py-3 px-3 text-gray-400 text-xs">{r.cpf || '—'}</td>
                           <td className="py-3 px-3 text-gray-400 text-xs">{r.phone || '—'}</td>
+                          <td className="py-3 px-3 text-gray-400 text-xs">{r.var1 || '—'}</td>
+                          <td className="py-3 px-3 text-gray-400 text-xs">{r.var2 || '—'}</td>
+                          <td className="py-3 px-3 text-gray-400 text-xs">{r.var3 || '—'}</td>
+                          <td className="py-3 px-3 text-gray-400 text-xs">{r.var4 || '—'}</td>
+                          <td className="py-3 px-3 text-gray-400 text-xs">{r.var5 || '—'}</td>
+                          <td className="py-3 px-3 text-cyan-300 text-xs font-mono">{r.protocol || '—'}</td>
                           <td className="py-3 px-3">
                             <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
                           </td>
@@ -1280,6 +1301,8 @@ export default function CampaignDetail() {
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Nome</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">CPF</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Telefone</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Var1</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Protocolo</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Status</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Data / Hora</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Aberto em</th>
@@ -1289,14 +1312,14 @@ export default function CampaignDetail() {
                   <tbody>
                     {loadingRecipients && recipients.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="text-center py-12 text-gray-400">
+                        <td colSpan={10} className="text-center py-12 text-gray-400">
                           <FaSpinner className="animate-spin text-3xl text-orange-400 mx-auto mb-3" />
                           Carregando log de envio...
                         </td>
                       </tr>
                     ) : filteredRecipients.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="text-center py-12 text-gray-400">
+                        <td colSpan={10} className="text-center py-12 text-gray-400">
                           <div className="text-5xl mb-3">📭</div>
                           {filterStatus === 'all'
                             ? 'Aguardando envios... Assim que sair um e-mail (sucesso ou erro), aparece aqui no topo.'
@@ -1319,6 +1342,10 @@ export default function CampaignDetail() {
                             <td className="p-3 text-gray-400">{r.name || '—'}</td>
                             <td className="p-3 text-gray-400 text-xs whitespace-nowrap">{r.cpf || '—'}</td>
                             <td className="p-3 text-gray-400 text-xs whitespace-nowrap">{r.phone || '—'}</td>
+                            <td className="p-3 text-gray-400 text-xs" title={[r.var1, r.var2, r.var3, r.var4, r.var5].filter(Boolean).join(' | ') || ''}>
+                              {r.var1 || '—'}
+                            </td>
+                            <td className="p-3 text-cyan-300 text-xs font-mono">{r.protocol || '—'}</td>
                             <td className="p-3">
                               <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
                             </td>

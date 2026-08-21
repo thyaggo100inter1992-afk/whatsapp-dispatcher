@@ -46,9 +46,12 @@ type SenderMode = 'manual' | 'paste' | 'csv';
 type SubjectMode = 'manual' | 'paste';
 type RecipientSource = 'list' | 'manual' | 'paste' | 'csv';
 
-interface RecipientRow { email: string; name: string; cpf: string; phone: string; }
+interface RecipientRow {
+  email: string; name: string; cpf: string; phone: string;
+  var1: string; var2: string; var3: string; var4: string; var5: string;
+}
 
-/** Formato: email,nome,cpf,telefone (cpf e telefone opcionais). Aceita ; ou tab. */
+/** Formato: email,nome,cpf,telefone,var1,var2,var3,var4,var5 (extras opcionais). Aceita ; ou tab. */
 function parseRecipientsText(text: string): RecipientRow[] {
   const seen = new Set<string>();
   const out: RecipientRow[] = [];
@@ -56,7 +59,7 @@ function parseRecipientsText(text: string): RecipientRow[] {
     const line = rawLine.trim();
     if (!line) continue;
     if (/^email\b/i.test(line) && !line.includes('@')) continue;
-    const parts = line.split(/[,;\t]/).map(p => p.trim()).filter(Boolean);
+    const parts = line.split(/[,;\t]/).map(p => p.trim());
     const emailIdx = parts.findIndex(p => p.includes('@'));
     if (emailIdx < 0) continue;
     const email = parts[emailIdx].toLowerCase();
@@ -68,6 +71,11 @@ function parseRecipientsText(text: string): RecipientRow[] {
       name: others[0] || '',
       cpf: others[1] || '',
       phone: others[2] || '',
+      var1: others[3] || '',
+      var2: others[4] || '',
+      var3: others[5] || '',
+      var4: others[6] || '',
+      var5: others[7] || '',
     });
   }
   return out;
@@ -93,7 +101,7 @@ export default function CriarCampanha() {
 
   const [recipientSource, setRecipientSource] = useState<RecipientSource>('list');
   const [manualRecipients, setManualRecipients] = useState<RecipientRow[]>([
-    { email: '', name: '', cpf: '', phone: '' },
+    { email: '', name: '', cpf: '', phone: '', var1: '', var2: '', var3: '', var4: '', var5: '' },
   ]);
   const [recipientPasteText, setRecipientPasteText] = useState('');
 
@@ -168,7 +176,9 @@ export default function CriarCampanha() {
         const wb = XLSX.read(buf, { type: 'array' });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
-        text = rows.map(r => [r[0], r[1], r[2], r[3]].map(c => String(c ?? '').trim()).join(',')).join('\n');
+        text = rows.map(r =>
+          [r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]].map(c => String(c ?? '').trim()).join(',')
+        ).join('\n');
       } else {
         text = await file.text();
       }
@@ -184,13 +194,16 @@ export default function CriarCampanha() {
 
   const downloadRecipientTemplate = () => {
     const rows = [
-      ['email', 'nome', 'cpf', 'telefone'],
-      ['joao.silva@email.com', 'João Silva', '123.456.789-00', '(11) 98888-7777'],
-      ['maria.santos@email.com', 'Maria Santos', '', ''],
-      ['pedro@empresa.com.br', 'Pedro Oliveira', '98765432100', '11999998888'],
+      ['email', 'nome', 'cpf', 'telefone', 'var1', 'var2', 'var3', 'var4', 'var5'],
+      ['joao.silva@email.com', 'João Silva', '123.456.789-00', '(11) 98888-7777', 'Segmento A', '', '', '', ''],
+      ['maria.santos@email.com', 'Maria Santos', '', '', '', '', '', '', ''],
+      ['pedro@empresa.com.br', 'Pedro Oliveira', '98765432100', '11999998888', 'VIP', 'SP', '', '', ''],
     ];
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 32 }, { wch: 22 }, { wch: 16 }, { wch: 18 }];
+    ws['!cols'] = [
+      { wch: 30 }, { wch: 20 }, { wch: 16 }, { wch: 16 },
+      { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+    ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Destinatarios');
     XLSX.writeFile(wb, 'modelo-destinatarios.xlsx');
@@ -221,6 +234,11 @@ export default function CriarCampanha() {
           name: r.name.trim(),
           cpf: r.cpf.trim(),
           phone: r.phone.trim(),
+          var1: r.var1.trim(),
+          var2: r.var2.trim(),
+          var3: r.var3.trim(),
+          var4: r.var4.trim(),
+          var5: r.var5.trim(),
         }))
       : parseRecipientsText(recipientPasteText);
 
@@ -237,7 +255,7 @@ export default function CriarCampanha() {
   const updateSubject = (i: number, val: string) =>
     setSubjects(s => s.map((x, idx) => idx === i ? val : x));
 
-  const addRecipient = () => setManualRecipients(r => [...r, { email: '', name: '', cpf: '', phone: '' }]);
+  const addRecipient = () => setManualRecipients(r => [...r, { email: '', name: '', cpf: '', phone: '', var1: '', var2: '', var3: '', var4: '', var5: '' }]);
   const removeRecipient = (i: number) => setManualRecipients(r => r.filter((_, idx) => idx !== i));
   const updateRecipient = (i: number, field: keyof RecipientRow, val: string) =>
     setManualRecipients(r => r.map((x, idx) => idx === i ? { ...x, [field]: val } : x));
@@ -274,6 +292,11 @@ export default function CriarCampanha() {
           name: r.name || null,
           cpf: r.cpf || null,
           phone: r.phone || null,
+          var1: r.var1 || null,
+          var2: r.var2 || null,
+          var3: r.var3 || null,
+          var4: r.var4 || null,
+          var5: r.var5 || null,
         })),
         template_id: templateId || null,
         body_html: bodyHtml || null,
@@ -516,6 +539,19 @@ export default function CriarCampanha() {
                           placeholder="(11) 99999-0000" className={inputCls} />
                       </div>
                     </div>
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mt-4">
+                      {([1, 2, 3, 4, 5] as const).map(n => (
+                        <div key={n}>
+                          <label className={labelCls}>Var{n} <span className="text-white/40 font-normal">(opc.)</span></label>
+                          <input
+                            value={r[`var${n}` as keyof RecipientRow] as string}
+                            onChange={e => updateRecipient(i, `var${n}` as keyof RecipientRow, e.target.value)}
+                            placeholder={`variavel${n}`}
+                            className={inputCls}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
                 <button type="button" onClick={addRecipient}
@@ -529,8 +565,8 @@ export default function CriarCampanha() {
             {(recipientSource === 'paste' || recipientSource === 'csv') && (
               <div className="space-y-4">
                 <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300 space-y-2">
-                  <p><strong>Modelo Excel:</strong> baixe o arquivo — colunas separadas (email | nome | cpf | telefone). CPF e telefone opcionais. Aceita <strong>.xlsx</strong> ou CSV.</p>
-                  <p className="text-xs text-blue-200/80">Ao colar texto, use: <code className="bg-black/30 px-1 rounded">email,nome,cpf,telefone</code> (um por linha).</p>
+                  <p><strong>Modelo Excel:</strong> colunas email | nome | cpf | telefone | var1…var5 (todas opcionais exceto e-mail). Aceita <strong>.xlsx</strong> ou CSV.</p>
+                  <p className="text-xs text-blue-200/80">No texto do e-mail use: {'{{nome}}'} {'{{cpf}}'} {'{{telefone}}'} {'{{var1}}'}…{'{{var5}}'} · sistema: {'{{saudacao}}'} {'{{hora}}'} {'{{data}}'} {'{{protocolo}}'}</p>
                 </div>
                 {recipientSource === 'csv' && (
                   <div className="flex flex-wrap gap-3">

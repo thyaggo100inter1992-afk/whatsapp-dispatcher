@@ -67,7 +67,10 @@ export default function Listas() {
         if (!rows.length) throw new Error('Planilha vazia');
         // Normaliza cabeçalho e gera CSV com ; (Excel BR)
         const csvText = rows.map(r =>
-          [r[0], r[1], r[2], r[3]].map(c => String(c ?? '').replace(/"/g, '""')).map(c => `"${c}"`).join(';')
+          [r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]]
+            .map(c => String(c ?? '').replace(/"/g, '""'))
+            .map(c => `"${c}"`)
+            .join(';')
         ).join('\n');
         uploadFile = new File([csvText], 'contatos.csv', { type: 'text/csv' });
       }
@@ -84,7 +87,7 @@ export default function Listas() {
     if (!pasteListId || !pasteText.trim()) { notification.warning('Atenção', 'Cole ao menos um e-mail.'); return; }
     const lines = pasteText.split(/[\n;]/).map(l => l.trim()).filter(Boolean);
     if (lines.length === 0) { notification.warning('Atenção', 'Nenhum e-mail encontrado.'); return; }
-    const csvLines = ['email;nome;cpf;telefone'];
+    const csvLines = ['email;nome;cpf;telefone;var1;var2;var3;var4;var5'];
     for (const line of lines) {
       if (/^email\b/i.test(line) && !line.includes('@')) continue;
       const parts = line.split(/[,;\t]/).map(p => p.trim());
@@ -92,10 +95,8 @@ export default function Listas() {
       if (emailIdx < 0) continue;
       const email = parts[emailIdx];
       const others = parts.filter((_, i) => i !== emailIdx);
-      const name = others[0] || '';
-      const cpf = others[1] || '';
-      const phone = others[2] || '';
-      csvLines.push([email, name, cpf, phone].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
+      const cols = [email, others[0] || '', others[1] || '', others[2] || '', others[3] || '', others[4] || '', others[5] || '', others[6] || '', others[7] || ''];
+      csvLines.push(cols.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
     }
     if (csvLines.length <= 1) { notification.warning('Nenhum e-mail válido', 'Verifique se os endereços contêm "@".'); return; }
     const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' });
@@ -113,15 +114,18 @@ export default function Listas() {
 
   const downloadExcelTemplate = () => {
     const rows = [
-      ['email', 'nome', 'cpf', 'telefone'],
-      ['joao.silva@email.com', 'João Silva', '123.456.789-00', '(11) 98888-7777'],
-      ['maria.santos@email.com', 'Maria Santos', '', ''],
-      ['pedro.oliveira@gmail.com', 'Pedro Oliveira', '98765432100', '11999998888'],
-      ['ana.costa@hotmail.com', 'Ana Costa', '', '11988887777'],
-      ['carlos.mendes@empresa.com.br', 'Carlos Mendes', '11144477735', ''],
+      ['email', 'nome', 'cpf', 'telefone', 'var1', 'var2', 'var3', 'var4', 'var5'],
+      ['joao.silva@email.com', 'João Silva', '123.456.789-00', '(11) 98888-7777', 'Segmento A', '', '', '', ''],
+      ['maria.santos@email.com', 'Maria Santos', '', '', '', '', '', '', ''],
+      ['pedro.oliveira@gmail.com', 'Pedro Oliveira', '98765432100', '11999998888', 'VIP', 'SP', '', '', ''],
+      ['ana.costa@hotmail.com', 'Ana Costa', '', '11988887777', '', '', '', '', ''],
+      ['carlos.mendes@empresa.com.br', 'Carlos Mendes', '11144477735', '', '', '', '', '', ''],
     ];
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 32 }, { wch: 22 }, { wch: 16 }, { wch: 18 }];
+    ws['!cols'] = [
+      { wch: 30 }, { wch: 20 }, { wch: 16 }, { wch: 16 },
+      { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+    ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Contatos');
     XLSX.writeFile(wb, 'modelo-lista-contatos.xlsx');
@@ -191,11 +195,10 @@ export default function Listas() {
             </div>
             <p className="text-gray-400">Lista: <span className="text-white font-bold">{pasteListName}</span></p>
             <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300 space-y-2">
-              <p><strong>Como colar:</strong> Um contato por linha no formato <code className="bg-black/30 px-1 rounded">email,nome,cpf,telefone</code>. CPF e telefone são opcionais.</p>
+              <p><strong>Como colar:</strong> <code className="bg-black/30 px-1 rounded">email,nome,cpf,telefone,var1,var2,var3,var4,var5</code> — extras opcionais.</p>
               <code className="block font-mono text-xs bg-black/30 rounded-lg p-3">
-                joao@email.com,João Silva,123.456.789-00,(11) 98888-7777<br />
-                maria@email.com,Maria Santos<br />
-                pedro@email.com
+                joao@email.com,João Silva,123.456.789-00,(11) 98888-7777,Segmento A<br />
+                maria@email.com,Maria Santos
               </code>
             </div>
             <div>
@@ -261,7 +264,7 @@ export default function Listas() {
 
           {/* Info CSV */}
           <div className="bg-blue-500/10 border-2 border-blue-500/30 rounded-2xl p-5 text-sm text-blue-300">
-            <strong>📋 Modelo Excel:</strong> Baixe o modelo — as colunas já vêm separadas (<code className="bg-white/10 px-1 rounded">email</code> | <code className="bg-white/10 px-1 rounded">nome</code> | <code className="bg-white/10 px-1 rounded">cpf</code> | <code className="bg-white/10 px-1 rounded">telefone</code>). CPF e telefone são opcionais. Aceita <strong>.xlsx</strong> ou <strong>.csv</strong>.
+            <strong>📋 Modelo Excel:</strong> colunas <code className="bg-white/10 px-1 rounded">email</code> | nome | cpf | telefone | <code className="bg-white/10 px-1 rounded">var1…var5</code> (opcionais). Aceita <strong>.xlsx</strong> ou CSV.
           </div>
 
           {/* LISTA */}

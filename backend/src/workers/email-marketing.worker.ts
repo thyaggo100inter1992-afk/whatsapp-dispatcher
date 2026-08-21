@@ -1,7 +1,7 @@
 import { pool } from '../database/connection';
 import FormData from 'form-data';
 import Mailgun from 'mailgun.js';
-import { ensureEmailHtml, applyEmailVariables } from '../utils/email-html';
+import { ensureEmailHtml, applyEmailVariables, generateProtocol } from '../utils/email-html';
 
 let isRunning = false;
 
@@ -194,11 +194,15 @@ async function processCampaigns() {
           }
         }
 
-        // Substitui variáveis (nome/e-mail do DESTINATÁRIO) — após montar HTML final também
+        // Substitui variáveis (contato + sistema) — protocolo único por envio
         const recipName = (recipient.name && String(recipient.name).trim()) || recipient.email;
         const recipEmail = recipient.email;
+        const protocol = generateProtocol();
+        await pool.query(
+          `UPDATE email_marketing_recipients SET protocol=$1, updated_at=NOW() WHERE id=$2`,
+          [protocol, recipient.id]
+        );
 
-        // Texto simples → HTML com quebras de linha
         const prepared = ensureEmailHtml(html, text);
         const recipVars = {
           nome: recipName,
@@ -206,6 +210,12 @@ async function processCampaigns() {
           cpf: recipient.cpf || '',
           telefone: recipient.phone || '',
           phone: recipient.phone || '',
+          var1: recipient.var1 || '',
+          var2: recipient.var2 || '',
+          var3: recipient.var3 || '',
+          var4: recipient.var4 || '',
+          var5: recipient.var5 || '',
+          protocolo: protocol,
         };
         html = applyEmailVariables(prepared.html, recipVars);
         text = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
