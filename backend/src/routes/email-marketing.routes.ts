@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import * as ctrl from '../controllers/email-marketing.controller';
+import * as mailboxCtrl from '../controllers/email-mailbox.controller';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -12,6 +13,8 @@ router.get('/domains', ctrl.getDomains);
 router.post('/domains', ctrl.addDomain);
 router.post('/domains/:id/verify', ctrl.verifyDomain);
 router.post('/domains/:id/register-webhooks', ctrl.registerDomainWebhooks);
+router.post('/domains/:id/enable-inbound', mailboxCtrl.enableDomainInbound);
+router.post('/domains/:id/verify-inbound', mailboxCtrl.verifyDomainInbound);
 router.delete('/domains/:id', ctrl.deleteDomain);
 
 // =============================================
@@ -65,5 +68,16 @@ router.get('/restrictions', ctrl.getEmailRestrictions);
 router.post('/restrictions', ctrl.addEmailRestriction);
 router.delete('/restrictions/:id', ctrl.removeEmailRestriction);
 router.post('/restrictions/check-bulk', ctrl.checkEmailRestrictionsBulk);
+
+// =============================================
+// CAIXAS DE E-MAIL (inbox)
+// =============================================
+router.get('/mailboxes', mailboxCtrl.listMailboxes);
+router.post('/mailboxes', mailboxCtrl.createMailbox);
+router.delete('/mailboxes/:id', mailboxCtrl.deleteMailbox);
+router.get('/mailboxes/:id/messages', mailboxCtrl.listMailboxMessages);
+router.get('/mailboxes/:id/messages/:messageId', mailboxCtrl.getMailboxMessage);
+router.post('/mailboxes/:id/send', mailboxCtrl.sendMailboxMessage);
+router.patch('/mailboxes/:id/messages/:messageId', mailboxCtrl.moveMailboxMessage);
 
 export default router;

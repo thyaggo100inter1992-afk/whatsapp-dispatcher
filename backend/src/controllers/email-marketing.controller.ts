@@ -2680,7 +2680,29 @@ export const sendgridInboundParse = async (req: Request, res: Response) => {
     }
 
     if (!parsed) {
-      console.warn('[inbound-reply] token não encontrado no To:', toField || envelopeTo);
+      // Sem token de campanha → tenta gravar na caixa de e-mail do tenant
+      try {
+        const { ingestInboundToMailbox } = require('../services/email-mailbox.service');
+        const fromRaw = String(body.from || '');
+        const ingested = await ingestInboundToMailbox({
+          toCandidates: candidates.length
+            ? candidates
+            : extractEmailsFromHeader(toField + ' ' + envelopeTo),
+          fromRaw,
+          subject: String(body.subject || ''),
+          text: String(body.text || ''),
+          html: String(body.html || ''),
+          messageId: String(body.headers || '').match(/Message-Id:\s*<([^>]+)>/i)?.[1]
+            || String(body['message-id'] || '') || null,
+        });
+        if (ingested.ok) {
+          console.log(`[inbound-mailbox] mailbox=${ingested.mailboxId} msg=${ingested.messageId}`);
+          return res.status(200).json({ success: true, matched: true, mailbox: true, id: ingested.messageId });
+        }
+      } catch (e: any) {
+        console.warn('[inbound-mailbox]', e.message);
+      }
+      console.warn('[inbound-reply] token/caixa não encontrados no To:', toField || envelopeTo);
       return res.status(200).json({ success: true, matched: false });
     }
 

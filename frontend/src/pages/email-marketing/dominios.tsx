@@ -16,6 +16,9 @@ interface Domain {
   verified_at: string | null;
   provider?: string | null;
   sendgrid_domain_id?: string | null;
+  inbound_enabled?: boolean;
+  inbound_status?: string;
+  inbound_dns_records?: any;
 }
 
 const STATUS = {
@@ -36,6 +39,7 @@ export default function Dominios() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [verifying, setVerifying] = useState<number | null>(null);
+  const [inboundBusy, setInboundBusy] = useState<number | null>(null);
   const [newDomain, setNewDomain] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [showDns, setShowDns] = useState<Domain | null>(null);
@@ -150,6 +154,35 @@ export default function Dominios() {
       }
     } catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
     finally { setVerifying(null); }
+  };
+
+  const handleEnableInbound = async (id: number) => {
+    setInboundBusy(id);
+    try {
+      const r = await api.post(`/email-marketing/domains/${id}/enable-inbound`);
+      notification.success('Recebimento', r.data.message || 'Configuração de caixa gerada');
+      if (r.data.data) setShowDns(r.data.data);
+      await loadDomains();
+    } catch (e: any) {
+      notification.error('Erro', e.response?.data?.message || e.message);
+    } finally {
+      setInboundBusy(null);
+    }
+  };
+
+  const handleVerifyInbound = async (id: number) => {
+    setInboundBusy(id);
+    try {
+      const r = await api.post(`/email-marketing/domains/${id}/verify-inbound`);
+      if (r.data.verified) notification.success('MX OK', r.data.message);
+      else notification.warning('Aguardando DNS', r.data.message);
+      if (r.data.data) setShowDns(r.data.data);
+      await loadDomains();
+    } catch (e: any) {
+      notification.error('Erro', e.response?.data?.message || e.message);
+    } finally {
+      setInboundBusy(null);
+    }
   };
 
   const handleRegisterWebhooks = async (id: number) => {
@@ -348,6 +381,58 @@ export default function Dominios() {
                 </div>
               );
             })()}
+
+            {/* Recebimento / Caixa de e-mail */}
+            <div className="mt-5 bg-cyan-900/20 border border-cyan-500/30 rounded-xl p-4 space-y-3">
+              <p className="text-cyan-300 font-bold text-sm">📥 Recebimento (Caixa de E-mail)</p>
+              <p className="text-gray-400 text-xs">
+                Configure <strong className="text-gray-300">uma vez</strong> por domínio. Depois crie endereços em{' '}
+                <strong className="text-gray-300">Criar E-mail</strong> sem novo DNS.
+              </p>
+              {showDns.inbound_status === 'active' ? (
+                <div className="flex items-center gap-2 text-green-300 text-sm font-bold">
+                  <FaCheckCircle /> Recebimento ativo
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleEnableInbound(showDns.id)}
+                  disabled={inboundBusy === showDns.id}
+                  className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 rounded-lg text-sm font-bold disabled:opacity-50"
+                >
+                  {inboundBusy === showDns.id ? <FaSpinner className="animate-spin inline mr-2" /> : null}
+                  {showDns.inbound_enabled ? 'Atualizar recebimento' : 'Ativar recebimento neste domínio'}
+                </button>
+              )}
+              {Array.isArray(showDns.inbound_dns_records) && showDns.inbound_dns_records.length > 0 && (
+                <div className="space-y-2">
+                  {showDns.inbound_dns_records.map((rec: any, i: number) => (
+                    <div key={i} className="bg-black/30 border border-white/10 rounded-lg p-3 text-sm">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="px-2 py-0.5 bg-white/10 rounded text-xs font-bold text-white">MX</span>
+                        <span className={`text-xs font-bold ${rec.valid === 'valid' ? 'text-green-300' : 'text-yellow-300'}`}>
+                          {rec.valid === 'valid' ? 'Verificado' : 'Aguardando'}
+                        </span>
+                      </div>
+                      <p className="text-gray-400 text-xs">Host: <code className="text-green-300">{rec.name || showDns.domain}</code></p>
+                      <p className="text-gray-400 text-xs">Valor: <code className="text-blue-300">{rec.value}</code>
+                        {rec.priority != null ? ` · prioridade ${rec.priority}` : ''}
+                      </p>
+                    </div>
+                  ))}
+                  {showDns.inbound_enabled && showDns.inbound_status !== 'active' && (
+                    <button
+                      type="button"
+                      onClick={() => handleVerifyInbound(showDns.id)}
+                      disabled={inboundBusy === showDns.id}
+                      className="w-full py-2 bg-cyan-500/20 text-cyan-300 rounded-lg text-sm font-bold disabled:opacity-50"
+                    >
+                      Verificar MX de recebimento
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Botão fechar ou verificar */}
             {(() => {

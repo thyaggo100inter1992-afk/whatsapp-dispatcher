@@ -4,6 +4,7 @@ import Head from 'next/head';
 import {
   FaEnvelope, FaPaperPlane, FaRocket, FaSync, FaBullhorn, FaList,
   FaFileAlt, FaGlobe, FaHistory, FaExclamationTriangle, FaChartPie, FaBan,
+  FaInbox, FaAt,
 } from 'react-icons/fa';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import api from '@/services/api';
@@ -199,8 +200,8 @@ export default function EmailMarketingDashboard() {
               </button>
             </div>
 
-            {/* Atalhos — grid 7 itens */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
+            {/* Atalhos */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
 
               <button
                 onClick={() => router.push('/email-marketing/campanhas')}
@@ -227,6 +228,32 @@ export default function EmailMarketingDashboard() {
                   </div>
                   <h3 className="text-lg font-bold text-white text-center">Envio Único</h3>
                   <p className="text-sm text-white/70 text-center">E-mail avulso</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => router.push('/email-marketing/criar-email')}
+                className="group relative overflow-hidden bg-gradient-to-br from-cyan-500/20 to-cyan-600/10 hover:from-cyan-500/30 hover:to-cyan-600/20 border-2 border-cyan-500/40 hover:border-cyan-500/60 rounded-2xl p-6 text-left transition-all duration-300 hover:scale-105 shadow-lg"
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <div className="bg-cyan-500/20 p-4 rounded-xl">
+                    <FaAt className="text-4xl text-cyan-300" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white text-center">Criar E-mail</h3>
+                  <p className="text-sm text-white/70 text-center">Caixa no domínio</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => router.push('/email-marketing/caixa-entrada')}
+                className="group relative overflow-hidden bg-gradient-to-br from-indigo-500/20 to-indigo-600/10 hover:from-indigo-500/30 hover:to-indigo-600/20 border-2 border-indigo-500/40 hover:border-indigo-500/60 rounded-2xl p-6 text-left transition-all duration-300 hover:scale-105 shadow-lg"
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <div className="bg-indigo-500/20 p-4 rounded-xl">
+                    <FaInbox className="text-4xl text-indigo-300" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white text-center">Caixa de Entrada</h3>
+                  <p className="text-sm text-white/70 text-center">Receber e responder</p>
                 </div>
               </button>
 
