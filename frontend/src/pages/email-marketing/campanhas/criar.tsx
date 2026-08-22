@@ -103,7 +103,8 @@ export default function CriarCampanha() {
   const [templates, setTemplates] = useState<Template[]>([]);
 
   const [name, setName] = useState('');
-  const [domainId, setDomainId] = useState('');
+  const [domainId, setDomainId] = useState(''); // legado / primeiro selecionado
+  const [domainIds, setDomainIds] = useState<number[]>([]);
   const [listId, setListId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [bodyHtml, setBodyHtml] = useState('');
@@ -257,16 +258,50 @@ export default function CriarCampanha() {
     XLSX.writeFile(wb, 'modelo-destinatarios.xlsx');
   };
 
-  const selectedDomainName = domains.find(d => d.id === parseInt(domainId))?.domain || '';
+  const selectedDomains = domains.filter(d => domainIds.includes(d.id));
+  const selectedDomainNames = selectedDomains.map(d => d.domain);
+  const selectedDomainName = selectedDomainNames[0] || '';
 
   const rawSenders: Sender[] = senderMode === 'manual'
     ? senders.map(s => ({ from_name: s.from_name, from_email: extractLocalPart(s.from_email) })).filter(s => s.from_email)
     : parseSendersText(senderPasteText);
 
-  // E-mail final sempre: usuario@dominio_selecionado
-  const finalSenders: Sender[] = selectedDomainName
-    ? rawSenders.map(s => ({ from_name: s.from_name, from_email: `${s.from_email}@${selectedDomainName}` }))
-    : [];
+  // Expande usuario × cada domínio selecionado (rotação multi-domínio)
+  const finalSenders: Sender[] = (() => {
+    if (selectedDomainNames.length === 0) return [];
+    const out: Sender[] = [];
+    const seen = new Set<string>();
+    for (const s of rawSenders) {
+      const local = extractLocalPart(s.from_email);
+      if (!local) continue;
+      for (const dom of selectedDomainNames) {
+        const full = `${local}@${dom}`;
+        if (seen.has(full)) continue;
+        seen.add(full);
+        out.push({ from_name: s.from_name, from_email: full });
+      }
+    }
+    return out;
+  })();
+
+  const toggleDomain = (id: number) => {
+    setDomainIds(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      setDomainId(next.length ? String(next[0]) : '');
+      return next;
+    });
+  };
+
+  const selectAllDomains = () => {
+    const all = domains.map(d => d.id);
+    setDomainIds(all);
+    setDomainId(all.length ? String(all[0]) : '');
+  };
+
+  const clearDomains = () => {
+    setDomainIds([]);
+    setDomainId('');
+  };
 
   const finalSubjects: string[] = subjectMode === 'manual'
     ? subjects.filter(s => s.trim() !== '')
@@ -311,7 +346,7 @@ export default function CriarCampanha() {
   const handleSave = async () => {
     const errs: string[] = [];
     if (!name.trim()) errs.push('Informe o nome da campanha.');
-    if (!domainId) errs.push('Selecione um domínio verificado.');
+    if (domainIds.length === 0) errs.push('Selecione ao menos um domínio verificado.');
     if (finalSenders.length === 0) errs.push('Adicione ao menos um remetente (só a parte antes do @).');
     if (finalSubjects.length === 0) errs.push('Adicione ao menos um assunto.');
     if (recipientSource === 'list' && !listId) errs.push('Selecione uma lista de contatos.');
@@ -333,7 +368,8 @@ export default function CriarCampanha() {
         from_email: finalSenders[0].from_email,
         subject: finalSubjects[0],
         reply_to: replyTo || null,
-        domain_id: domainId || null,
+        domain_id: domainIds[0] || null,
+        domain_ids: domainIds,
         list_id: recipientSource === 'list' ? listId : null,
         recipients: recipientSource === 'list' ? undefined : finalRecipients.map(r => ({
           email: r.email,
@@ -491,15 +527,57 @@ export default function CriarCampanha() {
                 <p className="text-sm text-white/50 mt-2 flex items-center gap-1"><span>💡</span> Dê um nome descritivo para identificar facilmente esta campanha</p>
               </div>
               <div>
-                <label className={labelCls}>Domínio de Envio</label>
-                <select value={domainId} onChange={e => setDomainId(e.target.value)} className={inputCls}>
-                  <option value="">Selecione um domínio ativo</option>
-                  {domains.map(d => <option key={d.id} value={d.id}>{d.domain}</option>)}
-                </select>
-                {domains.length === 0 && (
-                  <p className="text-yellow-400 text-sm mt-2">⚠️ Nenhum domínio ativo.{' '}
+                <label className={labelCls}>Domínios de Envio *</label>
+                <p className="text-sm text-white/50 mb-3">
+                  Selecione um ou mais. Com vários, o sistema <strong className="text-white/70">rotaciona os domínios</strong> a cada e-mail.
+                </p>
+                {domains.length === 0 ? (
+                  <p className="text-yellow-400 text-sm">⚠️ Nenhum domínio ativo.{' '}
                     <span className="underline cursor-pointer" onClick={() => router.push('/email-marketing/dominios')}>Configurar domínio</span>
                   </p>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={selectAllDomains}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-orange-500/20 text-orange-200 border border-orange-500/40 hover:bg-orange-500/30">
+                        Selecionar todos ({domains.length})
+                      </button>
+                      {domainIds.length > 0 && (
+                        <button type="button" onClick={clearDomains}
+                          className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white/10 text-white/70 border border-white/20 hover:bg-white/20">
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      {domains.map(d => {
+                        const checked = domainIds.includes(d.id);
+                        return (
+                          <label
+                            key={d.id}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all ${
+                              checked
+                                ? 'border-orange-500/60 bg-orange-500/15 text-white'
+                                : 'border-white/15 bg-dark-700/60 text-white/70 hover:border-white/30'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleDomain(d.id)}
+                              className="w-4 h-4 accent-orange-500"
+                            />
+                            <span className="font-mono text-sm font-bold">@{d.domain}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {domainIds.length > 1 && (
+                      <p className="text-green-300 text-sm font-bold">
+                        ✅ {domainIds.length} domínios — rotação automática na campanha
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
               <div>
@@ -520,17 +598,28 @@ export default function CriarCampanha() {
               <StepBadge n={2} />
               <div>
                 <h2 className="text-3xl font-black text-white">Remetentes</h2>
-                <p className="text-white/60 text-sm mt-1">Digite só a parte antes do @ — o domínio selecionado é aplicado automaticamente</p>
+                <p className="text-white/60 text-sm mt-1">
+                  Digite só a parte antes do @ — o sistema cria o remetente em <strong className="text-white/80">todos os domínios</strong> selecionados
+                </p>
               </div>
             </div>
 
-            {!selectedDomainName ? (
+            {selectedDomainNames.length === 0 ? (
               <div className="mt-4 p-4 bg-yellow-500/10 border-2 border-yellow-500/30 rounded-xl text-yellow-300 text-sm font-bold flex items-center gap-2">
-                <FaExclamationTriangle /> Selecione um domínio na seção 1 antes de cadastrar remetentes.
+                <FaExclamationTriangle /> Selecione ao menos um domínio na seção 1 antes de cadastrar remetentes.
               </div>
             ) : (
-              <div className="mt-4 p-4 bg-green-500/10 border-2 border-green-500/30 rounded-xl text-green-300 text-sm">
-                Domínio de envio: <strong className="text-white">@{selectedDomainName}</strong> — o e-mail final será <code className="bg-black/30 px-2 py-0.5 rounded">usuario@{selectedDomainName}</code>
+              <div className="mt-4 p-4 bg-green-500/10 border-2 border-green-500/30 rounded-xl text-green-300 text-sm space-y-1">
+                <p>
+                  Domínio{selectedDomainNames.length > 1 ? 's' : ''} selecionado{selectedDomainNames.length > 1 ? 's' : ''}:{' '}
+                  <strong className="text-white">{selectedDomainNames.map(d => `@${d}`).join(' · ')}</strong>
+                </p>
+                <p className="text-xs text-green-200/80">
+                  Ex.: usuário <code className="bg-black/30 px-1 rounded">tiago</code> gera{' '}
+                  {selectedDomainNames.map(d => (
+                    <code key={d} className="bg-black/30 px-1 rounded mr-1">tiago@{d}</code>
+                  ))}
+                </p>
               </div>
             )}
 
@@ -575,13 +664,17 @@ export default function CriarCampanha() {
                             className={`${inputCls} rounded-r-none border-r-0`}
                           />
                           <span className="flex items-center px-4 bg-dark-600 border-2 border-white/20 border-l-0 rounded-r-xl text-orange-300 font-mono text-sm whitespace-nowrap">
-                            @{selectedDomainName || 'dominio.com'}
+                            {selectedDomainNames.length > 1
+                              ? `× ${selectedDomainNames.length} domínios`
+                              : `@${selectedDomainName || 'dominio.com'}`}
                           </span>
                         </div>
-                        {s.from_email && selectedDomainName && (
-                          <p className="text-xs text-green-400 mt-2">
-                            ✅ Ficará: <strong>{extractLocalPart(s.from_email)}@{selectedDomainName}</strong>
-                          </p>
+                        {s.from_email && selectedDomainNames.length > 0 && (
+                          <div className="text-xs text-green-400 mt-2 space-y-0.5">
+                            {selectedDomainNames.map(dom => (
+                              <p key={dom}>✅ <strong>{extractLocalPart(s.from_email)}@{dom}</strong></p>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -608,9 +701,12 @@ export default function CriarCampanha() {
                     Atendimento,atendimento<br />
                     Marketing,marketing
                   </code>
-                  {selectedDomainName && (
+                  {selectedDomainNames.length > 0 && (
                     <p className="text-xs text-blue-200/80 mt-3">
-                      Ex.: <code className="bg-black/30 px-1 rounded">contato</code> → <strong>contato@{selectedDomainName}</strong>
+                      Ex.: <code className="bg-black/30 px-1 rounded">contato</code> gera{' '}
+                      {selectedDomainNames.map(d => (
+                        <code key={d} className="bg-black/30 px-1 rounded mr-1">contato@{d}</code>
+                      ))}
                     </p>
                   )}
                 </div>
@@ -678,8 +774,18 @@ export default function CriarCampanha() {
             )}
 
             {finalSenders.length > 0 && (
-              <div className="mt-4 p-4 bg-orange-500/10 border border-orange-500/30 rounded-xl text-orange-200 text-sm flex items-center gap-2">
-                <FaRandom /> {finalSenders.length} remetente{finalSenders.length > 1 ? 's' : ''} — rotação automática a cada e-mail enviado
+              <div className="mt-4 p-4 bg-orange-500/10 border border-orange-500/30 rounded-xl text-orange-200 text-sm space-y-2">
+                <p className="flex items-center gap-2 font-bold">
+                  <FaRandom /> {finalSenders.length} remetente{finalSenders.length > 1 ? 's' : ''} final{finalSenders.length > 1 ? 'is' : ''}
+                  {selectedDomainNames.length > 1 ? ` (${rawSenders.length} usuário${rawSenders.length > 1 ? 's' : ''} × ${selectedDomainNames.length} domínio${selectedDomainNames.length > 1 ? 's' : ''})` : ''}
+                  {' '}— rotação automática
+                </p>
+                <div className="max-h-36 overflow-y-auto space-y-1 font-mono text-xs text-orange-100/90">
+                  {finalSenders.slice(0, 30).map((s, i) => (
+                    <p key={i}>{s.from_name ? `${s.from_name} <${s.from_email}>` : s.from_email}</p>
+                  ))}
+                  {finalSenders.length > 30 && <p className="text-orange-200/60">… e mais {finalSenders.length - 30}</p>}
+                </div>
               </div>
             )}
           </div>
@@ -1053,7 +1159,8 @@ export default function CriarCampanha() {
             <div className="bg-gradient-to-r from-orange-500/20 to-orange-600/20 backdrop-blur-xl border-2 border-orange-500/40 rounded-2xl p-6 shadow-xl">
               <h3 className="text-xl font-bold text-orange-300 mb-4 flex items-center gap-2"><FaChartLine /> Resumo da Campanha</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Remetentes:</span><br /><span className="text-white font-bold">{finalSenders.length} cadastrado{finalSenders.length > 1 ? 's' : ''}</span></div>
+                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Domínios:</span><br /><span className="text-white font-bold">{domainIds.length} selecionado{domainIds.length > 1 ? 's' : ''}</span></div>
+                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Remetentes:</span><br /><span className="text-white font-bold">{finalSenders.length} (rotação)</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Assuntos:</span><br /><span className="text-white font-bold">{finalSubjects.length} cadastrado{finalSubjects.length > 1 ? 's' : ''}</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Contatos:</span><br /><span className="text-white font-bold">{recipientCount.toLocaleString('pt-BR')}</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Delay:</span><br /><span className="text-white font-bold">{delayMin}s – {delayMax}s aleatório</span></div>

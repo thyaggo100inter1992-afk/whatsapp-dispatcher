@@ -75,6 +75,244 @@ function pickRotating(arr: any[], index: number): any {
   return arr[index % arr.length];
 }
 
+async function processOneCampaignTick(campaign: any): Promise<void> {
+  // Reverifica status
+  const check = await pool.query(`SELECT status FROM email_marketing_campaigns WHERE id=$1`, [campaign.id]);
+  if (check.rows[0]?.status !== 'sending') return;
+
+  // Verifica horário de trabalho
+  const workStart = campaign.work_start_time || '08:00';
+  const workEnd   = campaign.work_end_time   || '20:00';
+  if (!isWithinWorkHours(workStart, workEnd)) {
+    console.log(`⏰ Campanha ${campaign.id} fora do horário de trabalho (${workStart}-${workEnd}), aguardando...`);
+    return;
+  }
+
+  // Verifica pausa automática
+  const pauseAfter = campaign.pause_after || 0;
+  if (pauseAfter > 0) {
+    const sentInSession = campaign.sent_in_session || 0;
+    if (sentInSession >= pauseAfter) {
+      const pauseStarted = campaign.pause_started_at ? new Date(campaign.pause_started_at) : null;
+      const pauseDurMin  = campaign.pause_duration_minutes || 30;
+      if (pauseStarted) {
+        const pausedMs = Date.now() - pauseStarted.getTime();
+        if (pausedMs < pauseDurMin * 60 * 1000) {
+          const remaining = Math.ceil((pauseDurMin * 60 * 1000 - pausedMs) / 60000);
+          console.log(`⏸ Campanha ${campaign.id} em pausa automática — ${remaining}min restantes`);
+          return;
+        }
+        await pool.query(
+          `UPDATE email_marketing_campaigns SET sent_in_session=0, pause_started_at=NULL, updated_at=NOW() WHERE id=$1`,
+          [campaign.id]
+        );
+        campaign.sent_in_session = 0;
+        campaign.pause_started_at = null;
+        console.log(`▶️ Campanha ${campaign.id} retomada após pausa automática`);
+      } else {
+        await pool.query(
+          `UPDATE email_marketing_campaigns SET pause_started_at=NOW(), updated_at=NOW() WHERE id=$1`,
+          [campaign.id]
+        );
+        console.log(`⏸ Campanha ${campaign.id} entrando em pausa automática por ${pauseDurMin}min após ${sentInSession} envios`);
+        return;
+      }
+    }
+  }
+
+  // Busca próximo recipient pendente (lock leve para evitar double-send entre ticks paralelos)
+  const recipResult = await pool.query(
+    `UPDATE email_marketing_recipients
+     SET status='sending', updated_at=NOW()
+     WHERE id = (
+       SELECT id FROM email_marketing_recipients
+       WHERE campaign_id=$1 AND status='pending'
+       ORDER BY id ASC
+       LIMIT 1
+       FOR UPDATE SKIP LOCKED
+     )
+     RETURNING *`,
+    [campaign.id]
+  );
+
+  if (recipResult.rows.length === 0) {
+    const pending = await pool.query(
+      `SELECT COUNT(*) FROM email_marketing_recipients WHERE campaign_id=$1 AND status IN ('pending','sending')`,
+      [campaign.id]
+    );
+    if (parseInt(pending.rows[0].count) === 0) {
+      await pool.query(
+        `UPDATE email_marketing_campaigns SET status='completed', completed_at=NOW(), updated_at=NOW() WHERE id=$1`,
+        [campaign.id]
+      );
+      console.log(`✅ Campanha ${campaign.id} finalizada`);
+    }
+    return;
+  }
+
+  const recipient = recipResult.rows[0];
+
+  let html    = campaign.body_html;
+  let text    = campaign.body_text;
+
+  if (campaign.template_id && !html) {
+    const tpl = await pool.query(
+      `SELECT body_html, body_text FROM email_marketing_templates WHERE id=$1`,
+      [campaign.template_id]
+    );
+    if (tpl.rows[0]) {
+      html = html || tpl.rows[0].body_html;
+      text = text || tpl.rows[0].body_text;
+    }
+  }
+
+  const recipName = (recipient.name && String(recipient.name).trim()) || recipient.email;
+  const recipEmail = recipient.email;
+
+  const subjectsPreview = campaign.subjects
+    ? (typeof campaign.subjects === 'string' ? JSON.parse(campaign.subjects) : campaign.subjects)
+    : [campaign.subject];
+  const used = detectUsedEmailVars(
+    html,
+    text,
+    campaign.subject,
+    ...(Array.isArray(subjectsPreview) ? subjectsPreview : [])
+  );
+
+  let protocol: string | null = null;
+  if (used.protocolo) {
+    protocol = generateProtocol();
+    await pool.query(
+      `UPDATE email_marketing_recipients SET protocol=$1, updated_at=NOW() WHERE id=$2`,
+      [protocol, recipient.id]
+    );
+  } else {
+    await pool.query(
+      `UPDATE email_marketing_recipients SET protocol=NULL, updated_at=NOW() WHERE id=$1`,
+      [recipient.id]
+    );
+  }
+
+  const prepared = ensureEmailHtml(html, text);
+  const recipVars = {
+    nome: recipName,
+    email: recipEmail,
+    cpf: recipient.cpf || '',
+    telefone: recipient.phone || '',
+    phone: recipient.phone || '',
+    var1: recipient.var1 || '',
+    var2: recipient.var2 || '',
+    var3: recipient.var3 || '',
+    var4: recipient.var4 || '',
+    var5: recipient.var5 || '',
+    protocolo: protocol || '',
+  };
+  html = applyEmailVariables(prepared.html, recipVars);
+  text = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
+
+  // === ROTAÇÃO DE REMETENTES (já expandido: usuario@dominio) ===
+  const sentCount = campaign.sent_count || 0;
+  let fromName  = campaign.from_name;
+  let fromEmail = campaign.from_email;
+
+  const sendersArr = campaign.from_senders
+    ? (typeof campaign.from_senders === 'string' ? JSON.parse(campaign.from_senders) : campaign.from_senders)
+    : null;
+  if (Array.isArray(sendersArr) && sendersArr.length > 0) {
+    const sender = pickRotating(sendersArr, sentCount);
+    fromName  = sender.from_name  || fromName;
+    fromEmail = sender.from_email || fromEmail;
+  }
+
+  // === ROTAÇÃO DE ASSUNTOS ===
+  let subject = campaign.subject;
+  const subjectsArr = campaign.subjects
+    ? (typeof campaign.subjects === 'string' ? JSON.parse(campaign.subjects) : campaign.subjects)
+    : null;
+  if (Array.isArray(subjectsArr) && subjectsArr.length > 0) {
+    subject = pickRotating(subjectsArr, sentCount) || subject;
+  }
+  subject = applyEmailVariables(subject, recipVars, { escapeValues: false });
+
+  // Domínio = o do remetente rotacionado (multi-domínio). Fallback: domain_id da campanha.
+  let domain = fromEmail.includes('@') ? String(fromEmail.split('@')[1] || '').toLowerCase() : '';
+  if (!domain && campaign.domain_id) {
+    const domainRow = await pool.query(`SELECT domain FROM email_marketing_domains WHERE id=$1`, [campaign.domain_id]);
+    if (domainRow.rows[0]) domain = domainRow.rows[0].domain;
+  }
+
+  if (!domain) {
+    await pool.query(
+      `UPDATE email_marketing_recipients SET status='failed', error_message=$1, sent_at=NOW(), updated_at=NOW() WHERE id=$2`,
+      ['Campanha sem domínio de envio configurado. Selecione um domínio verificado.', recipient.id]
+    );
+    await pool.query(
+      `UPDATE email_marketing_campaigns SET failed_count=failed_count+1, updated_at=NOW() WHERE id=$1`,
+      [campaign.id]
+    );
+    return;
+  }
+
+  fromEmail = buildFromEmail(fromEmail, domain);
+
+  try {
+    const attendant = String(campaign.reply_to || '').trim();
+    const intercept = attendant ? buildInterceptReplyTo('r', Number(recipient.id)) : null;
+    const sent = await sendMarketingEmail({
+      domain,
+      fromEmail,
+      fromName,
+      toEmail: recipient.email,
+      toName: recipient.name,
+      replyTo: intercept || attendant || fromEmail,
+      subject,
+      html,
+      text: text || 'Por favor, habilite HTML para visualizar este e-mail.',
+    });
+
+    const msgId = sent.messageId;
+    await pool.query(
+      `UPDATE email_marketing_recipients
+       SET status='sent',
+           mailgun_message_id=$1,
+           provider_message_id=$1,
+           sent_at=NOW(),
+           updated_at=NOW()
+       WHERE id=$2`,
+      [msgId, recipient.id]
+    );
+    await pool.query(
+      `UPDATE email_marketing_campaigns c SET
+         sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked')),
+         failed_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status='failed'),
+         sent_in_session = COALESCE(sent_in_session,0)+1,
+         updated_at = NOW()
+       WHERE c.id=$1`,
+      [campaign.id]
+    );
+  } catch (sendError: any) {
+    const friendly = formatSendError(sendError, fromEmail, domain);
+    console.error(`❌ Erro ao enviar para ${recipient.email}:`, friendly);
+    await pool.query(
+      `UPDATE email_marketing_recipients SET status='failed', error_message=$1, sent_at=NOW(), updated_at=NOW() WHERE id=$2`,
+      [friendly, recipient.id]
+    );
+    await pool.query(
+      `UPDATE email_marketing_campaigns c SET
+         sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked')),
+         failed_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status='failed'),
+         updated_at = NOW()
+       WHERE c.id=$1`,
+      [campaign.id]
+    );
+  }
+
+  // Delay desta campanha (não bloqueia as outras — rodam em paralelo)
+  const minSec = campaign.delay_seconds_min || campaign.delay_seconds || 1;
+  const maxSec = campaign.delay_seconds_max || campaign.delay_seconds || 3;
+  await randomDelay(minSec, maxSec);
+}
+
 async function processCampaigns() {
   if (isRunning) return;
   isRunning = true;
@@ -89,252 +327,30 @@ async function processCampaigns() {
         AND scheduled_at <= NOW()
     `);
 
-    // 2. Busca campanhas em envio
+    // Recupera recipients travados em 'sending' (crash / timeout)
+    await pool.query(`
+      UPDATE email_marketing_recipients
+      SET status='pending', updated_at=NOW()
+      WHERE status='sending'
+        AND updated_at < NOW() - INTERVAL '5 minutes'
+    `);
+
+    // 2. Busca campanhas em envio — processa TODAS em paralelo (uma mensagem cada)
     const campaigns = await pool.query(
       `SELECT * FROM email_marketing_campaigns WHERE status='sending' ORDER BY started_at ASC`
     );
 
-    for (const campaign of campaigns.rows) {
-      try {
-        // Reverifica status
-        const check = await pool.query(`SELECT status FROM email_marketing_campaigns WHERE id=$1`, [campaign.id]);
-        if (check.rows[0]?.status !== 'sending') continue;
+    if (campaigns.rows.length === 0) return;
 
-        // Verifica horário de trabalho
-        const workStart = campaign.work_start_time || '08:00';
-        const workEnd   = campaign.work_end_time   || '20:00';
-        if (!isWithinWorkHours(workStart, workEnd)) {
-          console.log(`⏰ Campanha ${campaign.id} fora do horário de trabalho (${workStart}-${workEnd}), aguardando...`);
-          continue;
-        }
-
-        // Verifica pausa automática
-        const pauseAfter = campaign.pause_after || 0;
-        if (pauseAfter > 0) {
-          const sentInSession = campaign.sent_in_session || 0;
-          if (sentInSession >= pauseAfter) {
-            // Verificar se já expirou o tempo de pausa
-            const pauseStarted = campaign.pause_started_at ? new Date(campaign.pause_started_at) : null;
-            const pauseDurMin  = campaign.pause_duration_minutes || 30;
-            if (pauseStarted) {
-              const pausedMs = Date.now() - pauseStarted.getTime();
-              if (pausedMs < pauseDurMin * 60 * 1000) {
-                const remaining = Math.ceil((pauseDurMin * 60 * 1000 - pausedMs) / 60000);
-                console.log(`⏸ Campanha ${campaign.id} em pausa automática — ${remaining}min restantes`);
-                continue;
-              } else {
-                // Pausa expirou — resetar sessão e continuar
-                await pool.query(
-                  `UPDATE email_marketing_campaigns SET sent_in_session=0, pause_started_at=NULL, updated_at=NOW() WHERE id=$1`,
-                  [campaign.id]
-                );
-                campaign.sent_in_session = 0;
-                campaign.pause_started_at = null;
-                console.log(`▶️ Campanha ${campaign.id} retomada após pausa automática`);
-              }
-            } else {
-              // Iniciar pausa
-              await pool.query(
-                `UPDATE email_marketing_campaigns SET pause_started_at=NOW(), updated_at=NOW() WHERE id=$1`,
-                [campaign.id]
-              );
-              console.log(`⏸ Campanha ${campaign.id} entrando em pausa automática por ${pauseDurMin}min após ${sentInSession} envios`);
-              continue;
-            }
-          }
-        }
-
-        // Busca próximo recipient pendente
-        const recipResult = await pool.query(
-          `SELECT * FROM email_marketing_recipients WHERE campaign_id=$1 AND status='pending' LIMIT 1`,
-          [campaign.id]
-        );
-
-        if (recipResult.rows.length === 0) {
-          const pending = await pool.query(
-            `SELECT COUNT(*) FROM email_marketing_recipients WHERE campaign_id=$1 AND status='pending'`,
-            [campaign.id]
-          );
-          if (parseInt(pending.rows[0].count) === 0) {
-            await pool.query(
-              `UPDATE email_marketing_campaigns SET status='completed', completed_at=NOW(), updated_at=NOW() WHERE id=$1`,
-              [campaign.id]
-            );
-            console.log(`✅ Campanha ${campaign.id} finalizada`);
-          }
-          continue;
-        }
-
-        const recipient = recipResult.rows[0];
-
-        // Resolve HTML e texto (template ou direto)
-        let html    = campaign.body_html;
-        let text    = campaign.body_text;
-
-        if (campaign.template_id && !html) {
-          const tpl = await pool.query(
-            `SELECT body_html, body_text FROM email_marketing_templates WHERE id=$1`,
-            [campaign.template_id]
-          );
-          if (tpl.rows[0]) {
-            html = html || tpl.rows[0].body_html;
-            text = text || tpl.rows[0].body_text;
-          }
-        }
-
-        // Substitui variáveis (contato + sistema) — protocolo só se {{protocolo}} estiver no e-mail
-        const recipName = (recipient.name && String(recipient.name).trim()) || recipient.email;
-        const recipEmail = recipient.email;
-
-        const subjectsPreview = campaign.subjects
-          ? (typeof campaign.subjects === 'string' ? JSON.parse(campaign.subjects) : campaign.subjects)
-          : [campaign.subject];
-        const used = detectUsedEmailVars(
-          html,
-          text,
-          campaign.subject,
-          ...(Array.isArray(subjectsPreview) ? subjectsPreview : [])
-        );
-
-        let protocol: string | null = null;
-        if (used.protocolo) {
-          protocol = generateProtocol();
-          await pool.query(
-            `UPDATE email_marketing_recipients SET protocol=$1, updated_at=NOW() WHERE id=$2`,
-            [protocol, recipient.id]
-          );
-        } else {
-          await pool.query(
-            `UPDATE email_marketing_recipients SET protocol=NULL, updated_at=NOW() WHERE id=$1`,
-            [recipient.id]
-          );
-        }
-
-        const prepared = ensureEmailHtml(html, text);
-        const recipVars = {
-          nome: recipName,
-          email: recipEmail,
-          cpf: recipient.cpf || '',
-          telefone: recipient.phone || '',
-          phone: recipient.phone || '',
-          var1: recipient.var1 || '',
-          var2: recipient.var2 || '',
-          var3: recipient.var3 || '',
-          var4: recipient.var4 || '',
-          var5: recipient.var5 || '',
-          protocolo: protocol || '',
-        };
-        html = applyEmailVariables(prepared.html, recipVars);
-        text = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
-
-        // === ROTAÇÃO DE REMETENTES ===
-        const sentCount = campaign.sent_count || 0;
-        let fromName  = campaign.from_name;
-        let fromEmail = campaign.from_email;
-
-        const sendersArr = campaign.from_senders
-          ? (typeof campaign.from_senders === 'string' ? JSON.parse(campaign.from_senders) : campaign.from_senders)
-          : null;
-        if (Array.isArray(sendersArr) && sendersArr.length > 0) {
-          const sender = pickRotating(sendersArr, sentCount);
-          fromName  = sender.from_name  || fromName;
-          fromEmail = sender.from_email || fromEmail;
-        }
-
-        // === ROTAÇÃO DE ASSUNTOS ===
-        let subject = campaign.subject;
-        const subjectsArr = campaign.subjects
-          ? (typeof campaign.subjects === 'string' ? JSON.parse(campaign.subjects) : campaign.subjects)
-          : null;
-        if (Array.isArray(subjectsArr) && subjectsArr.length > 0) {
-          subject = pickRotating(subjectsArr, sentCount) || subject;
-        }
-        subject = applyEmailVariables(subject, recipVars, { escapeValues: false });
-
-        // Resolve domínio de envio e força remetente no domínio correto
-        let domain = fromEmail.includes('@') ? fromEmail.split('@')[1] : '';
-        if (campaign.domain_id) {
-          const domainRow = await pool.query(`SELECT domain FROM email_marketing_domains WHERE id=$1`, [campaign.domain_id]);
-          if (domainRow.rows[0]) domain = domainRow.rows[0].domain;
-        }
-
-        if (!domain) {
-          await pool.query(
-            `UPDATE email_marketing_recipients SET status='failed', error_message=$1, sent_at=NOW(), updated_at=NOW() WHERE id=$2`,
-            ['Campanha sem domínio de envio configurado. Selecione um domínio verificado.', recipient.id]
-          );
-          await pool.query(
-            `UPDATE email_marketing_campaigns SET failed_count=failed_count+1, updated_at=NOW() WHERE id=$1`,
-            [campaign.id]
-          );
-          continue;
-        }
-
-        fromEmail = buildFromEmail(fromEmail, domain);
-
+    await Promise.all(
+      campaigns.rows.map(async (campaign: any) => {
         try {
-          const attendant = String(campaign.reply_to || '').trim();
-          const intercept = attendant ? buildInterceptReplyTo('r', Number(recipient.id)) : null;
-          const sent = await sendMarketingEmail({
-            domain,
-            fromEmail,
-            fromName,
-            toEmail: recipient.email,
-            toName: recipient.name,
-            replyTo: intercept || attendant || fromEmail,
-            subject,
-            html,
-            text: text || 'Por favor, habilite HTML para visualizar este e-mail.',
-          });
-
-          const msgId = sent.messageId;
-          await pool.query(
-            `UPDATE email_marketing_recipients
-             SET status='sent',
-                 mailgun_message_id=$1,
-                 provider_message_id=$1,
-                 sent_at=NOW(),
-                 updated_at=NOW()
-             WHERE id=$2`,
-            [msgId, recipient.id]
-          );
-          await pool.query(
-            `UPDATE email_marketing_campaigns c SET
-               sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked')),
-               failed_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status='failed'),
-               sent_in_session = COALESCE(sent_in_session,0)+1,
-               updated_at = NOW()
-             WHERE c.id=$1`,
-            [campaign.id]
-          );
-
-        } catch (sendError: any) {
-          const friendly = formatSendError(sendError, fromEmail, domain);
-          console.error(`❌ Erro ao enviar para ${recipient.email}:`, friendly);
-          await pool.query(
-            `UPDATE email_marketing_recipients SET status='failed', error_message=$1, sent_at=NOW(), updated_at=NOW() WHERE id=$2`,
-            [friendly, recipient.id]
-          );
-          await pool.query(
-            `UPDATE email_marketing_campaigns c SET
-               sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked')),
-               failed_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status='failed'),
-               updated_at = NOW()
-             WHERE c.id=$1`,
-            [campaign.id]
-          );
+          await processOneCampaignTick(campaign);
+        } catch (campaignError: any) {
+          console.error(`❌ Erro ao processar campanha ${campaign.id}:`, campaignError.message);
         }
-
-        // === DELAY ALEATÓRIO ===
-        const minSec = campaign.delay_seconds_min || campaign.delay_seconds || 1;
-        const maxSec = campaign.delay_seconds_max || campaign.delay_seconds || 3;
-        await randomDelay(minSec, maxSec);
-
-      } catch (campaignError: any) {
-        console.error(`❌ Erro ao processar campanha ${campaign.id}:`, campaignError.message);
-      }
-    }
-
+      })
+    );
   } catch (error: any) {
     console.error('❌ Erro no worker de email marketing:', error.message);
   } finally {
@@ -343,6 +359,6 @@ async function processCampaigns() {
 }
 
 export function startEmailMarketingWorker() {
-  console.log('📧 Worker Email Marketing iniciado (com agendamento, horário, pausa e rotação)');
+  console.log('📧 Worker Email Marketing iniciado (paralelo + multi-domínio + rotação)');
   setInterval(processCampaigns, 3000);
 }

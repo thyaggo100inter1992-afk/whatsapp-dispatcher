@@ -849,11 +849,11 @@ export const createCampaign = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const {
-      name, reply_to, domain_id, list_id, template_id, body_html, body_text,
+      name, reply_to, domain_id, domain_ids, list_id, template_id, body_html, body_text,
       // Legado (compat)
       subject, from_name, from_email,
       // Novos campos avançados
-      from_senders,    // [{ from_name, from_email }]
+      from_senders,    // [{ from_name, from_email }] — pode vir já expandido (usuario@dominio)
       subjects,        // ["Assunto A", "Assunto B"]
       recipients,      // [{ email, name?, cpf?, phone? }] — destinatários manuais/colar/CSV
       delay_seconds_min, delay_seconds_max,
@@ -862,18 +862,39 @@ export const createCampaign = async (req: Request, res: Response) => {
       pause_after, pause_duration_minutes,
     } = req.body;
 
-    if (!domain_id) {
-      return res.status(400).json({ success: false, message: 'Selecione um domínio verificado para envio' });
+    const requestedDomainIds: number[] = Array.isArray(domain_ids) && domain_ids.length > 0
+      ? domain_ids.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
+      : (domain_id ? [Number(domain_id)] : []);
+
+    if (requestedDomainIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'Selecione ao menos um domínio verificado para envio' });
     }
 
-    const domainRow = await pool.query(
-      `SELECT domain, status FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`,
-      [domain_id, tenantId]
+    const domainsResult = await pool.query(
+      `SELECT id, domain, status FROM email_marketing_domains
+       WHERE tenant_id=$1 AND id = ANY($2::int[])`,
+      [tenantId, requestedDomainIds]
     );
-    if (!domainRow.rows[0]) {
-      return res.status(400).json({ success: false, message: 'Domínio não encontrado' });
+    if (domainsResult.rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'Nenhum domínio válido encontrado' });
     }
-    const domainName = domainRow.rows[0].domain;
+    const inactive = domainsResult.rows.filter((d: any) => d.status !== 'active');
+    if (inactive.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Domínio(s) ainda não ativo(s): ${inactive.map((d: any) => d.domain).join(', ')}`,
+      });
+    }
+    // Mantém a ordem pedida pelo front
+    const domainById = new Map(domainsResult.rows.map((d: any) => [Number(d.id), String(d.domain)]));
+    const orderedDomains = requestedDomainIds
+      .map(id => ({ id, domain: domainById.get(id) }))
+      .filter((d): d is { id: number; domain: string } => !!d.domain);
+    if (orderedDomains.length === 0) {
+      return res.status(400).json({ success: false, message: 'Nenhum domínio válido encontrado' });
+    }
+    const primaryDomainId = orderedDomains[0].id;
+    const domainNames = orderedDomains.map(d => d.domain);
 
     // Normaliza remetentes: aceita array novo OU campos legados
     const rawSenders: { from_name: string; from_email: string }[] =
@@ -881,17 +902,32 @@ export const createCampaign = async (req: Request, res: Response) => {
         ? from_senders
         : [{ from_name: from_name || '', from_email: from_email || '' }];
 
-    // Força local@dominio_selecionado (ignora @ de outro domínio digitado)
-    const sendersArr = rawSenders.map((s) => {
+    // Expande usuario × cada domínio (se já vier com @domínio válido, mantém)
+    const sendersArr: { from_name: string; from_email: string }[] = [];
+    const seenSender = new Set<string>();
+    for (const s of rawSenders) {
       const raw = String(s.from_email || '').trim();
       const local = (raw.includes('@') ? raw.split('@')[0] : raw)
         .replace(/[^a-zA-Z0-9._+-]/g, '')
         .toLowerCase();
-      return {
-        from_name: (s.from_name || '').trim(),
-        from_email: local ? `${local}@${domainName}` : '',
-      };
-    }).filter((s) => s.from_email.includes('@'));
+      if (!local) continue;
+      const name = (s.from_name || '').trim();
+      const rawDomain = raw.includes('@') ? raw.split('@')[1].toLowerCase() : '';
+      if (rawDomain && domainNames.map(d => d.toLowerCase()).includes(rawDomain)) {
+        const full = `${local}@${rawDomain}`;
+        if (!seenSender.has(full)) {
+          seenSender.add(full);
+          sendersArr.push({ from_name: name, from_email: full });
+        }
+        continue;
+      }
+      for (const dom of domainNames) {
+        const full = `${local}@${dom}`;
+        if (seenSender.has(full)) continue;
+        seenSender.add(full);
+        sendersArr.push({ from_name: name, from_email: full });
+      }
+    }
 
     // Normaliza assuntos: aceita array novo OU campo legado
     const subjectsArr: string[] =
@@ -944,12 +980,14 @@ export const createCampaign = async (req: Request, res: Response) => {
     // Define status inicial: se agendado para o futuro -> 'scheduled', senão -> 'draft'
     const initStatus = scheduled_at && new Date(scheduled_at) > new Date() ? 'scheduled' : 'draft';
 
-    const result = await pool.query(
+    let result;
+    try {
+      result = await pool.query(
       `INSERT INTO email_marketing_campaigns (
          tenant_id, name,
          subject, from_name, from_email,
          from_senders, subjects,
-         reply_to, domain_id, list_id, template_id,
+         reply_to, domain_id, domain_ids, list_id, template_id,
          body_html, body_text,
          delay_seconds, delay_seconds_min, delay_seconds_max,
          scheduled_at, work_start_time, work_end_time,
@@ -959,18 +997,19 @@ export const createCampaign = async (req: Request, res: Response) => {
          $1,$2,
          $3,$4,$5,
          $6,$7,
-         $8,$9,$10,$11,
-         $12,$13,
-         $14,$15,$16,
-         $17,$18,$19,
-         $20,$21,
-         $22,$23
+         $8,$9,$10,$11,$12,
+         $13,$14,
+         $15,$16,$17,
+         $18,$19,$20,
+         $21,$22,
+         $23,$24
        ) RETURNING *`,
       [
         tenantId, name,
         subjectsArr[0], sendersArr[0].from_name, sendersArr[0].from_email,
         JSON.stringify(sendersArr), JSON.stringify(subjectsArr),
-        reply_to || null, domain_id || null, hasList ? list_id : null, template_id || null,
+        reply_to || null, primaryDomainId, JSON.stringify(orderedDomains.map(d => d.id)),
+        hasList ? list_id : null, template_id || null,
         body_html || null, body_text || null,
         delay_seconds_min || 1, delay_seconds_min || 1, delay_seconds_max || 3,
         scheduled_at || null, work_start_time || '08:00', work_end_time || '20:00',
@@ -978,7 +1017,37 @@ export const createCampaign = async (req: Request, res: Response) => {
         initStatus,
         uniqueInline.length,
       ]
-    );
+      );
+    } catch (insertErr: any) {
+      if (!/domain_ids/i.test(String(insertErr?.message || ''))) throw insertErr;
+      result = await pool.query(
+        `INSERT INTO email_marketing_campaigns (
+           tenant_id, name,
+           subject, from_name, from_email,
+           from_senders, subjects,
+           reply_to, domain_id, list_id, template_id,
+           body_html, body_text,
+           delay_seconds, delay_seconds_min, delay_seconds_max,
+           scheduled_at, work_start_time, work_end_time,
+           pause_after, pause_duration_minutes,
+           status, total_contacts
+         ) VALUES (
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
+         ) RETURNING *`,
+        [
+          tenantId, name,
+          subjectsArr[0], sendersArr[0].from_name, sendersArr[0].from_email,
+          JSON.stringify(sendersArr), JSON.stringify(subjectsArr),
+          reply_to || null, primaryDomainId, hasList ? list_id : null, template_id || null,
+          body_html || null, body_text || null,
+          delay_seconds_min || 1, delay_seconds_min || 1, delay_seconds_max || 3,
+          scheduled_at || null, work_start_time || '08:00', work_end_time || '20:00',
+          pause_after || 0, pause_duration_minutes || 30,
+          initStatus,
+          uniqueInline.length,
+        ]
+      );
+    }
 
     const campaignId = result.rows[0].id;
 
