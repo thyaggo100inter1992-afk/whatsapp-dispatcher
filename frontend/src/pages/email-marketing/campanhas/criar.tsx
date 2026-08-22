@@ -481,140 +481,10 @@ export default function CriarCampanha() {
             </div>
           </div>
 
-          {/* ══ DESTINATÁRIOS ══ */}
+          {/* ══ 2. REMETENTES ══ */}
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-2">
               <StepBadge n={2} />
-              <div>
-                <h2 className="text-3xl font-black text-white">Destinatários</h2>
-                <p className="text-white/60 text-sm mt-1">Lista pronta, digitação manual, colar em massa ou CSV — CPF e telefone opcionais</p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2 mb-6 mt-4">
-              <button type="button" onClick={() => setRecipientSource('list')} className={modeTabCls(recipientSource === 'list')}>
-                <FaUsers className="inline mr-1" /> Lista pronta
-              </button>
-              <button type="button" onClick={() => setRecipientSource('manual')} className={modeTabCls(recipientSource === 'manual')}>
-                <FaListUl className="inline mr-1" /> Manual
-              </button>
-              <button type="button" onClick={() => setRecipientSource('paste')} className={modeTabCls(recipientSource === 'paste')}>
-                <FaClipboard className="inline mr-1" /> Colar em massa
-              </button>
-              <button type="button" onClick={() => setRecipientSource('csv')} className={modeTabCls(recipientSource === 'csv')}>
-                <FaUpload className="inline mr-1" /> CSV
-              </button>
-            </div>
-
-            {recipientSource === 'list' && (
-              <div>
-                <label className={labelCls}>Lista de Contatos *</label>
-                <select value={listId} onChange={e => setListId(e.target.value)} className={inputCls}>
-                  <option value="">Selecione uma lista</option>
-                  {lists.map(l => <option key={l.id} value={l.id}>{l.name} ({l.total_contacts.toLocaleString('pt-BR')} contatos)</option>)}
-                </select>
-                {lists.length === 0 && (
-                  <p className="text-yellow-400 text-sm mt-2">Nenhuma lista.{' '}
-                    <span className="underline cursor-pointer" onClick={() => router.push('/email-marketing/listas')}>Criar lista</span>
-                  </p>
-                )}
-                {selectedList && (
-                  <p className="text-green-400 text-sm mt-2 font-bold">{selectedList.total_contacts.toLocaleString('pt-BR')} contatos nesta lista</p>
-                )}
-              </div>
-            )}
-
-            {recipientSource === 'manual' && (
-              <div className="space-y-4">
-                {manualRecipients.map((r, i) => (
-                  <div key={i} className="bg-dark-700/60 border border-white/10 rounded-xl p-5">
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="text-sm font-bold text-orange-300 bg-orange-500/10 px-3 py-1 rounded-full">Contato {i + 1}</span>
-                      {manualRecipients.length > 1 && (
-                        <button type="button" onClick={() => removeRecipient(i)} className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1">
-                          <FaTrash /> Remover
-                        </button>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className={labelCls}>E-mail *</label>
-                        <input value={r.email} onChange={e => updateRecipient(i, 'email', e.target.value)}
-                          placeholder="cliente@email.com" className={inputCls} />
-                      </div>
-                      <div>
-                        <label className={labelCls}>Nome</label>
-                        <input value={r.name} onChange={e => updateRecipient(i, 'name', e.target.value)}
-                          placeholder="Nome do cliente" className={inputCls} />
-                      </div>
-                      <div>
-                        <label className={labelCls}>CPF <span className="text-white/40 font-normal">(opcional)</span></label>
-                        <input value={r.cpf} onChange={e => updateRecipient(i, 'cpf', e.target.value)}
-                          placeholder="000.000.000-00" className={inputCls} />
-                      </div>
-                      <div>
-                        <label className={labelCls}>Telefone <span className="text-white/40 font-normal">(opcional)</span></label>
-                        <input value={r.phone} onChange={e => updateRecipient(i, 'phone', e.target.value)}
-                          placeholder="(11) 99999-0000" className={inputCls} />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mt-4">
-                      {([1, 2, 3, 4, 5] as const).map(n => (
-                        <div key={n}>
-                          <label className={labelCls}>Var{n} <span className="text-white/40 font-normal">(opc.)</span></label>
-                          <input
-                            value={r[`var${n}` as keyof RecipientRow] as string}
-                            onChange={e => updateRecipient(i, `var${n}` as keyof RecipientRow, e.target.value)}
-                            placeholder={`variavel${n}`}
-                            className={inputCls}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                <button type="button" onClick={addRecipient}
-                  className="w-full py-4 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border-2 border-dashed border-orange-500/40 rounded-xl text-base font-bold flex items-center justify-center gap-2">
-                  <FaPlus /> Adicionar contato
-                </button>
-                <p className="text-sm text-green-400 font-bold">{finalRecipients.length} destinatário(s) válido(s)</p>
-              </div>
-            )}
-
-            {(recipientSource === 'paste' || recipientSource === 'csv') && (
-              <div className="space-y-4">
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300 space-y-2">
-                  <p><strong>Modelo Excel:</strong> colunas email | nome | cpf | telefone | var1…var5 (todas opcionais exceto e-mail). Aceita <strong>.xlsx</strong> ou CSV.</p>
-                  <p className="text-xs text-blue-200/80">No texto do e-mail use: {'{{nome}}'} {'{{cpf}}'} {'{{telefone}}'} {'{{var1}}'}…{'{{var5}}'} · sistema: {'{{saudacao}}'} {'{{hora}}'} {'{{data}}'} {'{{protocolo}}'}</p>
-                </div>
-                {recipientSource === 'csv' && (
-                  <div className="flex flex-wrap gap-3">
-                    <button type="button" onClick={() => recipientFileRef.current?.click()}
-                      className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold flex items-center gap-2">
-                      <FaUpload /> Selecionar Excel/CSV
-                    </button>
-                    <button type="button" onClick={downloadRecipientTemplate}
-                      className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold flex items-center gap-2">
-                      <FaFileExcel /> Baixar modelo Excel
-                    </button>
-                  </div>
-                )}
-                <textarea
-                  value={recipientPasteText}
-                  onChange={e => setRecipientPasteText(e.target.value)}
-                  placeholder="email,nome,cpf,telefone"
-                  rows={10}
-                  className="w-full px-5 py-4 text-sm bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-orange-500 font-mono resize-y"
-                />
-                <p className="text-sm text-green-400 font-bold">{finalRecipients.length} destinatário(s) válido(s)</p>
-              </div>
-            )}
-          </div>
-
-          {/* ══ REMETENTES ══ */}
-          <div className={sectionCls}>
-            <div className="flex items-center gap-4 mb-2">
-              <StepBadge n={3} />
               <div>
                 <h2 className="text-3xl font-black text-white">Remetentes</h2>
                 <p className="text-white/60 text-sm mt-1">Digite só a parte antes do @ — o domínio selecionado é aplicado automaticamente</p>
@@ -759,6 +629,136 @@ export default function CriarCampanha() {
             {finalSenders.length > 0 && (
               <div className="mt-4 p-4 bg-orange-500/10 border border-orange-500/30 rounded-xl text-orange-200 text-sm flex items-center gap-2">
                 <FaRandom /> {finalSenders.length} remetente{finalSenders.length > 1 ? 's' : ''} — rotação automática a cada e-mail enviado
+              </div>
+            )}
+          </div>
+
+          {/* ══ 3. DESTINATÁRIOS ══ */}
+          <div className={sectionCls}>
+            <div className="flex items-center gap-4 mb-2">
+              <StepBadge n={3} />
+              <div>
+                <h2 className="text-3xl font-black text-white">Destinatários</h2>
+                <p className="text-white/60 text-sm mt-1">Lista pronta, digitação manual, colar em massa ou CSV — CPF e telefone opcionais</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-6 mt-4">
+              <button type="button" onClick={() => setRecipientSource('list')} className={modeTabCls(recipientSource === 'list')}>
+                <FaUsers className="inline mr-1" /> Lista pronta
+              </button>
+              <button type="button" onClick={() => setRecipientSource('manual')} className={modeTabCls(recipientSource === 'manual')}>
+                <FaListUl className="inline mr-1" /> Manual
+              </button>
+              <button type="button" onClick={() => setRecipientSource('paste')} className={modeTabCls(recipientSource === 'paste')}>
+                <FaClipboard className="inline mr-1" /> Colar em massa
+              </button>
+              <button type="button" onClick={() => setRecipientSource('csv')} className={modeTabCls(recipientSource === 'csv')}>
+                <FaUpload className="inline mr-1" /> CSV
+              </button>
+            </div>
+
+            {recipientSource === 'list' && (
+              <div>
+                <label className={labelCls}>Lista de Contatos *</label>
+                <select value={listId} onChange={e => setListId(e.target.value)} className={inputCls}>
+                  <option value="">Selecione uma lista</option>
+                  {lists.map(l => <option key={l.id} value={l.id}>{l.name} ({l.total_contacts.toLocaleString('pt-BR')} contatos)</option>)}
+                </select>
+                {lists.length === 0 && (
+                  <p className="text-yellow-400 text-sm mt-2">Nenhuma lista.{' '}
+                    <span className="underline cursor-pointer" onClick={() => router.push('/email-marketing/listas')}>Criar lista</span>
+                  </p>
+                )}
+                {selectedList && (
+                  <p className="text-green-400 text-sm mt-2 font-bold">{selectedList.total_contacts.toLocaleString('pt-BR')} contatos nesta lista</p>
+                )}
+              </div>
+            )}
+
+            {recipientSource === 'manual' && (
+              <div className="space-y-4">
+                {manualRecipients.map((r, i) => (
+                  <div key={i} className="bg-dark-700/60 border border-white/10 rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-sm font-bold text-orange-300 bg-orange-500/10 px-3 py-1 rounded-full">Contato {i + 1}</span>
+                      {manualRecipients.length > 1 && (
+                        <button type="button" onClick={() => removeRecipient(i)} className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1">
+                          <FaTrash /> Remover
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelCls}>E-mail *</label>
+                        <input value={r.email} onChange={e => updateRecipient(i, 'email', e.target.value)}
+                          placeholder="cliente@email.com" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Nome</label>
+                        <input value={r.name} onChange={e => updateRecipient(i, 'name', e.target.value)}
+                          placeholder="Nome do cliente" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>CPF <span className="text-white/40 font-normal">(opcional)</span></label>
+                        <input value={r.cpf} onChange={e => updateRecipient(i, 'cpf', e.target.value)}
+                          placeholder="000.000.000-00" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Telefone <span className="text-white/40 font-normal">(opcional)</span></label>
+                        <input value={r.phone} onChange={e => updateRecipient(i, 'phone', e.target.value)}
+                          placeholder="(11) 99999-0000" className={inputCls} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mt-4">
+                      {([1, 2, 3, 4, 5] as const).map(n => (
+                        <div key={n}>
+                          <label className={labelCls}>Var{n} <span className="text-white/40 font-normal">(opc.)</span></label>
+                          <input
+                            value={r[`var${n}` as keyof RecipientRow] as string}
+                            onChange={e => updateRecipient(i, `var${n}` as keyof RecipientRow, e.target.value)}
+                            placeholder={`variavel${n}`}
+                            className={inputCls}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <button type="button" onClick={addRecipient}
+                  className="w-full py-4 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border-2 border-dashed border-orange-500/40 rounded-xl text-base font-bold flex items-center justify-center gap-2">
+                  <FaPlus /> Adicionar contato
+                </button>
+                <p className="text-sm text-green-400 font-bold">{finalRecipients.length} destinatário(s) válido(s)</p>
+              </div>
+            )}
+
+            {(recipientSource === 'paste' || recipientSource === 'csv') && (
+              <div className="space-y-4">
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300 space-y-2">
+                  <p><strong>Modelo Excel:</strong> colunas email | nome | cpf | telefone | var1…var5 (todas opcionais exceto e-mail). Aceita <strong>.xlsx</strong> ou CSV.</p>
+                  <p className="text-xs text-blue-200/80">No texto do e-mail use: {'{{nome}}'} {'{{cpf}}'} {'{{telefone}}'} {'{{var1}}'}…{'{{var5}}'} · sistema: {'{{saudacao}}'} {'{{hora}}'} {'{{data}}'} {'{{protocolo}}'}</p>
+                </div>
+                {recipientSource === 'csv' && (
+                  <div className="flex flex-wrap gap-3">
+                    <button type="button" onClick={() => recipientFileRef.current?.click()}
+                      className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold flex items-center gap-2">
+                      <FaUpload /> Selecionar Excel/CSV
+                    </button>
+                    <button type="button" onClick={downloadRecipientTemplate}
+                      className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold flex items-center gap-2">
+                      <FaFileExcel /> Baixar modelo Excel
+                    </button>
+                  </div>
+                )}
+                <textarea
+                  value={recipientPasteText}
+                  onChange={e => setRecipientPasteText(e.target.value)}
+                  placeholder="email,nome,cpf,telefone"
+                  rows={10}
+                  className="w-full px-5 py-4 text-sm bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-orange-500 font-mono resize-y"
+                />
+                <p className="text-sm text-green-400 font-bold">{finalRecipients.length} destinatário(s) válido(s)</p>
               </div>
             )}
           </div>
