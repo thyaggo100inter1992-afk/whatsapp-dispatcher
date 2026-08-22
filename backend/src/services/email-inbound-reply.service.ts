@@ -34,12 +34,13 @@ function esc(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function row(label: string, value: string | null | undefined): string {
+function row(label: string, value: string | null | undefined, opts?: { always?: boolean }): string {
   const v = String(value || '').trim();
-  if (!v) return '';
+  if (!v && !opts?.always) return '';
+  const display = v || '—';
   return `<tr>
     <td style="padding:6px 10px;color:#64748b;font-size:12px;width:120px;vertical-align:top;">${esc(label)}</td>
-    <td style="padding:6px 10px;color:#0f172a;font-size:13px;font-weight:600;">${esc(v)}</td>
+    <td style="padding:6px 10px;color:#0f172a;font-size:13px;font-weight:600;">${esc(display)}</td>
   </tr>`;
 }
 
@@ -95,31 +96,33 @@ function buildFichaEmail(ctx: ClientReplyContext, clientSubject: string): { subj
   const subjectBase = clientSubject || ctx.originalSubject || '';
   const subject = `[FICHA INTERNA] ${who}${subjectBase ? ` — ${subjectBase.replace(/^re:\s*/i, '')}` : ''}`;
 
+  // Sempre do CADASTRO (banco) — não depende de {{cpf}} etc. no corpo do e-mail
   const ficheRows = [
-    row('Nome', ctx.clientName),
-    row('E-mail', ctx.clientEmail),
-    row('CPF', ctx.cpf),
-    row('Telefone', ctx.phone),
-    row('Protocolo', ctx.protocol),
-    row('Var1', ctx.var1),
-    row('Var2', ctx.var2),
-    row('Var3', ctx.var3),
-    row('Var4', ctx.var4),
-    row('Var5', ctx.var5),
-  ].filter(Boolean).join('');
+    row('Nome', ctx.clientName, { always: true }),
+    row('E-mail', ctx.clientEmail, { always: true }),
+    row('CPF', ctx.cpf, { always: true }),
+    row('Telefone', ctx.phone, { always: true }),
+    row('Protocolo', ctx.protocol, { always: true }),
+    row('Var1', ctx.var1, { always: true }),
+    row('Var2', ctx.var2, { always: true }),
+    row('Var3', ctx.var3, { always: true }),
+    row('Var4', ctx.var4, { always: true }),
+    row('Var5', ctx.var5, { always: true }),
+  ].join('');
 
   const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#fffbeb;font-family:Segoe UI,Arial,sans-serif;">
   <div style="max-width:640px;margin:0 auto;padding:20px;">
     <div style="background:#fff;border:2px solid #f59e0b;border-radius:12px;overflow:hidden;">
       <div style="background:#b45309;color:#fff;padding:12px 16px;font-size:13px;font-weight:700;">
-        FICHA INTERNA — NÃO responda este e-mail ao cliente
+        FICHA INTERNA (cadastro) — NÃO responda este e-mail ao cliente
       </div>
       <div style="padding:16px;">
         <p style="margin:0 0 12px;font-size:12px;color:#92400e;">
+          Dados vindos do cadastro no disparador (não do texto do e-mail).
           Use o outro e-mail da conversa (sem [FICHA] no assunto) para responder o cliente.
         </p>
         <table style="width:100%;border-collapse:collapse;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;">
-          ${ficheRows || '<tr><td style="padding:10px;color:#78716c;font-size:12px;">Sem dados extras cadastrados.</td></tr>'}
+          ${ficheRows}
         </table>
       </div>
     </div>
@@ -127,20 +130,20 @@ function buildFichaEmail(ctx: ClientReplyContext, clientSubject: string): { subj
 </body></html>`;
 
   const text = [
-    'FICHA INTERNA — NÃO responda este e-mail ao cliente.',
+    'FICHA INTERNA (cadastro) — NÃO responda este e-mail ao cliente.',
     'Responda pelo outro e-mail da conversa (sem [FICHA] no assunto).',
     '',
-    ctx.clientName ? `Nome: ${ctx.clientName}` : '',
-    `E-mail: ${ctx.clientEmail}`,
-    ctx.cpf ? `CPF: ${ctx.cpf}` : '',
-    ctx.phone ? `Telefone: ${ctx.phone}` : '',
-    ctx.protocol ? `Protocolo: ${ctx.protocol}` : '',
-    ctx.var1 ? `Var1: ${ctx.var1}` : '',
-    ctx.var2 ? `Var2: ${ctx.var2}` : '',
-    ctx.var3 ? `Var3: ${ctx.var3}` : '',
-    ctx.var4 ? `Var4: ${ctx.var4}` : '',
-    ctx.var5 ? `Var5: ${ctx.var5}` : '',
-  ].filter(l => l !== '').join('\n');
+    `Nome: ${ctx.clientName || '—'}`,
+    `E-mail: ${ctx.clientEmail || '—'}`,
+    `CPF: ${ctx.cpf || '—'}`,
+    `Telefone: ${ctx.phone || '—'}`,
+    `Protocolo: ${ctx.protocol || '—'}`,
+    `Var1: ${ctx.var1 || '—'}`,
+    `Var2: ${ctx.var2 || '—'}`,
+    `Var3: ${ctx.var3 || '—'}`,
+    `Var4: ${ctx.var4 || '—'}`,
+    `Var5: ${ctx.var5 || '—'}`,
+  ].join('\n');
 
   return { subject, html, text };
 }

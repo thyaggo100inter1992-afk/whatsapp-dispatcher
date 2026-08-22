@@ -27,6 +27,7 @@ export default function EnvioUnico() {
   const [form, setForm] = useState({
     to_email: '', to_name: '', from_name: '', from_email: '',
     reply_to: '', subject: '', body_html: '', domain_id: '',
+    cpf: '', telefone: '', var1: '', var2: '', var3: '', var4: '', var5: '',
   });
 
   useEffect(() => {
@@ -66,9 +67,20 @@ export default function EnvioUnico() {
         subject: form.subject.trim(),
         body_html: form.body_html,
         domain_id: Number(form.domain_id),
+        // Cadastro interno (ficha) — NÃO vai no corpo do e-mail a menos que use {{cpf}} etc.
+        cpf: form.cpf.trim() || undefined,
+        telefone: form.telefone.trim() || undefined,
+        var1: form.var1.trim() || undefined,
+        var2: form.var2.trim() || undefined,
+        var3: form.var3.trim() || undefined,
+        var4: form.var4.trim() || undefined,
+        var5: form.var5.trim() || undefined,
       });
       notification.success('E-mail enviado!', `Enviado com sucesso para ${form.to_email}`);
-      setForm({ to_email: '', to_name: '', from_name: '', from_email: '', reply_to: '', subject: '', body_html: '', domain_id: form.domain_id });
+      setForm({
+        to_email: '', to_name: '', from_name: '', from_email: '', reply_to: '', subject: '', body_html: '',
+        domain_id: form.domain_id, cpf: '', telefone: '', var1: '', var2: '', var3: '', var4: '', var5: '',
+      });
     } catch (error: any) {
       setErrors([error.response?.data?.message || error.message]);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -193,7 +205,44 @@ export default function EnvioUnico() {
           </div>
 
           <div className={sectionCls}>
-            <div className="flex items-center gap-4 mb-6"><StepBadge n={4} /><h2 className="text-3xl font-black text-white">Mensagem</h2></div>
+            <div className="flex items-center gap-4 mb-2">
+              <StepBadge n={4} />
+              <div>
+                <h2 className="text-3xl font-black text-white">Cadastro do cliente (ficha)</h2>
+                <p className="text-white/60 text-sm mt-1">
+                  Uso interno. Não vai no e-mail do cliente — só na ficha quando ele responder.
+                  Se quiser mostrar algo no e-mail, use {'{{nome}}'}, {'{{cpf}}'} etc. no texto (opcional).
+                </p>
+              </div>
+            </div>
+            <div className="grid md:grid-cols-2 gap-6 mt-6">
+              <div>
+                <label className={labelCls}>CPF (opcional)</label>
+                <input type="text" value={form.cpf} onChange={e => setForm({ ...form, cpf: e.target.value })}
+                  placeholder="000.000.000-00" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Telefone (opcional)</label>
+                <input type="text" value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })}
+                  placeholder="(00) 00000-0000" className={inputCls} />
+              </div>
+              {[1, 2, 3, 4, 5].map(n => (
+                <div key={n}>
+                  <label className={labelCls}>Var{n} (opcional)</label>
+                  <input
+                    type="text"
+                    value={(form as any)[`var${n}`]}
+                    onChange={e => setForm({ ...form, [`var${n}`]: e.target.value } as any)}
+                    placeholder={`Ex.: segmento, cidade...`}
+                    className={inputCls}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className={sectionCls}>
+            <div className="flex items-center gap-4 mb-6"><StepBadge n={5} /><h2 className="text-3xl font-black text-white">Mensagem</h2></div>
             <div className="space-y-6">
               <div>
                 <label className={labelCls}>Assunto *</label>
