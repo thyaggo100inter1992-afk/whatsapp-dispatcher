@@ -101,7 +101,7 @@ export default function EmailListasRestricao() {
       </Head>
       <ProtectedRoute requiredPermission="email_marketing" fallbackPath="/">
         <notification.NotificationContainer />
-        {ConfirmDialog}
+        <ConfirmDialog />
         <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
           <div className="max-w-5xl mx-auto space-y-8">
             <div className="relative overflow-hidden bg-gradient-to-r from-red-600/30 via-orange-500/20 to-red-600/30 backdrop-blur-xl border-2 border-red-500/40 rounded-3xl p-8 shadow-2xl">
