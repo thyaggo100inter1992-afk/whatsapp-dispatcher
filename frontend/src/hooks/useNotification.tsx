@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import Toast from '@/components/ui/Toast';
 
 interface Notification {
@@ -11,8 +11,25 @@ interface Notification {
 
 let notificationId = 0;
 
+const DEFAULT_DURATION: Record<Notification['type'], number> = {
+  success: 3500,
+  info: 4000,
+  warning: 4500,
+  error: 5500,
+};
+
 export function useNotification() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  const removeNotification = useCallback((id: number) => {
+    const t = timersRef.current.get(id);
+    if (t) {
+      clearTimeout(t);
+      timersRef.current.delete(id);
+    }
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  }, []);
 
   const showNotification = useCallback((
     type: 'success' | 'error' | 'info' | 'warning',
@@ -21,7 +38,17 @@ export function useNotification() {
     duration?: number
   ) => {
     const id = ++notificationId;
-    setNotifications((prev) => [...prev, { id, type, title, message, duration }]);
+    const ms = duration ?? DEFAULT_DURATION[type];
+    setNotifications((prev) => [...prev, { id, type, title, message, duration: ms }]);
+
+    // Auto-remove também no hook (garantia extra, além do Toast)
+    if (ms > 0) {
+      const timer = setTimeout(() => {
+        timersRef.current.delete(id);
+        setNotifications((prev) => prev.filter((n) => n.id !== id));
+      }, ms);
+      timersRef.current.set(id, timer);
+    }
   }, []);
 
   const success = useCallback((title: string, message?: string, duration?: number) => {
@@ -39,10 +66,6 @@ export function useNotification() {
   const info = useCallback((title: string, message?: string, duration?: number) => {
     showNotification('info', title, message, duration);
   }, [showNotification]);
-
-  const removeNotification = useCallback((id: number) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-  }, []);
 
   const NotificationContainer = useCallback(() => {
     return (
@@ -78,4 +101,3 @@ export function useNotification() {
     NotificationContainer,
   };
 }
-

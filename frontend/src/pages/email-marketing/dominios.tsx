@@ -47,6 +47,7 @@ export default function Dominios() {
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const domainsRef = useRef<Domain[]>([]);
+  const lastBgNotifyRef = useRef<Record<number, string>>({});
   domainsRef.current = domains;
 
   useEffect(() => {
@@ -96,6 +97,9 @@ export default function Dominios() {
       try {
         const r = await api.post(`/email-marketing/domains/${d.id}/verify`);
         if (r.data.data) setShowDns(prev => prev?.id === d.id ? r.data.data : prev);
+        const key = r.data.allVerified ? 'all' : (r.data.verified ? 'partial' : 'pending');
+        if (lastBgNotifyRef.current[d.id] === key) continue;
+        lastBgNotifyRef.current[d.id] = key;
         if (r.data.allVerified) notification.success('Domínio totalmente verificado!', `Todos os registros DNS de ${d.domain} foram verificados!`);
         else if (r.data.verified && !r.data.allVerified) notification.info('Domínio ativo para envio', `${d.domain} está ativo mas ainda há registros pendentes.`);
       } catch { /* silencioso */ }

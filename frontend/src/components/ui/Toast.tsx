@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { FaCheckCircle, FaExclamationCircle, FaInfoCircle, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
 
 interface ToastProps {
@@ -9,15 +9,26 @@ interface ToastProps {
   onClose: () => void;
 }
 
-export default function Toast({ type, title, message, duration = 4000, onClose }: ToastProps) {
+const DEFAULT_DURATION: Record<ToastProps['type'], number> = {
+  success: 3500,
+  info: 4000,
+  warning: 4500,
+  error: 5500,
+};
+
+export default function Toast({ type, title, message, duration, onClose }: ToastProps) {
+  const autoCloseMs = duration ?? DEFAULT_DURATION[type];
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Fecha sozinho; não depende de onClose no array (evita timer resetar a cada re-render da página)
   useEffect(() => {
-    if (duration > 0) {
-      const timer = setTimeout(() => {
-        onClose();
-      }, duration);
-      return () => clearTimeout(timer);
-    }
-  }, [duration, onClose]);
+    if (autoCloseMs <= 0) return;
+    const timer = setTimeout(() => {
+      onCloseRef.current();
+    }, autoCloseMs);
+    return () => clearTimeout(timer);
+  }, [autoCloseMs]);
 
   const styles = {
     success: {
@@ -50,7 +61,7 @@ export default function Toast({ type, title, message, duration = 4000, onClose }
 
   return (
     <div
-      className={`fixed top-4 right-4 z-[9999] max-w-md w-full animate-slide-in-right`}
+      className={`max-w-md w-full`}
       style={{
         animation: 'slideInRight 0.3s ease-out',
       }}
@@ -67,8 +78,10 @@ export default function Toast({ type, title, message, duration = 4000, onClose }
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
+            aria-label="Fechar"
           >
             <FaTimes />
           </button>
@@ -77,4 +90,3 @@ export default function Toast({ type, title, message, duration = 4000, onClose }
     </div>
   );
 }
-
