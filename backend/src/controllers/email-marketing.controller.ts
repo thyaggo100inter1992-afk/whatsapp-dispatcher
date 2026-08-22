@@ -1334,7 +1334,8 @@ export const getCampaignRecipients = async (req: Request, res: Response) => {
     params.push(parseInt(limit, 10) || 500);
 
     const result = await pool.query(
-      `SELECT id, email, name, cpf, phone, var1, var2, var3, var4, var5, protocol, status, error_message, sent_at, opened_at, clicked_at, updated_at
+      `SELECT id, email, name, cpf, phone, var1, var2, var3, var4, var5, protocol, status, error_message,
+              sent_from_email, sent_domain, sent_at, opened_at, clicked_at, updated_at
        FROM email_marketing_recipients r
        WHERE campaign_id=$1 AND tenant_id=$2${whereExtra}
        ORDER BY COALESCE(sent_at, updated_at, created_at) DESC NULLS LAST, id DESC
@@ -1343,6 +1344,22 @@ export const getCampaignRecipients = async (req: Request, res: Response) => {
     );
     res.json({ success: true, data: result.rows, total: result.rowCount });
   } catch (error: any) {
+    // Compat: coluna sent_domain ainda não migrada
+    if (/sent_domain|sent_from_email/i.test(String(error.message || ''))) {
+      try {
+        const result = await pool.query(
+          `SELECT id, email, name, cpf, phone, var1, var2, var3, var4, var5, protocol, status, error_message, sent_at, opened_at, clicked_at, updated_at
+           FROM email_marketing_recipients r
+           WHERE campaign_id=$1 AND tenant_id=$2${whereExtra}
+           ORDER BY COALESCE(sent_at, updated_at, created_at) DESC NULLS LAST, id DESC
+           LIMIT $${params.length}`,
+          params
+        );
+        return res.json({ success: true, data: result.rows, total: result.rowCount });
+      } catch (e2: any) {
+        return res.status(500).json({ success: false, message: e2.message });
+      }
+    }
     res.status(500).json({ success: false, message: error.message });
   }
 };

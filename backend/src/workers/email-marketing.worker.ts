@@ -243,7 +243,9 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
 
   if (!domain) {
     await pool.query(
-      `UPDATE email_marketing_recipients SET status='failed', error_message=$1, sent_at=NOW(), updated_at=NOW() WHERE id=$2`,
+      `UPDATE email_marketing_recipients
+       SET status='failed', error_message=$1, sent_at=NOW(), updated_at=NOW()
+       WHERE id=$2`,
       ['Campanha sem domínio de envio configurado. Selecione um domínio verificado.', recipient.id]
     );
     await pool.query(
@@ -271,16 +273,31 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
     });
 
     const msgId = sent.messageId;
-    await pool.query(
-      `UPDATE email_marketing_recipients
-       SET status='sent',
-           mailgun_message_id=$1,
-           provider_message_id=$1,
-           sent_at=NOW(),
-           updated_at=NOW()
-       WHERE id=$2`,
-      [msgId, recipient.id]
-    );
+    try {
+      await pool.query(
+        `UPDATE email_marketing_recipients
+         SET status='sent',
+             mailgun_message_id=$1,
+             provider_message_id=$1,
+             sent_from_email=$2,
+             sent_domain=$3,
+             sent_at=NOW(),
+             updated_at=NOW()
+         WHERE id=$4`,
+        [msgId, fromEmail, domain, recipient.id]
+      );
+    } catch {
+      await pool.query(
+        `UPDATE email_marketing_recipients
+         SET status='sent',
+             mailgun_message_id=$1,
+             provider_message_id=$1,
+             sent_at=NOW(),
+             updated_at=NOW()
+         WHERE id=$2`,
+        [msgId, recipient.id]
+      );
+    }
     await pool.query(
       `UPDATE email_marketing_campaigns c SET
          sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked')),
@@ -293,10 +310,19 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
   } catch (sendError: any) {
     const friendly = formatSendError(sendError, fromEmail, domain);
     console.error(`❌ Erro ao enviar para ${recipient.email}:`, friendly);
-    await pool.query(
-      `UPDATE email_marketing_recipients SET status='failed', error_message=$1, sent_at=NOW(), updated_at=NOW() WHERE id=$2`,
-      [friendly, recipient.id]
-    );
+    try {
+      await pool.query(
+        `UPDATE email_marketing_recipients
+         SET status='failed', error_message=$1, sent_from_email=$2, sent_domain=$3, sent_at=NOW(), updated_at=NOW()
+         WHERE id=$4`,
+        [friendly, fromEmail, domain, recipient.id]
+      );
+    } catch {
+      await pool.query(
+        `UPDATE email_marketing_recipients SET status='failed', error_message=$1, sent_at=NOW(), updated_at=NOW() WHERE id=$2`,
+        [friendly, recipient.id]
+      );
+    }
     await pool.query(
       `UPDATE email_marketing_campaigns c SET
          sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked')),

@@ -64,6 +64,8 @@ interface Recipient {
   cpf?: string | null; phone?: string | null;
   var1?: string | null; var2?: string | null; var3?: string | null; var4?: string | null; var5?: string | null;
   protocol?: string | null;
+  sent_from_email?: string | null;
+  sent_domain?: string | null;
   error_message: string | null; sent_at: string | null;
   opened_at: string | null; clicked_at: string | null; updated_at: string;
 }
@@ -494,7 +496,7 @@ export default function CampaignDetail() {
       if (used.var4) destHeader.push('Var4');
       if (used.var5) destHeader.push('Var5');
       if (used.protocolo) destHeader.push('Protocolo');
-      destHeader.push('Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Motivo do erro');
+      destHeader.push('Status', 'Domínio', 'Remetente', 'Enviado em', 'Aberto em', 'Clicado em', 'Motivo do erro');
 
       const destinatarios = [
         destHeader,
@@ -513,6 +515,8 @@ export default function CampaignDetail() {
           if (used.protocolo) row.push(r2.protocol || '');
           row.push(
             RECIPIENT_STATUS[r2.status]?.label || r2.status,
+            r2.sent_domain ? `@${r2.sent_domain}` : '',
+            r2.sent_from_email || '',
             r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : '',
             r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : '',
             r2.clicked_at ? new Date(r2.clicked_at).toLocaleString('pt-BR') : '',
@@ -914,7 +918,7 @@ export default function CampaignDetail() {
                         if (usedVars.var4) headers.push('Var4');
                         if (usedVars.var5) headers.push('Var5');
                         if (usedVars.protocolo) headers.push('Protocolo');
-                        headers.push('Status', 'Enviado em', 'Aberto em', 'Clicado em', 'Erro');
+                        headers.push('Status', 'Domínio', 'Remetente', 'Enviado em', 'Aberto em', 'Clicado em', 'Erro');
                         return headers.map(h => (
                           <th key={h} className="text-left py-3 px-3 text-xs font-bold text-gray-400 uppercase">{h}</th>
                         ));
@@ -939,6 +943,12 @@ export default function CampaignDetail() {
                           {usedVars.protocolo && <td className="py-3 px-3 text-cyan-300 text-xs font-mono">{displayVar(r, 'protocol') || '—'}</td>}
                           <td className="py-3 px-3">
                             <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
+                          </td>
+                          <td className="py-3 px-3 text-orange-300 text-xs font-mono whitespace-nowrap">
+                            {r.sent_domain ? `@${r.sent_domain}` : '—'}
+                          </td>
+                          <td className="py-3 px-3 text-green-300 text-xs font-mono max-w-[180px] truncate" title={r.sent_from_email || ''}>
+                            {r.sent_from_email || '—'}
                           </td>
                           <td className="py-3 px-3 text-gray-500 text-xs">{when ? new Date(when).toLocaleString('pt-BR') : '—'}</td>
                           <td className="py-3 px-3 text-purple-400 text-xs">{r.opened_at ? new Date(r.opened_at).toLocaleString('pt-BR') : '—'}</td>
@@ -1362,6 +1372,8 @@ export default function CampaignDetail() {
                       {usedVars.var5 && <th className="text-left p-3 text-xs font-black text-white uppercase">Var5</th>}
                       {usedVars.protocolo && <th className="text-left p-3 text-xs font-black text-white uppercase">Protocolo</th>}
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Status</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Domínio</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Remetente</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Data / Hora</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Aberto em</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Motivo do Erro</th>
@@ -1370,14 +1382,14 @@ export default function CampaignDetail() {
                   <tbody>
                     {loadingRecipients && recipients.length === 0 ? (
                       <tr>
-                        <td colSpan={8 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
+                        <td colSpan={10 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
                           <FaSpinner className="animate-spin text-3xl text-orange-400 mx-auto mb-3" />
                           Carregando log de envio...
                         </td>
                       </tr>
                     ) : filteredRecipients.length === 0 ? (
                       <tr>
-                        <td colSpan={8 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
+                        <td colSpan={10 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
                           <div className="text-5xl mb-3">📭</div>
                           {filterStatus === 'all'
                             ? 'Aguardando envios... Assim que sair um e-mail (sucesso ou erro), aparece aqui no topo.'
@@ -1410,6 +1422,12 @@ export default function CampaignDetail() {
                             )}
                             <td className="p-3">
                               <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
+                            </td>
+                            <td className="p-3 text-orange-300 text-xs font-mono whitespace-nowrap font-bold">
+                              {r.sent_domain ? `@${r.sent_domain}` : '—'}
+                            </td>
+                            <td className="p-3 text-green-300 text-xs font-mono max-w-[200px] truncate" title={r.sent_from_email || ''}>
+                              {r.sent_from_email || '—'}
                             </td>
                             <td className="p-3 text-xs whitespace-nowrap font-semibold text-white">
                               {when ? new Date(when).toLocaleString('pt-BR') : '—'}
