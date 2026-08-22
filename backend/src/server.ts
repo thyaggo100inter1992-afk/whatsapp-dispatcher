@@ -169,7 +169,8 @@ app.use((req, res, next) => {
     (path.includes('/conversations') && path.includes('/messages/media')) ||
     path.includes('/webhook/mailgun') ||  // ✅ Webhook Mailgun — body já processado pelo express.text
     path.includes('/webhook/sendgrid') ||  // ✅ Webhook SendGrid
-    path.includes('/email-marketing/lists') // ✅ Importação de contatos — usa Multer
+    path.includes('/email-marketing/lists') || // ✅ Importação de contatos — usa Multer
+    path.includes('/email-marketing/mailboxes') // ✅ Caixa de e-mail (envio/anexos)
   ) {
     console.log('🔄 Rota de upload detectada - pulando express-fileupload (usa Multer)');
     return next();

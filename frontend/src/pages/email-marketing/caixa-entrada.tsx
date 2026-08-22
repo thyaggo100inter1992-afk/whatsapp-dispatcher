@@ -692,28 +692,21 @@ export default function CaixaEntrada() {
     };
   };
 
-  const buildFormData = (asDraft: boolean, fields: ReturnType<typeof readComposeFields>) => {
-    const tos = parseEmailList(fields.to_email);
-    const fd = new FormData();
-    fd.append('to_email', tos.join(', ') || fields.to_email);
-    if (fields.to_name) fd.append('to_name', fields.to_name);
-    fd.append('subject', fields.subject);
-    const html = editorRef.current?.innerHTML || compose.body_html;
-    fd.append('body_html', html);
-    fd.append('body_text', stripHtml(html));
-    const ccs = parseEmailList(fields.cc);
-    const bccs = parseEmailList(fields.bcc);
-    if (ccs.length) fd.append('cc', ccs.join(', '));
-    if (bccs.length) fd.append('bcc', bccs.join(', '));
-    if (asDraft) fd.append('save_as_draft', 'true');
-    if (compose.draft_id) fd.append('draft_id', String(compose.draft_id));
-    if (compose.scheduled_at) fd.append('scheduled_at', new Date(compose.scheduled_at).toISOString());
-    if (compose.request_read_receipt) fd.append('request_read_receipt', 'true');
-    fd.append('append_signature', compose.append_signature ? 'true' : 'false');
-    if (compose.reply_to_message_id) fd.append('reply_to_message_id', String(compose.reply_to_message_id));
-    compose.files.forEach((f) => fd.append('attachments', f));
-    return fd;
-  };
+  const fileToBase64 = (file: File) =>
+    new Promise<{ filename: string; contentType: string; content: string }>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || '');
+        const content = result.includes(',') ? result.split(',')[1] : result;
+        resolve({
+          filename: file.name,
+          contentType: file.type || 'application/octet-stream',
+          content,
+        });
+      };
+      reader.onerror = () => reject(new Error(`Falha ao ler ${file.name}`));
+      reader.readAsDataURL(file);
+    });
 
   const handleSend = async (asDraft = false) => {
     if (!composeMailboxId) {
@@ -752,7 +745,12 @@ export default function CaixaEntrada() {
     try {
       syncEditor();
       const html = editorRef.current?.innerHTML || compose.body_html;
-      const payloadBase = {
+      let attachments_base64: Array<{ filename: string; contentType: string; content: string }> = [];
+      if (compose.files.length > 0) {
+        attachments_base64 = await Promise.all(compose.files.map((f) => fileToBase64(f)));
+      }
+
+      await api.post(`/email-marketing/mailboxes/${composeMailboxId}/send`, {
         to_email: tos.join(', ') || fields.to_email,
         to_name: fields.to_name || undefined,
         subject: fields.subject,
@@ -766,21 +764,8 @@ export default function CaixaEntrada() {
         request_read_receipt: compose.request_read_receipt || undefined,
         append_signature: compose.append_signature,
         reply_to_message_id: compose.reply_to_message_id || undefined,
-      };
-
-      if (compose.files.length > 0) {
-        // Com anexo → multipart (sem Content-Type manual)
-        await api.post(
-          `/email-marketing/mailboxes/${composeMailboxId}/send`,
-          buildFormData(asDraft, {
-            ...fields,
-            to_email: tos.join(', ') || fields.to_email,
-          })
-        );
-      } else {
-        // Sem anexo → JSON (evita erro multer "Unexpected end of form")
-        await api.post(`/email-marketing/mailboxes/${composeMailboxId}/send`, payloadBase);
-      }
+        attachments_base64: attachments_base64.length ? attachments_base64 : undefined,
+      });
       notification.success(
         asDraft ? 'Rascunho salvo' : compose.scheduled_at ? 'Agendado' : 'Enviado',
         asDraft ? 'Mensagem salva em Rascunhos' : `Para ${tos.join(', ') || fields.to_email}`

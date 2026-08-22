@@ -652,6 +652,7 @@ export const sendMailboxMessage = async (req: Request, res: Response) => {
       scheduled_at,
       request_read_receipt,
       append_signature,
+      attachments_base64,
     } = req.body;
 
     const saveAsDraft = parseBool(save_as_draft) === true;
@@ -662,12 +663,41 @@ export const sendMailboxMessage = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Rascunho vazio' });
     }
 
+    // Anexos via JSON base64 (evita conflito multer/express-fileupload)
+    const attachments: Array<{ filename: string; contentType?: string; content: Buffer }> = [];
+    const rawAtts = Array.isArray(attachments_base64) ? attachments_base64 : [];
+    for (const a of rawAtts) {
+      if (!a || !a.content) continue;
+      try {
+        const content = Buffer.from(String(a.content), 'base64');
+        if (!content.length) continue;
+        if (content.length > 15 * 1024 * 1024) {
+          return res.status(400).json({
+            success: false,
+            message: `Anexo "${a.filename || 'arquivo'}" muito grande (máx. 15MB)`,
+          });
+        }
+        attachments.push({
+          filename: String(a.filename || 'anexo').slice(0, 180),
+          contentType: String(a.contentType || 'application/octet-stream'),
+          content,
+        });
+      } catch {
+        /* ignora anexo inválido */
+      }
+    }
+
+    // Compat: multer files se ainda vierem
     const files: any[] = Array.isArray((req as any).files) ? (req as any).files : [];
-    const attachments = files.map((f: any) => ({
-      filename: f.originalname || f.filename || 'anexo',
-      contentType: f.mimetype || 'application/octet-stream',
-      content: f.buffer as Buffer,
-    }));
+    for (const f of files) {
+      if (f?.buffer) {
+        attachments.push({
+          filename: f.originalname || f.filename || 'anexo',
+          contentType: f.mimetype || 'application/octet-stream',
+          content: f.buffer as Buffer,
+        });
+      }
+    }
 
     const result = await sendFromMailbox({
       tenantId,
@@ -697,6 +727,7 @@ export const sendMailboxMessage = async (req: Request, res: Response) => {
 
     res.json({ success: true, data: result, message: msg });
   } catch (error: any) {
+    console.error('[mailbox-send]', error?.message || error);
     res.status(400).json({ success: false, message: error.message });
   }
 };
