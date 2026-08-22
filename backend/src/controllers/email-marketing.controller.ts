@@ -2792,10 +2792,12 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
       // Caixa de e-mail (conversa) — tracking interno
       try {
         const { applyMailboxTrackingEvent } = require('../services/email-mailbox.service');
+        // SendGrid devolve customArgs no topo do evento (e às vezes aninhado)
         const mailboxMsgId = Number(
           ev?.mailbox_message_id ||
           ev?.unique_args?.mailbox_message_id ||
           ev?.custom_args?.mailbox_message_id ||
+          ev?.unique_args?.['mailbox_message_id'] ||
           0
         ) || null;
         const mb = await applyMailboxTrackingEvent({

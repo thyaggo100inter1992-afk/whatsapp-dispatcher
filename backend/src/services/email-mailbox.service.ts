@@ -234,33 +234,33 @@ export async function applyMailboxTrackingEvent(opts: {
   let row: any = null;
   if (customId > 0) {
     const r = await pool.query(
-      `SELECT id, status, tracking_status, opened_at, clicked_at, replied_at, direction
-       FROM email_mailbox_messages WHERE id=$1 LIMIT 1`,
+      `SELECT id, mailbox_id, tenant_id, status, tracking_status, opened_at, clicked_at, replied_at, direction
+       FROM email_mailbox_messages WHERE id=$1::int LIMIT 1`,
       [customId]
     );
     row = r.rows[0] || null;
   }
   if (!row && (messageId || baseMessageId)) {
-    const params: any[] = [messageId, baseMessageId, `${baseMessageId}%`];
-    let recipientClause = '';
-    if (recipient) {
-      params.push(recipient);
-      recipientClause = `AND (LOWER(to_email)=$${params.length} OR LOWER(to_email) LIKE '%' || $${params.length} || '%')`;
-    }
+    // Match SendGrid X-Message-Id (base) mesmo quando sg_message_id traz sufixo .recvd-...
     const r = await pool.query(
-      `SELECT id, status, tracking_status, opened_at, clicked_at, replied_at, direction
+      `SELECT id, mailbox_id, tenant_id, status, tracking_status, opened_at, clicked_at, replied_at, direction
        FROM email_mailbox_messages
        WHERE direction='outbound'
          AND provider_message_id IS NOT NULL
          AND (
-           provider_message_id=$1 OR provider_message_id=$2
-           OR provider_message_id LIKE $3
+           provider_message_id = $1
+           OR provider_message_id = $2
+           OR $1 LIKE provider_message_id || '.%'
            OR $1 LIKE provider_message_id || '%'
          )
-         ${recipientClause}
+         AND (
+           $3 = ''
+           OR LOWER(to_email) = $3
+           OR LOWER(to_email) LIKE '%' || $3 || '%'
+         )
        ORDER BY id DESC
        LIMIT 1`,
-      params
+      [messageId || baseMessageId, baseMessageId, recipient]
     );
     row = r.rows[0] || null;
   }
@@ -279,35 +279,57 @@ export async function applyMailboxTrackingEvent(opts: {
 
   const setOpened = eventType === 'open' || eventType === 'opened' || eventType === 'click' || eventType === 'clicked';
   const setClicked = eventType === 'click' || eventType === 'clicked';
-  const setDelivered = eventType === 'delivered';
+  // open/click implicam entrega na caixa do destinatário
+  const setDelivered = eventType === 'delivered' || setOpened || setClicked;
   const setBounced = ['bounce', 'bounced', 'dropped', 'failed', 'spamreport'].includes(eventType);
+  const eventAt =
+    opts.eventAt instanceof Date && !Number.isNaN(opts.eventAt.getTime())
+      ? opts.eventAt
+      : new Date();
+  const errMsg = opts.errorMessage ? String(opts.errorMessage).slice(0, 500) : null;
 
+  // Casts explícitos evitam "inconsistent types deduced for parameter $N" no Postgres
   await pool.query(
     `UPDATE email_mailbox_messages SET
-       tracking_status=$1,
-       status=CASE
-         WHEN $1 IN ('bounced','failed','complained') THEN $1
+       tracking_status = $1::varchar(30),
+       status = CASE
+         WHEN $1::text IN ('bounced','failed','complained') THEN $1::varchar(30)
          WHEN status IN ('draft','scheduled','pending','failed') THEN 'sent'
          ELSE status
        END,
-       delivered_at=CASE WHEN $2::boolean THEN COALESCE(delivered_at, COALESCE($6::timestamptz, NOW())) ELSE delivered_at END,
-       opened_at=CASE WHEN $3::boolean THEN COALESCE(opened_at, COALESCE($6::timestamptz, NOW())) ELSE opened_at END,
-       clicked_at=CASE WHEN $4::boolean THEN COALESCE(clicked_at, COALESCE($6::timestamptz, NOW())) ELSE clicked_at END,
-       bounced_at=CASE WHEN $5::boolean THEN COALESCE(bounced_at, COALESCE($6::timestamptz, NOW())) ELSE bounced_at END,
-       error_message=COALESCE($7, error_message),
-       updated_at=NOW()
-     WHERE id=$8`,
+       delivered_at = CASE WHEN $2::boolean THEN COALESCE(delivered_at, $6::timestamptz) ELSE delivered_at END,
+       opened_at    = CASE WHEN $3::boolean THEN COALESCE(opened_at, $6::timestamptz) ELSE opened_at END,
+       clicked_at   = CASE WHEN $4::boolean THEN COALESCE(clicked_at, $6::timestamptz) ELSE clicked_at END,
+       bounced_at   = CASE WHEN $5::boolean THEN COALESCE(bounced_at, $6::timestamptz) ELSE bounced_at END,
+       error_message = COALESCE($7::text, error_message),
+       updated_at = NOW()
+     WHERE id = $8::int`,
     [
       next,
-      setDelivered || setOpened || setClicked,
+      setDelivered,
       setOpened,
       setClicked,
       setBounced,
-      opts.eventAt || null,
-      opts.errorMessage || null,
-      row.id,
+      eventAt.toISOString(),
+      errMsg,
+      Number(row.id),
     ]
   );
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { io } = require('../server');
+    if (io) {
+      io.emit('mailbox:tracking', {
+        tenantId: row.tenant_id,
+        mailboxId: row.mailbox_id,
+        messageId: row.id,
+        tracking_status: next,
+      });
+    }
+  } catch {
+    /* socket opcional */
+  }
 
   return { updated: true, id: row.id, tracking_status: next };
 }
@@ -332,6 +354,7 @@ export async function markMailboxThreadReplied(opts: {
            tracking_status='replied',
            replied_at=COALESCE(replied_at, NOW()),
            opened_at=COALESCE(opened_at, NOW()),
+           delivered_at=COALESCE(delivered_at, NOW()),
            updated_at=NOW()
          WHERE mailbox_id=$1 AND tenant_id=$2 AND direction='outbound'
            AND (message_id=$3 OR message_id LIKE $4 OR provider_message_id=$3)
@@ -349,6 +372,7 @@ export async function markMailboxThreadReplied(opts: {
        tracking_status='replied',
        replied_at=COALESCE(replied_at, NOW()),
        opened_at=COALESCE(opened_at, NOW()),
+       delivered_at=COALESCE(delivered_at, NOW()),
        updated_at=NOW()
      WHERE id = (
        SELECT id FROM email_mailbox_messages

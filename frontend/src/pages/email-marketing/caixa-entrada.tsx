@@ -198,41 +198,97 @@ function trackingBadgeClass(status?: string | null) {
   if (s === 'replied') return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
   if (s === 'clicked') return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40';
   if (s === 'opened') return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
-  if (s === 'delivered' || s === 'sent') return 'bg-white/10 text-white/60 border-white/20';
+  if (s === 'delivered') return 'bg-sky-500/15 text-sky-300 border-sky-500/35';
+  if (s === 'sent') return 'bg-white/10 text-white/60 border-white/20';
   if (s === 'bounced' || s === 'failed' || s === 'complained') return 'bg-red-500/20 text-red-300 border-red-500/40';
   return 'bg-white/10 text-white/50 border-white/15';
 }
 
-/** Painel interno de webhook — só para o atendente */
+/** Inferência dos passos já atingidos (como no disparador WhatsApp/e-mail) */
+function trackingStepsReached(msg: MessageRow | MessageFull) {
+  const st = String(msg.tracking_status || msg.status || '').toLowerCase();
+  const sent = !!(msg.sent_at || st === 'sent' || ['delivered', 'opened', 'clicked', 'replied'].includes(st));
+  const delivered = !!(
+    msg.delivered_at ||
+    msg.opened_at ||
+    msg.clicked_at ||
+    msg.replied_at ||
+    ['delivered', 'opened', 'clicked', 'replied'].includes(st)
+  );
+  const opened = !!(msg.opened_at || msg.clicked_at || msg.replied_at || ['opened', 'clicked', 'replied'].includes(st));
+  const clicked = !!(msg.clicked_at || st === 'clicked');
+  const replied = !!(msg.replied_at || st === 'replied');
+  return [
+    { key: 'sent', label: 'Enviado', at: msg.sent_at, done: sent },
+    { key: 'delivered', label: 'Entregue', at: msg.delivered_at, done: delivered },
+    { key: 'opened', label: 'Abriu / Leu', at: msg.opened_at, done: opened },
+    { key: 'clicked', label: 'Clicou', at: msg.clicked_at, done: clicked },
+    { key: 'replied', label: 'Respondeu', at: msg.replied_at, done: replied },
+  ];
+}
+
+/** Chips compactos na lista — mostra TODOS os status já passados */
+function TrackingTrailBadges({ msg }: { msg: MessageRow | MessageFull }) {
+  if (msg.direction !== 'outbound') return null;
+  const steps = trackingStepsReached(msg).filter((s) => s.done);
+  if (!steps.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1 justify-end max-w-[220px]">
+      {steps.map((s) => (
+        <span
+          key={s.key}
+          title={s.at ? `${s.label}: ${formatFullDate(s.at)}` : s.label}
+          className={`text-[9px] leading-tight px-1.5 py-0.5 rounded border flex-shrink-0 ${trackingBadgeClass(s.key)}`}
+        >
+          {trackingLabel(s.key)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Painel interno de webhook — trilha completa com horário de cada etapa */
 function InternalTrackingPanel({ msg }: { msg: MessageRow | MessageFull }) {
   if (msg.direction !== 'outbound') return null;
   const status = msg.tracking_status || (msg.status === 'sent' || msg.sent_at ? 'sent' : msg.status);
   if (!status && !msg.sent_at) return null;
-  const steps = [
-    { key: 'sent', label: 'Enviado', at: msg.sent_at },
-    { key: 'delivered', label: 'Entregue', at: msg.delivered_at },
-    { key: 'opened', label: 'Abriu / Leu', at: msg.opened_at },
-    { key: 'clicked', label: 'Clicou', at: msg.clicked_at },
-    { key: 'replied', label: 'Respondeu', at: msg.replied_at },
-  ];
+  const steps = trackingStepsReached(msg);
   const failed = !!(msg.bounced_at || ['bounced', 'failed', 'complained'].includes(String(status)));
+  const current = trackingLabel(status) || 'Enviado';
   return (
     <div className="mx-4 mt-3 p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-sm">
-      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <p className="text-[11px] font-bold uppercase text-indigo-300 tracking-wide">
-          Controle interno (webhook) — não visível ao cliente
+          Status do envio (igual ao disparador)
         </p>
-        {trackingLabel(status) && (
-          <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${trackingBadgeClass(status)}`}>
-            {trackingLabel(status)}
-          </span>
-        )}
+        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${trackingBadgeClass(status)}`}>
+          Atual: {current}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {steps.map((s, i) => (
+          <div key={s.key} className="flex items-center gap-1.5">
+            {i > 0 && <span className={`text-[10px] ${s.done ? 'text-indigo-300' : 'text-white/20'}`}>→</span>}
+            <span
+              className={`text-[10px] px-2 py-1 rounded-lg border font-semibold ${
+                s.done ? trackingBadgeClass(s.key) : 'bg-black/20 text-white/25 border-white/10'
+              }`}
+            >
+              {s.done ? '✓ ' : ''}{s.label}
+            </span>
+          </div>
+        ))}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
         {steps.map((s) => (
-          <div key={s.key} className={`flex justify-between gap-2 px-2 py-1.5 rounded-lg ${s.at ? 'bg-emerald-500/10 text-emerald-200' : 'bg-black/20 text-white/35'}`}>
+          <div
+            key={s.key}
+            className={`flex justify-between gap-2 px-2 py-1.5 rounded-lg ${
+              s.done ? 'bg-emerald-500/10 text-emerald-200' : 'bg-black/20 text-white/35'
+            }`}
+          >
             <span>{s.label}</span>
-            <span className="font-mono text-right">{s.at ? formatFullDate(s.at) : '—'}</span>
+            <span className="font-mono text-right">{s.at ? formatFullDate(s.at) : s.done ? 'sim' : '—'}</span>
           </div>
         ))}
         {failed && (
@@ -431,6 +487,21 @@ export default function CaixaEntrada() {
       const r = await api.get(url, { params });
       const list: MessageRow[] = r.data.data || [];
       setMessages(list);
+      setSelected((prev) => {
+        if (!prev) return prev;
+        const fresh = list.find((m) => m.id === prev.id);
+        if (!fresh) return prev;
+        return {
+          ...prev,
+          tracking_status: fresh.tracking_status,
+          delivered_at: fresh.delivered_at,
+          opened_at: fresh.opened_at,
+          clicked_at: fresh.clicked_at,
+          replied_at: fresh.replied_at,
+          bounced_at: fresh.bounced_at,
+          status: fresh.status,
+        };
+      });
 
       if (opts?.silent && soundOn) {
         const unreadNow = list.filter((m) => !m.is_read && m.folder === 'inbox').length;
@@ -468,14 +539,14 @@ export default function CaixaEntrada() {
     loadMessages();
   }, [loadMessages]);
 
-  /* Polling 15s */
+  /* Polling 8s — status de webhook (entregue/abriu/clicou) atualiza na lista */
   useEffect(() => {
     const id = setInterval(() => {
       if (pollSkipRef.current || composing) return;
       loadMessages({ silent: true });
       loadStats();
       loadMailboxes();
-    }, 15000);
+    }, 8000);
     return () => clearInterval(id);
   }, [loadMessages, loadStats, loadMailboxes, composing]);
 
@@ -1353,11 +1424,7 @@ export default function CaixaEntrada() {
                               </p>
                               <div className="flex items-center gap-2 mt-0.5">
                                 <p className="text-xs text-white/35 truncate flex-1">{msg.preview}</p>
-                                {msg.direction === 'outbound' && trackingLabel(msg.tracking_status || (msg.sent_at ? 'sent' : null)) && (
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${trackingBadgeClass(msg.tracking_status || 'sent')}`}>
-                                    {trackingLabel(msg.tracking_status || 'sent')}
-                                  </span>
-                                )}
+                                <TrackingTrailBadges msg={msg} />
                               </div>
                             </button>
                           </div>
