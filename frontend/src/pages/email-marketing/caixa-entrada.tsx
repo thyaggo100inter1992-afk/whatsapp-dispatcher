@@ -751,14 +751,36 @@ export default function CaixaEntrada() {
     setConfirmSend(false);
     try {
       syncEditor();
-      await api.post(
-        `/email-marketing/mailboxes/${composeMailboxId}/send`,
-        buildFormData(asDraft, {
-          ...fields,
-          to_email: tos.join(', ') || fields.to_email,
-        }),
-        { headers: { 'Content-Type': 'multipart/form-data' } }
-      );
+      const html = editorRef.current?.innerHTML || compose.body_html;
+      const payloadBase = {
+        to_email: tos.join(', ') || fields.to_email,
+        to_name: fields.to_name || undefined,
+        subject: fields.subject,
+        body_html: html,
+        body_text: stripHtml(html),
+        cc: parseEmailList(fields.cc).join(', ') || undefined,
+        bcc: parseEmailList(fields.bcc).join(', ') || undefined,
+        save_as_draft: asDraft || undefined,
+        draft_id: compose.draft_id || undefined,
+        scheduled_at: compose.scheduled_at ? new Date(compose.scheduled_at).toISOString() : undefined,
+        request_read_receipt: compose.request_read_receipt || undefined,
+        append_signature: compose.append_signature,
+        reply_to_message_id: compose.reply_to_message_id || undefined,
+      };
+
+      if (compose.files.length > 0) {
+        // Com anexo → multipart (sem Content-Type manual)
+        await api.post(
+          `/email-marketing/mailboxes/${composeMailboxId}/send`,
+          buildFormData(asDraft, {
+            ...fields,
+            to_email: tos.join(', ') || fields.to_email,
+          })
+        );
+      } else {
+        // Sem anexo → JSON (evita erro multer "Unexpected end of form")
+        await api.post(`/email-marketing/mailboxes/${composeMailboxId}/send`, payloadBase);
+      }
       notification.success(
         asDraft ? 'Rascunho salvo' : compose.scheduled_at ? 'Agendado' : 'Enviado',
         asDraft ? 'Mensagem salva em Rascunhos' : `Para ${tos.join(', ') || fields.to_email}`

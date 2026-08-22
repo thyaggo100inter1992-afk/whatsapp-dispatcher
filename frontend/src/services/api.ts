@@ -38,10 +38,17 @@ api.interceptors.request.use(
     
     // ⚠️ IMPORTANTE: Definir Content-Type apenas se não for FormData
     // FormData precisa que o navegador defina o boundary automaticamente
-    if (!(config.data instanceof FormData)) {
+    if (config.data instanceof FormData) {
+      // Remover Content-Type manual (senão falta o boundary → 500 Unexpected end of form)
+      if (config.headers && typeof (config.headers as any).delete === 'function') {
+        (config.headers as any).delete('Content-Type');
+      } else if (config.headers) {
+        delete (config.headers as any)['Content-Type'];
+        delete (config.headers as any)['content-type'];
+      }
+    } else {
       config.headers['Content-Type'] = 'application/json';
     }
-    // Se for FormData, NÃO definir Content-Type (Axios define automaticamente com boundary)
     
     // Salvar timestamp para calcular duração da requisição
     config.metadata = { startTime: new Date().getTime() };

@@ -97,7 +97,18 @@ router.post('/mailboxes/:id/messages/:messageId/action', mailboxCtrl.messageActi
 router.get('/mailboxes/:id/messages/:messageId/thread', mailboxCtrl.getThread);
 router.get('/mailboxes/:id/messages/:messageId/eml', mailboxCtrl.downloadMessageEml);
 router.get('/mailboxes/:id/messages/:messageId/attachments.zip', mailboxCtrl.downloadAttachmentsZip);
-router.post('/mailboxes/:id/send', upload.array('attachments', 20), mailboxCtrl.sendMailboxMessage);
+router.post('/mailboxes/:id/send', (req, res, next) => {
+  upload.array('attachments', 20)(req, res, (err: any) => {
+    if (err) {
+      console.error('[mailbox-send] multer:', err.message || err);
+      return res.status(400).json({
+        success: false,
+        message: 'Falha ao processar anexos. Tente de novo sem arquivo ou com arquivo menor.',
+      });
+    }
+    next();
+  });
+}, mailboxCtrl.sendMailboxMessage);
 router.patch('/mailboxes/:id/messages/:messageId', mailboxCtrl.moveMailboxMessage);
 
 export default router;

@@ -241,6 +241,12 @@ export async function applyMailboxTrackingEvent(opts: {
     row = r.rows[0] || null;
   }
   if (!row && (messageId || baseMessageId)) {
+    const params: any[] = [messageId, baseMessageId, `${baseMessageId}%`];
+    let recipientClause = '';
+    if (recipient) {
+      params.push(recipient);
+      recipientClause = `AND (LOWER(to_email)=$${params.length} OR LOWER(to_email) LIKE '%' || $${params.length} || '%')`;
+    }
     const r = await pool.query(
       `SELECT id, status, tracking_status, opened_at, clicked_at, replied_at, direction
        FROM email_mailbox_messages
@@ -251,12 +257,10 @@ export async function applyMailboxTrackingEvent(opts: {
            OR provider_message_id LIKE $3
            OR $1 LIKE provider_message_id || '%'
          )
-         ${recipient ? "AND (LOWER(to_email)=$4 OR LOWER(to_email) LIKE '%' || $4 || '%')" : ''}
+         ${recipientClause}
        ORDER BY id DESC
        LIMIT 1`,
-      recipient
-        ? [messageId, baseMessageId, `${baseMessageId}%`, recipient]
-        : [messageId, baseMessageId, `${baseMessageId}%`]
+      params
     );
     row = r.rows[0] || null;
   }
