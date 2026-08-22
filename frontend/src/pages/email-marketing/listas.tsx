@@ -77,7 +77,9 @@ export default function Listas() {
       const formData = new FormData();
       formData.append('file', uploadFile);
       const r = await api.post(`/email-marketing/lists/${listId}/import`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      notification.success('Importação concluída!', `${r.data.imported} contatos importados de ${r.data.total}.`);
+      const dup = Number(r.data?.duplicates_removed || 0);
+      const extra = dup > 0 ? ` ${dup} duplicado(s) removido(s).` : '';
+      notification.success('Importação concluída!', `${r.data.imported} contatos importados de ${r.data.total}.${extra}`);
       loadLists();
     } catch (e: any) { notification.error('Erro na importação', e.response?.data?.message || e.message); }
     finally { setImporting(null); }
@@ -88,12 +90,19 @@ export default function Listas() {
     const lines = pasteText.split(/[\n;]/).map(l => l.trim()).filter(Boolean);
     if (lines.length === 0) { notification.warning('Atenção', 'Nenhum e-mail encontrado.'); return; }
     const csvLines = ['email;nome;cpf;telefone;var1;var2;var3;var4;var5'];
+    const seen = new Set<string>();
+    let duplicatesRemoved = 0;
     for (const line of lines) {
       if (/^email\b/i.test(line) && !line.includes('@')) continue;
       const parts = line.split(/[,;\t]/).map(p => p.trim());
       const emailIdx = parts.findIndex(p => p.includes('@'));
       if (emailIdx < 0) continue;
-      const email = parts[emailIdx];
+      const email = parts[emailIdx].toLowerCase();
+      if (seen.has(email)) {
+        duplicatesRemoved += 1;
+        continue;
+      }
+      seen.add(email);
       const others = parts.filter((_, i) => i !== emailIdx);
       const cols = [email, others[0] || '', others[1] || '', others[2] || '', others[3] || '', others[4] || '', others[5] || '', others[6] || '', others[7] || ''];
       csvLines.push(cols.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
@@ -106,7 +115,8 @@ export default function Listas() {
     formData.append('file', file);
     try {
       const r = await api.post(`/email-marketing/lists/${pasteListId}/import`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      notification.success('Importação concluída!', `${r.data.imported} contatos importados de ${r.data.total}.`);
+      const extra = duplicatesRemoved > 0 ? ` (${duplicatesRemoved} duplicado(s) removido(s) antes de importar)` : '';
+      notification.success('Importação concluída!', `${r.data.imported} contatos importados de ${r.data.total}.${extra}`);
       setShowPaste(false); setPasteText(''); loadLists();
     } catch (e: any) { notification.error('Erro na importação', e.response?.data?.message || e.message); }
     finally { setPasteImporting(false); }

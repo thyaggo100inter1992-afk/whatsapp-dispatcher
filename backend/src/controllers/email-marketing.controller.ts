@@ -649,8 +649,23 @@ export const importContacts = async (req: Request, res: Response) => {
         .on('error', reject);
     });
 
-    let inserted = 0;
+    // Remove e-mails clonados no próprio arquivo (mantém 1ª ocorrência)
+    const uniqueContacts: typeof contacts = [];
+    const seenEmail = new Set<string>();
+    let duplicatesRemoved = 0;
     for (const c of contacts) {
+      const email = String(c.email || '').toLowerCase();
+      if (!email.includes('@')) continue;
+      if (seenEmail.has(email)) {
+        duplicatesRemoved += 1;
+        continue;
+      }
+      seenEmail.add(email);
+      uniqueContacts.push({ ...c, email });
+    }
+
+    let inserted = 0;
+    for (const c of uniqueContacts) {
       try {
         const r = await pool.query(
           `INSERT INTO email_marketing_contacts (tenant_id, list_id, email, name, cpf, phone, var1, var2, var3, var4, var5)
@@ -677,7 +692,13 @@ export const importContacts = async (req: Request, res: Response) => {
 
     await pool.query(`UPDATE email_marketing_lists SET total_contacts=(SELECT COUNT(*) FROM email_marketing_contacts WHERE list_id=$1), updated_at=NOW() WHERE id=$1`, [list_id]);
 
-    res.json({ success: true, imported: inserted, total: contacts.length });
+    res.json({
+      success: true,
+      imported: inserted,
+      total: uniqueContacts.length,
+      duplicates_removed: duplicatesRemoved,
+      raw_total: contacts.length,
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

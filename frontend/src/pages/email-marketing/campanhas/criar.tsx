@@ -61,10 +61,13 @@ interface RecipientRow {
   var1: string; var2: string; var3: string; var4: string; var5: string;
 }
 
-/** Formato: email,nome,cpf,telefone,var1,var2,var3,var4,var5 (extras opcionais). Aceita ; ou tab. */
-function parseRecipientsText(text: string): RecipientRow[] {
+/** Formato: email,nome,cpf,telefone,var1,var2,var3,var4,var5 (extras opcionais). Aceita ; ou tab.
+ * Remove e-mails duplicados automaticamente (mantém a 1ª ocorrência). */
+function parseRecipientsText(text: string): { rows: RecipientRow[]; duplicatesRemoved: number; totalRaw: number } {
   const seen = new Set<string>();
   const out: RecipientRow[] = [];
+  let duplicatesRemoved = 0;
+  let totalRaw = 0;
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -72,8 +75,12 @@ function parseRecipientsText(text: string): RecipientRow[] {
     const parts = line.split(/[,;\t]/).map(p => p.trim());
     const emailIdx = parts.findIndex(p => p.includes('@'));
     if (emailIdx < 0) continue;
+    totalRaw += 1;
     const email = parts[emailIdx].toLowerCase();
-    if (seen.has(email)) continue;
+    if (seen.has(email)) {
+      duplicatesRemoved += 1;
+      continue;
+    }
     seen.add(email);
     const others = parts.filter((_, i) => i !== emailIdx);
     out.push({
@@ -88,7 +95,37 @@ function parseRecipientsText(text: string): RecipientRow[] {
       var5: others[7] || '',
     });
   }
-  return out;
+  return { rows: out, duplicatesRemoved, totalRaw };
+}
+
+/** Serializa destinatários de volta para texto (após dedupe) */
+function recipientsToText(rows: RecipientRow[]): string {
+  return rows.map(r =>
+    [r.email, r.name, r.cpf, r.phone, r.var1, r.var2, r.var3, r.var4, r.var5]
+      .map(c => String(c || '').trim())
+      .join(',')
+  ).join('\n');
+}
+
+/** Deduplica lista manual — mantém a 1ª ocorrência de cada e-mail */
+function dedupeManualRecipients(rows: RecipientRow[]): { rows: RecipientRow[]; duplicatesRemoved: number } {
+  const seen = new Set<string>();
+  const out: RecipientRow[] = [];
+  let duplicatesRemoved = 0;
+  for (const r of rows) {
+    const email = String(r.email || '').trim().toLowerCase();
+    if (!email.includes('@')) {
+      out.push(r); // linhas vazias / incompletas mantidas
+      continue;
+    }
+    if (seen.has(email)) {
+      duplicatesRemoved += 1;
+      continue;
+    }
+    seen.add(email);
+    out.push({ ...r, email });
+  }
+  return { rows: out.length ? out : [{ email: '', name: '', cpf: '', phone: '', var1: '', var2: '', var3: '', var4: '', var5: '' }], duplicatesRemoved };
 }
 
 export default function CriarCampanha() {
@@ -234,8 +271,17 @@ export default function CriarCampanha() {
       const lines = text.split(/\r?\n/).filter(Boolean);
       const dataLines = lines[0]?.toLowerCase().includes('email') && !lines[0].includes('@')
         ? lines.slice(1) : lines;
-      setRecipientPasteText(dataLines.join('\n'));
+      const parsed = parseRecipientsText(dataLines.join('\n'));
+      setRecipientPasteText(recipientsToText(parsed.rows));
       setRecipientSource('paste');
+      if (parsed.duplicatesRemoved > 0) {
+        notification.success(
+          'Duplicados removidos',
+          `${parsed.duplicatesRemoved} e-mail(s) repetido(s) excluído(s). Restaram ${parsed.rows.length} único(s).`
+        );
+      } else {
+        notification.success('Arquivo carregado', `${parsed.rows.length} destinatário(s) válido(s).`);
+      }
     } catch (e: any) {
       notification.error('Erro ao ler arquivo', e.message || 'Não foi possível ler o arquivo');
     }
@@ -309,21 +355,27 @@ export default function CriarCampanha() {
 
   const selectedList = lists.find(l => l.id === parseInt(listId));
 
+  const pastedParse = recipientSource === 'paste' || recipientSource === 'csv'
+    ? parseRecipientsText(recipientPasteText)
+    : { rows: [] as RecipientRow[], duplicatesRemoved: 0, totalRaw: 0 };
+
   const finalRecipients: RecipientRow[] = recipientSource === 'list'
     ? []
     : recipientSource === 'manual'
-      ? manualRecipients.filter(r => r.email.includes('@')).map(r => ({
-          email: r.email.trim().toLowerCase(),
-          name: r.name.trim(),
-          cpf: r.cpf.trim(),
-          phone: r.phone.trim(),
-          var1: r.var1.trim(),
-          var2: r.var2.trim(),
-          var3: r.var3.trim(),
-          var4: r.var4.trim(),
-          var5: r.var5.trim(),
-        }))
-      : parseRecipientsText(recipientPasteText);
+      ? dedupeManualRecipients(
+          manualRecipients.filter(r => r.email.includes('@')).map(r => ({
+            email: r.email.trim().toLowerCase(),
+            name: r.name.trim(),
+            cpf: r.cpf.trim(),
+            phone: r.phone.trim(),
+            var1: r.var1.trim(),
+            var2: r.var2.trim(),
+            var3: r.var3.trim(),
+            var4: r.var4.trim(),
+            var5: r.var5.trim(),
+          }))
+        ).rows.filter(r => r.email.includes('@'))
+      : pastedParse.rows;
 
   const recipientCount = recipientSource === 'list'
     ? (selectedList?.total_contacts ?? 0)
@@ -342,6 +394,52 @@ export default function CriarCampanha() {
   const removeRecipient = (i: number) => setManualRecipients(r => r.filter((_, idx) => idx !== i));
   const updateRecipient = (i: number, field: keyof RecipientRow, val: string) =>
     setManualRecipients(r => r.map((x, idx) => idx === i ? { ...x, [field]: val } : x));
+
+  /** Ao sair do campo e-mail: remove clones automaticamente */
+  const handleManualEmailBlur = (i: number) => {
+    setManualRecipients(prev => {
+      const email = String(prev[i]?.email || '').trim().toLowerCase();
+      if (!email.includes('@')) return prev;
+
+      const firstIdx = prev.findIndex(r => r.email.trim().toLowerCase() === email);
+      // Se esta linha é clone de outra anterior → remove esta linha
+      if (firstIdx >= 0 && firstIdx < i) {
+        notification.success('E-mail duplicado removido', `${email} já estava na lista.`);
+        const next = prev.filter((_, idx) => idx !== i);
+        return next.length ? next : [{ email: '', name: '', cpf: '', phone: '', var1: '', var2: '', var3: '', var4: '', var5: '' }];
+      }
+
+      // Remove clones posteriores do mesmo e-mail
+      let removed = 0;
+      const next = prev.filter((r, idx) => {
+        if (idx === firstIdx) return true;
+        if (r.email.trim().toLowerCase() === email) {
+          removed += 1;
+          return false;
+        }
+        return true;
+      }).map((r, idx) => (idx === firstIdx ? { ...r, email } : r));
+
+      if (removed > 0) {
+        notification.success(
+          'Duplicados removidos',
+          `${removed} contato(s) com o mesmo e-mail (${email}) foram excluídos.`
+        );
+      }
+      return next.length ? next : [{ email: '', name: '', cpf: '', phone: '', var1: '', var2: '', var3: '', var4: '', var5: '' }];
+    });
+  };
+
+  /** Ao colar/editar texto: limpa duplicados quando sai do campo */
+  const handlePasteBlur = () => {
+    const parsed = parseRecipientsText(recipientPasteText);
+    if (parsed.duplicatesRemoved <= 0) return;
+    setRecipientPasteText(recipientsToText(parsed.rows));
+    notification.success(
+      'Duplicados removidos',
+      `${parsed.duplicatesRemoved} e-mail(s) repetido(s) excluído(s). Restaram ${parsed.rows.length} único(s).`
+    );
+  };
 
   const handleSave = async () => {
     const errs: string[] = [];
@@ -848,7 +946,9 @@ export default function CriarCampanha() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className={labelCls}>E-mail *</label>
-                        <input value={r.email} onChange={e => updateRecipient(i, 'email', e.target.value)}
+                        <input value={r.email}
+                          onChange={e => updateRecipient(i, 'email', e.target.value)}
+                          onBlur={() => handleManualEmailBlur(i)}
                           placeholder="cliente@email.com" className={inputCls} />
                       </div>
                       <div>
@@ -886,7 +986,7 @@ export default function CriarCampanha() {
                   className="w-full py-4 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border-2 border-dashed border-orange-500/40 rounded-xl text-base font-bold flex items-center justify-center gap-2">
                   <FaPlus /> Adicionar contato
                 </button>
-                <p className="text-sm text-green-400 font-bold">{finalRecipients.length} destinatário(s) válido(s)</p>
+                <p className="text-sm text-green-400 font-bold">{finalRecipients.length} destinatário(s) válido(s) — e-mails duplicados são excluídos automaticamente</p>
               </div>
             )}
 
@@ -895,6 +995,7 @@ export default function CriarCampanha() {
                 <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300 space-y-2">
                   <p><strong>Modelo Excel:</strong> colunas email | nome | cpf | telefone | var1…var5 (todas opcionais exceto e-mail). Aceita <strong>.xlsx</strong> ou CSV.</p>
                   <p className="text-xs text-blue-200/80">No texto do e-mail use: {'{{nome}}'} {'{{cpf}}'} {'{{telefone}}'} {'{{var1}}'}…{'{{var5}}'} · sistema: {'{{saudacao}}'} {'{{hora}}'} {'{{data}}'} {'{{protocolo}}'}</p>
+                  <p className="text-xs text-green-300/90 font-bold">E-mails iguais (clonados) são removidos automaticamente — só entra 1 de cada.</p>
                 </div>
                 {recipientSource === 'csv' && (
                   <div className="flex flex-wrap gap-3">
@@ -911,11 +1012,17 @@ export default function CriarCampanha() {
                 <textarea
                   value={recipientPasteText}
                   onChange={e => setRecipientPasteText(e.target.value)}
+                  onBlur={handlePasteBlur}
                   placeholder="email,nome,cpf,telefone"
                   rows={10}
                   className="w-full px-5 py-4 text-sm bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-orange-500 font-mono resize-y"
                 />
-                <p className="text-sm text-green-400 font-bold">{finalRecipients.length} destinatário(s) válido(s)</p>
+                <p className="text-sm text-green-400 font-bold">
+                  {finalRecipients.length} destinatário(s) único(s)
+                  {pastedParse.duplicatesRemoved > 0
+                    ? ` · ${pastedParse.duplicatesRemoved} duplicado(s) ignorado(s)`
+                    : ''}
+                </p>
               </div>
             )}
           </div>
