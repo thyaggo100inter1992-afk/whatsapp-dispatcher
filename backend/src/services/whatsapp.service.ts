@@ -921,7 +921,10 @@ export class WhatsAppService {
       });
 
       const fileBuffer = Buffer.from(imageResponse.data);
-      const mimeType = imageResponse.headers['content-type'] || 'image/jpeg';
+      const contentType = imageResponse.headers['content-type'];
+      const mimeType = typeof contentType === 'string' && contentType
+        ? contentType
+        : 'image/jpeg';
       const fileName = imageUrl.split('/').pop() || 'image.jpg';
 
       console.log(`✅ Imagem baixada com sucesso!`);
