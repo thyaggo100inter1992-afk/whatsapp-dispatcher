@@ -283,11 +283,10 @@ export async function forwardClientReplyToAttendant(opts: {
   const ficha = buildFichaEmail(ctx, opts.clientSubject, opts.clientText, opts.clientHtml);
 
   // 1) Conversa — só a mensagem do cliente (sem texto de sistema). Reply-To = cliente.
-  //    fromName = nome do cliente para a citação no Gmail não parecer "sistema".
   await sendMarketingEmail({
     domain: ctx.domain,
     fromEmail: ctx.fromEmail,
-    fromName: ctx.clientName || ctx.clientEmail || 'Cliente',
+    fromName: 'NETTSISTEMAS',
     toEmail: ctx.attendantEmail,
     toName: null,
     replyTo: ctx.clientEmail || opts.clientFromEmail,
@@ -300,7 +299,7 @@ export async function forwardClientReplyToAttendant(opts: {
   await sendMarketingEmail({
     domain: ctx.domain,
     fromEmail: ctx.fromEmail,
-    fromName: `${ctx.fromName} (ficha)`,
+    fromName: 'NETTSISTEMAS',
     toEmail: ctx.attendantEmail,
     toName: null,
     replyTo: ctx.attendantEmail,
