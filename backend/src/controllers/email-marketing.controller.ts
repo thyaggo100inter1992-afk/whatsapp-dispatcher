@@ -2147,9 +2147,15 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
       const newStatus = statusMap[eventType];
       if (!newStatus) continue;
 
-      const messageId = String(ev?.sg_message_id || ev?.['smtp-id'] || '').replace(/^<|>$/g, '').trim();
-      const recipient = String(ev?.email || '').trim();
+      // SendGrid: X-Message-Id no envio = "abc123"
+      // no webhook sg_message_id = "abc123.filter0001.xxx.yyy" — precisa casar pelo prefixo
+      const rawMessageId = String(ev?.sg_message_id || ev?.['smtp-id'] || '').replace(/^<|>$/g, '').trim();
+      const messageId = rawMessageId;
+      const baseMessageId = rawMessageId.split('.')[0] || rawMessageId;
+      const recipient = String(ev?.email || '').trim().toLowerCase();
       if (!messageId || !recipient) continue;
+
+      console.log(`[webhook-sendgrid] event=${eventType} email=${recipient} msg=${messageId} base=${baseMessageId}`);
 
       const deliveryError =
         eventType === 'bounce' || eventType === 'dropped'
@@ -2160,9 +2166,15 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
       const current = await pool.query(
         `SELECT id, campaign_id, status, opened_at, clicked_at
          FROM email_marketing_recipients
-         WHERE email=$2 AND (provider_message_id=$1 OR mailgun_message_id=$1 OR provider_message_id LIKE $3 OR mailgun_message_id LIKE $3)
+         WHERE LOWER(email)=$2
+           AND (
+             provider_message_id=$1 OR mailgun_message_id=$1
+             OR provider_message_id=$3 OR mailgun_message_id=$3
+             OR provider_message_id LIKE $4 OR mailgun_message_id LIKE $4
+             OR $1 LIKE provider_message_id || '%' OR $1 LIKE mailgun_message_id || '%'
+           )
          LIMIT 1`,
-        [messageId, recipient, `${messageId}%`]
+        [messageId, recipient, baseMessageId, `${baseMessageId}%`]
       );
 
       if (current.rows[0]) {
@@ -2215,11 +2227,13 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
                clicked_at=CASE WHEN $3='click' THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
                updated_at=NOW()
            WHERE mailgun_message_id=$4 OR provider_message_id=$4
-              OR mailgun_message_id LIKE $5 OR provider_message_id LIKE $5`,
-          [newStatus, deliveryError, eventType, messageId, `${messageId}%`]
+              OR mailgun_message_id=$5 OR provider_message_id=$5
+              OR mailgun_message_id LIKE $6 OR provider_message_id LIKE $6
+              OR $4 LIKE mailgun_message_id || '%' OR $4 LIKE provider_message_id || '%'`,
+          [newStatus, deliveryError, eventType, messageId, baseMessageId, `${baseMessageId}%`]
         );
       } else {
-        await pool.query(
+        const upd = await pool.query(
           `UPDATE email_marketing_single_sends
            SET status=CASE
                  WHEN $1='opened' AND (clicked_at IS NOT NULL OR status='clicked') THEN 'clicked'
@@ -2231,9 +2245,17 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
                clicked_at=CASE WHEN $2='click' THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
                updated_at=NOW()
            WHERE mailgun_message_id=$3 OR provider_message_id=$3
-              OR mailgun_message_id LIKE $4 OR provider_message_id LIKE $4`,
-          [newStatus, eventType, messageId, `${messageId}%`]
+              OR mailgun_message_id=$4 OR provider_message_id=$4
+              OR mailgun_message_id LIKE $5 OR provider_message_id LIKE $5
+              OR $3 LIKE mailgun_message_id || '%' OR $3 LIKE provider_message_id || '%'
+           RETURNING id, status`,
+          [newStatus, eventType, messageId, baseMessageId, `${baseMessageId}%`]
         );
+        if (!upd.rowCount && !current.rows[0]) {
+          console.warn(`[webhook-sendgrid] sem match para msg=${messageId} email=${recipient}`);
+        } else if (upd.rowCount) {
+          console.log(`[webhook-sendgrid] single_send atualizado id=${upd.rows[0].id} -> ${upd.rows[0].status}`);
+        }
       }
     }
 
