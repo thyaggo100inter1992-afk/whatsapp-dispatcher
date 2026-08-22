@@ -43,7 +43,7 @@ function row(label: string, value: string | null | undefined): string {
   </tr>`;
 }
 
-export function buildAttendantReplyHtml(opts: {
+function buildConversationEmail(opts: {
   ctx: ClientReplyContext;
   clientSubject: string;
   clientText: string;
@@ -54,6 +54,46 @@ export function buildAttendantReplyHtml(opts: {
   const subject = subjectBase.toLowerCase().startsWith('re:')
     ? subjectBase
     : `Re: ${subjectBase}`;
+
+  const clientBody = clientHtml && /<\s*(p|div|br|table|html|body)\b/i.test(clientHtml)
+    ? clientHtml
+    : `<pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;color:#1e293b;margin:0;">${esc(clientText || '(sem conteúdo)')}</pre>`;
+
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif;">
+  <div style="max-width:640px;margin:0 auto;padding:20px;">
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+      <div style="background:#0f766e;color:#fff;padding:12px 16px;font-size:13px;font-weight:700;">
+        Resposta do cliente — use este e-mail para responder
+      </div>
+      <div style="padding:16px;">
+        <p style="margin:0 0 12px;font-size:12px;color:#64748b;">
+          A ficha (CPF, telefone, etc.) chegou em um <strong>segundo e-mail separado</strong> com assunto começando em [FICHA].
+          Responda <strong>somente este</strong> para o cliente não receber dados internos.
+        </p>
+        <div style="font-size:12px;color:#64748b;margin-bottom:8px;">Mensagem do cliente:</div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;background:#fafafa;">
+          ${clientBody}
+        </div>
+      </div>
+    </div>
+  </div>
+</body></html>`;
+
+  const text = [
+    'Use ESTE e-mail para responder ao cliente.',
+    'A ficha interna veio em outro e-mail com assunto [FICHA].',
+    '',
+    '--- Mensagem do cliente ---',
+    clientText || '(sem conteúdo)',
+  ].join('\n');
+
+  return { subject, html, text };
+}
+
+function buildFichaEmail(ctx: ClientReplyContext, clientSubject: string): { subject: string; html: string; text: string } {
+  const who = ctx.clientName || ctx.clientEmail;
+  const subjectBase = clientSubject || ctx.originalSubject || '';
+  const subject = `[FICHA INTERNA] ${who}${subjectBase ? ` — ${subjectBase.replace(/^re:\s*/i, '')}` : ''}`;
 
   const ficheRows = [
     row('Nome', ctx.clientName),
@@ -68,44 +108,28 @@ export function buildAttendantReplyHtml(opts: {
     row('Var5', ctx.var5),
   ].filter(Boolean).join('');
 
-  const clientBody = clientHtml && /<\s*(p|div|br|table|html|body)\b/i.test(clientHtml)
-    ? clientHtml
-    : `<pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;color:#1e293b;margin:0;">${esc(clientText || '(sem conteúdo)')}</pre>`;
-
-  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif;">
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#fffbeb;font-family:Segoe UI,Arial,sans-serif;">
   <div style="max-width:640px;margin:0 auto;padding:20px;">
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
-      <div style="background:#0f766e;color:#fff;padding:12px 16px;font-size:13px;font-weight:700;">
-        Resposta do cliente — use &quot;Responder&quot; para falar com o cliente
+    <div style="background:#fff;border:2px solid #f59e0b;border-radius:12px;overflow:hidden;">
+      <div style="background:#b45309;color:#fff;padding:12px 16px;font-size:13px;font-weight:700;">
+        FICHA INTERNA — NÃO responda este e-mail ao cliente
       </div>
       <div style="padding:16px;">
-        <div style="font-size:12px;color:#64748b;margin-bottom:8px;">Mensagem do cliente:</div>
-        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;background:#fafafa;">
-          ${clientBody}
-        </div>
-      </div>
-      <div style="border-top:2px dashed #cbd5e1;margin:0 16px;"></div>
-      <div style="padding:16px;">
-        <div style="font-size:11px;color:#b45309;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em;">
-          Dados do cliente (uso interno — não enviar ao cliente)
-        </div>
+        <p style="margin:0 0 12px;font-size:12px;color:#92400e;">
+          Use o outro e-mail da conversa (sem [FICHA] no assunto) para responder o cliente.
+        </p>
         <table style="width:100%;border-collapse:collapse;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;">
           ${ficheRows || '<tr><td style="padding:10px;color:#78716c;font-size:12px;">Sem dados extras cadastrados.</td></tr>'}
         </table>
-        <p style="margin:12px 0 0;font-size:11px;color:#94a3b8;">
-          Ao clicar em Responder, a mensagem vai para <strong>${esc(ctx.clientEmail)}</strong>.
-          Apague o bloco amarelo acima se o seu cliente de e-mail incluir a citação.
-        </p>
       </div>
     </div>
   </div>
 </body></html>`;
 
-  const textLines = [
-    '--- Mensagem do cliente ---',
-    clientText || '(sem conteúdo)',
+  const text = [
+    'FICHA INTERNA — NÃO responda este e-mail ao cliente.',
+    'Responda pelo outro e-mail da conversa (sem [FICHA] no assunto).',
     '',
-    '========== DADOS DO CLIENTE (USO INTERNO — NÃO ENVIAR AO CLIENTE) ==========',
     ctx.clientName ? `Nome: ${ctx.clientName}` : '',
     `E-mail: ${ctx.clientEmail}`,
     ctx.cpf ? `CPF: ${ctx.cpf}` : '',
@@ -116,11 +140,19 @@ export function buildAttendantReplyHtml(opts: {
     ctx.var3 ? `Var3: ${ctx.var3}` : '',
     ctx.var4 ? `Var4: ${ctx.var4}` : '',
     ctx.var5 ? `Var5: ${ctx.var5}` : '',
-    '=======================================================================',
-    `Responder vai para: ${ctx.clientEmail}`,
-  ].filter(l => l !== '');
+  ].filter(l => l !== '').join('\n');
 
-  return { subject, html, text: textLines.join('\n') };
+  return { subject, html, text };
+}
+
+/** @deprecated mantido por compat — preferir os dois e-mails separados */
+export function buildAttendantReplyHtml(opts: {
+  ctx: ClientReplyContext;
+  clientSubject: string;
+  clientText: string;
+  clientHtml: string;
+}): { subject: string; html: string; text: string } {
+  return buildConversationEmail(opts);
 }
 
 export async function loadReplyContext(kind: ReplyTokenKind, id: number): Promise<ClientReplyContext | null> {
@@ -221,29 +253,42 @@ export async function forwardClientReplyToAttendant(opts: {
   if (!ctx) return { ok: false, reason: 'envio/destinatário não encontrado' };
   if (!ctx.attendantEmail) return { ok: false, reason: 'sem e-mail de retorno (Reply-To) na campanha' };
 
-  // Se o cliente respondeu de outro endereço, ainda priorizamos o e-mail cadastrado para Reply-To do atendente
-  const built = buildAttendantReplyHtml({
+  const conversation = buildConversationEmail({
     ctx,
     clientSubject: opts.clientSubject,
     clientText: opts.clientText,
     clientHtml: opts.clientHtml,
   });
+  const ficha = buildFichaEmail(ctx, opts.clientSubject);
 
+  // 1) Conversa — Reply-To = cliente (atendente responde por AQUI)
   await sendMarketingEmail({
     domain: ctx.domain,
     fromEmail: ctx.fromEmail,
     fromName: `${ctx.fromName} (resposta)`,
     toEmail: ctx.attendantEmail,
     toName: null,
-    // Crítico: ao responder, o atendente fala com o CLIENTE — não com o parse
     replyTo: ctx.clientEmail || opts.clientFromEmail,
-    subject: built.subject,
-    html: built.html,
-    text: built.text,
+    subject: conversation.subject,
+    html: conversation.html,
+    text: conversation.text,
+  });
+
+  // 2) Ficha — e-mail separado; Reply-To = atendente (não o cliente)
+  await sendMarketingEmail({
+    domain: ctx.domain,
+    fromEmail: ctx.fromEmail,
+    fromName: `${ctx.fromName} (ficha)`,
+    toEmail: ctx.attendantEmail,
+    toName: null,
+    replyTo: ctx.attendantEmail,
+    subject: ficha.subject,
+    html: ficha.html,
+    text: ficha.text,
   });
 
   console.log(
-    `[inbound-reply] encaminhado ao atendente ${ctx.attendantEmail} | cliente=${ctx.clientEmail} | ${opts.kind}-${opts.id}`
+    `[inbound-reply] 2 e-mails ao atendente ${ctx.attendantEmail} | cliente=${ctx.clientEmail} | ${opts.kind}-${opts.id}`
   );
   return { ok: true };
 }
