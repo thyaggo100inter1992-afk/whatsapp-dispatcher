@@ -297,11 +297,16 @@ export default function Dominios() {
             {/* Webhook URL */}
             {(() => {
               const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '');
-              const webhookUrl = `${apiBase}/api/webhook/mailgun`;
+              const provider = showDns.provider || 'mailgun';
+              const webhookPath = provider === 'sendgrid' ? '/api/webhook/sendgrid' : '/api/webhook/mailgun';
+              const webhookUrl = `${apiBase}${webhookPath}`;
               return (
                 <div className="mt-5 bg-indigo-900/20 border border-indigo-500/30 rounded-xl p-4">
                   <p className="text-indigo-300 font-bold text-sm mb-1 flex items-center gap-2">🔗 URL de Rastreamento (Webhook)</p>
-                  <p className="text-gray-400 text-xs mb-3">Configure esta URL no painel do seu provedor de e-mail (seção <strong className="text-gray-300">Webhooks</strong>) para rastrear aberturas, cliques e devoluções em tempo real.</p>
+                  <p className="text-gray-400 text-xs mb-3">
+                    Provedor: <strong className="text-gray-300">{provider === 'sendgrid' ? 'SendGrid' : 'Mailgun'}</strong>.
+                    Configure esta URL na seção <strong className="text-gray-300">Webhooks</strong> para rastrear aberturas, cliques e devoluções.
+                  </p>
                   <div className="flex items-center gap-2 bg-black/40 rounded-lg px-3 py-2 border border-white/10">
                     <code className="text-indigo-300 text-xs flex-1 break-all">{webhookUrl}</code>
                     <button onClick={() => copyToClipboard(webhookUrl)} className="flex-shrink-0 px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/40 border border-indigo-500/40 rounded-lg text-indigo-300 text-xs font-bold flex items-center gap-1">
