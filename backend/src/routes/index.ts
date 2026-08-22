@@ -307,6 +307,12 @@ console.log('✅ Webhook público SendGrid registrado em /webhook/sendgrid');
 router.post('/webhook/sendgrid-inbound', inboundUpload.any(), sendgridInboundParse);
 console.log('✅ Inbound Parse SendGrid registrado em /webhook/sendgrid-inbound');
 
+// Cancelamento de inscrição (público — link no rodapé de todos os e-mails)
+const { publicEmailUnsubscribe } = require('../controllers/email-marketing.controller');
+router.get('/public/email-unsubscribe', publicEmailUnsubscribe);
+router.post('/public/email-unsubscribe', publicEmailUnsubscribe);
+console.log('✅ Unsubscribe público registrado em /public/email-unsubscribe');
+
 const adminLandingRoutes = require('./admin/landing.routes');
 router.use('/admin/landing', authenticate, requireSuperAdmin, adminLandingRoutes);
 console.log('✅ Rota /admin/landing registrada (apenas super_admin)');

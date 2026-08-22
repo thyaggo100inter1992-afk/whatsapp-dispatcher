@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import {
   FaEnvelope, FaPaperPlane, FaRocket, FaSync, FaBullhorn, FaList,
-  FaFileAlt, FaGlobe, FaHistory, FaExclamationTriangle, FaChartPie,
+  FaFileAlt, FaGlobe, FaHistory, FaExclamationTriangle, FaChartPie, FaBan,
 } from 'react-icons/fa';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import api from '@/services/api';
@@ -199,8 +199,8 @@ export default function EmailMarketingDashboard() {
               </button>
             </div>
 
-            {/* 6 CARDS MENORES — mesmo grid do menu Oficial */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {/* Atalhos — grid 7 itens */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
 
               <button
                 onClick={() => router.push('/email-marketing/campanhas')}
@@ -242,6 +242,19 @@ export default function EmailMarketingDashboard() {
                   <p className="text-sm text-white/70 text-center">
                     {loading ? '…' : `${stats.total_contacts.toLocaleString('pt-BR')} contatos`}
                   </p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => router.push('/email-marketing/listas-restricao')}
+                className="group relative overflow-hidden bg-gradient-to-br from-rose-500/20 to-rose-600/10 hover:from-rose-500/30 hover:to-rose-600/20 border-2 border-rose-500/40 hover:border-rose-500/60 rounded-2xl p-6 text-left transition-all duration-300 hover:scale-105 shadow-lg"
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <div className="bg-rose-500/20 p-4 rounded-xl">
+                    <FaBan className="text-4xl text-rose-300" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white text-center">Restrição</h3>
+                  <p className="text-sm text-white/70 text-center">Opt-out / cancelados</p>
                 </div>
               </button>
 

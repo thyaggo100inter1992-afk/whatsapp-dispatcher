@@ -881,6 +881,7 @@ export const createCampaign = async (req: Request, res: Response) => {
       scheduled_at,
       work_start_time, work_end_time,
       pause_after, pause_duration_minutes,
+      ignore_email_restrictions,
     } = req.body;
 
     const requestedDomainIds: number[] = Array.isArray(domain_ids) && domain_ids.length > 0
@@ -992,6 +993,7 @@ export const createCampaign = async (req: Request, res: Response) => {
 
     // Define status inicial: se agendado para o futuro -> 'scheduled', senão -> 'draft'
     const initStatus = scheduled_at && new Date(scheduled_at) > new Date() ? 'scheduled' : 'draft';
+    const ignoreRestrictions = !!ignore_email_restrictions;
 
     let result;
     try {
@@ -1005,7 +1007,7 @@ export const createCampaign = async (req: Request, res: Response) => {
          delay_seconds, delay_seconds_min, delay_seconds_max,
          scheduled_at, work_start_time, work_end_time,
          pause_after, pause_duration_minutes,
-         status, total_contacts
+         status, total_contacts, ignore_email_restrictions
        ) VALUES (
          $1,$2,
          $3,$4,$5,
@@ -1015,7 +1017,7 @@ export const createCampaign = async (req: Request, res: Response) => {
          $15,$16,$17,
          $18,$19,$20,
          $21,$22,
-         $23,$24
+         $23,$24,$25
        ) RETURNING *`,
       [
         tenantId, name,
@@ -1029,10 +1031,44 @@ export const createCampaign = async (req: Request, res: Response) => {
         pause_after || 0, pause_duration_minutes || 30,
         initStatus,
         uniqueInline.length,
+        ignoreRestrictions,
       ]
       );
     } catch (insertErr: any) {
-      if (!/domain_ids/i.test(String(insertErr?.message || ''))) throw insertErr;
+      const msg = String(insertErr?.message || '');
+      if (/ignore_email_restrictions/i.test(msg)) {
+        // Coluna ainda não migrada — cria sem o flag
+        result = await pool.query(
+          `INSERT INTO email_marketing_campaigns (
+             tenant_id, name,
+             subject, from_name, from_email,
+             from_senders, subjects,
+             reply_to, domain_id, domain_ids, list_id, template_id,
+             body_html, body_text,
+             delay_seconds, delay_seconds_min, delay_seconds_max,
+             scheduled_at, work_start_time, work_end_time,
+             pause_after, pause_duration_minutes,
+             status, total_contacts
+           ) VALUES (
+             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+           ) RETURNING *`,
+          [
+            tenantId, name,
+            subjectsArr[0], sendersArr[0].from_name, sendersArr[0].from_email,
+            JSON.stringify(sendersArr), JSON.stringify(subjectsArr),
+            reply_to || null, primaryDomainId, JSON.stringify(orderedDomains.map(d => d.id)),
+            hasList ? list_id : null, template_id || null,
+            body_html || null, body_text || null,
+            delay_seconds_min || 1, delay_seconds_min || 1, delay_seconds_max || 3,
+            scheduled_at || null, work_start_time || '08:00', work_end_time || '20:00',
+            pause_after || 0, pause_duration_minutes || 30,
+            initStatus,
+            uniqueInline.length,
+          ]
+        );
+      } else if (!/domain_ids/i.test(msg)) {
+        throw insertErr;
+      } else {
       result = await pool.query(
         `INSERT INTO email_marketing_campaigns (
            tenant_id, name,
@@ -1060,6 +1096,7 @@ export const createCampaign = async (req: Request, res: Response) => {
           uniqueInline.length,
         ]
       );
+      }
     }
 
     const campaignId = result.rows[0].id;
@@ -1504,7 +1541,7 @@ export const sendSingle = async (req: Request, res: Response) => {
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
-    const { to_email, to_name, from_name, from_email, reply_to, subject, body_html, body_text, domain_id } = req.body;
+    const { to_email, to_name, from_name, from_email, reply_to, subject, body_html, body_text, domain_id, ignore_email_restrictions } = req.body;
     if (!to_email || !from_email || !subject) {
       return res.status(400).json({ success: false, message: 'Destinatário, remetente e assunto obrigatórios' });
     }
@@ -1513,6 +1550,29 @@ export const sendSingle = async (req: Request, res: Response) => {
     }
     if (!from_name || !String(from_name).trim()) {
       return res.status(400).json({ success: false, message: 'Nome do remetente obrigatório' });
+    }
+
+    const toNorm = String(to_email).trim().toLowerCase();
+    if (!ignore_email_restrictions) {
+      try {
+        const rest = await pool.query(
+          `SELECT id, reason, source, created_at FROM email_marketing_restrictions
+           WHERE tenant_id=$1 AND lower(email)=lower($2) LIMIT 1`,
+          [tenantId, toNorm]
+        );
+        if (rest.rows[0]) {
+          return res.status(409).json({
+            success: false,
+            code: 'EMAIL_RESTRICTED',
+            message: 'Este e-mail está na lista de restrição (cancelou inscrição). Confirme se deseja enviar mesmo assim.',
+            restriction: rest.rows[0],
+          });
+        }
+      } catch (e: any) {
+        if (!/email_marketing_restrictions|does not exist/i.test(String(e?.message || ''))) {
+          console.warn('[send-single] checagem restrição:', e.message);
+        }
+      }
     }
 
     const domainRow = await pool.query(
@@ -1615,6 +1675,7 @@ export const sendSingle = async (req: Request, res: Response) => {
         subject: finalSubject,
         html: finalHtml,
         text: finalText,
+        tenantId,
       });
 
       const msgId = sent.messageId || null;
@@ -1767,6 +1828,7 @@ export const resendSingleSend = async (req: Request, res: Response) => {
         subject: finalSubject,
         html: finalHtml,
         text: finalText,
+        tenantId,
       });
 
       const msgId = sent.messageId || null;
@@ -2449,6 +2511,29 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
 
       if (current.rows[0]) {
         const row = current.rows[0];
+
+        // Opt-out via botão do provedor → entra na lista de restrição do tenant
+        if (eventType === 'unsubscribe') {
+          try {
+            const camp = await pool.query(
+              `SELECT tenant_id FROM email_marketing_campaigns WHERE id=$1`,
+              [row.campaign_id]
+            );
+            const tid = Number(camp.rows[0]?.tenant_id);
+            if (tid) {
+              await upsertEmailRestriction({
+                tenantId: tid,
+                email: recipient,
+                reason: 'opt_out',
+                source: 'sendgrid_webhook',
+                notes: 'Cancelamento via evento unsubscribe do SendGrid',
+              });
+            }
+          } catch (e: any) {
+            console.warn('[webhook-sendgrid] unsubscribe→restriction:', e.message);
+          }
+        }
+
         const prev = String(row.status || 'pending');
         const alreadyClicked = !!row.clicked_at || prev === 'clicked' || prev === 'replied';
         const alreadyReplied = prev === 'replied';
@@ -2618,3 +2703,249 @@ export const sendgridInboundParse = async (req: Request, res: Response) => {
     return res.status(200).json({ success: false, message: error.message });
   }
 };
+
+// =============================================
+// LISTA DE RESTRIÇÃO (opt-out / cancelamento)
+// =============================================
+
+async function upsertEmailRestriction(opts: {
+  tenantId: number;
+  email: string;
+  reason?: string;
+  source?: string;
+  notes?: string | null;
+}) {
+  const email = String(opts.email || '').trim().toLowerCase();
+  if (!email.includes('@')) return null;
+  const r = await pool.query(
+    `INSERT INTO email_marketing_restrictions (tenant_id, email, reason, source, notes, updated_at)
+     VALUES ($1,$2,$3,$4,$5,NOW())
+     ON CONFLICT (tenant_id, email) DO UPDATE SET
+       reason = COALESCE(EXCLUDED.reason, email_marketing_restrictions.reason),
+       source = COALESCE(EXCLUDED.source, email_marketing_restrictions.source),
+       notes = COALESCE(EXCLUDED.notes, email_marketing_restrictions.notes),
+       updated_at = NOW()
+     RETURNING *`,
+    [
+      opts.tenantId,
+      email,
+      opts.reason || 'opt_out',
+      opts.source || 'manual',
+      opts.notes || null,
+    ]
+  );
+  return r.rows[0];
+}
+
+export const getEmailRestrictions = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+
+    const params: any[] = [tenantId];
+    let where = 'tenant_id=$1';
+    if (q) {
+      params.push(`%${q}%`);
+      where += ` AND lower(email) LIKE $${params.length}`;
+    }
+    const countParams = [...params];
+    params.push(limit, offset);
+
+    const result = await pool.query(
+      `SELECT id, email, reason, source, notes, created_at, updated_at
+       FROM email_marketing_restrictions
+       WHERE ${where}
+       ORDER BY created_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const count = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM email_marketing_restrictions WHERE ${where}`,
+      countParams
+    );
+    res.json({ success: true, data: result.rows, total: count.rows[0]?.total || 0 });
+  } catch (error: any) {
+    if (/email_marketing_restrictions|does not exist/i.test(String(error.message || ''))) {
+      return res.json({ success: true, data: [], total: 0, migration_pending: true });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const addEmailRestriction = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!email.includes('@')) {
+      return res.status(400).json({ success: false, message: 'Informe um e-mail válido' });
+    }
+    const row = await upsertEmailRestriction({
+      tenantId,
+      email,
+      reason: req.body.reason || 'opt_out',
+      source: req.body.source || 'manual',
+      notes: req.body.notes || null,
+    });
+    res.json({ success: true, data: row });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const removeEmailRestriction = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const { id } = req.params;
+    const r = await pool.query(
+      `DELETE FROM email_marketing_restrictions WHERE id=$1 AND tenant_id=$2 RETURNING id`,
+      [id, tenantId]
+    );
+    if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Registro não encontrado' });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/** Checagem em lote — campanha / envio único (igual WhatsApp check-bulk) */
+export const checkEmailRestrictionsBulk = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const emailsRaw: string[] = Array.isArray(req.body.emails) ? req.body.emails : [];
+    const emails = [...new Set(
+      emailsRaw.map((e) => String(e || '').trim().toLowerCase()).filter((e) => e.includes('@'))
+    )];
+
+    if (emails.length === 0) {
+      return res.json({
+        success: true,
+        total_checked: 0,
+        restricted_count: 0,
+        clean_count: 0,
+        restricted_emails: [],
+        restricted_details: [],
+      });
+    }
+
+    let restricted: any[] = [];
+    try {
+      const r = await pool.query(
+        `SELECT id, email, reason, source, notes, created_at
+         FROM email_marketing_restrictions
+         WHERE tenant_id=$1 AND lower(email) = ANY($2::text[])`,
+        [tenantId, emails]
+      );
+      restricted = r.rows;
+    } catch (e: any) {
+      if (!/email_marketing_restrictions|does not exist/i.test(String(e?.message || ''))) throw e;
+    }
+
+    const restrictedSet = new Set(restricted.map((x) => String(x.email).toLowerCase()));
+    const restrictedDetails = restricted.map((x) => ({
+      email: x.email,
+      reason: x.reason,
+      source: x.source,
+      notes: x.notes,
+      added_at: x.created_at,
+    }));
+
+    res.json({
+      success: true,
+      total_checked: emails.length,
+      restricted_count: restrictedSet.size,
+      clean_count: emails.length - restrictedSet.size,
+      restricted_emails: [...restrictedSet],
+      restricted_details: restrictedDetails,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Página / endpoint público de cancelamento de inscrição (link do rodapé automático).
+ * GET ou POST /api/public/email-unsubscribe?t=TOKEN
+ */
+export const publicEmailUnsubscribe = async (req: Request, res: Response) => {
+  try {
+    const { parseUnsubscribeToken } = require('../utils/email-unsubscribe');
+    const token = String(req.query.t || req.body?.t || '').trim();
+    const parsed = parseUnsubscribeToken(token);
+    if (!parsed) {
+      return res.status(400).send(unsubscribeHtmlPage({
+        ok: false,
+        title: 'Link inválido',
+        message: 'Este link de cancelamento é inválido ou expirou. Se o problema continuar, responda o e-mail pedindo para sair da lista.',
+      }));
+    }
+
+    try {
+      await upsertEmailRestriction({
+        tenantId: parsed.tenantId,
+        email: parsed.email,
+        reason: 'opt_out',
+        source: 'unsubscribe_link',
+        notes: 'Cancelamento via link do rodapé do e-mail',
+      });
+    } catch (e: any) {
+      console.error('[unsubscribe] erro ao gravar:', e.message);
+      return res.status(500).send(unsubscribeHtmlPage({
+        ok: false,
+        title: 'Erro temporário',
+        message: 'Não foi possível processar o cancelamento agora. Tente novamente em alguns minutos.',
+      }));
+    }
+
+    return res.status(200).send(unsubscribeHtmlPage({
+      ok: true,
+      title: 'Inscrição cancelada',
+      message: `O e-mail <strong>${escapeHtml(parsed.email)}</strong> não receberá mais mensagens de marketing deste remetente.`,
+    }));
+  } catch (error: any) {
+    return res.status(500).send(unsubscribeHtmlPage({
+      ok: false,
+      title: 'Erro',
+      message: 'Não foi possível processar o cancelamento.',
+    }));
+  }
+};
+
+function escapeHtml(s: string): string {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function unsubscribeHtmlPage(opts: { ok: boolean; title: string; message: string }): string {
+  const color = opts.ok ? '#16a34a' : '#dc2626';
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${opts.title} | NettSistemas</title>
+  <style>
+    body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px;}
+    .card{max-width:480px;width:100%;background:#1e293b;border:1px solid #334155;border-radius:16px;padding:32px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.35);}
+    h1{margin:0 0 12px;font-size:1.5rem;color:${color};}
+    p{margin:0;line-height:1.6;color:#cbd5e1;font-size:1rem;}
+    .brand{margin-top:24px;font-size:.85rem;color:#64748b;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${opts.title}</h1>
+    <p>${opts.message}</p>
+    <div class="brand">NettSistemas · E-mail Marketing</div>
+  </div>
+</body>
+</html>`;
+}

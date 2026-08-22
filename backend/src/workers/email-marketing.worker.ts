@@ -358,6 +358,46 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
 
   fromEmail = buildFromEmail(fromEmail, domain);
 
+  // Lista de restrição (opt-out) — pula envio salvo se campanha ignorar restrições
+  const ignoreRestrictions = !!campaign.ignore_email_restrictions;
+  if (!ignoreRestrictions && campaign.tenant_id && recipient.email) {
+    try {
+      const rest = await pool.query(
+        `SELECT 1 FROM email_marketing_restrictions
+         WHERE tenant_id=$1 AND lower(email)=lower($2) LIMIT 1`,
+        [campaign.tenant_id, recipient.email]
+      );
+      if (rest.rows[0]) {
+        await pool.query(
+          `UPDATE email_marketing_recipients
+           SET status='failed',
+               error_message=$1,
+               sent_from_email=$2,
+               sent_domain=$3,
+               sent_at=NOW(),
+               updated_at=NOW()
+           WHERE id=$4`,
+          [
+            'E-mail na lista de restrição (cancelou inscrição / opt-out)',
+            fromEmail,
+            domain,
+            recipient.id,
+          ]
+        );
+        await pool.query(
+          `UPDATE email_marketing_campaigns SET failed_count=failed_count+1, updated_at=NOW() WHERE id=$1`,
+          [campaign.id]
+        );
+        return;
+      }
+    } catch (e: any) {
+      // Tabela ainda não migrada — não bloqueia o envio
+      if (!/email_marketing_restrictions|does not exist/i.test(String(e?.message || ''))) {
+        console.warn('[email-worker] checagem restrição:', e.message);
+      }
+    }
+  }
+
   try {
     const attendant = String(campaign.reply_to || '').trim();
     const intercept = attendant ? buildInterceptReplyTo('r', Number(recipient.id)) : null;
@@ -371,6 +411,7 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
       subject,
       html,
       text: text || 'Por favor, habilite HTML para visualizar este e-mail.',
+      tenantId: Number(campaign.tenant_id) || null,
     });
 
     const msgId = sent.messageId;

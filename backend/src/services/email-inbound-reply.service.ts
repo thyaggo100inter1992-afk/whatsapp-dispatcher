@@ -295,6 +295,7 @@ export async function forwardClientReplyToAttendant(opts: {
     subject: conversation.subject,
     html: conversation.html,
     text: conversation.text,
+    skipUnsubscribeFooter: true,
   });
 
   // 2) Ficha — e-mail separado com cadastro + última resposta; NÃO usar para responder o cliente
@@ -308,6 +309,7 @@ export async function forwardClientReplyToAttendant(opts: {
     subject: ficha.subject,
     html: ficha.html,
     text: ficha.text,
+    skipUnsubscribeFooter: true,
   });
 
   // Marca destinatário da campanha como "respondido" (cards / log / relatório)

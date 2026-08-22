@@ -58,4 +58,12 @@ router.post('/send-single/:id/resend', ctrl.resendSingleSend);
 // =============================================
 router.get('/sends', ctrl.getSends);
 
+// =============================================
+// LISTA DE RESTRIÇÃO (opt-out)
+// =============================================
+router.get('/restrictions', ctrl.getEmailRestrictions);
+router.post('/restrictions', ctrl.addEmailRestriction);
+router.delete('/restrictions/:id', ctrl.removeEmailRestriction);
+router.post('/restrictions/check-bulk', ctrl.checkEmailRestrictionsBulk);
+
 export default router;

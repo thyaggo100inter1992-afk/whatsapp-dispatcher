@@ -5,6 +5,9 @@ import Head from 'next/head';
 import { FaPaperPlane, FaArrowLeft, FaSpinner, FaExclamationTriangle } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
+import EmailRestrictionCheckModal, {
+  EmailRestrictionCheckResult,
+} from '@/components/EmailRestrictionCheckModal';
 
 const EmailBodyEditor = dynamic(() => import('@/components/EmailBodyEditor'), { ssr: false });
 
@@ -67,6 +70,8 @@ export default function EnvioUnico() {
   const [templateId, setTemplateId] = useState('');
   const [templateSubjects, setTemplateSubjects] = useState<string[]>([]);
   const subjectInputRef = useRef<HTMLInputElement>(null);
+  const [restrictionModalOpen, setRestrictionModalOpen] = useState(false);
+  const [restrictionResult, setRestrictionResult] = useState<EmailRestrictionCheckResult | null>(null);
   const [form, setForm] = useState({
     to_email: '', to_name: '', from_name: '', from_email: '',
     reply_to: '', subject: '', body_html: '', domain_id: '',
@@ -133,7 +138,7 @@ export default function EnvioUnico() {
   const fromLocal = extractLocalPart(form.from_email);
   const fromFull = selectedDomain && fromLocal ? `${fromLocal}@${selectedDomain}` : '';
 
-  const handleSend = async () => {
+  const handleSend = async (opts?: { ignoreRestrictions?: boolean }) => {
     const errs: string[] = [];
     if (!form.domain_id) errs.push('Selecione um domínio verificado.');
     if (!form.from_name.trim()) errs.push('Informe o nome do remetente.');
@@ -145,17 +150,30 @@ export default function EnvioUnico() {
     if (errs.length > 0) { setErrors(errs); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     setErrors([]);
     setSending(true);
+
     try {
+      if (!opts?.ignoreRestrictions) {
+        const check = await api.post('/email-marketing/restrictions/check-bulk', {
+          emails: [form.to_email.trim().toLowerCase()],
+        });
+        const result = check.data as EmailRestrictionCheckResult;
+        if (result.restricted_count > 0) {
+          setRestrictionResult(result);
+          setRestrictionModalOpen(true);
+          setSending(false);
+          return;
+        }
+      }
+
       await api.post('/email-marketing/send-single', {
         to_email: form.to_email.trim(),
         to_name: form.to_name.trim() || undefined,
         from_name: form.from_name.trim(),
-        from_email: fromLocal, // só a parte local — backend monta @domínio
+        from_email: fromLocal,
         reply_to: form.reply_to.trim() || undefined,
         subject: form.subject.trim(),
         body_html: form.body_html,
         domain_id: Number(form.domain_id),
-        // Cadastro interno (ficha) — NÃO vai no corpo do e-mail a menos que use {{cpf}} etc.
         cpf: form.cpf.trim() || undefined,
         telefone: form.telefone.trim() || undefined,
         var1: form.var1.trim() || undefined,
@@ -163,6 +181,7 @@ export default function EnvioUnico() {
         var3: form.var3.trim() || undefined,
         var4: form.var4.trim() || undefined,
         var5: form.var5.trim() || undefined,
+        ignore_email_restrictions: !!opts?.ignoreRestrictions,
       });
       notification.success('E-mail enviado!', `Enviado com sucesso para ${form.to_email}`);
       setForm({
@@ -171,6 +190,7 @@ export default function EnvioUnico() {
       });
       setTemplateId('');
       setTemplateSubjects([]);
+      setRestrictionModalOpen(false);
     } catch (error: any) {
       setErrors([error.response?.data?.message || error.message]);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -422,7 +442,7 @@ export default function EnvioUnico() {
             </div>
           </div>
 
-          <button onClick={handleSend} disabled={sending || domains.length === 0}
+          <button onClick={() => handleSend()} disabled={sending || domains.length === 0}
             className="w-full py-6 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-2xl font-black text-2xl transition-all flex items-center justify-center gap-4 disabled:opacity-50 shadow-2xl shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-[1.01]">
             {sending
               ? <><FaSpinner className="animate-spin text-2xl" /> Enviando...</>
@@ -431,6 +451,19 @@ export default function EnvioUnico() {
 
         </div>
       </div>
+
+      <EmailRestrictionCheckModal
+        isOpen={restrictionModalOpen}
+        result={restrictionResult}
+        onClose={() => { setRestrictionModalOpen(false); setSending(false); }}
+        onExcludeRestricted={() => {
+          setRestrictionModalOpen(false);
+          setErrors(['Envio cancelado: o destinatário está na lista de restrição.']);
+        }}
+        onKeepAll={() => handleSend({ ignoreRestrictions: true })}
+        actionLabelExclude="Não enviar (cancelar)"
+        actionLabelKeep="Enviar mesmo assim"
+      />
     </>
   );
 }

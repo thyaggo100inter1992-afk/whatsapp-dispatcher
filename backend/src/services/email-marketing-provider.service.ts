@@ -1,10 +1,12 @@
 /**
  * Camada de provedor do E-mail Marketing.
  * Mailgun continua funcionando; SendGrid entra como opção ativa.
+ * Rodapé de cancelamento de inscrição é injetado automaticamente quando tenantId é informado.
  */
 import FormData from 'form-data';
 import Mailgun from 'mailgun.js';
 import { pool } from '../database/connection';
+import { appendUnsubscribeFooter } from '../utils/email-unsubscribe';
 
 export type EmailMarketingProviderName = 'mailgun' | 'sendgrid';
 
@@ -18,6 +20,10 @@ export type MarketingSendInput = {
   subject: string;
   html?: string | null;
   text?: string | null;
+  /** Quando informado, injeta rodapé de opt-out (todos os tenants / todos os envios de marketing) */
+  tenantId?: number | null;
+  /** Encaminhamentos internos (reply ao atendente) — sem rodapé de cancelamento */
+  skipUnsubscribeFooter?: boolean;
 };
 
 export type MarketingSendResult = {
@@ -72,9 +78,12 @@ export async function getSendGridApiKey(): Promise<string> {
   return String(result.rows[0].api_key);
 }
 
-async function sendViaMailgun(input: MarketingSendInput): Promise<MarketingSendResult> {
+async function sendViaMailgun(
+  input: MarketingSendInput,
+  unsubscribeUrl?: string | null
+): Promise<MarketingSendResult> {
   const mg = await getMailgunApiClient();
-  const result = await mg.messages.create(input.domain, {
+  const payload: any = {
     from: `${input.fromName} <${input.fromEmail}>`,
     to: [input.toName ? `${input.toName} <${input.toEmail}>` : input.toEmail],
     'h:Reply-To': input.replyTo || input.fromEmail,
@@ -84,18 +93,26 @@ async function sendViaMailgun(input: MarketingSendInput): Promise<MarketingSendR
     'o:tracking': 'yes',
     'o:tracking-clicks': 'yes',
     'o:tracking-opens': 'yes',
-  } as any);
+  };
+  if (unsubscribeUrl) {
+    payload['h:List-Unsubscribe'] = `<${unsubscribeUrl}>`;
+    payload['h:List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+  }
+  const result = await mg.messages.create(input.domain, payload);
   const messageId = String(result.id || '').replace(/^<|>$/g, '');
   return { provider: 'mailgun', messageId };
 }
 
-async function sendViaSendGrid(input: MarketingSendInput): Promise<MarketingSendResult> {
+async function sendViaSendGrid(
+  input: MarketingSendInput,
+  unsubscribeUrl?: string | null
+): Promise<MarketingSendResult> {
   const apiKey = await getSendGridApiKey();
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const sgMail = require('@sendgrid/mail');
   sgMail.setApiKey(apiKey);
 
-  const [response] = await sgMail.send({
+  const msg: any = {
     to: input.toName ? { email: input.toEmail, name: input.toName } : input.toEmail,
     from: { email: input.fromEmail, name: input.fromName },
     replyTo: input.replyTo || input.fromEmail,
@@ -106,7 +123,15 @@ async function sendViaSendGrid(input: MarketingSendInput): Promise<MarketingSend
       clickTracking: { enable: true, enableText: false },
       openTracking: { enable: true },
     },
-  });
+  };
+  if (unsubscribeUrl) {
+    msg.headers = {
+      'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    };
+  }
+
+  const [response] = await sgMail.send(msg);
 
   const messageId = String(
     response?.headers?.['x-message-id'] ||
@@ -126,9 +151,28 @@ export async function sendMarketingEmail(
   input: MarketingSendInput,
   forceProvider?: EmailMarketingProviderName
 ): Promise<MarketingSendResult> {
+  let prepared = { ...input };
+  let unsubscribeUrl: string | null = null;
+
+  // Rodapé automático em TODOS os e-mails de marketing (todos os tenants)
+  if (
+    prepared.tenantId &&
+    !prepared.skipUnsubscribeFooter &&
+    prepared.toEmail
+  ) {
+    const withFooter = appendUnsubscribeFooter({
+      html: prepared.html,
+      text: prepared.text,
+      tenantId: Number(prepared.tenantId),
+      toEmail: prepared.toEmail,
+    });
+    prepared = { ...prepared, html: withFooter.html, text: withFooter.text };
+    unsubscribeUrl = withFooter.unsubscribeUrl;
+  }
+
   const provider = forceProvider || (await getActiveEmailMarketingProvider());
-  if (provider === 'sendgrid') return sendViaSendGrid(input);
-  return sendViaMailgun(input);
+  if (provider === 'sendgrid') return sendViaSendGrid(prepared, unsubscribeUrl);
+  return sendViaMailgun(prepared, unsubscribeUrl);
 }
 
 /** Autentica domínio no SendGrid (whitelabel) e devolve DNS + id */

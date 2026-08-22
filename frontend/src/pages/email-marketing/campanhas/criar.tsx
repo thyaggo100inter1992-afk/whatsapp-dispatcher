@@ -11,6 +11,9 @@ import {
 import * as XLSX from 'xlsx';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
+import EmailRestrictionCheckModal, {
+  EmailRestrictionCheckResult,
+} from '@/components/EmailRestrictionCheckModal';
 
 const EmailBodyEditor = dynamic(() => import('@/components/EmailBodyEditor'), { ssr: false });
 
@@ -167,6 +170,8 @@ export default function CriarCampanha() {
   const [scheduleTime, setScheduleTime] = useState('');
   const [workStart, setWorkStart] = useState('08:00');
   const [workEnd, setWorkEnd] = useState('20:00');
+  const [restrictionModalOpen, setRestrictionModalOpen] = useState(false);
+  const [restrictionResult, setRestrictionResult] = useState<EmailRestrictionCheckResult | null>(null);
   const [pauseAfter, setPauseAfter] = useState(0);
   const [pauseDuration, setPauseDuration] = useState(30);
 
@@ -454,10 +459,73 @@ export default function CriarCampanha() {
     if (delayMin > delayMax) errs.push('O delay mínimo não pode ser maior que o máximo.');
     if (errs.length > 0) { setErrors(errs); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     setErrors([]);
+    setSaving(true);
 
+    try {
+      let emailsToCheck: string[] = [];
+      if (recipientSource === 'list') {
+        const contactsRes = await api.get(`/email-marketing/lists/${listId}/contacts`, {
+          params: { limit: 50000 },
+        });
+        emailsToCheck = (contactsRes.data.data || [])
+          .map((c: any) => String(c.email || '').trim().toLowerCase())
+          .filter((e: string) => e.includes('@'));
+      } else {
+        emailsToCheck = finalRecipients.map(r => r.email.trim().toLowerCase());
+      }
+
+      if (emailsToCheck.length > 0) {
+        const check = await api.post('/email-marketing/restrictions/check-bulk', { emails: emailsToCheck });
+        const result = check.data as EmailRestrictionCheckResult;
+        if (result.restricted_count > 0) {
+          setRestrictionResult(result);
+          setRestrictionModalOpen(true);
+          setSaving(false);
+          return;
+        }
+      }
+
+      await createCampaignPayload({ ignoreRestrictions: false, excludeEmails: [] });
+    } catch (error: any) {
+      const msg = error.response?.data?.message || error.message;
+      setErrors([msg]);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setSaving(false);
+    }
+  };
+
+  const createCampaignPayload = async (opts: {
+    ignoreRestrictions: boolean;
+    excludeEmails: string[];
+  }) => {
     const scheduledAt = scheduleDate && scheduleTime ? `${scheduleDate}T${scheduleTime}:00` : null;
     setSaving(true);
     try {
+      const excludeSet = new Set(opts.excludeEmails.map(e => e.toLowerCase()));
+      const recipientsPayload =
+        recipientSource === 'list'
+          ? undefined
+          : finalRecipients
+              .filter(r => !excludeSet.has(r.email.trim().toLowerCase()))
+              .map(r => ({
+                email: r.email,
+                name: r.name || null,
+                cpf: r.cpf || null,
+                phone: r.phone || null,
+                var1: r.var1 || null,
+                var2: r.var2 || null,
+                var3: r.var3 || null,
+                var4: r.var4 || null,
+                var5: r.var5 || null,
+              }));
+
+      if (recipientSource !== 'list' && (!recipientsPayload || recipientsPayload.length === 0)) {
+        setErrors(['Todos os destinatários estão na lista de restrição. Não há ninguém para enviar.']);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setSaving(false);
+        return;
+      }
+
       await api.post('/email-marketing/campaigns', {
         name,
         from_senders: finalSenders,
@@ -469,17 +537,7 @@ export default function CriarCampanha() {
         domain_id: domainIds[0] || null,
         domain_ids: domainIds,
         list_id: recipientSource === 'list' ? listId : null,
-        recipients: recipientSource === 'list' ? undefined : finalRecipients.map(r => ({
-          email: r.email,
-          name: r.name || null,
-          cpf: r.cpf || null,
-          phone: r.phone || null,
-          var1: r.var1 || null,
-          var2: r.var2 || null,
-          var3: r.var3 || null,
-          var4: r.var4 || null,
-          var5: r.var5 || null,
-        })),
+        recipients: recipientsPayload,
         template_id: templateId || null,
         body_html: bodyHtml || null,
         delay_seconds_min: delayMin,
@@ -489,6 +547,7 @@ export default function CriarCampanha() {
         work_end_time: workEnd,
         pause_after: pauseAfter,
         pause_duration_minutes: pauseDuration,
+        ignore_email_restrictions: opts.ignoreRestrictions,
       });
       notification.success(
         scheduledAt ? 'Campanha agendada!' : 'Campanha criada!',
@@ -499,7 +558,10 @@ export default function CriarCampanha() {
       const msg = error.response?.data?.message || error.message;
       setErrors([msg]);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+      setRestrictionModalOpen(false);
+    }
   };
 
   const inputCls = 'w-full px-6 py-4 text-base bg-dark-700/80 backdrop-blur-md border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/30 transition-all duration-200';
@@ -1294,6 +1356,26 @@ export default function CriarCampanha() {
 
         </div>
       </div>
+
+      <EmailRestrictionCheckModal
+        isOpen={restrictionModalOpen}
+        result={restrictionResult}
+        onClose={() => { setRestrictionModalOpen(false); setSaving(false); }}
+        onExcludeRestricted={() =>
+          createCampaignPayload({
+            ignoreRestrictions: false,
+            excludeEmails: restrictionResult?.restricted_emails || [],
+          })
+        }
+        onKeepAll={() =>
+          createCampaignPayload({
+            ignoreRestrictions: true,
+            excludeEmails: [],
+          })
+        }
+        actionLabelExclude="Excluir restritos e criar campanha"
+        actionLabelKeep="Manter todos e criar campanha"
+      />
     </>
   );
 }
