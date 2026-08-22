@@ -469,6 +469,7 @@ async function queryMailboxMessages(opts: {
            m.to_email, m.to_name, m.subject, m.is_read, m.status,
            m.received_at, m.sent_at, m.created_at, m.scheduled_at,
            m.cc, m.custom_folder_id, m.thread_key,
+           m.tracking_status, m.delivered_at, m.opened_at, m.clicked_at, m.replied_at, m.bounced_at,
            COALESCE(m.is_starred, FALSE) AS is_starred,
            COALESCE(m.has_attachments, FALSE) AS has_attachments,
            LEFT(COALESCE(m.body_text, ''), 160) AS preview,

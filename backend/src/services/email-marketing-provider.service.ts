@@ -40,6 +40,8 @@ export type MarketingSendInput = {
   inReplyTo?: string | null;
   references?: string | null;
   requestReadReceipt?: boolean;
+  /** Custom args SendGrid / variáveis Mailgun para casar webhook */
+  customArgs?: Record<string, string> | null;
 };
 
 function normalizeAddressList(value: string[] | string | null | undefined): string[] {
@@ -147,6 +149,11 @@ async function sendViaMailgun(
       contentType: a.contentType || 'application/octet-stream',
     }));
   }
+  if (input.customArgs) {
+    for (const [k, v] of Object.entries(input.customArgs)) {
+      if (v != null) payload[`v:${k}`] = String(v);
+    }
+  }
   const result = await mg.messages.create(input.domain, payload);
   const messageId = String(result.id || '').replace(/^<|>$/g, '');
   return { provider: 'mailgun', messageId };
@@ -204,6 +211,9 @@ async function sendViaSendGrid(
       disposition: a.disposition || 'attachment',
       contentId: a.contentId,
     }));
+  }
+  if (input.customArgs && Object.keys(input.customArgs).length) {
+    msg.customArgs = input.customArgs;
   }
 
   const [response] = await sgMail.send(msg);

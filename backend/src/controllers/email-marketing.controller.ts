@@ -2448,6 +2448,23 @@ export const mailgunWebhook = async (req: Request, res: Response) => {
       );
     }
 
+    // Caixa de e-mail — tracking interno
+    try {
+      const { applyMailboxTrackingEvent } = require('../services/email-mailbox.service');
+      const mb = await applyMailboxTrackingEvent({
+        eventType,
+        messageId,
+        baseMessageId: messageId,
+        recipientEmail: recipient,
+        errorMessage: deliveryError,
+      });
+      if (mb.updated) {
+        console.log(`[webhook-mailgun] mailbox msg=${mb.id} -> ${mb.tracking_status}`);
+      }
+    } catch (e: any) {
+      console.warn('[webhook-mailgun] mailbox tracking:', e?.message || e);
+    }
+
     res.json({ success: true });
   } catch (error: any) {
     console.error('[webhook] erro:', error.message);
@@ -2770,6 +2787,31 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
         } else if (upd.rowCount) {
           console.log(`[webhook-sendgrid] single_send atualizado id=${upd.rows[0].id} -> ${upd.rows[0].status}`);
         }
+      }
+
+      // Caixa de e-mail (conversa) — tracking interno
+      try {
+        const { applyMailboxTrackingEvent } = require('../services/email-mailbox.service');
+        const mailboxMsgId = Number(
+          ev?.mailbox_message_id ||
+          ev?.unique_args?.mailbox_message_id ||
+          ev?.custom_args?.mailbox_message_id ||
+          0
+        ) || null;
+        const mb = await applyMailboxTrackingEvent({
+          eventType,
+          messageId,
+          baseMessageId,
+          recipientEmail: recipient,
+          mailboxMessageId: mailboxMsgId,
+          errorMessage: deliveryError,
+          eventAt: ev?.timestamp ? new Date(Number(ev.timestamp) * 1000) : null,
+        });
+        if (mb.updated) {
+          console.log(`[webhook-sendgrid] mailbox msg=${mb.id} -> ${mb.tracking_status}`);
+        }
+      } catch (e: any) {
+        console.warn('[webhook-sendgrid] mailbox tracking:', e?.message || e);
       }
     }
 

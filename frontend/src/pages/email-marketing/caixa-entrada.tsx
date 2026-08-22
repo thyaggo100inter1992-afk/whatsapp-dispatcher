@@ -82,6 +82,12 @@ interface MessageRow {
   bcc?: string | null;
   custom_folder_id?: number | null;
   thread_key?: string | null;
+  tracking_status?: string | null;
+  delivered_at?: string | null;
+  opened_at?: string | null;
+  clicked_at?: string | null;
+  replied_at?: string | null;
+  bounced_at?: string | null;
 }
 
 interface MessageFull extends MessageRow {
@@ -170,6 +176,74 @@ function formatDate(iso: string | null | undefined) {
 function formatFullDate(iso: string | null | undefined) {
   if (!iso) return '';
   return new Date(iso).toLocaleString('pt-BR');
+}
+
+function trackingLabel(status?: string | null) {
+  const s = String(status || '').toLowerCase();
+  const map: Record<string, string> = {
+    sent: 'Enviado',
+    delivered: 'Entregue',
+    opened: 'Aberto',
+    clicked: 'Clicou',
+    replied: 'Respondeu',
+    bounced: 'Bounce',
+    failed: 'Falhou',
+    complained: 'Spam',
+  };
+  return map[s] || '';
+}
+
+function trackingBadgeClass(status?: string | null) {
+  const s = String(status || '').toLowerCase();
+  if (s === 'replied') return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+  if (s === 'clicked') return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40';
+  if (s === 'opened') return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
+  if (s === 'delivered' || s === 'sent') return 'bg-white/10 text-white/60 border-white/20';
+  if (s === 'bounced' || s === 'failed' || s === 'complained') return 'bg-red-500/20 text-red-300 border-red-500/40';
+  return 'bg-white/10 text-white/50 border-white/15';
+}
+
+/** Painel interno de webhook — só para o atendente */
+function InternalTrackingPanel({ msg }: { msg: MessageRow | MessageFull }) {
+  if (msg.direction !== 'outbound') return null;
+  const status = msg.tracking_status || (msg.status === 'sent' || msg.sent_at ? 'sent' : msg.status);
+  if (!status && !msg.sent_at) return null;
+  const steps = [
+    { key: 'sent', label: 'Enviado', at: msg.sent_at },
+    { key: 'delivered', label: 'Entregue', at: msg.delivered_at },
+    { key: 'opened', label: 'Abriu / Leu', at: msg.opened_at },
+    { key: 'clicked', label: 'Clicou', at: msg.clicked_at },
+    { key: 'replied', label: 'Respondeu', at: msg.replied_at },
+  ];
+  const failed = !!(msg.bounced_at || ['bounced', 'failed', 'complained'].includes(String(status)));
+  return (
+    <div className="mx-4 mt-3 p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-sm">
+      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+        <p className="text-[11px] font-bold uppercase text-indigo-300 tracking-wide">
+          Controle interno (webhook) — não visível ao cliente
+        </p>
+        {trackingLabel(status) && (
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${trackingBadgeClass(status)}`}>
+            {trackingLabel(status)}
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
+        {steps.map((s) => (
+          <div key={s.key} className={`flex justify-between gap-2 px-2 py-1.5 rounded-lg ${s.at ? 'bg-emerald-500/10 text-emerald-200' : 'bg-black/20 text-white/35'}`}>
+            <span>{s.label}</span>
+            <span className="font-mono text-right">{s.at ? formatFullDate(s.at) : '—'}</span>
+          </div>
+        ))}
+        {failed && (
+          <div className="sm:col-span-2 flex justify-between gap-2 px-2 py-1.5 rounded-lg bg-red-500/10 text-red-200">
+            <span>Falha / Bounce</span>
+            <span className="font-mono">{msg.bounced_at ? formatFullDate(msg.bounced_at) : trackingLabel(status)}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function stripHtml(html: string) {
@@ -1205,7 +1279,14 @@ export default function CaixaEntrada() {
                               <p className={`text-sm truncate mt-0.5 ${!msg.is_read ? 'text-white font-semibold' : 'text-white/80'}`}>
                                 {msg.subject || '(sem assunto)'}
                               </p>
-                              <p className="text-xs text-white/35 truncate">{msg.preview}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <p className="text-xs text-white/35 truncate flex-1">{msg.preview}</p>
+                                {msg.direction === 'outbound' && trackingLabel(msg.tracking_status || (msg.sent_at ? 'sent' : null)) && (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${trackingBadgeClass(msg.tracking_status || 'sent')}`}>
+                                    {trackingLabel(msg.tracking_status || 'sent')}
+                                  </span>
+                                )}
+                              </div>
                             </button>
                           </div>
                         );
@@ -1417,6 +1498,8 @@ export default function CaixaEntrada() {
                         </div>
                       </div>
 
+                      <InternalTrackingPanel msg={selected} />
+
                       {Array.isArray(selected.phishing_hints) && selected.phishing_hints.length > 0 && (
                         <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-200 text-sm flex gap-2">
                           <FaExclamationTriangle className="flex-shrink-0 mt-0.5" />
@@ -1438,6 +1521,11 @@ export default function CaixaEntrada() {
                                   <span>{t.from_name || t.from_email}</span>
                                   <span>{formatFullDate(t.received_at || t.sent_at || t.created_at)}</span>
                                 </div>
+                                {t.direction === 'outbound' && (
+                                  <div className="mb-2">
+                                    <InternalTrackingPanel msg={t} />
+                                  </div>
+                                )}
                                 <p className="text-sm font-semibold text-white mb-2">{t.subject}</p>
                                 {t.body_html ? (
                                   <div className="prose prose-invert max-w-none text-sm [&_img]:max-w-full" dangerouslySetInnerHTML={{ __html: rewriteMailboxHtml(t.body_html) }} />

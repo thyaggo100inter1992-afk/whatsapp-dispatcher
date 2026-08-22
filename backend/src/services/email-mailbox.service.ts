@@ -177,6 +177,187 @@ export function detectPhishingHints(html: string, text: string): string[] {
   return [...new Set(hints)].slice(0, 5);
 }
 
+/** Rank de engajamento (não rebaixa status melhores) */
+function mailboxTrackingRank(status: string): number {
+  const map: Record<string, number> = {
+    pending: 0,
+    draft: 0,
+    scheduled: 0,
+    failed: 1,
+    bounced: 1,
+    complained: 1,
+    sent: 2,
+    delivered: 3,
+    opened: 4,
+    clicked: 5,
+    replied: 6,
+  };
+  return map[String(status || '').toLowerCase()] ?? 0;
+}
+
+/**
+ * Aplica evento de webhook (SendGrid/Mailgun) em mensagem da caixa.
+ * Controlo interno — nunca vai no corpo do e-mail ao cliente.
+ */
+export async function applyMailboxTrackingEvent(opts: {
+  eventType: string; // delivered|open|opened|click|clicked|bounce|bounced|dropped|failed|spamreport|complained|unsubscribe
+  messageId?: string | null;
+  baseMessageId?: string | null;
+  recipientEmail?: string | null;
+  mailboxMessageId?: number | null;
+  errorMessage?: string | null;
+  eventAt?: Date | null;
+}): Promise<{ updated: boolean; id?: number; tracking_status?: string }> {
+  const eventType = String(opts.eventType || '').toLowerCase();
+  const statusMap: Record<string, string> = {
+    delivered: 'delivered',
+    open: 'opened',
+    opened: 'opened',
+    click: 'clicked',
+    clicked: 'clicked',
+    bounce: 'bounced',
+    bounced: 'bounced',
+    dropped: 'failed',
+    failed: 'failed',
+    spamreport: 'complained',
+    complained: 'complained',
+    unsubscribe: 'complained',
+  };
+  const mapped = statusMap[eventType];
+  if (!mapped) return { updated: false };
+
+  const messageId = String(opts.messageId || '').replace(/^<|>$/g, '').trim();
+  const baseMessageId = String(opts.baseMessageId || messageId.split('.')[0] || messageId).trim();
+  const recipient = String(opts.recipientEmail || '').trim().toLowerCase();
+  const customId = opts.mailboxMessageId ? Number(opts.mailboxMessageId) : 0;
+
+  let row: any = null;
+  if (customId > 0) {
+    const r = await pool.query(
+      `SELECT id, status, tracking_status, opened_at, clicked_at, replied_at, direction
+       FROM email_mailbox_messages WHERE id=$1 LIMIT 1`,
+      [customId]
+    );
+    row = r.rows[0] || null;
+  }
+  if (!row && (messageId || baseMessageId)) {
+    const r = await pool.query(
+      `SELECT id, status, tracking_status, opened_at, clicked_at, replied_at, direction
+       FROM email_mailbox_messages
+       WHERE direction='outbound'
+         AND provider_message_id IS NOT NULL
+         AND (
+           provider_message_id=$1 OR provider_message_id=$2
+           OR provider_message_id LIKE $3
+           OR $1 LIKE provider_message_id || '%'
+         )
+         ${recipient ? 'AND LOWER(to_email)=$4' : ''}
+       ORDER BY id DESC
+       LIMIT 1`,
+      recipient
+        ? [messageId, baseMessageId, `${baseMessageId}%`, recipient]
+        : [messageId, baseMessageId, `${baseMessageId}%`]
+    );
+    row = r.rows[0] || null;
+  }
+  if (!row) return { updated: false };
+
+  const prev = String(row.tracking_status || row.status || 'sent').toLowerCase();
+  let next = mapped;
+  if (prev === 'replied' && !['failed', 'bounced', 'complained'].includes(mapped)) {
+    next = 'replied';
+  } else if (mapped === 'opened' && (row.clicked_at || prev === 'clicked')) {
+    next = prev === 'replied' ? 'replied' : 'clicked';
+  } else if (mailboxTrackingRank(mapped) < mailboxTrackingRank(prev) && !['failed', 'bounced', 'complained'].includes(mapped)) {
+    // não rebaixa (ex.: delivered depois de opened)
+    next = prev;
+  }
+
+  const setOpened = eventType === 'open' || eventType === 'opened' || eventType === 'click' || eventType === 'clicked';
+  const setClicked = eventType === 'click' || eventType === 'clicked';
+  const setDelivered = eventType === 'delivered';
+  const setBounced = ['bounce', 'bounced', 'dropped', 'failed', 'spamreport'].includes(eventType);
+
+  await pool.query(
+    `UPDATE email_mailbox_messages SET
+       tracking_status=$1,
+       status=CASE
+         WHEN $1 IN ('bounced','failed','complained') THEN $1
+         WHEN status IN ('draft','scheduled','pending','failed') THEN 'sent'
+         ELSE status
+       END,
+       delivered_at=CASE WHEN $2::boolean THEN COALESCE(delivered_at, COALESCE($6::timestamptz, NOW())) ELSE delivered_at END,
+       opened_at=CASE WHEN $3::boolean THEN COALESCE(opened_at, COALESCE($6::timestamptz, NOW())) ELSE opened_at END,
+       clicked_at=CASE WHEN $4::boolean THEN COALESCE(clicked_at, COALESCE($6::timestamptz, NOW())) ELSE clicked_at END,
+       bounced_at=CASE WHEN $5::boolean THEN COALESCE(bounced_at, COALESCE($6::timestamptz, NOW())) ELSE bounced_at END,
+       error_message=COALESCE($7, error_message),
+       updated_at=NOW()
+     WHERE id=$8`,
+    [
+      next,
+      setDelivered || setOpened || setClicked,
+      setOpened,
+      setClicked,
+      setBounced,
+      opts.eventAt || null,
+      opts.errorMessage || null,
+      row.id,
+    ]
+  );
+
+  return { updated: true, id: row.id, tracking_status: next };
+}
+
+/** Marca outbound anterior da conversa como replied (quando chega resposta na caixa) */
+export async function markMailboxThreadReplied(opts: {
+  tenantId: number;
+  mailboxId: number;
+  fromEmail: string;
+  subject?: string | null;
+  inReplyTo?: string | null;
+}) {
+  const from = String(opts.fromEmail || '').trim().toLowerCase();
+  if (!from.includes('@')) return;
+
+  // 1) Por In-Reply-To / message_id
+  if (opts.inReplyTo) {
+    const mid = String(opts.inReplyTo).replace(/^<|>$/g, '').trim();
+    if (mid) {
+      const r = await pool.query(
+        `UPDATE email_mailbox_messages SET
+           tracking_status='replied',
+           replied_at=COALESCE(replied_at, NOW()),
+           opened_at=COALESCE(opened_at, NOW()),
+           updated_at=NOW()
+         WHERE mailbox_id=$1 AND tenant_id=$2 AND direction='outbound'
+           AND (message_id=$3 OR message_id LIKE $4 OR provider_message_id=$3)
+         RETURNING id`,
+        [opts.mailboxId, opts.tenantId, mid, `${mid}%`]
+      );
+      if (r.rowCount) return;
+    }
+  }
+
+  // 2) Último outbound para esse e-mail (mesmo thread aproximado)
+  const threadKey = buildThreadKey(opts.subject || '', [from]);
+  await pool.query(
+    `UPDATE email_mailbox_messages SET
+       tracking_status='replied',
+       replied_at=COALESCE(replied_at, NOW()),
+       opened_at=COALESCE(opened_at, NOW()),
+       updated_at=NOW()
+     WHERE id = (
+       SELECT id FROM email_mailbox_messages
+       WHERE mailbox_id=$1 AND tenant_id=$2 AND direction='outbound'
+         AND LOWER(to_email)=$3
+         AND (thread_key=$4 OR thread_key LIKE $5 OR $4 = '' OR thread_key IS NULL)
+       ORDER BY COALESCE(sent_at, created_at) DESC
+       LIMIT 1
+     )`,
+    [opts.mailboxId, opts.tenantId, from, threadKey, `${String(opts.subject || '').replace(/^(re|fw|fwd|enc|res)\s*:\s*/gi, '').trim().toLowerCase()}%`]
+  );
+}
+
 export type InboundMulterFile = {
   fieldname: string;
   originalname?: string;
@@ -375,6 +556,18 @@ export async function ingestInboundToMailbox(opts: {
     }
   } catch { /* socket opcional */ }
 
+  try {
+    await markMailboxThreadReplied({
+      tenantId: mailbox.tenant_id,
+      mailboxId: mailbox.id,
+      fromEmail: fromEmail || '',
+      subject: opts.subject,
+      inReplyTo: opts.messageId || null,
+    });
+  } catch (e: any) {
+    console.warn('[inbound-mailbox] mark replied:', e?.message || e);
+  }
+
   return {
     ok: true,
     mailboxId: mailbox.id,
@@ -559,11 +752,18 @@ export async function sendFromMailbox(opts: {
       inReplyTo,
       references,
       requestReadReceipt: !!opts.requestReadReceipt,
+      customArgs: {
+        source: 'mailbox',
+        mailbox_message_id: String(rowId),
+        mailbox_id: String(opts.mailboxId),
+        tenant_id: String(opts.tenantId),
+      },
     });
 
     await pool.query(
       `UPDATE email_mailbox_messages SET
-         folder='sent', provider_message_id=$1, status='sent', sent_at=NOW(),
+         folder='sent', provider_message_id=$1, status='sent',
+         tracking_status='sent', sent_at=NOW(),
          scheduled_at=NULL, updated_at=NOW()
        WHERE id=$2`,
       [sent.messageId, rowId]
@@ -632,10 +832,17 @@ export async function processScheduledMailboxSends() {
         attachments: atts.length ? atts : undefined,
         inReplyTo: row.in_reply_to,
         requestReadReceipt: !!row.request_read_receipt,
+        customArgs: {
+          source: 'mailbox',
+          mailbox_message_id: String(row.id),
+          mailbox_id: String(row.mailbox_id),
+          tenant_id: String(row.tenant_id),
+        },
       });
       await pool.query(
         `UPDATE email_mailbox_messages SET
-           folder='sent', status='sent', provider_message_id=$1, sent_at=NOW(),
+           folder='sent', status='sent', tracking_status='sent',
+           provider_message_id=$1, sent_at=NOW(),
            scheduled_at=NULL, updated_at=NOW()
          WHERE id=$2`,
         [sent.messageId, row.id]
