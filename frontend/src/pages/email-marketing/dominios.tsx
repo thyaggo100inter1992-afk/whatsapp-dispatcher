@@ -39,7 +39,6 @@ export default function Dominios() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [verifying, setVerifying] = useState<number | null>(null);
-  const [inboundBusy, setInboundBusy] = useState<number | null>(null);
   const [newDomain, setNewDomain] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [showDns, setShowDns] = useState<Domain | null>(null);
@@ -65,7 +64,10 @@ export default function Dominios() {
   const domainHasPendingRecords = (d: Domain) => {
     if (d.status !== 'active' && d.status !== 'active_partial') return true;
     if (!Array.isArray(d.dns_records) || d.dns_records.length === 0) return true;
-    return d.dns_records.some((r: any) => r.valid !== 'valid');
+    if (d.dns_records.some((r: any) => r.valid !== 'valid')) return true;
+    // MX de recebimento obrigatório
+    if (d.inbound_status && d.inbound_status !== 'active') return true;
+    return false;
   };
 
   useEffect(() => {
@@ -154,35 +156,6 @@ export default function Dominios() {
       }
     } catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
     finally { setVerifying(null); }
-  };
-
-  const handleEnableInbound = async (id: number) => {
-    setInboundBusy(id);
-    try {
-      const r = await api.post(`/email-marketing/domains/${id}/enable-inbound`);
-      notification.success('Recebimento', r.data.message || 'Configuração de caixa gerada');
-      if (r.data.data) setShowDns(r.data.data);
-      await loadDomains();
-    } catch (e: any) {
-      notification.error('Erro', e.response?.data?.message || e.message);
-    } finally {
-      setInboundBusy(null);
-    }
-  };
-
-  const handleVerifyInbound = async (id: number) => {
-    setInboundBusy(id);
-    try {
-      const r = await api.post(`/email-marketing/domains/${id}/verify-inbound`);
-      if (r.data.verified) notification.success('MX OK', r.data.message);
-      else notification.warning('Aguardando DNS', r.data.message);
-      if (r.data.data) setShowDns(r.data.data);
-      await loadDomains();
-    } catch (e: any) {
-      notification.error('Erro', e.response?.data?.message || e.message);
-    } finally {
-      setInboundBusy(null);
-    }
   };
 
   const handleRegisterWebhooks = async (id: number) => {
@@ -287,7 +260,7 @@ export default function Dominios() {
             ) : (
               <>
                 <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-4 text-sm text-yellow-300">
-                  Configure esses registros no painel DNS do seu domínio (Cloudflare, Registro.br, etc.). O sistema verifica automaticamente a cada <strong>{POLL_INTERVAL} segundos em segundo plano</strong> — você pode fechar este modal.
+                  Configure <strong>todos</strong> esses registros no DNS (incluindo o MX de recebimento da caixa). O sistema verifica automaticamente a cada <strong>{POLL_INTERVAL} segundos</strong> — você pode fechar este modal.
                 </div>
                 <div className="bg-black/40 border border-white/10 rounded-xl p-3 mb-4 flex items-center gap-3 flex-wrap">
                   {bgChecking ? <FaSpinner className="text-blue-400 animate-spin flex-shrink-0" /> : <FaWifi className={`flex-shrink-0 ${countdown <= 5 ? 'text-yellow-400 animate-pulse' : 'text-green-400'}`} />}
@@ -314,17 +287,36 @@ export default function Dominios() {
                 {showDns.dns_records.map((rec: any, i: number) => {
                   const type = (rec.record_type || rec.type || '').toUpperCase();
                   const isDmarc = !!(rec._is_dmarc || (rec.name || '').startsWith('_dmarc.'));
+                  const isInbound = !!rec._inbound;
                   const recName = rec.name || (type === 'MX' ? showDns.domain : '');
                   return (
-                    <div key={i} className={`rounded-xl p-4 border ${isDmarc ? 'bg-purple-900/20 border-purple-500/30' : 'bg-black/30 border-white/10'}`}>
+                    <div key={i} className={`rounded-xl p-4 border ${
+                      isInbound ? 'bg-cyan-900/20 border-cyan-500/30'
+                        : isDmarc ? 'bg-purple-900/20 border-purple-500/30'
+                        : 'bg-black/30 border-white/10'
+                    }`}>
                       <div className="flex items-center gap-2 mb-3 flex-wrap">
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold text-white uppercase ${isDmarc ? 'bg-purple-500/40' : 'bg-white/10'}`}>{type}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold text-white uppercase ${
+                          isInbound ? 'bg-cyan-500/40' : isDmarc ? 'bg-purple-500/40' : 'bg-white/10'
+                        }`}>{type}</span>
+                        {isInbound && (
+                          <span className="px-2 py-0.5 bg-cyan-500/20 border border-cyan-500/40 rounded text-xs font-bold text-cyan-300">
+                            Obrigatório — Caixa de E-mail
+                          </span>
+                        )}
                         {isDmarc && <span className="px-2 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-xs font-bold text-purple-300">🛡️ DMARC — Recomendado contra spam</span>}
-                        {rec.priority && <span className="px-2 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded text-xs font-bold text-blue-300">Prioridade: {rec.priority}</span>}
+                        {(rec.priority != null && rec.priority !== '') && (
+                          <span className="px-2 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded text-xs font-bold text-blue-300">Prioridade: {rec.priority}</span>
+                        )}
                         <span className={`px-2 py-0.5 rounded text-xs font-bold border ${rec.valid === 'valid' ? 'bg-green-500/20 border-green-500/30 text-green-300' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'}`}>
                           {rec.valid === 'valid' ? '✅ Verificado' : '⏳ Aguardando'}
                         </span>
                       </div>
+                      {isInbound && rec.valid !== 'valid' && (
+                        <div className="mb-3 p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-xs text-cyan-300">
+                          <strong>Obrigatório:</strong> adicione este MX no DNS para a caixa de e-mail receber mensagens. A verificação roda automaticamente junto com os demais.
+                        </div>
+                      )}
                       {isDmarc && rec.valid !== 'valid' && (
                         <div className="mb-3 p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg text-xs text-purple-300">
                           ⚠️ <strong>Adicione este registro no DNS</strong> para melhorar drasticamente a entregabilidade e evitar que e-mails caiam no spam.
@@ -345,6 +337,15 @@ export default function Dominios() {
                             <button onClick={() => copyToClipboard(rec.value)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500 hover:text-gray-300" title="Copiar"><FaCopy /></button>
                           </div>
                         </div>
+                        {isInbound && rec.priority != null && (
+                          <div className="flex items-start gap-2">
+                            <span className="text-gray-500 w-24 flex-shrink-0 pt-0.5">Prioridade:</span>
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <code className="text-blue-300 break-all text-xs">{String(rec.priority)}</code>
+                              <button onClick={() => copyToClipboard(String(rec.priority))} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500 hover:text-gray-300" title="Copiar"><FaCopy /></button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -381,95 +382,6 @@ export default function Dominios() {
                 </div>
               );
             })()}
-
-            {/* Recebimento / Caixa de e-mail */}
-            <div className="mt-5 bg-cyan-900/20 border border-cyan-500/30 rounded-xl p-4 space-y-3">
-              <p className="text-cyan-300 font-bold text-sm">📥 Recebimento (Caixa de E-mail)</p>
-              <p className="text-gray-400 text-xs">
-                Configure <strong className="text-gray-300">uma vez</strong> por domínio. Depois crie endereços em{' '}
-                <strong className="text-gray-300">Criar E-mail</strong> sem novo DNS.
-              </p>
-              {showDns.inbound_status === 'active' ? (
-                <div className="flex items-center gap-2 text-green-300 text-sm font-bold">
-                  <FaCheckCircle /> Recebimento ativo
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => handleEnableInbound(showDns.id)}
-                  disabled={inboundBusy === showDns.id}
-                  className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 rounded-lg text-sm font-bold disabled:opacity-50"
-                >
-                  {inboundBusy === showDns.id ? <FaSpinner className="animate-spin inline mr-2" /> : null}
-                  {showDns.inbound_enabled ? 'Atualizar recebimento' : 'Ativar recebimento neste domínio'}
-                </button>
-              )}
-              {Array.isArray(showDns.inbound_dns_records) && showDns.inbound_dns_records.length > 0 && (
-                <div className="space-y-2">
-                  {showDns.inbound_dns_records.map((rec: any, i: number) => {
-                    const hostName = rec.name || showDns.domain;
-                    const mxValue = String(rec.value || '');
-                    const priority = rec.priority != null ? String(rec.priority) : '';
-                    return (
-                      <div key={i} className="bg-black/30 border border-white/10 rounded-lg p-3 text-sm">
-                        <div className="flex items-center gap-2 mb-3 flex-wrap">
-                          <span className="px-2 py-0.5 bg-white/10 rounded text-xs font-bold text-white uppercase">MX</span>
-                          {priority && (
-                            <span className="px-2 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded text-xs font-bold text-blue-300">
-                              Prioridade: {priority}
-                            </span>
-                          )}
-                          <span className={`px-2 py-0.5 rounded text-xs font-bold border ${rec.valid === 'valid' ? 'bg-green-500/20 border-green-500/30 text-green-300' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'}`}>
-                            {rec.valid === 'valid' ? '✅ Verificado' : '⏳ Aguardando'}
-                          </span>
-                        </div>
-                        <div className="grid gap-2 text-sm">
-                          <div className="flex items-start gap-2">
-                            <span className="text-gray-500 w-24 flex-shrink-0 pt-0.5">Host (nome):</span>
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <code className="text-green-300 break-all">{hostName}</code>
-                              <button type="button" onClick={() => copyToClipboard(hostName)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500 hover:text-gray-300" title="Copiar">
-                                <FaCopy />
-                              </button>
-                            </div>
-                          </div>
-                          <div className="flex items-start gap-2">
-                            <span className="text-gray-500 w-24 flex-shrink-0 pt-0.5">Valor:</span>
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <code className="text-blue-300 break-all text-xs">{mxValue}</code>
-                              <button type="button" onClick={() => copyToClipboard(mxValue)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500 hover:text-gray-300" title="Copiar">
-                                <FaCopy />
-                              </button>
-                            </div>
-                          </div>
-                          {priority && (
-                            <div className="flex items-start gap-2">
-                              <span className="text-gray-500 w-24 flex-shrink-0 pt-0.5">Prioridade:</span>
-                              <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <code className="text-blue-300 break-all text-xs">{priority}</code>
-                                <button type="button" onClick={() => copyToClipboard(priority)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500 hover:text-gray-300" title="Copiar">
-                                  <FaCopy />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {showDns.inbound_enabled && showDns.inbound_status !== 'active' && (
-                    <button
-                      type="button"
-                      onClick={() => handleVerifyInbound(showDns.id)}
-                      disabled={inboundBusy === showDns.id}
-                      className="w-full py-2 bg-cyan-500/20 text-cyan-300 rounded-lg text-sm font-bold disabled:opacity-50"
-                    >
-                      Verificar MX de recebimento
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
 
             {/* Botão fechar ou verificar */}
             {(() => {

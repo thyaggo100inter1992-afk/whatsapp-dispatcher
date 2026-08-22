@@ -164,14 +164,16 @@ export const getDomains = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const result = await pool.query(
-      `SELECT id, domain, status, dns_records, is_active, created_at, updated_at, verified_at, provider, sendgrid_domain_id
+      `SELECT id, domain, status, dns_records, is_active, created_at, updated_at, verified_at,
+              provider, sendgrid_domain_id, inbound_enabled, inbound_status, inbound_dns_records
        FROM email_marketing_domains WHERE tenant_id = $1 ORDER BY created_at DESC`,
       [tenantId]
     );
-    // Garantir que DMARC sempre aparece em cada domínio
+    const { buildInboundDnsRecords } = require('../services/email-mailbox.service');
+    // Garantir que DMARC + MX de recebimento sempre aparecem
     const rows = result.rows.map((row: any) => {
-      const dns: any[] = Array.isArray(row.dns_records) ? row.dns_records : [];
-      const hasDmarc = dns.some((r: any) => (r.name || '').startsWith('_dmarc.'));
+      const dns: any[] = Array.isArray(row.dns_records) ? [...row.dns_records] : [];
+      const hasDmarc = dns.some((r: any) => (r.name || '').startsWith('_dmarc.') || r._is_dmarc);
       if (!hasDmarc) {
         dns.push({
           record_type: 'TXT',
@@ -181,7 +183,19 @@ export const getDomains = async (req: Request, res: Response) => {
           _is_dmarc: true
         });
       }
-      return { ...row, dns_records: dns };
+      let inboundDns: any[] = Array.isArray(row.inbound_dns_records) ? [...row.inbound_dns_records] : [];
+      if (inboundDns.length === 0) {
+        inboundDns = buildInboundDnsRecords(row.domain);
+      }
+      // Exibe MX de recebimento junto com os demais (obrigatório)
+      const withoutOldInbound = dns.filter((r: any) => !r._inbound);
+      const mergedDns = [...inboundDns.map((r: any) => ({ ...r, _inbound: true })), ...withoutOldInbound];
+      return {
+        ...row,
+        dns_records: mergedDns,
+        inbound_dns_records: inboundDns,
+        inbound_enabled: row.inbound_enabled !== false,
+      };
     });
     res.json({ success: true, data: rows });
   } catch (error: any) {
@@ -203,21 +217,37 @@ export const addDomain = async (req: Request, res: Response) => {
       const sgDomain = await createSendGridDomain(domain);
       const dnsRecords = mapSendGridDnsRecords(sgDomain, domain);
       const sgId = String(sgDomain.id || '');
+      const { buildInboundDnsRecords, ensureSendGridInboundParse } = require('../services/email-mailbox.service');
+      const inboundDns = buildInboundDnsRecords(domain);
+      try {
+        await ensureSendGridInboundParse(domain);
+      } catch (e: any) {
+        console.warn('[addDomain] inbound parse:', e.message);
+      }
       const result = await pool.query(
         `INSERT INTO email_marketing_domains
-           (tenant_id, domain, mailgun_domain_id, sendgrid_domain_id, smtp_login, smtp_password, status, dns_records, provider)
-         VALUES ($1, $2, NULL, $3, $4, '', 'pending', $5, 'sendgrid')
+           (tenant_id, domain, mailgun_domain_id, sendgrid_domain_id, smtp_login, smtp_password, status, dns_records, provider,
+            inbound_enabled, inbound_status, inbound_dns_records)
+         VALUES ($1, $2, NULL, $3, $4, '', 'pending', $5, 'sendgrid', TRUE, 'pending', $6)
          ON CONFLICT (tenant_id, domain) DO UPDATE SET
            status='pending',
            dns_records=$5,
            sendgrid_domain_id=$3,
            provider='sendgrid',
+           inbound_enabled=TRUE,
+           inbound_dns_records=COALESCE(email_marketing_domains.inbound_dns_records, $6),
            updated_at=NOW()
          RETURNING *`,
-        [tenantId, domain, sgId, `postmaster@${domain}`, JSON.stringify(dnsRecords)]
+        [tenantId, domain, sgId, `postmaster@${domain}`, JSON.stringify(dnsRecords), JSON.stringify(inboundDns)]
       );
       ensureSendGridEventWebhook().catch(() => {});
-      return res.json({ success: true, data: result.rows[0], dns_records: dnsRecords, provider: 'sendgrid' });
+      const row = result.rows[0];
+      // Resposta já com MX de recebimento misturado na lista
+      const merged = {
+        ...row,
+        dns_records: [...inboundDns, ...(Array.isArray(row.dns_records) ? row.dns_records : [])],
+      };
+      return res.json({ success: true, data: merged, dns_records: merged.dns_records, provider: 'sendgrid' });
     }
 
     // ========== MAILGUN (legado) ==========
@@ -324,27 +354,63 @@ export const verifyDomain = async (req: Request, res: Response) => {
       );
 
       const essentialOk = checkedDns
-        .filter((r: any) => !r._is_dmarc)
+        .filter((r: any) => !r._is_dmarc && !r._inbound)
         .every((r: any) => r.valid === 'valid') || sendgridActive;
       const canSend = sendgridActive || essentialOk;
       const newStatus = canSend ? 'active' : 'unverified';
+
+      // MX de recebimento (caixa) — obrigatório, verificado junto
+      const { buildInboundDnsRecords, ensureSendGridInboundParse } = require('../services/email-mailbox.service');
+      try { await ensureSendGridInboundParse(domainName); } catch (e: any) {
+        console.warn('[verify-domain] inbound parse:', e?.message || e);
+      }
+      let inboundDns: any[] = Array.isArray(domainRow.rows[0].inbound_dns_records) && domainRow.rows[0].inbound_dns_records.length
+        ? [...domainRow.rows[0].inbound_dns_records]
+        : buildInboundDnsRecords(domainName);
+      inboundDns = await Promise.all(
+        inboundDns.map(async (rec: any) => ({
+          ...rec,
+          _inbound: true,
+          valid: await checkDnsRecord(rec, domainName),
+        }))
+      );
+      const inboundOk = inboundDns.every((r: any) => r.valid === 'valid');
+      const inboundStatus = inboundOk ? 'active' : 'pending';
+
       await pool.query(
-        `UPDATE email_marketing_domains SET status=$1, dns_records=$3, verified_at=${canSend ? 'NOW()' : 'NULL'}, updated_at=NOW() WHERE id=$2`,
-        [newStatus, id, JSON.stringify(checkedDns)]
+        `UPDATE email_marketing_domains SET
+           status=$1, dns_records=$3,
+           verified_at=${canSend ? 'NOW()' : 'NULL'},
+           inbound_enabled=TRUE,
+           inbound_status=$4,
+           inbound_dns_records=$5,
+           updated_at=NOW()
+         WHERE id=$2`,
+        [newStatus, id, JSON.stringify(checkedDns), inboundStatus, JSON.stringify(inboundDns)]
       );
       if (canSend) ensureSendGridEventWebhook().catch(() => {});
       const updated = await pool.query(`SELECT * FROM email_marketing_domains WHERE id=$1`, [id]);
+      const data = {
+        ...updated.rows[0],
+        dns_records: [...inboundDns, ...checkedDns.filter((r: any) => !r._inbound)],
+      };
+      const allVerified = checkedDns.every((r: any) => r.valid === 'valid') && inboundOk;
       return res.json({
         success: true,
         verified: canSend,
-        allVerified: checkedDns.every((r: any) => r.valid === 'valid'),
+        allVerified,
+        inboundOk,
         sendgridActive,
         provider: 'sendgrid',
         status: newStatus,
         message: canSend
-          ? 'Domínio pronto para envio no SendGrid.'
+          ? (allVerified
+            ? 'Domínio pronto para envio e recebimento.'
+            : inboundOk
+              ? 'Domínio pronto para envio. Alguns registros ainda pendentes.'
+              : 'Domínio pronto para envio. Configure o MX de recebimento (caixa de e-mail).')
           : 'Ainda não foi possível confirmar DNS do SendGrid. Verifique CNAME/DKIM e tente de novo.',
-        data: updated.rows[0],
+        data,
       });
     }
 
