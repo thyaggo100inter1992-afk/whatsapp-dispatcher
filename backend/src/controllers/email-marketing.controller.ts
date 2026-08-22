@@ -1676,6 +1676,7 @@ export const sendSingle = async (req: Request, res: Response) => {
         html: finalHtml,
         text: finalText,
         tenantId,
+        singleSendId: singleId,
       });
 
       const msgId = sent.messageId || null;
@@ -1829,6 +1830,7 @@ export const resendSingleSend = async (req: Request, res: Response) => {
         html: finalHtml,
         text: finalText,
         tenantId,
+        singleSendId: Number(id) || null,
       });
 
       const msgId = sent.messageId || null;
@@ -2870,6 +2872,7 @@ export const checkEmailRestrictionsBulk = async (req: Request, res: Response) =>
 
 /**
  * Página / endpoint público de cancelamento de inscrição (link do rodapé automático).
+ * O token carrega o tenant_id da campanha/envio — grava SOMENTE na lista daquele tenant.
  * GET ou POST /api/public/email-unsubscribe?t=TOKEN
  */
 export const publicEmailUnsubscribe = async (req: Request, res: Response) => {
@@ -2885,13 +2888,59 @@ export const publicEmailUnsubscribe = async (req: Request, res: Response) => {
       }));
     }
 
+    // Só grava no tenant embutido no link (nunca em lista global / outro tenant)
+    const tenantOk = await pool.query(
+      `SELECT id FROM tenants WHERE id=$1 LIMIT 1`,
+      [parsed.tenantId]
+    );
+    if (!tenantOk.rows[0]) {
+      return res.status(400).send(unsubscribeHtmlPage({
+        ok: false,
+        title: 'Link inválido',
+        message: 'Este link não pertence a um remetente válido.',
+      }));
+    }
+
+    // Confirma que a campanha (se houver) realmente é desse tenant — evita token adulterado
+    if (parsed.campaignId) {
+      const camp = await pool.query(
+        `SELECT id FROM email_marketing_campaigns WHERE id=$1 AND tenant_id=$2 LIMIT 1`,
+        [parsed.campaignId, parsed.tenantId]
+      );
+      if (!camp.rows[0]) {
+        return res.status(400).send(unsubscribeHtmlPage({
+          ok: false,
+          title: 'Link inválido',
+          message: 'Este link não corresponde à campanha do remetente.',
+        }));
+      }
+    }
+    if (parsed.singleSendId) {
+      const single = await pool.query(
+        `SELECT id FROM email_marketing_single_sends WHERE id=$1 AND tenant_id=$2 LIMIT 1`,
+        [parsed.singleSendId, parsed.tenantId]
+      );
+      if (!single.rows[0]) {
+        return res.status(400).send(unsubscribeHtmlPage({
+          ok: false,
+          title: 'Link inválido',
+          message: 'Este link não corresponde ao envio do remetente.',
+        }));
+      }
+    }
+
+    const noteParts = ['Cancelamento via link do rodapé'];
+    if (parsed.campaignId) noteParts.push(`campanha #${parsed.campaignId}`);
+    if (parsed.singleSendId) noteParts.push(`envio único #${parsed.singleSendId}`);
+    noteParts.push(`tenant #${parsed.tenantId}`);
+
     try {
       await upsertEmailRestriction({
         tenantId: parsed.tenantId,
         email: parsed.email,
         reason: 'opt_out',
         source: 'unsubscribe_link',
-        notes: 'Cancelamento via link do rodapé do e-mail',
+        notes: noteParts.join(' · '),
       });
     } catch (e: any) {
       console.error('[unsubscribe] erro ao gravar:', e.message);
@@ -2902,10 +2951,16 @@ export const publicEmailUnsubscribe = async (req: Request, res: Response) => {
       }));
     }
 
+    console.log(
+      `[unsubscribe] tenant=${parsed.tenantId} email=${parsed.email}` +
+      (parsed.campaignId ? ` campaign=${parsed.campaignId}` : '') +
+      (parsed.singleSendId ? ` single=${parsed.singleSendId}` : '')
+    );
+
     return res.status(200).send(unsubscribeHtmlPage({
       ok: true,
       title: 'Inscrição cancelada',
-      message: `O e-mail <strong>${escapeHtml(parsed.email)}</strong> não receberá mais mensagens de marketing deste remetente.`,
+      message: `O e-mail <strong>${escapeHtml(parsed.email)}</strong> foi removido da lista de marketing deste remetente. Outros remetentes (outras empresas) não são afetados.`,
     }));
   } catch (error: any) {
     return res.status(500).send(unsubscribeHtmlPage({

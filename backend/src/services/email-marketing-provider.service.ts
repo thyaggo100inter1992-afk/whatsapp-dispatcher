@@ -20,8 +20,10 @@ export type MarketingSendInput = {
   subject: string;
   html?: string | null;
   text?: string | null;
-  /** Quando informado, injeta rodapé de opt-out (todos os tenants / todos os envios de marketing) */
+  /** Tenant dono do envio — o link de opt-out grava só nesta lista (nunca mistura tenants) */
   tenantId?: number | null;
+  campaignId?: number | null;
+  singleSendId?: number | null;
   /** Encaminhamentos internos (reply ao atendente) — sem rodapé de cancelamento */
   skipUnsubscribeFooter?: boolean;
 };
@@ -165,6 +167,8 @@ export async function sendMarketingEmail(
       text: prepared.text,
       tenantId: Number(prepared.tenantId),
       toEmail: prepared.toEmail,
+      campaignId: prepared.campaignId,
+      singleSendId: prepared.singleSendId,
     });
     prepared = { ...prepared, html: withFooter.html, text: withFooter.text };
     unsubscribeUrl = withFooter.unsubscribeUrl;

@@ -412,6 +412,7 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
       html,
       text: text || 'Por favor, habilite HTML para visualizar este e-mail.',
       tenantId: Number(campaign.tenant_id) || null,
+      campaignId: Number(campaign.id) || null,
     });
 
     const msgId = sent.messageId;

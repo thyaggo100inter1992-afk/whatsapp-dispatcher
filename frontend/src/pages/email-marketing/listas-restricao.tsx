@@ -119,7 +119,7 @@ export default function EmailListasRestricao() {
                 <div>
                   <h1 className="text-3xl md:text-4xl font-black text-white">Lista de Restrição</h1>
                   <p className="text-white/70 mt-1">
-                    Quem cancelou a inscrição — o sistema não envia e-mails para estes endereços (salvo confirmação no disparo).
+                    Lista exclusiva do seu tenant — quem cancelou inscrição nos seus e-mails. Não mistura com outros tenants.
                   </p>
                 </div>
               </div>
@@ -127,8 +127,9 @@ export default function EmailListasRestricao() {
 
             <div className="bg-dark-800/60 border-2 border-white/10 rounded-2xl p-6 space-y-4">
               <p className="text-sm text-white/60">
-                Em <strong className="text-white/80">todos os e-mails</strong> enviados pelo marketing (todos os tenants),
-                o sistema adiciona automaticamente o rodapé com o link &quot;Cancelar inscrição&quot;. Quem clicar entra nesta lista.
+                Quando alguém clica em <strong className="text-white/80">Cancelar inscrição</strong> no rodapé do seu e-mail,
+                o endereço sobe <strong className="text-white/80">somente na lista deste tenant</strong> (o que criou a campanha/envio).
+                Outros tenants continuam com as listas deles, separadas.
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <input
