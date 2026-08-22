@@ -1,14 +1,11 @@
 import { Request, Response } from 'express';
 import { pool } from '../database/connection';
-import * as dns from 'dns';
-import { promisify } from 'util';
 import {
   buildInboundDnsRecords,
+  checkInboundMxOnly,
   ensureSendGridInboundParse,
   sendFromMailbox,
 } from '../services/email-mailbox.service';
-
-const resolveMx = promisify(dns.resolveMx);
 
 function getTenantId(req: Request): number | null {
   return (req as any).tenant?.id || (req as any).user?.tenant_id || (req as any).tenantId || null;
@@ -47,16 +44,12 @@ export const enableDomainInbound = async (req: Request, res: Response) => {
     }
 
     const inboundDns = buildInboundDnsRecords(domain);
-    // Verifica MX atual
-    try {
-      const mx = await resolveMx(domain);
-      const ok = mx.some((r) => String(r.exchange || '').toLowerCase().replace(/\.$/, '').includes('mx.sendgrid.net'));
-      inboundDns[0].valid = ok ? 'valid' : 'unknown';
-    } catch {
-      inboundDns[0].valid = 'unknown';
-    }
+    const mxCheck = await checkInboundMxOnly(domain);
+    inboundDns[0].valid = mxCheck.ok ? 'valid' : 'unknown';
+    inboundDns[0].mx_conflicts = mxCheck.conflicts;
+    inboundDns[0].hint = mxCheck.hint;
 
-    const inboundStatus = inboundDns[0].valid === 'valid' ? 'active' : 'pending';
+    const inboundStatus = mxCheck.ok ? 'active' : 'pending';
     const result = await pool.query(
       `UPDATE email_marketing_domains SET
          inbound_enabled=TRUE,
@@ -71,9 +64,9 @@ export const enableDomainInbound = async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: result.rows[0],
-      message: inboundStatus === 'active'
+      message: mxCheck.ok
         ? 'Recebimento ativo — você já pode criar caixas de e-mail.'
-        : 'Adicione o registro MX no DNS do domínio. Depois clique em Verificar recebimento.',
+        : (mxCheck.hint || 'Adicione o registro MX no DNS do domínio. Depois clique em Verificar recebimento.'),
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -111,17 +104,12 @@ export const verifyDomainInbound = async (req: Request, res: Response) => {
       console.warn('[inbound] ensure parse verify:', e.message);
     }
 
-    let ok = false;
-    try {
-      const mx = await resolveMx(domain);
-      ok = mx.some((r) => String(r.exchange || '').toLowerCase().replace(/\.$/, '').includes('sendgrid.net'));
-    } catch {
-      ok = false;
-    }
+    const mxCheck = await checkInboundMxOnly(domain);
+    const ok = mxCheck.ok;
 
     inboundDns = inboundDns.map((r: any) =>
       r._inbound || String(r.record_type || '').toUpperCase() === 'MX'
-        ? { ...r, valid: ok ? 'valid' : 'unknown' }
+        ? { ...r, valid: ok ? 'valid' : 'unknown', mx_conflicts: mxCheck.conflicts, hint: mxCheck.hint }
         : r
     );
 
@@ -142,7 +130,7 @@ export const verifyDomainInbound = async (req: Request, res: Response) => {
       verified: ok,
       message: ok
         ? 'Recebimento verificado — MX ok.'
-        : 'MX ainda não aponta para mx.sendgrid.net. Aguarde a propagação DNS.',
+        : (mxCheck.hint || 'MX ainda não aponta exclusivamente para mx.sendgrid.net.'),
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

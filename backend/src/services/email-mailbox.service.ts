@@ -1,9 +1,13 @@
 /**
  * Caixas de e-mail (inbox) por tenant — criar endereço + receber/enviar.
  */
+import * as dns from 'dns';
+import { promisify } from 'util';
 import { pool } from '../database/connection';
 import { getSendGridApiKey, sendMarketingEmail } from './email-marketing-provider.service';
 import { extractEmailsFromHeader } from '../utils/email-reply-token';
+
+const resolveMx = promisify(dns.resolveMx);
 
 const INBOUND_WEBHOOK_URL =
   process.env.EMAIL_MARKETING_SENDGRID_INBOUND_URL ||
@@ -20,6 +24,54 @@ export function buildInboundDnsRecords(domain: string) {
       _inbound: true,
     },
   ];
+}
+
+/**
+ * Caixa de e-mail exige MX exclusivo do SendGrid.
+ * Se houver Mailgun/outro MX junto, o envio cai aleatoriamente no servidor errado
+ * e o remetente recebe bounce "550 Relaying denied".
+ */
+export async function checkInboundMxOnly(domain: string): Promise<{
+  ok: boolean;
+  hasSendgrid: boolean;
+  conflicts: string[];
+  hint?: string;
+}> {
+  try {
+    const results = await resolveMx(String(domain || '').trim().toLowerCase());
+    const exchanges = results.map((r) =>
+      String(r.exchange || '').toLowerCase().replace(/\.$/, '')
+    );
+    const hasSendgrid = exchanges.some(
+      (ex) => ex === 'mx.sendgrid.net' || ex.endsWith('.sendgrid.net')
+    );
+    const conflicts = exchanges.filter((ex) => !ex.includes('sendgrid.net'));
+
+    if (!hasSendgrid) {
+      return {
+        ok: false,
+        hasSendgrid: false,
+        conflicts,
+        hint: 'Adicione o MX mx.sendgrid.net no DNS do domínio.',
+      };
+    }
+    if (conflicts.length > 0) {
+      return {
+        ok: false,
+        hasSendgrid: true,
+        conflicts,
+        hint: `Remova os outros MX do DNS (deixe só mx.sendgrid.net). Conflito atual: ${conflicts.join(', ')}. Com MX misturados o e-mail pode cair no servidor errado e voltar com "Relaying denied".`,
+      };
+    }
+    return { ok: true, hasSendgrid: true, conflicts: [] };
+  } catch {
+    return {
+      ok: false,
+      hasSendgrid: false,
+      conflicts: [],
+      hint: 'MX ainda não encontrado no DNS. Aguarde a propagação.',
+    };
+  }
 }
 
 /** Registra hostname no Inbound Parse do SendGrid (uma vez por domínio) */

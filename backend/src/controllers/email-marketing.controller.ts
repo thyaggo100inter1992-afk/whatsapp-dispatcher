@@ -169,9 +169,9 @@ export const getDomains = async (req: Request, res: Response) => {
        FROM email_marketing_domains WHERE tenant_id = $1 ORDER BY created_at DESC`,
       [tenantId]
     );
-    const { buildInboundDnsRecords } = require('../services/email-mailbox.service');
+    const { buildInboundDnsRecords, checkInboundMxOnly } = require('../services/email-mailbox.service');
     // Garantir que DMARC + MX de recebimento sempre aparecem
-    const rows = result.rows.map((row: any) => {
+    const rows = await Promise.all(result.rows.map(async (row: any) => {
       const dns: any[] = Array.isArray(row.dns_records) ? [...row.dns_records] : [];
       const hasDmarc = dns.some((r: any) => (r.name || '').startsWith('_dmarc.') || r._is_dmarc);
       if (!hasDmarc) {
@@ -187,6 +187,18 @@ export const getDomains = async (req: Request, res: Response) => {
       if (inboundDns.length === 0) {
         inboundDns = buildInboundDnsRecords(row.domain);
       }
+      try {
+        const mxCheck = await checkInboundMxOnly(row.domain);
+        inboundDns = inboundDns.map((r: any) => ({
+          ...r,
+          _inbound: true,
+          valid: mxCheck.ok ? 'valid' : 'unknown',
+          mx_conflicts: mxCheck.conflicts,
+          hint: mxCheck.hint,
+        }));
+      } catch {
+        inboundDns = inboundDns.map((r: any) => ({ ...r, _inbound: true }));
+      }
       // Exibe MX de recebimento junto com os demais (obrigatório)
       const withoutOldInbound = dns.filter((r: any) => !r._inbound);
       const mergedDns = [...inboundDns.map((r: any) => ({ ...r, _inbound: true })), ...withoutOldInbound];
@@ -195,8 +207,9 @@ export const getDomains = async (req: Request, res: Response) => {
         dns_records: mergedDns,
         inbound_dns_records: inboundDns,
         inbound_enabled: row.inbound_enabled !== false,
+        inbound_status: inboundDns.every((r: any) => r.valid === 'valid') ? 'active' : (row.inbound_status || 'pending'),
       };
-    });
+    }));
     res.json({ success: true, data: rows });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -359,22 +372,27 @@ export const verifyDomain = async (req: Request, res: Response) => {
       const canSend = sendgridActive || essentialOk;
       const newStatus = canSend ? 'active' : 'unverified';
 
-      // MX de recebimento (caixa) — obrigatório, verificado junto
-      const { buildInboundDnsRecords, ensureSendGridInboundParse } = require('../services/email-mailbox.service');
+      // MX de recebimento (caixa) — obrigatório e exclusivo (sem Mailgun/outro MX)
+      const {
+        buildInboundDnsRecords,
+        ensureSendGridInboundParse,
+        checkInboundMxOnly,
+      } = require('../services/email-mailbox.service');
       try { await ensureSendGridInboundParse(domainName); } catch (e: any) {
         console.warn('[verify-domain] inbound parse:', e?.message || e);
       }
       let inboundDns: any[] = Array.isArray(domainRow.rows[0].inbound_dns_records) && domainRow.rows[0].inbound_dns_records.length
         ? [...domainRow.rows[0].inbound_dns_records]
         : buildInboundDnsRecords(domainName);
-      inboundDns = await Promise.all(
-        inboundDns.map(async (rec: any) => ({
-          ...rec,
-          _inbound: true,
-          valid: await checkDnsRecord(rec, domainName),
-        }))
-      );
-      const inboundOk = inboundDns.every((r: any) => r.valid === 'valid');
+      const inboundMx = await checkInboundMxOnly(domainName);
+      inboundDns = inboundDns.map((rec: any) => ({
+        ...rec,
+        _inbound: true,
+        valid: inboundMx.ok ? 'valid' : 'unknown',
+        mx_conflicts: inboundMx.conflicts,
+        hint: inboundMx.hint,
+      }));
+      const inboundOk = inboundMx.ok;
       const inboundStatus = inboundOk ? 'active' : 'pending';
 
       await pool.query(
@@ -395,6 +413,9 @@ export const verifyDomain = async (req: Request, res: Response) => {
         dns_records: [...inboundDns, ...checkedDns.filter((r: any) => !r._inbound)],
       };
       const allVerified = checkedDns.every((r: any) => r.valid === 'valid') && inboundOk;
+      const inboundMsg = inboundMx.conflicts?.length
+        ? ` Remova os MX conflitantes: ${inboundMx.conflicts.join(', ')}.`
+        : '';
       return res.json({
         success: true,
         verified: canSend,
@@ -408,7 +429,7 @@ export const verifyDomain = async (req: Request, res: Response) => {
             ? 'Domínio pronto para envio e recebimento.'
             : inboundOk
               ? 'Domínio pronto para envio. Alguns registros ainda pendentes.'
-              : 'Domínio pronto para envio. Configure o MX de recebimento (caixa de e-mail).')
+              : `Domínio pronto para envio. Configure o MX de recebimento (só mx.sendgrid.net).${inboundMsg}`)
           : 'Ainda não foi possível confirmar DNS do SendGrid. Verifique CNAME/DKIM e tente de novo.',
         data,
       });

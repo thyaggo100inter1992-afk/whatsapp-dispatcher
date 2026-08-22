@@ -314,7 +314,11 @@ export default function Dominios() {
                       </div>
                       {isInbound && rec.valid !== 'valid' && (
                         <div className="mb-3 p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-xs text-cyan-300">
-                          <strong>Obrigatório:</strong> adicione este MX no DNS para a caixa de e-mail receber mensagens. A verificação roda automaticamente junto com os demais.
+                          <strong>Obrigatório:</strong>{' '}
+                          {Array.isArray(rec.mx_conflicts) && rec.mx_conflicts.length > 0
+                            ? <>Remova os outros MX do DNS (deixe <strong>só</strong> <code>mx.sendgrid.net</code>). Conflito: {rec.mx_conflicts.join(', ')}. Com MX misturados o e-mail cai no servidor errado e volta com &quot;Relaying denied&quot;.</>
+                            : <>Adicione este MX no DNS para a caixa receber mensagens. A verificação roda automaticamente junto com os demais.</>}
+                          {rec.hint ? <div className="mt-1 opacity-90">{rec.hint}</div> : null}
                         </div>
                       )}
                       {isDmarc && rec.valid !== 'valid' && (
