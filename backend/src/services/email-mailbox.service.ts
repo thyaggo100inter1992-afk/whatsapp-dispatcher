@@ -2,6 +2,8 @@
  * Caixas de e-mail (inbox) por tenant — criar endereço + receber/enviar.
  */
 import * as dns from 'dns';
+import * as fs from 'fs';
+import * as path from 'path';
 import { promisify } from 'util';
 import { pool } from '../database/connection';
 import { getSendGridApiKey, sendMarketingEmail } from './email-marketing-provider.service';
@@ -141,6 +143,114 @@ export async function findMailboxByEmail(email: string) {
   return r.rows[0] || null;
 }
 
+export type InboundMulterFile = {
+  fieldname: string;
+  originalname?: string;
+  mimetype?: string;
+  buffer: Buffer;
+  size?: number;
+};
+
+function safeFileName(name: string) {
+  return String(name || 'arquivo')
+    .replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
+    .replace(/\s+/g, '_')
+    .slice(0, 120) || 'arquivo';
+}
+
+function parseJsonObject(raw: any): Record<string, any> {
+  if (!raw) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw;
+  try {
+    const parsed = JSON.parse(String(raw));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Salva anexos do Inbound Parse e troca cid: por URL pública /uploads */
+async function persistInboundAttachments(opts: {
+  tenantId: number;
+  mailboxId: number;
+  messageId: number;
+  html: string;
+  files?: InboundMulterFile[];
+  attachmentInfoRaw?: any;
+  contentIdsRaw?: any;
+}): Promise<{ html: string; attachments: any[] }> {
+  const files = Array.isArray(opts.files) ? opts.files : [];
+  if (files.length === 0) {
+    return { html: opts.html || '', attachments: [] };
+  }
+
+  const attachmentInfo = parseJsonObject(opts.attachmentInfoRaw);
+  const contentIds = parseJsonObject(opts.contentIdsRaw); // cid -> attachmentN
+  const uploadDir = path.join(
+    __dirname,
+    '../../uploads/email-inbox',
+    String(opts.tenantId),
+    String(opts.mailboxId)
+  );
+  fs.mkdirSync(uploadDir, { recursive: true });
+
+  const attachments: any[] = [];
+  const fieldToUrl: Record<string, string> = {};
+  const cidToUrl: Record<string, string> = {};
+
+  for (const file of files) {
+    const field = String(file.fieldname || '');
+    // SendGrid: attachment1, attachment2... — ignora outros campos de formulário
+    if (!/^attachment\d+$/i.test(field)) continue;
+    if (!file.buffer || !Buffer.isBuffer(file.buffer)) continue;
+
+    const meta = attachmentInfo[field] || {};
+    const filename = safeFileName(meta.filename || meta.name || file.originalname || `${field}.bin`);
+    const stored = `${opts.messageId}-${Date.now()}-${filename}`;
+    fs.writeFileSync(path.join(uploadDir, stored), file.buffer);
+    const url = `/uploads/email-inbox/${opts.tenantId}/${opts.mailboxId}/${stored}`;
+    fieldToUrl[field] = url;
+
+    const contentId = String(meta['content-id'] || meta.content_id || '')
+      .replace(/[<>]/g, '')
+      .trim();
+    if (contentId) cidToUrl[contentId] = url;
+
+    attachments.push({
+      filename,
+      contentType: meta.type || file.mimetype || 'application/octet-stream',
+      size: file.size || file.buffer.length,
+      url,
+      contentId: contentId || null,
+      fieldname: field,
+    });
+  }
+
+  for (const [cid, field] of Object.entries(contentIds)) {
+    const cleanCid = String(cid).replace(/[<>]/g, '').trim();
+    const url = fieldToUrl[String(field)];
+    if (cleanCid && url) cidToUrl[cleanCid] = url;
+  }
+
+  let html = String(opts.html || '');
+  if (Object.keys(cidToUrl).length > 0) {
+    html = html.replace(/src=(["'])cid:([^"']+)\1/gi, (_m, quote, cid) => {
+      const url = cidToUrl[String(cid).replace(/[<>]/g, '').trim()];
+      return url ? `src=${quote}${url}${quote}` : `src=${quote}cid:${cid}${quote}`;
+    });
+  }
+
+  // Se ainda há cid quebrado ou HTML sem as imagens, anexa <img> no final
+  const imageAtts = attachments.filter((a) => String(a.contentType || '').startsWith('image/'));
+  for (const a of imageAtts) {
+    if (!html.includes(a.url)) {
+      html += `<div style="margin-top:12px"><img src="${a.url}" alt="${a.filename}" style="max-width:100%;height:auto"/></div>`;
+    }
+  }
+
+  return { html, attachments };
+}
+
 export async function ingestInboundToMailbox(opts: {
   toCandidates: string[];
   fromRaw: string;
@@ -148,7 +258,10 @@ export async function ingestInboundToMailbox(opts: {
   text: string;
   html: string;
   messageId?: string | null;
-}): Promise<{ ok: boolean; mailboxId?: number; messageId?: number; reason?: string }> {
+  files?: InboundMulterFile[];
+  attachmentInfoRaw?: any;
+  contentIdsRaw?: any;
+}): Promise<{ ok: boolean; mailboxId?: number; messageId?: number; reason?: string; attachments?: number }> {
   let mailbox: any = null;
   for (const to of opts.toCandidates) {
     mailbox = await findMailboxByEmail(to);
@@ -168,11 +281,11 @@ export async function ingestInboundToMailbox(opts: {
     `INSERT INTO email_mailbox_messages (
        tenant_id, mailbox_id, direction, folder,
        from_email, from_name, to_email, subject, body_html, body_text,
-       message_id, is_read, status, received_at
+       message_id, is_read, status, received_at, attachments
      ) VALUES (
        $1,$2,'inbound','inbox',
        $3,$4,$5,$6,$7,$8,
-       $9,FALSE,'received',NOW()
+       $9,FALSE,'received',NOW(),'[]'::jsonb
      ) RETURNING id`,
     [
       mailbox.tenant_id,
@@ -187,7 +300,39 @@ export async function ingestInboundToMailbox(opts: {
     ]
   );
 
-  return { ok: true, mailboxId: mailbox.id, messageId: Number(ins.rows[0].id) };
+  const messageId = Number(ins.rows[0].id);
+  let html = opts.html || '';
+  let attachments: any[] = [];
+  try {
+    const saved = await persistInboundAttachments({
+      tenantId: mailbox.tenant_id,
+      mailboxId: mailbox.id,
+      messageId,
+      html,
+      files: opts.files,
+      attachmentInfoRaw: opts.attachmentInfoRaw,
+      contentIdsRaw: opts.contentIdsRaw,
+    });
+    html = saved.html;
+    attachments = saved.attachments;
+    if (attachments.length > 0 || html !== (opts.html || '')) {
+      await pool.query(
+        `UPDATE email_mailbox_messages
+         SET body_html=$1, attachments=$2::jsonb, updated_at=NOW()
+         WHERE id=$3`,
+        [html || null, JSON.stringify(attachments), messageId]
+      );
+    }
+  } catch (e: any) {
+    console.warn('[inbound-mailbox] anexos:', e?.message || e);
+  }
+
+  return {
+    ok: true,
+    mailboxId: mailbox.id,
+    messageId,
+    attachments: attachments.length,
+  };
 }
 
 export async function sendFromMailbox(opts: {

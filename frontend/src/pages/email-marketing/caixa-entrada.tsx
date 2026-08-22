@@ -34,9 +34,38 @@ interface MessageRow {
 interface MessageFull extends MessageRow {
   body_html: string | null;
   body_text: string | null;
+  attachments?: Array<{
+    filename: string;
+    contentType?: string;
+    size?: number;
+    url: string;
+  }> | null;
 }
 
 type Folder = 'inbox' | 'sent' | 'trash';
+
+function uploadsBaseUrl() {
+  const raw = process.env.NEXT_PUBLIC_API_URL || '';
+  // NEXT_PUBLIC_API_URL normalmente termina com /api
+  const base = raw.replace(/\/api\/?$/, '') || (typeof window !== 'undefined' ? window.location.origin : '');
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && base.startsWith('http://')) {
+    return base.replace(/^http:\/\//, 'https://');
+  }
+  return base;
+}
+
+function absoluteUploadUrl(url: string) {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${uploadsBaseUrl()}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+/** Troca caminhos /uploads relativos pelo host da API (imagens cid resolvidas) */
+function rewriteMailboxHtml(html: string) {
+  const base = uploadsBaseUrl();
+  if (!html || !base) return html;
+  return html.replace(/(src=["'])(\/uploads\/[^"']+)(["'])/gi, (_m, a, path, b) => `${a}${base}${path}${b}`);
+}
 
 export default function CaixaEntrada() {
   const router = useRouter();
@@ -342,11 +371,41 @@ export default function CaixaEntrada() {
                       <div className="border-t border-white/10 pt-4">
                         {selected.body_html ? (
                           <div
-                            className="prose prose-invert max-w-none text-white/90 text-sm"
-                            dangerouslySetInnerHTML={{ __html: selected.body_html }}
+                            className="prose prose-invert max-w-none text-white/90 text-sm [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg"
+                            dangerouslySetInnerHTML={{
+                              __html: rewriteMailboxHtml(selected.body_html),
+                            }}
                           />
                         ) : (
                           <pre className="whitespace-pre-wrap text-white/80 text-sm font-sans">{selected.body_text || '(sem conteúdo)'}</pre>
+                        )}
+                        {Array.isArray(selected.attachments) && selected.attachments.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-white/10">
+                            <p className="text-xs font-bold text-white/50 uppercase mb-2">Anexos</p>
+                            <div className="flex flex-wrap gap-3">
+                              {selected.attachments.map((att, idx) => {
+                                const href = absoluteUploadUrl(att.url);
+                                const isImg = String(att.contentType || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(att.filename || '');
+                                return (
+                                  <a
+                                    key={idx}
+                                    href={href}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="block rounded-lg border border-white/10 bg-black/30 overflow-hidden hover:border-cyan-500/40 max-w-[220px]"
+                                  >
+                                    {isImg ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={href} alt={att.filename} className="w-full h-auto max-h-48 object-contain bg-black/40" />
+                                    ) : (
+                                      <div className="px-3 py-2 text-sm text-cyan-300">{att.filename}</div>
+                                    )}
+                                    <div className="px-2 py-1 text-[11px] text-white/50 truncate">{att.filename}</div>
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>

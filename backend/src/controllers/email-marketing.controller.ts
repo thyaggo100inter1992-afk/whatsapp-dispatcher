@@ -2781,9 +2781,14 @@ export const sendgridInboundParse = async (req: Request, res: Response) => {
           html: String(body.html || ''),
           messageId: String(body.headers || '').match(/Message-Id:\s*<([^>]+)>/i)?.[1]
             || String(body['message-id'] || '') || null,
+          files: Array.isArray((req as any).files) ? (req as any).files : [],
+          attachmentInfoRaw: body['attachment-info'] || body.attachment_info,
+          contentIdsRaw: body['content-ids'] || body.content_ids,
         });
         if (ingested.ok) {
-          console.log(`[inbound-mailbox] mailbox=${ingested.mailboxId} msg=${ingested.messageId}`);
+          console.log(
+            `[inbound-mailbox] mailbox=${ingested.mailboxId} msg=${ingested.messageId} anexos=${ingested.attachments || 0}`
+          );
           return res.status(200).json({ success: true, matched: true, mailbox: true, id: ingested.messageId });
         }
       } catch (e: any) {

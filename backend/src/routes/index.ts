@@ -299,12 +299,36 @@ console.log('✅ Rota /admin/sendgrid-credentials registrada (apenas super_admin
 // Webhooks públicos (sem autenticação - tracking events)
 const { mailgunWebhook, sendgridWebhook, sendgridInboundParse } = require('../controllers/email-marketing.controller');
 const multerInbound = require('multer');
-const inboundUpload = multerInbound({ storage: multerInbound.memoryStorage() });
+// E-mails com imagem/anexo: campos HTML e arquivos podem passar de 1MB (limite padrão do multer)
+const inboundUpload = multerInbound({
+  storage: multerInbound.memoryStorage(),
+  limits: {
+    fileSize: 25 * 1024 * 1024,
+    fieldSize: 25 * 1024 * 1024,
+    files: 30,
+    fields: 100,
+  },
+});
+function inboundUploadMiddleware(req: any, res: any, next: any) {
+  inboundUpload.any()(req, res, (err: any) => {
+    if (err) {
+      console.error('[inbound-multer]', err.code || err.message, err);
+      // 200 para o SendGrid não ficar reenviando em loop; logamos o erro
+      return res.status(200).json({
+        success: false,
+        matched: false,
+        error: 'multer_' + String(err.code || 'error'),
+        message: String(err.message || err),
+      });
+    }
+    next();
+  });
+}
 router.post('/webhook/mailgun', mailgunWebhook);
 console.log('✅ Webhook público Mailgun registrado em /webhook/mailgun');
 router.post('/webhook/sendgrid', sendgridWebhook);
 console.log('✅ Webhook público SendGrid registrado em /webhook/sendgrid');
-router.post('/webhook/sendgrid-inbound', inboundUpload.any(), sendgridInboundParse);
+router.post('/webhook/sendgrid-inbound', inboundUploadMiddleware, sendgridInboundParse);
 console.log('✅ Inbound Parse SendGrid registrado em /webhook/sendgrid-inbound');
 
 // Cancelamento de inscrição (público — link no rodapé de todos os e-mails)
