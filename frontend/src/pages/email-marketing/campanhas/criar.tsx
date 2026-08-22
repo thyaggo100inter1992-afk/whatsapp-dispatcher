@@ -29,13 +29,23 @@ function extractLocalPart(value: string): string {
 }
 
 function parseSendersText(text: string): Sender[] {
-  return text.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
-    const parts = l.split(',').map(p => p.trim()).filter(Boolean);
-    // Se tiver @ em alguma parte, essa é o "email"; senão a última parte é o local
+  const seen = new Set<string>();
+  const out: Sender[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    // Pula cabeçalho: nome,usuario / from_name,from_email
+    if (/^(nome|from_name|name)\b/i.test(line) && !line.includes('@')) continue;
+    const parts = line.split(/[,;\t]/).map(p => p.trim()).filter(Boolean);
+    if (!parts.length) continue;
     const emailPart = parts.find(p => p.includes('@')) || parts[parts.length - 1] || '';
     const name = parts.find(p => p !== emailPart && !p.includes('@')) || '';
-    return { from_name: name, from_email: extractLocalPart(emailPart) };
-  }).filter(s => s.from_email.length > 0);
+    const local = extractLocalPart(emailPart);
+    if (!local || seen.has(local)) continue;
+    seen.add(local);
+    out.push({ from_name: name, from_email: local });
+  }
+  return out;
 }
 
 function parseSubjectsText(text: string): string[] {
@@ -160,26 +170,49 @@ export default function CriarCampanha() {
     if (tpl.body_html) setBodyHtml(tpl.body_html);
   };
 
-  const handleSenderCsvUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const text = (e.target?.result as string) || '';
-      const lines = text.split('\n').filter(Boolean);
-      const dataLines = lines[0]?.toLowerCase().includes('from_name') || lines[0]?.toLowerCase().includes('nome')
-        ? lines.slice(1) : lines;
+  const handleSenderCsvUpload = async (file: File) => {
+    try {
+      const lower = file.name.toLowerCase();
+      let text = '';
+      if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+        text = rows.map(r =>
+          [r[0], r[1]].map(c => String(c ?? '').trim()).join(',')
+        ).join('\n');
+      } else {
+        text = await file.text();
+      }
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      const header = (lines[0] || '').toLowerCase();
+      const dataLines =
+        (header.includes('nome') || header.includes('from_name') || header.includes('usuario') || header.includes('from_email'))
+        && !lines[0].includes('@')
+          ? lines.slice(1)
+          : lines;
       setSenderPasteText(dataLines.join('\n'));
-      setSenderMode('paste');
-    };
-    reader.readAsText(file);
+      setSenderMode('csv');
+      notification.success('Arquivo carregado', `${dataLines.length} linha(s) importada(s). Confira o preview.`);
+    } catch (e: any) {
+      notification.error('Erro ao ler arquivo', e.message || 'Não foi possível ler o arquivo');
+    }
   };
 
   const downloadSenderTemplate = () => {
-    const bom = '\uFEFF';
-    const content = ['nome,usuario', 'Empresa A,empresa-a', 'Empresa B,empresa-b', 'Suporte,suporte'].join('\r\n');
-    const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'modelo-remetentes.csv'; a.click();
-    URL.revokeObjectURL(url);
+    const rows = [
+      ['nome', 'usuario'],
+      ['Nett Sistemas', 'contato'],
+      ['Eli Promotora', 'eli'],
+      ['Atendimento', 'atendimento'],
+      ['Marketing', 'marketing'],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 22 }, { wch: 18 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Remetentes');
+    XLSX.writeFile(wb, 'modelo-remetentes.xlsx');
   };
 
   const handleRecipientCsvUpload = async (file: File) => {
@@ -353,7 +386,7 @@ export default function CriarCampanha() {
     <>
       <Head><title>Criar Campanha | E-mail Marketing</title></Head>
       <notification.NotificationContainer />
-      <input ref={senderFileRef} type="file" accept=".csv,.txt" className="hidden"
+      <input ref={senderFileRef} type="file" accept=".csv,.xlsx,.xls,.txt" className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) handleSenderCsvUpload(f); e.target.value = ''; }} />
       <input ref={recipientFileRef} type="file" accept=".csv,.xlsx,.xls,.txt" className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) handleRecipientCsvUpload(f); e.target.value = ''; }} />
@@ -565,12 +598,21 @@ export default function CriarCampanha() {
               <div className="space-y-4">
                 <div className="p-5 bg-blue-500/10 border-2 border-blue-500/30 rounded-xl">
                   <h3 className="text-base font-bold text-blue-300 mb-2">📋 Como colar:</h3>
-                  <p className="text-sm text-white/70 mb-2">Uma linha por remetente: <strong>nome,usuario</strong> (sem @). Se colar e-mail completo, o sistema ignora o domínio e usa o selecionado.</p>
+                  <p className="text-sm text-white/70 mb-2">
+                    Uma linha por remetente: <strong>nome,usuario</strong> (sem @ no usuário).
+                    Se colar e-mail completo, o sistema usa só a parte antes do @ e aplica o domínio da seção 1.
+                  </p>
                   <code className="block bg-black/30 rounded-lg p-3 font-mono text-sm text-green-300">
-                    Empresa A,empresa-a<br />
-                    Empresa B,empresa-b<br />
-                    noreply
+                    Nett Sistemas,contato<br />
+                    Eli Promotora,eli<br />
+                    Atendimento,atendimento<br />
+                    Marketing,marketing
                   </code>
+                  {selectedDomainName && (
+                    <p className="text-xs text-blue-200/80 mt-3">
+                      Ex.: <code className="bg-black/30 px-1 rounded">contato</code> → <strong>contato@{selectedDomainName}</strong>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-3">
@@ -582,7 +624,7 @@ export default function CriarCampanha() {
                     )}
                   </div>
                   <textarea value={senderPasteText} onChange={e => setSenderPasteText(e.target.value)}
-                    placeholder={"Empresa A,empresa-a\nEmpresa B,empresa-b\nnoreply"}
+                    placeholder={"Nett Sistemas,contato\nEli Promotora,eli\nAtendimento,atendimento"}
                     rows={12}
                     className="w-full px-5 py-4 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white text-sm font-mono focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 outline-none resize-y transition-all" />
                 </div>
@@ -600,20 +642,26 @@ export default function CriarCampanha() {
 
             {senderMode === 'csv' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <button onClick={downloadSenderTemplate}
-                    className="py-4 bg-green-500/10 hover:bg-green-500/20 text-green-300 border-2 border-green-500/30 rounded-xl text-base font-bold flex items-center justify-center gap-2 transition-all">
-                    <FaFileExcel /> Baixar modelo CSV
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300 space-y-2">
+                  <p>
+                    <strong>Modelo Excel:</strong> colunas <code className="bg-black/30 px-1 rounded">nome</code> |{' '}
+                    <code className="bg-black/30 px-1 rounded">usuario</code> (sem @). Aceita <strong>.xlsx</strong> ou CSV.
+                  </p>
+                  <p className="text-xs text-blue-200/80">
+                    O domínio selecionado na seção 1 é aplicado automaticamente (ex.: usuario → usuario@{selectedDomainName || 'seudominio.com'}).
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button type="button" onClick={downloadSenderTemplate}
+                    className="px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold flex items-center gap-2">
+                    <FaFileExcel /> Baixar modelo Excel
                   </button>
-                  <button onClick={() => senderFileRef.current?.click()}
-                    className="py-4 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border-2 border-blue-500/30 rounded-xl text-base font-bold flex items-center justify-center gap-2 transition-all">
-                    <FaUpload /> Selecionar arquivo CSV
+                  <button type="button" onClick={() => senderFileRef.current?.click()}
+                    className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold flex items-center gap-2">
+                    <FaUpload /> Selecionar Excel/CSV
                   </button>
                 </div>
-                <input ref={senderFileRef} type="file" accept=".csv,.txt" className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleSenderCsvUpload(f); }} />
-                <p className="text-sm text-white/50">Colunas: <code>nome,usuario</code> — sem @ no usuário. O domínio selecionado será aplicado.</p>
-                {finalSenders.length > 0 && (
+                {finalSenders.length > 0 && senderMode === 'csv' && (
                   <div className="bg-black/30 rounded-xl p-4">
                     <p className="text-green-300 font-bold text-base mb-3">✅ {finalSenders.length} remetentes prontos</p>
                     <div className="max-h-32 overflow-y-auto space-y-1">
@@ -622,6 +670,9 @@ export default function CriarCampanha() {
                       ))}
                     </div>
                   </div>
+                )}
+                {senderPasteText && senderMode === 'csv' && finalSenders.length === 0 && (
+                  <p className="text-yellow-300 text-sm">Arquivo lido, mas nenhum remetente válido. Confira as colunas nome | usuario.</p>
                 )}
               </div>
             )}
