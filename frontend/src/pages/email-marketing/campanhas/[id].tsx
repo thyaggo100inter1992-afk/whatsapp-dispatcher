@@ -101,6 +101,65 @@ const RECIPIENT_STATUS: Record<string, { label: string; color: string }> = {
 const POLL_INTERVAL = 3;
 const PROCESSED_STATUSES = new Set(['sent', 'failed', 'opened', 'clicked', 'replied', 'bounced', 'complained']);
 
+/** Flags de todas as etapas (não só o status final) */
+function getRecipientFlags(r: {
+  status?: string;
+  sent_at?: string | null;
+  opened_at?: string | null;
+  clicked_at?: string | null;
+  replied_at?: string | null;
+}) {
+  const st = String(r.status || '');
+  const sent = !!r.sent_at || ['sent', 'opened', 'clicked', 'replied', 'bounced', 'complained'].includes(st);
+  const opened = !!r.opened_at || !!r.clicked_at || !!r.replied_at || ['opened', 'clicked', 'replied'].includes(st);
+  const clicked = !!r.clicked_at || st === 'clicked';
+  const replied = !!r.replied_at || st === 'replied';
+  const bounced = st === 'bounced';
+  const complained = st === 'complained';
+  const failed = st === 'failed';
+  return { sent, opened, clicked, replied, bounced, complained, failed };
+}
+
+function yn(v: boolean): string {
+  return v ? 'Sim' : 'Não';
+}
+
+const JOURNEY_MARKS: Array<{
+  key: keyof ReturnType<typeof getRecipientFlags>;
+  label: string;
+  short: string;
+  on: string;
+  off: string;
+}> = [
+  { key: 'sent', label: 'Enviado', short: 'Env', on: 'bg-blue-500/30 text-blue-200 border-blue-400/50', off: 'bg-white/5 text-white/25 border-white/10' },
+  { key: 'opened', label: 'Aberto', short: 'Abe', on: 'bg-purple-500/30 text-purple-200 border-purple-400/50', off: 'bg-white/5 text-white/25 border-white/10' },
+  { key: 'clicked', label: 'Clicou', short: 'Cli', on: 'bg-indigo-500/30 text-indigo-200 border-indigo-400/50', off: 'bg-white/5 text-white/25 border-white/10' },
+  { key: 'replied', label: 'Respondido', short: 'Res', on: 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50', off: 'bg-white/5 text-white/25 border-white/10' },
+  { key: 'bounced', label: 'Rejeitado', short: 'Rej', on: 'bg-orange-500/30 text-orange-200 border-orange-400/50', off: 'bg-white/5 text-white/25 border-white/10' },
+  { key: 'complained', label: 'Spam', short: 'Spa', on: 'bg-red-500/30 text-red-200 border-red-400/50', off: 'bg-white/5 text-white/25 border-white/10' },
+  { key: 'failed', label: 'Falhou', short: 'Fal', on: 'bg-red-600/30 text-red-200 border-red-500/50', off: 'bg-white/5 text-white/25 border-white/10' },
+];
+
+function RecipientJourneyMarks({ r }: { r: Recipient }) {
+  const flags = getRecipientFlags(r);
+  return (
+    <div className="flex flex-wrap gap-1 min-w-[160px]" title="Etapas que o contato já passou">
+      {JOURNEY_MARKS.map(m => {
+        const active = flags[m.key];
+        return (
+          <span
+            key={m.key}
+            title={`${m.label}: ${active ? 'Sim' : 'Não'}`}
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold border ${active ? m.on : m.off}`}
+          >
+            {active ? '✓' : '·'} {m.short}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Exibe motivo de falha em português (traduz textos comuns do Mailgun/SMTP) */
 function formatErrorPt(raw: string | null | undefined): string {
   if (!raw) return '';
@@ -528,11 +587,18 @@ export default function CampaignDetail() {
       if (used.var4) destHeader.push('Var4');
       if (used.var5) destHeader.push('Var5');
       if (used.protocolo) destHeader.push('Protocolo');
-      destHeader.push('Status', 'Domínio', 'Remetente', 'Enviado em', 'Aberto em', 'Respondido em', 'Clicado em', 'Motivo do erro');
+      destHeader.push(
+        'Status atual',
+        'Enviado?', 'Aberto?', 'Clicou?', 'Respondido?', 'Rejeitado?', 'Spam?', 'Falhou?',
+        'Domínio', 'Remetente',
+        'Enviado em', 'Aberto em', 'Clicado em', 'Respondido em',
+        'Motivo do erro',
+      );
 
       const destinatarios = [
         destHeader,
         ...rows.map(r2 => {
+          const flags = getRecipientFlags(r2);
           const row: (string | number)[] = [
             r2.email || '',
             r2.name || '',
@@ -547,19 +613,28 @@ export default function CampaignDetail() {
           if (used.protocolo) row.push(r2.protocol || '');
           row.push(
             RECIPIENT_STATUS[r2.status]?.label || r2.status,
+            yn(flags.sent),
+            yn(flags.opened),
+            yn(flags.clicked),
+            yn(flags.replied),
+            yn(flags.bounced),
+            yn(flags.complained),
+            yn(flags.failed),
             r2.sent_domain ? `@${r2.sent_domain}` : '',
             r2.sent_from_email || '',
             r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : '',
             r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : '',
-            r2.replied_at ? new Date(r2.replied_at).toLocaleString('pt-BR') : '',
             r2.clicked_at ? new Date(r2.clicked_at).toLocaleString('pt-BR') : '',
+            r2.replied_at ? new Date(r2.replied_at).toLocaleString('pt-BR') : '',
             r2.error_message || '',
           );
           return row;
         }),
       ];
       const wsDest = XLSX.utils.aoa_to_sheet(destinatarios);
-      wsDest['!cols'] = destHeader.map(() => ({ wch: 16 }));
+      wsDest['!cols'] = destHeader.map((h) => ({
+        wch: /^(Enviado\?|Aberto\?|Clicou\?|Respondido\?|Rejeitado\?|Spam\?|Falhou\?)$/.test(h) ? 12 : 16,
+      }));
       XLSX.utils.book_append_sheet(wb, wsDest, 'Destinatarios');
 
       const fileName = `relatorio-${campaign.name.replace(/[^\w\-]+/g, '-').replace(/-+/g, '-').slice(0, 40)}-${new Date().toISOString().slice(0, 10)}.xlsx`;
@@ -654,11 +729,25 @@ export default function CampaignDetail() {
     return r[key] || null;
   };
 
+  const matchesJourneyFilter = (r: Recipient, status: string) => {
+    if (status === 'all') return true;
+    if (status === 'pending') return r.status === 'pending' || r.status === 'sending';
+    const flags = getRecipientFlags(r);
+    if (status === 'sent') return flags.sent;
+    if (status === 'opened') return flags.opened;
+    if (status === 'clicked') return flags.clicked;
+    if (status === 'replied') return flags.replied;
+    if (status === 'bounced') return flags.bounced;
+    if (status === 'complained') return flags.complained;
+    if (status === 'failed') return flags.failed;
+    return r.status === status;
+  };
+
   const filteredRecipients = recipients
     .filter(r => {
       if (filterStatus === 'all') {
         if (!PROCESSED_STATUSES.has(r.status)) return false;
-      } else if (r.status !== filterStatus) {
+      } else if (!matchesJourneyFilter(r, filterStatus)) {
         return false;
       }
       return matchesSearch(r);
@@ -669,7 +758,7 @@ export default function CampaignDetail() {
   // Modal de destinatários: "Todos" inclui pendentes
   const modalRecipients = recipients
     .filter(r => {
-      if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+      if (filterStatus !== 'all' && !matchesJourneyFilter(r, filterStatus)) return false;
       return matchesSearch(r);
     })
     .slice()
@@ -677,7 +766,19 @@ export default function CampaignDetail() {
 
   const processedCount = recipients.filter(r => PROCESSED_STATUSES.has(r.status)).length;
   const recipientCounts: Record<string, number> = { all: processedCount };
-  for (const r of recipients) recipientCounts[r.status] = (recipientCounts[r.status] || 0) + 1;
+  for (const r of recipients) {
+    const flags = getRecipientFlags(r);
+    if (flags.sent) recipientCounts.sent = (recipientCounts.sent || 0) + 1;
+    if (flags.opened) recipientCounts.opened = (recipientCounts.opened || 0) + 1;
+    if (flags.clicked) recipientCounts.clicked = (recipientCounts.clicked || 0) + 1;
+    if (flags.replied) recipientCounts.replied = (recipientCounts.replied || 0) + 1;
+    if (flags.bounced) recipientCounts.bounced = (recipientCounts.bounced || 0) + 1;
+    if (flags.complained) recipientCounts.complained = (recipientCounts.complained || 0) + 1;
+    if (flags.failed) recipientCounts.failed = (recipientCounts.failed || 0) + 1;
+    if (r.status === 'pending' || r.status === 'sending') {
+      recipientCounts.pending = (recipientCounts.pending || 0) + 1;
+    }
+  }
 
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex items-center justify-center">
@@ -977,7 +1078,7 @@ export default function CampaignDetail() {
                         if (usedVars.var4) headers.push('Var4');
                         if (usedVars.var5) headers.push('Var5');
                         if (usedVars.protocolo) headers.push('Protocolo');
-                        headers.push('Status', 'Domínio', 'Remetente', 'Enviado em', 'Aberto em', 'Respondido em', 'Clicado em', 'Erro');
+                        headers.push('Status', 'Etapas', 'Domínio', 'Remetente', 'Enviado em', 'Aberto em', 'Respondido em', 'Clicado em', 'Erro');
                         return headers.map(h => (
                           <th key={h} className="text-left py-3 px-3 text-xs font-bold text-gray-400 uppercase">{h}</th>
                         ));
@@ -1003,6 +1104,7 @@ export default function CampaignDetail() {
                           <td className="py-3 px-3">
                             <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
                           </td>
+                          <td className="py-3 px-3"><RecipientJourneyMarks r={r} /></td>
                           <td className="py-3 px-3 text-orange-300 text-xs font-mono whitespace-nowrap">
                             {r.sent_domain ? `@${r.sent_domain}` : '—'}
                           </td>
@@ -1436,6 +1538,7 @@ export default function CampaignDetail() {
                       {usedVars.var5 && <th className="text-left p-3 text-xs font-black text-white uppercase">Var5</th>}
                       {usedVars.protocolo && <th className="text-left p-3 text-xs font-black text-white uppercase">Protocolo</th>}
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Status</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Etapas</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Domínio</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Remetente</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Data / Hora</th>
@@ -1447,14 +1550,14 @@ export default function CampaignDetail() {
                   <tbody>
                     {loadingRecipients && recipients.length === 0 ? (
                       <tr>
-                        <td colSpan={11 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
+                        <td colSpan={12 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
                           <FaSpinner className="animate-spin text-3xl text-orange-400 mx-auto mb-3" />
                           Carregando log de envio...
                         </td>
                       </tr>
                     ) : filteredRecipients.length === 0 ? (
                       <tr>
-                        <td colSpan={11 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
+                        <td colSpan={12 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
                           <div className="text-5xl mb-3">📭</div>
                           {filterStatus === 'all'
                             ? 'Aguardando envios... Assim que sair um e-mail (sucesso ou erro), aparece aqui no topo.'
@@ -1488,6 +1591,7 @@ export default function CampaignDetail() {
                             <td className="p-3">
                               <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${rs.color}`}>{rs.label}</span>
                             </td>
+                            <td className="p-3"><RecipientJourneyMarks r={r} /></td>
                             <td className="p-3 text-orange-300 text-xs font-mono whitespace-nowrap font-bold">
                               {r.sent_domain ? `@${r.sent_domain}` : '—'}
                             </td>
@@ -1520,13 +1624,14 @@ export default function CampaignDetail() {
                 </table>
               </div>
               <p className="text-center text-xs text-gray-500 mt-3">
-                Mostra só o que já foi processado (enviado ou com erro), do mais novo para o mais antigo.
+                Coluna <strong className="text-white/70">Etapas</strong>: marcas ✓ do que o contato já fez (enviou, abriu, clicou, respondeu…), mesmo se o status atual for só o último.
+                {' '}
                 {campaign.status === 'sending'
-                  ? ` Atualiza a cada ${POLL_INTERVAL}s enquanto estiver enviando.`
+                  ? `Atualiza a cada ${POLL_INTERVAL}s enquanto estiver enviando.`
                   : campaign.status === 'paused'
-                    ? ' Campanha pausada — clique em Continuar/Iniciar para voltar a enviar.'
+                    ? 'Campanha pausada — clique em Continuar/Iniciar para voltar a enviar.'
                     : lastUpdated
-                      ? ` Última atualização: ${lastUpdated.toLocaleTimeString('pt-BR')}`
+                      ? `Última atualização: ${lastUpdated.toLocaleTimeString('pt-BR')}`
                       : ''}
               </p>
             </div>
