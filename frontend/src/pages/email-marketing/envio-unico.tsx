@@ -9,6 +9,29 @@ import { useNotification } from '@/hooks/useNotification';
 const EmailBodyEditor = dynamic(() => import('@/components/EmailBodyEditor'), { ssr: false });
 
 interface Domain { id: number; domain: string; status: string; }
+interface Template {
+  id: number;
+  name: string;
+  subject?: string;
+  subjects?: string[] | string | null;
+  body_html?: string;
+}
+
+function extractTemplateSubjects(tpl: Template | undefined | null): string[] {
+  if (!tpl) return [];
+  const raw = tpl.subjects;
+  if (Array.isArray(raw) && raw.length) {
+    return raw.map(s => String(s || '').trim()).filter(Boolean);
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map((s: any) => String(s || '').trim()).filter(Boolean);
+    } catch { /* ignore */ }
+  }
+  if (tpl.subject && String(tpl.subject).trim()) return [String(tpl.subject).trim()];
+  return [];
+}
 
 function extractLocalPart(value: string): string {
   const raw = String(value || '').trim();
@@ -40,6 +63,9 @@ export default function EnvioUnico() {
   const [sending, setSending] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [domains, setDomains] = useState<Domain[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [templateId, setTemplateId] = useState('');
+  const [templateSubjects, setTemplateSubjects] = useState<string[]>([]);
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     to_email: '', to_name: '', from_name: '', from_email: '',
@@ -65,10 +91,37 @@ export default function EnvioUnico() {
     });
   };
 
+  const handleTemplateSelect = (id: string) => {
+    setTemplateId(id);
+    if (!id) {
+      setTemplateSubjects([]);
+      return;
+    }
+    const tpl = templates.find(t => t.id === parseInt(id, 10));
+    if (!tpl) return;
+    const list = extractTemplateSubjects(tpl);
+    setTemplateSubjects(list);
+    if (tpl.body_html) {
+      setForm(f => ({ ...f, body_html: tpl.body_html || f.body_html }));
+    }
+    if (list.length === 1) {
+      setForm(f => ({ ...f, subject: list[0], body_html: tpl.body_html || f.body_html }));
+    } else if (list.length === 0) {
+      // Sem assunto no template — usuário digita
+      setForm(f => ({ ...f, body_html: tpl.body_html || f.body_html }));
+    } else {
+      // Vários — usuário escolhe um no select; não força assunto ainda
+      setForm(f => ({ ...f, subject: '', body_html: tpl.body_html || f.body_html }));
+    }
+  };
+
   useEffect(() => {
-    api.get('/email-marketing/domains').then(r => {
-      // Aceita ativos (prontos para envio); mesma regra das campanhas
-      setDomains((r.data.data || []).filter((d: Domain) => d.status === 'active'));
+    Promise.all([
+      api.get('/email-marketing/domains'),
+      api.get('/email-marketing/templates'),
+    ]).then(([d, t]) => {
+      setDomains((d.data.data || []).filter((x: Domain) => x.status === 'active'));
+      setTemplates(t.data.data || []);
     }).catch(() => {});
   }, []);
 
@@ -116,6 +169,8 @@ export default function EnvioUnico() {
         to_email: '', to_name: '', from_name: '', from_email: '', reply_to: '', subject: '', body_html: '',
         domain_id: form.domain_id, cpf: '', telefone: '', var1: '', var2: '', var3: '', var4: '', var5: '',
       });
+      setTemplateId('');
+      setTemplateSubjects([]);
     } catch (error: any) {
       setErrors([error.response?.data?.message || error.message]);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -290,13 +345,50 @@ export default function EnvioUnico() {
             </div>
             <div className="space-y-6">
               <div>
+                <label className={labelCls}>Template (opcional)</label>
+                <select
+                  value={templateId}
+                  onChange={e => handleTemplateSelect(e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">Sem template — digitar tudo abaixo</option>
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <p className="text-sm text-white/50 mt-2">
+                  Carrega o corpo do e-mail. No envio único só vale <strong className="text-white/70">um assunto</strong>.
+                </p>
+              </div>
+
+              <div>
                 <label className={labelCls}>Assunto *</label>
+                {templateSubjects.length > 1 && (
+                  <div className="mb-3">
+                    <label className="block text-sm font-bold mb-2 text-white/70">Escolher assunto do template</label>
+                    <select
+                      value={templateSubjects.includes(form.subject) ? form.subject : ''}
+                      onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
+                      className={inputCls}
+                    >
+                      <option value="">Selecione um assunto...</option>
+                      {templateSubjects.map((s, i) => (
+                        <option key={i} value={s}>{s}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-white/40 mt-2">Ou digite/edite o assunto no campo abaixo.</p>
+                  </div>
+                )}
                 <input
                   ref={subjectInputRef}
                   type="text"
                   value={form.subject}
                   onChange={e => setForm({ ...form, subject: e.target.value })}
-                  placeholder="Ex.: {{saudacao}}, {{nome}} — seu protocolo {{protocolo}}"
+                  placeholder={
+                    templateSubjects.length > 1
+                      ? 'Selecione acima ou digite o assunto'
+                      : 'Ex.: {{saudacao}}, {{nome}} — seu protocolo {{protocolo}}'
+                  }
                   className={inputCls}
                 />
                 <div className="mt-3">

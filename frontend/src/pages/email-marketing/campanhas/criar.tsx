@@ -136,24 +136,28 @@ export default function CriarCampanha() {
 
   const handleTemplateSelect = (id: string) => {
     setTemplateId(id);
-    if (id) {
-      const tpl = templates.find(t => t.id === parseInt(id));
-      if (tpl) {
-        const raw = (tpl as any).subjects;
-        let list: string[] = [];
-        if (Array.isArray(raw) && raw.length) {
-          list = raw.map((s: any) => String(s || '').trim()).filter(Boolean);
-        } else if (typeof raw === 'string' && raw.trim()) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) list = parsed.map((s: any) => String(s || '').trim()).filter(Boolean);
-          } catch { /* ignore */ }
-        }
-        if (!list.length && tpl.subject) list = [tpl.subject];
-        if (list.length && subjects.every(s => !s.trim())) setSubjects(list);
-        if (tpl.body_html) setBodyHtml(tpl.body_html);
-      }
+    if (!id) return;
+    const tpl = templates.find(t => t.id === parseInt(id, 10));
+    if (!tpl) return;
+
+    const raw = (tpl as any).subjects;
+    let list: string[] = [];
+    if (Array.isArray(raw) && raw.length) {
+      list = raw.map((s: any) => String(s || '').trim()).filter(Boolean);
+    } else if (typeof raw === 'string' && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) list = parsed.map((s: any) => String(s || '').trim()).filter(Boolean);
+      } catch { /* ignore */ }
     }
+    if (!list.length && tpl.subject && String(tpl.subject).trim()) {
+      list = [String(tpl.subject).trim()];
+    }
+
+    // Sempre sobe os assuntos do template (ou deixa em branco se o template não tiver)
+    setSubjects(list.length ? list : ['']);
+    setSubjectMode('manual');
+    if (tpl.body_html) setBodyHtml(tpl.body_html);
   };
 
   const handleSenderCsvUpload = (file: File) => {
@@ -852,6 +856,9 @@ export default function CriarCampanha() {
                   <option value="">Usar HTML personalizado abaixo</option>
                   {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
+                <p className="text-sm text-white/50 mt-2">
+                  Ao escolher um template, o corpo e os <strong className="text-white/70">assuntos</strong> sobem automaticamente na seção 4 (Assuntos). Se o template não tiver assunto, os campos ficam em branco.
+                </p>
               </div>
               <div>
                 <label className={labelCls}>Corpo do E-mail</label>
