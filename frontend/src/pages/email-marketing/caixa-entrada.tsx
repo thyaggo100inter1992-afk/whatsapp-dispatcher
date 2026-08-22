@@ -651,16 +651,39 @@ export default function CaixaEntrada() {
     }
   };
 
-  const buildFormData = (asDraft: boolean) => {
+  const parseEmailList = (raw: string) =>
+    String(raw || '')
+      .split(/[,;\n]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.includes('@'));
+
+  /** Lê inputs do DOM (autofill do Chrome às vezes não atualiza o state do React) */
+  const readComposeFromDom = () => {
+    const toEl = document.getElementById('mailbox-compose-to') as HTMLInputElement | null;
+    const subjectEl = document.getElementById('mailbox-compose-subject') as HTMLInputElement | null;
+    const nameEl = document.getElementById('mailbox-compose-name') as HTMLInputElement | null;
+    const ccEl = document.getElementById('mailbox-compose-cc') as HTMLInputElement | null;
+    const bccEl = document.getElementById('mailbox-compose-bcc') as HTMLInputElement | null;
+    return {
+      to_email: (toEl?.value ?? compose.to_email).trim(),
+      to_name: (nameEl?.value ?? compose.to_name).trim(),
+      subject: (subjectEl?.value ?? compose.subject).trim(),
+      cc: (ccEl?.value ?? compose.cc).trim(),
+      bcc: (bccEl?.value ?? compose.bcc).trim(),
+    };
+  };
+
+  const buildFormData = (asDraft: boolean, override?: ReturnType<typeof readComposeFromDom>) => {
+    const fields = override || readComposeFromDom();
     const fd = new FormData();
-    fd.append('to_email', compose.to_email.trim());
-    if (compose.to_name.trim()) fd.append('to_name', compose.to_name.trim());
-    fd.append('subject', compose.subject.trim());
+    fd.append('to_email', fields.to_email);
+    if (fields.to_name) fd.append('to_name', fields.to_name);
+    fd.append('subject', fields.subject);
     const html = editorRef.current?.innerHTML || compose.body_html;
     fd.append('body_html', html);
     fd.append('body_text', stripHtml(html));
-    if (compose.cc.trim()) fd.append('cc', compose.cc.trim());
-    if (compose.bcc.trim()) fd.append('bcc', compose.bcc.trim());
+    if (fields.cc) fd.append('cc', fields.cc);
+    if (fields.bcc) fd.append('bcc', fields.bcc);
     if (asDraft) fd.append('save_as_draft', 'true');
     if (compose.draft_id) fd.append('draft_id', String(compose.draft_id));
     if (compose.scheduled_at) fd.append('scheduled_at', new Date(compose.scheduled_at).toISOString());
@@ -676,12 +699,30 @@ export default function CaixaEntrada() {
       notification.warning('Atenção', 'Selecione uma caixa de e-mail');
       return;
     }
-    if (!asDraft && (!compose.to_email.includes('@') || !compose.subject.trim())) {
-      notification.warning('Atenção', 'Informe destinatário e assunto');
+    const fields = readComposeFromDom();
+    // sincroniza state com o que está na tela
+    setCompose((c) => ({
+      ...c,
+      to_email: fields.to_email,
+      to_name: fields.to_name,
+      subject: fields.subject,
+      cc: fields.cc,
+      bcc: fields.bcc,
+    }));
+
+    const tos = parseEmailList(fields.to_email);
+    if (!asDraft && (!tos.length || !fields.subject)) {
+      notification.warning(
+        'Atenção',
+        !tos.length
+          ? 'Informe ao menos um e-mail válido em Para (separe vários com vírgula)'
+          : 'Informe o assunto'
+      );
       return;
     }
     if (!asDraft && !confirmSend) {
       setConfirmSend(true);
+      notification.info('Confirme', 'Clique em Enviar novamente para confirmar o envio');
       return;
     }
     setSending(true);
@@ -690,12 +731,12 @@ export default function CaixaEntrada() {
       syncEditor();
       await api.post(
         `/email-marketing/mailboxes/${composeMailboxId}/send`,
-        buildFormData(asDraft),
+        buildFormData(asDraft, fields),
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
       notification.success(
         asDraft ? 'Rascunho salvo' : compose.scheduled_at ? 'Agendado' : 'Enviado',
-        asDraft ? 'Mensagem salva em Rascunhos' : `Para ${compose.to_email}`
+        asDraft ? 'Mensagem salva em Rascunhos' : `Para ${tos.join(', ') || fields.to_email}`
       );
       setComposing(false);
       setCompose(EMPTY_COMPOSE);
@@ -1322,16 +1363,21 @@ export default function CaixaEntrada() {
                         )}
                         <div className="flex gap-2 items-center">
                           <input
+                            id="mailbox-compose-to"
                             value={compose.to_email}
                             onChange={(e) => setCompose((c) => ({ ...c, to_email: e.target.value }))}
-                            placeholder="Para (e-mail)"
+                            onInput={(e) => setCompose((c) => ({ ...c, to_email: (e.target as HTMLInputElement).value }))}
+                            placeholder="Para: email1@..., email2@... (vírgula ou ;)"
                             className={inputCls + ' flex-1'}
+                            autoComplete="off"
                           />
                           <input
+                            id="mailbox-compose-name"
                             value={compose.to_name}
                             onChange={(e) => setCompose((c) => ({ ...c, to_name: e.target.value }))}
-                            placeholder="Nome"
+                            placeholder="Nome (opcional)"
                             className={inputCls + ' w-36'}
+                            autoComplete="off"
                           />
                           <button type="button" onClick={() => setShowCc((v) => !v)} className="text-xs text-cyan-400 font-bold whitespace-nowrap px-2">
                             Cc/Cco <FaChevronDown className="inline" />
@@ -1339,15 +1385,18 @@ export default function CaixaEntrada() {
                         </div>
                         {showCc && (
                           <>
-                            <input value={compose.cc} onChange={(e) => setCompose((c) => ({ ...c, cc: e.target.value }))} placeholder="Cc" className={inputCls} />
-                            <input value={compose.bcc} onChange={(e) => setCompose((c) => ({ ...c, bcc: e.target.value }))} placeholder="Cco" className={inputCls} />
+                            <input id="mailbox-compose-cc" value={compose.cc} onChange={(e) => setCompose((c) => ({ ...c, cc: e.target.value }))} onInput={(e) => setCompose((c) => ({ ...c, cc: (e.target as HTMLInputElement).value }))} placeholder="Cc (vários com vírgula)" className={inputCls} autoComplete="off" />
+                            <input id="mailbox-compose-bcc" value={compose.bcc} onChange={(e) => setCompose((c) => ({ ...c, bcc: e.target.value }))} onInput={(e) => setCompose((c) => ({ ...c, bcc: (e.target as HTMLInputElement).value }))} placeholder="Cco (vários com vírgula)" className={inputCls} autoComplete="off" />
                           </>
                         )}
                         <input
+                          id="mailbox-compose-subject"
                           value={compose.subject}
                           onChange={(e) => setCompose((c) => ({ ...c, subject: e.target.value }))}
+                          onInput={(e) => setCompose((c) => ({ ...c, subject: (e.target as HTMLInputElement).value }))}
                           placeholder="Assunto"
                           className={inputCls}
+                          autoComplete="off"
                         />
 
                         {/* Rich toolbar */}

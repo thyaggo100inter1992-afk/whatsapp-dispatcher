@@ -14,7 +14,7 @@ export type MarketingSendInput = {
   domain: string;
   fromEmail: string;
   fromName: string;
-  toEmail: string;
+  toEmail: string | string[];
   toName?: string | null;
   replyTo?: string | null;
   subject: string;
@@ -114,9 +114,15 @@ async function sendViaMailgun(
   const mg = await getMailgunApiClient();
   const cc = normalizeAddressList(input.cc);
   const bcc = normalizeAddressList(input.bcc);
+  const toList = normalizeAddressList(
+    Array.isArray(input.toEmail) ? input.toEmail : String(input.toEmail || '')
+  );
+  if (!toList.length) throw new Error('Destinatário inválido');
   const payload: any = {
     from: `${input.fromName} <${input.fromEmail}>`,
-    to: [input.toName ? `${input.toName} <${input.toEmail}>` : input.toEmail],
+    to: toList.length === 1 && input.toName
+      ? [`${input.toName} <${toList[0]}>`]
+      : toList,
     'h:Reply-To': input.replyTo || input.fromEmail,
     subject: input.subject,
     html: input.html || undefined,
@@ -170,9 +176,15 @@ async function sendViaSendGrid(
 
   const cc = normalizeAddressList(input.cc);
   const bcc = normalizeAddressList(input.bcc);
+  const toList = normalizeAddressList(
+    Array.isArray(input.toEmail) ? input.toEmail : String(input.toEmail || '')
+  );
+  if (!toList.length) throw new Error('Destinatário inválido');
 
   const msg: any = {
-    to: input.toName ? { email: input.toEmail, name: input.toName } : input.toEmail,
+    to: toList.length === 1 && input.toName
+      ? { email: toList[0], name: input.toName }
+      : toList.map((email) => ({ email })),
     from: { email: input.fromEmail, name: input.fromName },
     replyTo: input.replyTo || input.fromEmail,
     subject: input.subject,
@@ -245,11 +257,14 @@ export async function sendMarketingEmail(
     !prepared.skipUnsubscribeFooter &&
     prepared.toEmail
   ) {
+    const primaryTo = Array.isArray(prepared.toEmail)
+      ? prepared.toEmail[0]
+      : prepared.toEmail;
     const withFooter = appendUnsubscribeFooter({
       html: prepared.html,
       text: prepared.text,
       tenantId: Number(prepared.tenantId),
-      toEmail: prepared.toEmail,
+      toEmail: String(primaryTo || ''),
       campaignId: prepared.campaignId,
       singleSendId: prepared.singleSendId,
     });

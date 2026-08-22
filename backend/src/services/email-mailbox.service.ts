@@ -251,7 +251,7 @@ export async function applyMailboxTrackingEvent(opts: {
            OR provider_message_id LIKE $3
            OR $1 LIKE provider_message_id || '%'
          )
-         ${recipient ? 'AND LOWER(to_email)=$4' : ''}
+         ${recipient ? "AND (LOWER(to_email)=$4 OR LOWER(to_email) LIKE '%' || $4 || '%')" : ''}
        ORDER BY id DESC
        LIMIT 1`,
       recipient
@@ -621,8 +621,12 @@ export async function sendFromMailbox(opts: {
     }
   }
 
-  const toEmail = String(opts.toEmail || '').trim().toLowerCase();
-  if (!toEmail.includes('@')) throw new Error('Destinatário inválido');
+  const toList = String(opts.toEmail || '')
+    .split(/[,;\n]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.includes('@'));
+  if (!toList.length && !opts.saveAsDraft) throw new Error('Destinatário inválido — informe ao menos um e-mail');
+  const toEmailStored = toList.join(', ') || String(opts.toEmail || '').trim().toLowerCase() || 'draft@local';
   const subject = String(opts.subject || '').trim() || '(sem assunto)';
 
   let html = opts.bodyHtml || '';
@@ -633,13 +637,13 @@ export async function sendFromMailbox(opts: {
   }
 
   const ccList = Array.isArray(opts.cc)
-    ? opts.cc
-    : String(opts.cc || '').split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+    ? opts.cc.map((s) => String(s).trim().toLowerCase()).filter((s) => s.includes('@'))
+    : String(opts.cc || '').split(/[,;]+/).map((s) => s.trim().toLowerCase()).filter((s) => s.includes('@'));
   const bccList = Array.isArray(opts.bcc)
-    ? opts.bcc
-    : String(opts.bcc || '').split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+    ? opts.bcc.map((s) => String(s).trim().toLowerCase()).filter((s) => s.includes('@'))
+    : String(opts.bcc || '').split(/[,;]+/).map((s) => s.trim().toLowerCase()).filter((s) => s.includes('@'));
 
-  const threadKey = buildThreadKey(subject, [mailbox.email, toEmail, ...ccList]);
+  const threadKey = buildThreadKey(subject, [mailbox.email, ...toList, ...ccList]);
   const hasAtt = Array.isArray(opts.attachments) && opts.attachments.length > 0;
   const scheduledAt = opts.scheduledAt ? new Date(opts.scheduledAt) : null;
   const isDraft = !!opts.saveAsDraft;
@@ -666,7 +670,7 @@ export async function sendFromMailbox(opts: {
        WHERE id=$16 AND mailbox_id=$17 AND tenant_id=$18
        RETURNING id`,
       [
-        toEmail, opts.toName || null, subject, html || null, text || null,
+        toEmailStored, opts.toName || null, subject, html || null, text || null,
         ccList.join(', ') || null, bccList.join(', ') || null,
         folder, status, isScheduled ? scheduledAt : null,
         hasAtt, !!opts.requestReadReceipt, threadKey,
@@ -692,7 +696,7 @@ export async function sendFromMailbox(opts: {
       [
         opts.tenantId, opts.mailboxId, folder,
         mailbox.email, mailbox.display_name || mailbox.local_part,
-        toEmail, opts.toName || null, subject, html || null, text || null,
+        toEmailStored, opts.toName || null, subject, html || null, text || null,
         ccList.join(', ') || null, bccList.join(', ') || null, inReplyTo,
         status, isScheduled ? scheduledAt : null,
         hasAtt, !!opts.requestReadReceipt, threadKey,
@@ -738,8 +742,8 @@ export async function sendFromMailbox(opts: {
       domain: mailbox.domain,
       fromEmail: mailbox.email,
       fromName: mailbox.display_name || mailbox.local_part || mailbox.email,
-      toEmail,
-      toName: opts.toName,
+      toEmail: toList,
+      toName: toList.length === 1 ? opts.toName : null,
       replyTo: mailbox.email,
       subject,
       html,
