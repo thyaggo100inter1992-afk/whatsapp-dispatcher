@@ -164,7 +164,8 @@ export const getDomains = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const result = await pool.query(
-      `SELECT id, domain, status, dns_records, is_active, created_at, updated_at, verified_at FROM email_marketing_domains WHERE tenant_id = $1 ORDER BY created_at DESC`,
+      `SELECT id, domain, status, dns_records, is_active, created_at, updated_at, verified_at, provider, sendgrid_domain_id
+       FROM email_marketing_domains WHERE tenant_id = $1 ORDER BY created_at DESC`,
       [tenantId]
     );
     // Garantir que DMARC sempre aparece em cada domínio
@@ -495,14 +496,52 @@ export const registerDomainWebhooks = async (req: Request, res: Response) => {
 };
 
 export const deleteDomain = async (req: Request, res: Response) => {
+  const client = await pool.connect();
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const { id } = req.params;
-    await pool.query(`DELETE FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
-    res.json({ success: true });
+
+    const domainRow = await client.query(
+      `SELECT id, domain FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`,
+      [id, tenantId]
+    );
+    if (!domainRow.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
+    }
+
+    await client.query('BEGIN');
+    // Campanhas e envios únicos podem referenciar o domínio — desvincula antes de excluir
+    await client.query(
+      `UPDATE email_marketing_campaigns SET domain_id=NULL WHERE domain_id=$1 AND tenant_id=$2`,
+      [id, tenantId]
+    );
+    await client.query(
+      `UPDATE email_marketing_single_sends SET domain_id=NULL WHERE domain_id=$1 AND tenant_id=$2`,
+      [id, tenantId]
+    );
+    const deleted = await client.query(
+      `DELETE FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2 RETURNING id`,
+      [id, tenantId]
+    );
+    await client.query('COMMIT');
+
+    if (!deleted.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
+    }
+    res.json({ success: true, message: `Domínio ${domainRow.rows[0].domain} removido.` });
   } catch (error: any) {
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+    const msg = String(error?.message || '');
+    if (msg.includes('foreign key') || error?.code === '23503') {
+      return res.status(409).json({
+        success: false,
+        message: 'Não foi possível excluir: ainda há vínculos com este domínio. Tente novamente.',
+      });
+    }
     res.status(500).json({ success: false, message: error.message });
+  } finally {
+    client.release();
   }
 };
 

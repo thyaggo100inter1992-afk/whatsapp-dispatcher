@@ -6,7 +6,17 @@ import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
 
-interface Domain { id: number; domain: string; status: string; dns_records: any; created_at: string; updated_at: string; verified_at: string | null; }
+interface Domain {
+  id: number;
+  domain: string;
+  status: string;
+  dns_records: any;
+  created_at: string;
+  updated_at: string;
+  verified_at: string | null;
+  provider?: string | null;
+  sendgrid_domain_id?: string | null;
+}
 
 const STATUS = {
   active:         { label: '✅ Verificado',      color: 'text-green-300 bg-green-500/10 border-green-500/30' },
@@ -123,9 +133,11 @@ export default function Dominios() {
       if (r.data.verified) {
         notification.success(
           r.data.allVerified ? 'Domínio totalmente verificado!' : 'Domínio pronto para envio!',
-          r.data.message || (r.data.mailgunActive
-            ? 'Mailgun confirmou o domínio. CNAME de tracking pode ficar pendente.'
-            : 'SPF e DKIM OK.')
+          r.data.message || (r.data.sendgridActive
+            ? 'SendGrid confirmou o domínio.'
+            : r.data.mailgunActive
+              ? 'Mailgun confirmou o domínio. CNAME de tracking pode ficar pendente.'
+              : 'SPF e DKIM OK.')
         );
         await loadDomains();
       } else {
@@ -144,10 +156,21 @@ export default function Dominios() {
   };
 
   const handleDelete = async (id: number, domain: string) => {
-    const ok = await confirm({ title: 'Excluir Domínio', message: `Remover "${domain}"?`, confirmText: 'Sim, Excluir', type: 'danger' });
+    const ok = await confirm({
+      title: 'Excluir Domínio',
+      message: `Remover "${domain}"? Campanhas que usavam este domínio ficarão sem domínio vinculado (você poderá escolher outro depois).`,
+      confirmText: 'Sim, Excluir',
+      type: 'danger',
+    });
     if (!ok) return;
-    try { await api.delete(`/email-marketing/domains/${id}`); notification.success('Domínio removido', ''); loadDomains(); }
-    catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
+    try {
+      await api.delete(`/email-marketing/domains/${id}`);
+      notification.success('Domínio removido', `"${domain}" foi excluído.`);
+      if (showDns?.id === id) setShowDns(null);
+      loadDomains();
+    } catch (e: any) {
+      notification.error('Erro ao excluir', e.response?.data?.message || e.message);
+    }
   };
 
   const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text); notification.success('Copiado!', ''); };
@@ -297,7 +320,9 @@ export default function Dominios() {
             {/* Webhook URL */}
             {(() => {
               const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '');
-              const provider = showDns.provider || 'mailgun';
+              const dnsText = JSON.stringify(showDns.dns_records || []);
+              const looksSendgrid = /sendgrid\.net/i.test(dnsText) || showDns.provider === 'sendgrid';
+              const provider = looksSendgrid ? 'sendgrid' : (showDns.provider || 'mailgun');
               const webhookPath = provider === 'sendgrid' ? '/api/webhook/sendgrid' : '/api/webhook/mailgun';
               const webhookUrl = `${apiBase}${webhookPath}`;
               return (
@@ -305,7 +330,9 @@ export default function Dominios() {
                   <p className="text-indigo-300 font-bold text-sm mb-1 flex items-center gap-2">🔗 URL de Rastreamento (Webhook)</p>
                   <p className="text-gray-400 text-xs mb-3">
                     Provedor: <strong className="text-gray-300">{provider === 'sendgrid' ? 'SendGrid' : 'Mailgun'}</strong>.
-                    Configure esta URL na seção <strong className="text-gray-300">Webhooks</strong> para rastrear aberturas, cliques e devoluções.
+                    {provider === 'sendgrid'
+                      ? ' No SendGrid o sistema já tenta registrar sozinho; use esta URL se precisar configurar manualmente.'
+                      : ' Configure esta URL na seção Webhooks para rastrear aberturas, cliques e devoluções.'}
                   </p>
                   <div className="flex items-center gap-2 bg-black/40 rounded-lg px-3 py-2 border border-white/10">
                     <code className="text-indigo-300 text-xs flex-1 break-all">{webhookUrl}</code>
@@ -417,7 +444,16 @@ export default function Dominios() {
                         </div>
                         <div>
                           <h3 className="text-2xl font-black text-white">{d.domain}</h3>
-                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold border mt-1 ${st.color}`}>{st.label}</span>
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold border ${st.color}`}>{st.label}</span>
+                            <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold border ${
+                              (d.provider === 'sendgrid' || /sendgrid\.net/i.test(JSON.stringify(d.dns_records || [])))
+                                ? 'text-blue-300 bg-blue-500/10 border-blue-500/30'
+                                : 'text-red-300 bg-red-500/10 border-red-500/30'
+                            }`}>
+                              {(d.provider === 'sendgrid' || /sendgrid\.net/i.test(JSON.stringify(d.dns_records || []))) ? 'SendGrid' : 'Mailgun'}
+                            </span>
+                          </div>
                           <p className="text-gray-500 text-xs mt-1.5 flex items-center gap-1">
                             <FaClock className="text-xs" /> Criado em: <strong className="text-gray-400">{formatDateTime(d.created_at)}</strong>
                           </p>
