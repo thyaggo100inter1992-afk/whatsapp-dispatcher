@@ -902,7 +902,8 @@ export const createCampaign = async (req: Request, res: Response) => {
         ? from_senders
         : [{ from_name: from_name || '', from_email: from_email || '' }];
 
-    // Expande usuario × cada domínio (se já vier com @domínio válido, mantém)
+    // Sempre expande usuario × TODOS os domínios selecionados (rotação multi-domínio).
+    // Se o front já mandar e-mail completo, usa só a parte local e reexpande.
     const sendersArr: { from_name: string; from_email: string }[] = [];
     const seenSender = new Set<string>();
     for (const s of rawSenders) {
@@ -912,15 +913,6 @@ export const createCampaign = async (req: Request, res: Response) => {
         .toLowerCase();
       if (!local) continue;
       const name = (s.from_name || '').trim();
-      const rawDomain = raw.includes('@') ? raw.split('@')[1].toLowerCase() : '';
-      if (rawDomain && domainNames.map(d => d.toLowerCase()).includes(rawDomain)) {
-        const full = `${local}@${rawDomain}`;
-        if (!seenSender.has(full)) {
-          seenSender.add(full);
-          sendersArr.push({ from_name: name, from_email: full });
-        }
-        continue;
-      }
       for (const dom of domainNames) {
         const full = `${local}@${dom}`;
         if (seenSender.has(full)) continue;
@@ -1203,10 +1195,38 @@ export const updateCampaign = async (req: Request, res: Response) => {
     if (body_html !== undefined) push('body_html', body_html || null);
     if (body_text !== undefined) push('body_text', body_text || null);
 
-    // Domínio + remetentes (sempre força local@dominio)
-    let domainName: string | null = null;
+    // Domínio(s) + remetentes (sempre expande usuario × todos os domínios)
+    let domainNames: string[] = [];
 
-    if (domain_id !== undefined) {
+    const requestedDomainIds: number[] | null = Array.isArray((req.body as any).domain_ids)
+      ? (req.body as any).domain_ids.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0)
+      : null;
+
+    if (requestedDomainIds && requestedDomainIds.length > 0) {
+      const domainsResult = await pool.query(
+        `SELECT id, domain, status FROM email_marketing_domains WHERE id = ANY($1::int[]) AND tenant_id=$2`,
+        [requestedDomainIds, tenantId]
+      );
+      if (domainsResult.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'Nenhum domínio válido encontrado' });
+      }
+      const inactive = domainsResult.rows.filter((d: any) => d.status !== 'active');
+      if (inactive.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Domínio(s) ainda não ativo(s): ${inactive.map((d: any) => d.domain).join(', ')}`,
+        });
+      }
+      const byId = new Map(domainsResult.rows.map((d: any) => [Number(d.id), String(d.domain)]));
+      const ordered = requestedDomainIds
+        .map(id => ({ id, domain: byId.get(id) }))
+        .filter((d): d is { id: number; domain: string } => !!d.domain);
+      domainNames = ordered.map(d => d.domain);
+      push('domain_id', ordered[0].id);
+      try {
+        push('domain_ids', JSON.stringify(ordered.map(d => d.id)));
+      } catch { /* coluna pode não existir em instâncias antigas */ }
+    } else if (domain_id !== undefined) {
       if (!domain_id) {
         return res.status(400).json({ success: false, message: 'Selecione um domínio verificado' });
       }
@@ -1217,25 +1237,44 @@ export const updateCampaign = async (req: Request, res: Response) => {
       if (!domainRow.rows[0]) {
         return res.status(400).json({ success: false, message: 'Domínio não encontrado' });
       }
-      domainName = domainRow.rows[0].domain;
+      domainNames = [domainRow.rows[0].domain];
       push('domain_id', domain_id);
+      try {
+        push('domain_ids', JSON.stringify([Number(domain_id)]));
+      } catch { /* ignore */ }
     } else if (from_senders !== undefined || from_email !== undefined) {
-      // Precisa do domínio atual da campanha para normalizar remetentes
+      // Usa domínios atuais da campanha
       const cur = await pool.query(
-        `SELECT c.domain_id, d.domain
+        `SELECT c.domain_id, c.domain_ids, d.domain
          FROM email_marketing_campaigns c
          LEFT JOIN email_marketing_domains d ON d.id = c.domain_id
          WHERE c.id=$1 AND c.tenant_id=$2`,
         [id, tenantId]
       );
-      domainName = cur.rows[0]?.domain || null;
+      const row = cur.rows[0];
+      let ids: number[] = [];
+      try {
+        const parsed = typeof row?.domain_ids === 'string' ? JSON.parse(row.domain_ids) : row?.domain_ids;
+        if (Array.isArray(parsed)) ids = parsed.map((x: any) => Number(x)).filter((n: number) => n > 0);
+      } catch { /* ignore */ }
+      if (ids.length === 0 && row?.domain_id) ids = [Number(row.domain_id)];
+      if (ids.length > 0) {
+        const dres = await pool.query(
+          `SELECT id, domain FROM email_marketing_domains WHERE id = ANY($1::int[])`,
+          [ids]
+        );
+        const byId = new Map(dres.rows.map((d: any) => [Number(d.id), String(d.domain)]));
+        domainNames = ids.map(i => byId.get(i)).filter(Boolean) as string[];
+      } else if (row?.domain) {
+        domainNames = [row.domain];
+      }
     }
 
     if (from_senders !== undefined || from_email !== undefined) {
-      if (!domainName) {
+      if (domainNames.length === 0) {
         return res.status(400).json({
           success: false,
-          message: 'Campanha sem domínio. Selecione um domínio verificado antes de alterar remetentes.',
+          message: 'Campanha sem domínio. Selecione ao menos um domínio verificado antes de alterar remetentes.',
         });
       }
 
@@ -1244,16 +1283,22 @@ export const updateCampaign = async (req: Request, res: Response) => {
           ? from_senders
           : [{ from_name: from_name || '', from_email: from_email || '' }];
 
-      const sendersArr = rawSenders.map((s) => {
+      const sendersArr: { from_name: string; from_email: string }[] = [];
+      const seenSender = new Set<string>();
+      for (const s of rawSenders) {
         const raw = String(s.from_email || '').trim();
         const local = (raw.includes('@') ? raw.split('@')[0] : raw)
           .replace(/[^a-zA-Z0-9._+-]/g, '')
           .toLowerCase();
-        return {
-          from_name: (s.from_name || '').trim(),
-          from_email: local ? `${local}@${domainName}` : '',
-        };
-      }).filter((s) => s.from_email.includes('@'));
+        if (!local) continue;
+        const name = (s.from_name || '').trim();
+        for (const dom of domainNames) {
+          const full = `${local}@${dom}`;
+          if (seenSender.has(full)) continue;
+          seenSender.add(full);
+          sendersArr.push({ from_name: name, from_email: full });
+        }
+      }
 
       if (sendersArr.length === 0) {
         return res.status(400).json({ success: false, message: 'Informe ao menos um remetente válido (parte antes do @)' });

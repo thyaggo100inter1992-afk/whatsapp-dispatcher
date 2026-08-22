@@ -22,6 +22,7 @@ interface Campaign {
   opened_count: number; clicked_count: number; bounced_count: number; complained_count: number;
   replied_count?: number;
   domain_id?: number | null;
+  domain_ids?: number[] | null;
   domain_name: string; list_name: string; template_name: string;
   body_html?: string | null; body_text?: string | null; reply_to?: string | null;
   created_at: string; started_at: string | null; completed_at: string | null; scheduled_at: string | null;
@@ -154,6 +155,7 @@ export default function CampaignDetail() {
   const [editForm, setEditForm] = useState({
     name: '',
     domain_id: '' as string | number,
+    domain_ids: [] as number[],
     reply_to: '',
     senders: [{ from_name: '', from_email: '' }] as Array<{ from_name: string; from_email: string }>,
     subjects: [''] as string[],
@@ -289,14 +291,29 @@ export default function CampaignDetail() {
       ? campaign.from_senders
       : [{ from_name: campaign.from_name || '', from_email: campaign.from_email || '' }];
 
+    // Só a parte local, sem duplicar (multi-domínio expande no save)
+    const localSenders: Array<{ from_name: string; from_email: string }> = [];
+    const seenLocal = new Set<string>();
+    for (const s of rawSenders) {
+      const local = extractLocal(s.from_email || '');
+      if (!local || seenLocal.has(local)) continue;
+      seenLocal.add(local);
+      localSenders.push({ from_name: s.from_name || '', from_email: local });
+    }
+
+    let ids: number[] = [];
+    if (Array.isArray(campaign.domain_ids) && campaign.domain_ids.length > 0) {
+      ids = campaign.domain_ids.map(Number).filter(n => n > 0);
+    } else if (campaign.domain_id) {
+      ids = [Number(campaign.domain_id)];
+    }
+
     setEditForm({
       name: campaign.name,
-      domain_id: campaign.domain_id || '',
+      domain_id: ids[0] || campaign.domain_id || '',
+      domain_ids: ids,
       reply_to: campaign.reply_to || '',
-      senders: rawSenders.map(s => ({
-        from_name: s.from_name || '',
-        from_email: extractLocal(s.from_email || ''),
-      })),
+      senders: localSenders.length ? localSenders : [{ from_name: '', from_email: '' }],
       subjects: (campaign.subjects?.length ? campaign.subjects : [campaign.subject || '']).map(String),
       body_html: campaign.body_html || '',
       work_start_time: campaign.work_start_time || '08:00',
@@ -310,13 +327,23 @@ export default function CampaignDetail() {
     setShowEditModal(true);
   };
 
-  const editDomainName = domains.find(d => d.id === Number(editForm.domain_id))?.domain
+  const editSelectedDomains = domains.filter(d => editForm.domain_ids.includes(d.id));
+  const editDomainNames = editSelectedDomains.map(d => d.domain);
+  const editDomainName = editDomainNames[0]
+    || domains.find(d => d.id === Number(editForm.domain_id))?.domain
     || campaign?.domain_name
     || '';
 
+  const toggleEditDomain = (id: number) => {
+    setEditForm(f => {
+      const next = f.domain_ids.includes(id) ? f.domain_ids.filter(x => x !== id) : [...f.domain_ids, id];
+      return { ...f, domain_ids: next, domain_id: next[0] || '' };
+    });
+  };
+
   const handleSaveEdit = async () => {
-    if (!editForm.domain_id) {
-      notification.error('Erro', 'Selecione um domínio verificado');
+    if (editForm.domain_ids.length === 0) {
+      notification.error('Erro', 'Selecione ao menos um domínio verificado');
       return;
     }
     const locals = editForm.senders
@@ -336,7 +363,8 @@ export default function CampaignDetail() {
     try {
       await api.patch(`/email-marketing/campaigns/${id}`, {
         name: editForm.name,
-        domain_id: Number(editForm.domain_id),
+        domain_id: editForm.domain_ids[0],
+        domain_ids: editForm.domain_ids,
         reply_to: editForm.reply_to || null,
         from_senders: locals,
         subjects: subjectsClean,
@@ -701,16 +729,37 @@ export default function CampaignDetail() {
                   className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
               </div>
 
-              {/* Domínio */}
+              {/* Domínios (multi) */}
               <div>
-                <label className="block text-sm font-bold text-white/80 mb-2">🌐 Domínio de Envio *</label>
-                <select value={editForm.domain_id} onChange={e => setEditForm(f => ({ ...f, domain_id: e.target.value }))}
-                  className="w-full px-4 py-3 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-orange-500/60">
-                  <option value="">Selecione um domínio ativo</option>
-                  {domains.map(d => <option key={d.id} value={d.id}>{d.domain}</option>)}
-                </select>
-                {editDomainName && (
-                  <p className="text-xs text-green-400 mt-2">Os remetentes usarão: <strong>@{editDomainName}</strong></p>
+                <label className="block text-sm font-bold text-white/80 mb-2">🌐 Domínios de Envio *</label>
+                <p className="text-xs text-white/50 mb-3">Com vários, a campanha rotaciona domínio e remetente a cada e-mail.</p>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {domains.map(d => {
+                    const checked = editForm.domain_ids.includes(d.id);
+                    return (
+                      <label
+                        key={d.id}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all ${
+                          checked
+                            ? 'border-orange-500/60 bg-orange-500/15 text-white'
+                            : 'border-white/15 bg-dark-700/60 text-white/70 hover:border-white/30'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleEditDomain(d.id)}
+                          className="w-4 h-4 accent-orange-500"
+                        />
+                        <span className="font-mono text-sm font-bold">@{d.domain}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {editDomainNames.length > 0 && (
+                  <p className="text-xs text-green-400 mt-2">
+                    Remetentes em: <strong>{editDomainNames.map(d => `@${d}`).join(' · ')}</strong>
+                  </p>
                 )}
               </div>
 
@@ -742,11 +791,15 @@ export default function CampaignDetail() {
                               placeholder="usuario"
                               className="flex-1 px-3 py-2.5 bg-dark-800 border border-white/10 rounded-l-xl text-white text-sm focus:outline-none focus:border-orange-500/60" />
                             <span className="px-3 py-2.5 bg-dark-600 border border-l-0 border-white/10 rounded-r-xl text-orange-300 text-sm font-mono whitespace-nowrap">
-                              @{editDomainName || 'dominio.com'}
+                              {editDomainNames.length > 1 ? `× ${editDomainNames.length} domínios` : `@${editDomainName || 'dominio.com'}`}
                             </span>
                           </div>
-                          {s.from_email && editDomainName && (
-                            <p className="text-xs text-green-400 mt-1">✅ {extractLocal(s.from_email)}@{editDomainName}</p>
+                          {s.from_email && editDomainNames.length > 0 && (
+                            <div className="text-xs text-green-400 mt-1 space-y-0.5">
+                              {editDomainNames.map(dom => (
+                                <p key={dom}>✅ {extractLocal(s.from_email)}@{dom}</p>
+                              ))}
+                            </div>
                           )}
                         </div>
                       </div>

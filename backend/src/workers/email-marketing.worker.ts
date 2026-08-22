@@ -69,10 +69,95 @@ function randomDelay(minSec: number, maxSec: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// Pega item de um array JSON rotacionando pelo índice (baseado no sent_count)
+// Pega item de um array JSON rotacionando pelo índice
 function pickRotating(arr: any[], index: number): any {
   if (!arr || arr.length === 0) return null;
   return arr[index % arr.length];
+}
+
+function extractLocalPart(rawFrom: string): string {
+  const raw = String(rawFrom || '').trim();
+  return (raw.includes('@') ? raw.split('@')[0] : raw)
+    .replace(/[^a-zA-Z0-9._+-]/g, '')
+    .toLowerCase();
+}
+
+/** Monta pool de rotação: usuários × todos os domain_ids (não confia só em from_senders) */
+async function buildRotationPool(campaign: any): Promise<Array<{ from_name: string; from_email: string; domain: string }>> {
+  let domainIds: number[] = [];
+  try {
+    const raw = campaign.domain_ids;
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (Array.isArray(parsed)) {
+      domainIds = parsed.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0);
+    }
+  } catch { /* ignore */ }
+  if (domainIds.length === 0 && campaign.domain_id) {
+    domainIds = [Number(campaign.domain_id)];
+  }
+
+  const domainNames: string[] = [];
+  if (domainIds.length > 0) {
+    const dres = await pool.query(
+      `SELECT id, domain FROM email_marketing_domains WHERE id = ANY($1::int[])`,
+      [domainIds]
+    );
+    const byId = new Map(dres.rows.map((r: any) => [Number(r.id), String(r.domain || '').toLowerCase()]));
+    for (const id of domainIds) {
+      const name = byId.get(id);
+      if (name && !domainNames.includes(name)) domainNames.push(name);
+    }
+  }
+
+  let sendersRaw: any[] = [];
+  try {
+    const s = campaign.from_senders;
+    sendersRaw = typeof s === 'string' ? JSON.parse(s) : (Array.isArray(s) ? s : []);
+  } catch {
+    sendersRaw = [];
+  }
+
+  const locals: Array<{ local: string; from_name: string }> = [];
+  const seenLocal = new Set<string>();
+  for (const s of sendersRaw) {
+    const local = extractLocalPart(s?.from_email || '');
+    if (!local || seenLocal.has(local)) continue;
+    seenLocal.add(local);
+    locals.push({ local, from_name: String(s?.from_name || '').trim() });
+  }
+  if (locals.length === 0 && campaign.from_email) {
+    const local = extractLocalPart(campaign.from_email);
+    if (local) locals.push({ local, from_name: String(campaign.from_name || '').trim() });
+  }
+
+  const poolOut: Array<{ from_name: string; from_email: string; domain: string }> = [];
+  const seenFull = new Set<string>();
+
+  if (domainNames.length > 0 && locals.length > 0) {
+    for (const loc of locals) {
+      for (const dom of domainNames) {
+        const full = `${loc.local}@${dom}`;
+        if (seenFull.has(full)) continue;
+        seenFull.add(full);
+        poolOut.push({ from_name: loc.from_name, from_email: full, domain: dom });
+      }
+    }
+    return poolOut;
+  }
+
+  // Fallback: from_senders como está
+  for (const s of sendersRaw) {
+    const email = String(s?.from_email || '').trim().toLowerCase();
+    if (!email.includes('@')) continue;
+    if (seenFull.has(email)) continue;
+    seenFull.add(email);
+    poolOut.push({
+      from_name: String(s?.from_name || '').trim(),
+      from_email: email,
+      domain: email.split('@')[1] || '',
+    });
+  }
+  return poolOut;
 }
 
 async function processOneCampaignTick(campaign: any): Promise<void> {
@@ -210,18 +295,36 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
   html = applyEmailVariables(prepared.html, recipVars);
   text = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
 
-  // === ROTAÇÃO DE REMETENTES (já expandido: usuario@dominio) ===
-  const sentCount = campaign.sent_count || 0;
+  // === ROTAÇÃO DE REMETENTES × DOMÍNIOS (índice estável pelo destinatário) ===
+  const rotRow = await pool.query(
+    `SELECT COUNT(*)::int AS n
+     FROM email_marketing_recipients
+     WHERE campaign_id=$1 AND status <> 'pending' AND id <= $2`,
+    [campaign.id, recipient.id]
+  );
+  const rotIndex = Math.max(0, Number(rotRow.rows[0]?.n || 1) - 1);
+
+  const rotationPool = await buildRotationPool(campaign);
   let fromName  = campaign.from_name;
   let fromEmail = campaign.from_email;
+  let domain = '';
 
-  const sendersArr = campaign.from_senders
-    ? (typeof campaign.from_senders === 'string' ? JSON.parse(campaign.from_senders) : campaign.from_senders)
-    : null;
-  if (Array.isArray(sendersArr) && sendersArr.length > 0) {
-    const sender = pickRotating(sendersArr, sentCount);
-    fromName  = sender.from_name  || fromName;
-    fromEmail = sender.from_email || fromEmail;
+  if (rotationPool.length > 0) {
+    const picked = pickRotating(rotationPool, rotIndex);
+    fromName  = picked.from_name || fromName;
+    fromEmail = picked.from_email || fromEmail;
+    domain    = picked.domain || '';
+  } else {
+    // legado
+    const sendersArr = campaign.from_senders
+      ? (typeof campaign.from_senders === 'string' ? JSON.parse(campaign.from_senders) : campaign.from_senders)
+      : null;
+    if (Array.isArray(sendersArr) && sendersArr.length > 0) {
+      const sender = pickRotating(sendersArr, rotIndex);
+      fromName  = sender.from_name  || fromName;
+      fromEmail = sender.from_email || fromEmail;
+    }
+    domain = fromEmail.includes('@') ? String(fromEmail.split('@')[1] || '').toLowerCase() : '';
   }
 
   // === ROTAÇÃO DE ASSUNTOS ===
@@ -230,12 +333,10 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
     ? (typeof campaign.subjects === 'string' ? JSON.parse(campaign.subjects) : campaign.subjects)
     : null;
   if (Array.isArray(subjectsArr) && subjectsArr.length > 0) {
-    subject = pickRotating(subjectsArr, sentCount) || subject;
+    subject = pickRotating(subjectsArr, rotIndex) || subject;
   }
   subject = applyEmailVariables(subject, recipVars, { escapeValues: false });
 
-  // Domínio = o do remetente rotacionado (multi-domínio). Fallback: domain_id da campanha.
-  let domain = fromEmail.includes('@') ? String(fromEmail.split('@')[1] || '').toLowerCase() : '';
   if (!domain && campaign.domain_id) {
     const domainRow = await pool.query(`SELECT domain FROM email_marketing_domains WHERE id=$1`, [campaign.domain_id]);
     if (domainRow.rows[0]) domain = domainRow.rows[0].domain;
