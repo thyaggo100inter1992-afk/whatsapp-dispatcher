@@ -43,7 +43,7 @@ export const enableDomainInbound = async (req: Request, res: Response) => {
       // Continua — usuário ainda precisa do MX; parse pode ser configurado depois
     }
 
-    const inboundDns = buildInboundDnsRecords(domain);
+    const inboundDns: any[] = buildInboundDnsRecords(domain);
     const mxCheck = await checkInboundMxOnly(domain);
     inboundDns[0].valid = mxCheck.ok ? 'valid' : 'unknown';
     inboundDns[0].mx_conflicts = mxCheck.conflicts;
