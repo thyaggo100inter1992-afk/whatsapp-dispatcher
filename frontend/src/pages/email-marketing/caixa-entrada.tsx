@@ -651,39 +651,60 @@ export default function CaixaEntrada() {
     }
   };
 
-  const parseEmailList = (raw: string) =>
-    String(raw || '')
-      .split(/[,;\n]+/)
-      .map((s) => s.trim())
-      .filter((s) => s.includes('@'));
+  /** Extrai e-mails válidos de qualquer texto (vírgula, ;, espaço, etc.) */
+  const parseEmailList = (raw: string) => {
+    const re =
+      /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+/g;
+    const matches = String(raw || '').match(re) || [];
+    return [...new Set(matches.map((e) => e.trim().toLowerCase()))];
+  };
 
-  /** Lê inputs do DOM (autofill do Chrome às vezes não atualiza o state do React) */
-  const readComposeFromDom = () => {
-    const toEl = document.getElementById('mailbox-compose-to') as HTMLInputElement | null;
-    const subjectEl = document.getElementById('mailbox-compose-subject') as HTMLInputElement | null;
-    const nameEl = document.getElementById('mailbox-compose-name') as HTMLInputElement | null;
-    const ccEl = document.getElementById('mailbox-compose-cc') as HTMLInputElement | null;
-    const bccEl = document.getElementById('mailbox-compose-bcc') as HTMLInputElement | null;
+  const pickValue = (domVal: string | undefined | null, stateVal: string) => {
+    const d = String(domVal ?? '').trim();
+    const s = String(stateVal ?? '').trim();
+    // NÃO usar ?? — string vazia no DOM apagava o state do React
+    if (parseEmailList(d).length >= parseEmailList(s).length && (d || !s)) {
+      // preferir o que tiver mais e-mails; se empate, o mais longo
+      if (parseEmailList(d).length > parseEmailList(s).length) return d;
+      if (d.length >= s.length && d) return d;
+    }
+    return s || d;
+  };
+
+  const readComposeFields = () => {
+    const toDom = (document.getElementById('mailbox-compose-to') as HTMLInputElement | null)?.value;
+    const subjectDom = (document.getElementById('mailbox-compose-subject') as HTMLInputElement | null)?.value;
+    const nameDom = (document.getElementById('mailbox-compose-name') as HTMLInputElement | null)?.value;
+    const ccDom = (document.getElementById('mailbox-compose-cc') as HTMLInputElement | null)?.value;
+    const bccDom = (document.getElementById('mailbox-compose-bcc') as HTMLInputElement | null)?.value;
+    const to_email = pickValue(toDom, compose.to_email);
+    const subject = (() => {
+      const d = String(subjectDom ?? '').trim();
+      const s = String(compose.subject ?? '').trim();
+      return d || s;
+    })();
     return {
-      to_email: (toEl?.value ?? compose.to_email).trim(),
-      to_name: (nameEl?.value ?? compose.to_name).trim(),
-      subject: (subjectEl?.value ?? compose.subject).trim(),
-      cc: (ccEl?.value ?? compose.cc).trim(),
-      bcc: (bccEl?.value ?? compose.bcc).trim(),
+      to_email,
+      to_name: String(nameDom ?? compose.to_name ?? '').trim() || String(compose.to_name || '').trim(),
+      subject,
+      cc: pickValue(ccDom, compose.cc),
+      bcc: pickValue(bccDom, compose.bcc),
     };
   };
 
-  const buildFormData = (asDraft: boolean, override?: ReturnType<typeof readComposeFromDom>) => {
-    const fields = override || readComposeFromDom();
+  const buildFormData = (asDraft: boolean, fields: ReturnType<typeof readComposeFields>) => {
+    const tos = parseEmailList(fields.to_email);
     const fd = new FormData();
-    fd.append('to_email', fields.to_email);
+    fd.append('to_email', tos.join(', ') || fields.to_email);
     if (fields.to_name) fd.append('to_name', fields.to_name);
     fd.append('subject', fields.subject);
     const html = editorRef.current?.innerHTML || compose.body_html;
     fd.append('body_html', html);
     fd.append('body_text', stripHtml(html));
-    if (fields.cc) fd.append('cc', fields.cc);
-    if (fields.bcc) fd.append('bcc', fields.bcc);
+    const ccs = parseEmailList(fields.cc);
+    const bccs = parseEmailList(fields.bcc);
+    if (ccs.length) fd.append('cc', ccs.join(', '));
+    if (bccs.length) fd.append('bcc', bccs.join(', '));
     if (asDraft) fd.append('save_as_draft', 'true');
     if (compose.draft_id) fd.append('draft_id', String(compose.draft_id));
     if (compose.scheduled_at) fd.append('scheduled_at', new Date(compose.scheduled_at).toISOString());
@@ -696,42 +717,46 @@ export default function CaixaEntrada() {
 
   const handleSend = async (asDraft = false) => {
     if (!composeMailboxId) {
-      notification.warning('Atenção', 'Selecione uma caixa de e-mail');
+      notification.warning('Atenção', 'Selecione uma caixa de e-mail no topo da página');
       return;
     }
-    const fields = readComposeFromDom();
-    // sincroniza state com o que está na tela
+    const fields = readComposeFields();
+    const tos = parseEmailList(fields.to_email);
+
     setCompose((c) => ({
       ...c,
-      to_email: fields.to_email,
+      to_email: tos.join(', ') || fields.to_email,
       to_name: fields.to_name,
       subject: fields.subject,
-      cc: fields.cc,
-      bcc: fields.bcc,
+      cc: parseEmailList(fields.cc).join(', ') || fields.cc,
+      bcc: parseEmailList(fields.bcc).join(', ') || fields.bcc,
     }));
 
-    const tos = parseEmailList(fields.to_email);
-    if (!asDraft && (!tos.length || !fields.subject)) {
+    if (!asDraft && !tos.length) {
       notification.warning(
         'Atenção',
-        !tos.length
-          ? 'Informe ao menos um e-mail válido em Para (separe vários com vírgula)'
-          : 'Informe o assunto'
+        'Preencha o campo PARA com um e-mail válido (ex.: nome@gmail.com). Vários: separe com vírgula.'
       );
+      document.getElementById('mailbox-compose-to')?.focus();
       return;
     }
-    if (!asDraft && !confirmSend) {
-      setConfirmSend(true);
-      notification.info('Confirme', 'Clique em Enviar novamente para confirmar o envio');
+    if (!asDraft && !fields.subject) {
+      notification.warning('Atenção', 'Preencha o campo ASSUNTO');
+      document.getElementById('mailbox-compose-subject')?.focus();
       return;
     }
+
     setSending(true);
     pollSkipRef.current = true;
+    setConfirmSend(false);
     try {
       syncEditor();
       await api.post(
         `/email-marketing/mailboxes/${composeMailboxId}/send`,
-        buildFormData(asDraft, fields),
+        buildFormData(asDraft, {
+          ...fields,
+          to_email: tos.join(', ') || fields.to_email,
+        }),
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
       notification.success(
@@ -749,7 +774,6 @@ export default function CaixaEntrada() {
       loadStats();
     } catch (e: any) {
       notification.error('Erro', e.response?.data?.message || e.message);
-      setConfirmSend(false);
     } finally {
       setSending(false);
       pollSkipRef.current = false;
@@ -1349,101 +1373,126 @@ export default function CaixaEntrada() {
                           <FaTimes />
                         </button>
                       </div>
-                      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                      <div className="flex-1 overflow-y-auto p-4 space-y-4">
                         {allMode && (
-                          <select
-                            value={composeMailboxId || ''}
-                            onChange={(e) => { setAllMode(false); setMailboxId(Number(e.target.value)); }}
-                            className={inputCls}
-                          >
-                            {mailboxes.map((m) => (
-                              <option key={m.id} value={m.id}>Enviar de: {m.email}</option>
-                            ))}
-                          </select>
+                          <div>
+                            <label className="block text-xs font-bold uppercase tracking-wide text-cyan-300 mb-1.5">Enviar de (sua caixa)</label>
+                            <select
+                              value={composeMailboxId || ''}
+                              onChange={(e) => { setAllMode(false); setMailboxId(Number(e.target.value)); }}
+                              className={inputCls}
+                            >
+                              {mailboxes.map((m) => (
+                                <option key={m.id} value={m.id}>{m.email}</option>
+                              ))}
+                            </select>
+                          </div>
                         )}
-                        <div className="flex gap-2 items-center">
-                          <input
-                            id="mailbox-compose-to"
-                            value={compose.to_email}
-                            onChange={(e) => setCompose((c) => ({ ...c, to_email: e.target.value }))}
-                            onInput={(e) => setCompose((c) => ({ ...c, to_email: (e.target as HTMLInputElement).value }))}
-                            placeholder="Para: email1@..., email2@... (vírgula ou ;)"
-                            className={inputCls + ' flex-1'}
-                            autoComplete="off"
-                          />
+                        <div>
+                          <label htmlFor="mailbox-compose-to" className="block text-xs font-bold uppercase tracking-wide text-cyan-300 mb-1.5">
+                            Para (e-mail do destinatário) *
+                          </label>
+                          <div className="flex gap-2 items-center">
+                            <input
+                              id="mailbox-compose-to"
+                              value={compose.to_email}
+                              onChange={(e) => setCompose((c) => ({ ...c, to_email: e.target.value }))}
+                              placeholder="ex.: cliente@gmail.com, outro@hotmail.com"
+                              className={inputCls + ' flex-1'}
+                              autoComplete="off"
+                            />
+                            <button type="button" onClick={() => setShowCc((v) => !v)} className="text-xs text-cyan-400 font-bold whitespace-nowrap px-2">
+                              + Cc/Cco
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-white/40 mt-1">Vários e-mails: separe com vírgula</p>
+                        </div>
+                        <div>
+                          <label htmlFor="mailbox-compose-name" className="block text-xs font-bold uppercase tracking-wide text-white/50 mb-1.5">
+                            Nome do destinatário (opcional)
+                          </label>
                           <input
                             id="mailbox-compose-name"
                             value={compose.to_name}
                             onChange={(e) => setCompose((c) => ({ ...c, to_name: e.target.value }))}
-                            placeholder="Nome (opcional)"
-                            className={inputCls + ' w-36'}
+                            placeholder="ex.: João Silva"
+                            className={inputCls}
                             autoComplete="off"
                           />
-                          <button type="button" onClick={() => setShowCc((v) => !v)} className="text-xs text-cyan-400 font-bold whitespace-nowrap px-2">
-                            Cc/Cco <FaChevronDown className="inline" />
-                          </button>
                         </div>
                         {showCc && (
                           <>
-                            <input id="mailbox-compose-cc" value={compose.cc} onChange={(e) => setCompose((c) => ({ ...c, cc: e.target.value }))} onInput={(e) => setCompose((c) => ({ ...c, cc: (e.target as HTMLInputElement).value }))} placeholder="Cc (vários com vírgula)" className={inputCls} autoComplete="off" />
-                            <input id="mailbox-compose-bcc" value={compose.bcc} onChange={(e) => setCompose((c) => ({ ...c, bcc: e.target.value }))} onInput={(e) => setCompose((c) => ({ ...c, bcc: (e.target as HTMLInputElement).value }))} placeholder="Cco (vários com vírgula)" className={inputCls} autoComplete="off" />
+                            <div>
+                              <label htmlFor="mailbox-compose-cc" className="block text-xs font-bold uppercase tracking-wide text-white/50 mb-1.5">Cc (cópia)</label>
+                              <input id="mailbox-compose-cc" value={compose.cc} onChange={(e) => setCompose((c) => ({ ...c, cc: e.target.value }))} placeholder="ex.: copia@empresa.com" className={inputCls} autoComplete="off" />
+                            </div>
+                            <div>
+                              <label htmlFor="mailbox-compose-bcc" className="block text-xs font-bold uppercase tracking-wide text-white/50 mb-1.5">Cco (cópia oculta)</label>
+                              <input id="mailbox-compose-bcc" value={compose.bcc} onChange={(e) => setCompose((c) => ({ ...c, bcc: e.target.value }))} placeholder="ex.: oculto@empresa.com" className={inputCls} autoComplete="off" />
+                            </div>
                           </>
                         )}
-                        <input
-                          id="mailbox-compose-subject"
-                          value={compose.subject}
-                          onChange={(e) => setCompose((c) => ({ ...c, subject: e.target.value }))}
-                          onInput={(e) => setCompose((c) => ({ ...c, subject: (e.target as HTMLInputElement).value }))}
-                          placeholder="Assunto"
-                          className={inputCls}
-                          autoComplete="off"
-                        />
-
-                        {/* Rich toolbar */}
-                        <div className="flex flex-wrap items-center gap-1 p-1.5 bg-black/30 border border-white/10 rounded-xl">
-                          <button type="button" onClick={() => execCmd('bold')} className={btnGhost} title="Negrito"><FaBold /></button>
-                          <button type="button" onClick={() => execCmd('italic')} className={btnGhost} title="Itálico"><FaItalic /></button>
-                          <button type="button" onClick={() => execCmd('underline')} className={btnGhost} title="Sublinhado"><FaUnderline /></button>
-                          <button type="button" onClick={() => { const u = prompt('URL do link'); if (u) execCmd('createLink', u); }} className={btnGhost} title="Link"><FaLink /></button>
-                          <button type="button" onClick={() => execCmd('insertUnorderedList')} className={btnGhost} title="Lista"><FaListUl /></button>
-                          <span className="w-px h-5 bg-white/10 mx-1" />
-                          {quickReplies.length > 0 && (
-                            <select
-                              className="bg-dark-700 border border-white/10 rounded-lg text-xs text-white/80 px-2 py-1.5 max-w-[160px]"
-                              defaultValue=""
-                              onChange={(e) => {
-                                const qr = quickReplies.find((x) => x.id === Number(e.target.value));
-                                if (qr) insertQuickReply(qr);
-                                e.target.value = '';
-                              }}
-                            >
-                              <option value="">Resposta rápida…</option>
-                              {quickReplies.map((qr) => (
-                                <option key={qr.id} value={qr.id}>{qr.title}</option>
-                              ))}
-                            </select>
-                          )}
+                        <div>
+                          <label htmlFor="mailbox-compose-subject" className="block text-xs font-bold uppercase tracking-wide text-cyan-300 mb-1.5">
+                            Assunto *
+                          </label>
+                          <input
+                            id="mailbox-compose-subject"
+                            value={compose.subject}
+                            onChange={(e) => setCompose((c) => ({ ...c, subject: e.target.value }))}
+                            placeholder="ex.: Proposta comercial"
+                            className={inputCls}
+                            autoComplete="off"
+                          />
                         </div>
 
-                        <div
-                          ref={editorRef}
-                          contentEditable
-                          suppressContentEditableWarning
-                          onInput={syncEditor}
-                          className="min-h-[180px] max-h-[280px] overflow-y-auto px-3 py-2.5 bg-dark-700/80 border border-white/15 rounded-xl text-white text-sm focus:outline-none focus:border-cyan-500/50 prose prose-invert max-w-none"
-                        />
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wide text-cyan-300 mb-1.5">Mensagem</label>
+                          <div className="flex flex-wrap items-center gap-1 p-1.5 bg-black/30 border border-white/10 rounded-t-xl border-b-0">
+                            <button type="button" onClick={() => execCmd('bold')} className={btnGhost} title="Negrito"><FaBold /></button>
+                            <button type="button" onClick={() => execCmd('italic')} className={btnGhost} title="Itálico"><FaItalic /></button>
+                            <button type="button" onClick={() => execCmd('underline')} className={btnGhost} title="Sublinhado"><FaUnderline /></button>
+                            <button type="button" onClick={() => { const u = prompt('URL do link'); if (u) execCmd('createLink', u); }} className={btnGhost} title="Link"><FaLink /></button>
+                            <button type="button" onClick={() => execCmd('insertUnorderedList')} className={btnGhost} title="Lista"><FaListUl /></button>
+                            <span className="w-px h-5 bg-white/10 mx-1" />
+                            {quickReplies.length > 0 && (
+                              <select
+                                className="bg-dark-700 border border-white/10 rounded-lg text-xs text-white/80 px-2 py-1.5 max-w-[160px]"
+                                defaultValue=""
+                                onChange={(e) => {
+                                  const qr = quickReplies.find((x) => x.id === Number(e.target.value));
+                                  if (qr) insertQuickReply(qr);
+                                  e.target.value = '';
+                                }}
+                              >
+                                <option value="">Resposta rápida…</option>
+                                {quickReplies.map((qr) => (
+                                  <option key={qr.id} value={qr.id}>{qr.title}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                          <div
+                            ref={editorRef}
+                            contentEditable
+                            suppressContentEditableWarning
+                            onInput={syncEditor}
+                            className="min-h-[180px] max-h-[280px] overflow-y-auto px-3 py-2.5 bg-dark-700/80 border border-white/15 rounded-b-xl text-white text-sm focus:outline-none focus:border-cyan-500/50 prose prose-invert max-w-none"
+                          />
+                        </div>
 
                         <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" checked={compose.append_signature} onChange={(e) => setCompose((c) => ({ ...c, append_signature: e.target.checked }))} className="accent-cyan-500" />
-                            Assinatura
+                            Incluir assinatura
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" checked={compose.request_read_receipt} onChange={(e) => setCompose((c) => ({ ...c, request_read_receipt: e.target.checked }))} className="accent-cyan-500" />
-                            Confirmação de leitura
+                            Pedir confirmação de leitura
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
                             <FaClock className="text-white/40" />
+                            <span>Agendar:</span>
                             <input
                               type="datetime-local"
                               value={compose.scheduled_at}
@@ -1466,7 +1515,7 @@ export default function CaixaEntrada() {
                             }}
                           />
                           <button type="button" onClick={() => fileInputRef.current?.click()} className="px-3 py-2 bg-white/10 hover:bg-white/15 rounded-xl text-sm text-white flex items-center gap-2">
-                            <FaPaperclip /> Anexar
+                            <FaPaperclip /> Anexar arquivo
                           </button>
                           {compose.files.map((f, i) => (
                             <span key={i} className="px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-xs text-cyan-300 flex items-center gap-1">
@@ -1482,14 +1531,9 @@ export default function CaixaEntrada() {
                       <div className="px-4 py-3 border-t border-white/10 flex flex-wrap gap-2">
                         <button type="button" disabled={sending} onClick={() => handleSend(false)} className={btnAccent}>
                           {sending ? <FaSpinner className="animate-spin" /> : <FaPaperPlane />}
-                          {confirmSend ? 'Confirmar envio' : 'Enviar'}
+                          Enviar agora
                           <span className="opacity-50 text-[10px] font-normal hidden sm:inline">Ctrl+Enter</span>
                         </button>
-                        {confirmSend && (
-                          <button type="button" onClick={() => setConfirmSend(false)} className="px-4 py-2.5 bg-white/10 text-white rounded-xl text-sm font-bold">
-                            Cancelar confirmação
-                          </button>
-                        )}
                         <button type="button" disabled={sending} onClick={() => handleSend(true)} className="px-4 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-sm font-bold flex items-center gap-2">
                           Salvar rascunho
                         </button>
