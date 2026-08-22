@@ -406,20 +406,57 @@ export default function Dominios() {
               )}
               {Array.isArray(showDns.inbound_dns_records) && showDns.inbound_dns_records.length > 0 && (
                 <div className="space-y-2">
-                  {showDns.inbound_dns_records.map((rec: any, i: number) => (
-                    <div key={i} className="bg-black/30 border border-white/10 rounded-lg p-3 text-sm">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="px-2 py-0.5 bg-white/10 rounded text-xs font-bold text-white">MX</span>
-                        <span className={`text-xs font-bold ${rec.valid === 'valid' ? 'text-green-300' : 'text-yellow-300'}`}>
-                          {rec.valid === 'valid' ? 'Verificado' : 'Aguardando'}
-                        </span>
+                  {showDns.inbound_dns_records.map((rec: any, i: number) => {
+                    const hostName = rec.name || showDns.domain;
+                    const mxValue = String(rec.value || '');
+                    const priority = rec.priority != null ? String(rec.priority) : '';
+                    return (
+                      <div key={i} className="bg-black/30 border border-white/10 rounded-lg p-3 text-sm">
+                        <div className="flex items-center gap-2 mb-3 flex-wrap">
+                          <span className="px-2 py-0.5 bg-white/10 rounded text-xs font-bold text-white uppercase">MX</span>
+                          {priority && (
+                            <span className="px-2 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded text-xs font-bold text-blue-300">
+                              Prioridade: {priority}
+                            </span>
+                          )}
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold border ${rec.valid === 'valid' ? 'bg-green-500/20 border-green-500/30 text-green-300' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'}`}>
+                            {rec.valid === 'valid' ? '✅ Verificado' : '⏳ Aguardando'}
+                          </span>
+                        </div>
+                        <div className="grid gap-2 text-sm">
+                          <div className="flex items-start gap-2">
+                            <span className="text-gray-500 w-24 flex-shrink-0 pt-0.5">Host (nome):</span>
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <code className="text-green-300 break-all">{hostName}</code>
+                              <button type="button" onClick={() => copyToClipboard(hostName)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500 hover:text-gray-300" title="Copiar">
+                                <FaCopy />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="text-gray-500 w-24 flex-shrink-0 pt-0.5">Valor:</span>
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <code className="text-blue-300 break-all text-xs">{mxValue}</code>
+                              <button type="button" onClick={() => copyToClipboard(mxValue)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500 hover:text-gray-300" title="Copiar">
+                                <FaCopy />
+                              </button>
+                            </div>
+                          </div>
+                          {priority && (
+                            <div className="flex items-start gap-2">
+                              <span className="text-gray-500 w-24 flex-shrink-0 pt-0.5">Prioridade:</span>
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <code className="text-blue-300 break-all text-xs">{priority}</code>
+                                <button type="button" onClick={() => copyToClipboard(priority)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500 hover:text-gray-300" title="Copiar">
+                                  <FaCopy />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-gray-400 text-xs">Host: <code className="text-green-300">{rec.name || showDns.domain}</code></p>
-                      <p className="text-gray-400 text-xs">Valor: <code className="text-blue-300">{rec.value}</code>
-                        {rec.priority != null ? ` · prioridade ${rec.priority}` : ''}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {showDns.inbound_enabled && showDns.inbound_status !== 'active' && (
                     <button
                       type="button"
