@@ -94,7 +94,13 @@ export default function EmailRestrictionCheckModal({
                 <div className="mt-3 max-h-48 overflow-y-auto space-y-2">
                   {(result.restricted_details.length
                     ? result.restricted_details
-                    : result.restricted_emails.map((email) => ({ email }))
+                    : result.restricted_emails.map((email) => ({
+                        email,
+                        reason: undefined as string | undefined,
+                        source: undefined as string | undefined,
+                        notes: null as string | null,
+                        added_at: undefined as string | undefined,
+                      }))
                   ).map((row, i) => (
                     <div key={i} className="flex items-center gap-3 p-3 bg-dark-800/80 border border-white/10 rounded-lg">
                       <FaEnvelope className="text-white/40 flex-shrink-0" />
