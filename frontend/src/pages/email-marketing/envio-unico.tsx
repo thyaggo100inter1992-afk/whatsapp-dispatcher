@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
@@ -18,17 +18,52 @@ function extractLocalPart(value: string): string {
   return local;
 }
 
+const EMAIL_VARS = [
+  { token: '{{nome}}', tip: 'Nome do destinatário' },
+  { token: '{{email}}', tip: 'E-mail do destinatário' },
+  { token: '{{cpf}}', tip: 'CPF (cadastro)' },
+  { token: '{{telefone}}', tip: 'Telefone (cadastro)' },
+  { token: '{{var1}}', tip: 'Var1 (cadastro)' },
+  { token: '{{var2}}', tip: 'Var2 (cadastro)' },
+  { token: '{{var3}}', tip: 'Var3 (cadastro)' },
+  { token: '{{var4}}', tip: 'Var4 (cadastro)' },
+  { token: '{{var5}}', tip: 'Var5 (cadastro)' },
+  { token: '{{saudacao}}', tip: 'Bom dia / Boa tarde / Boa noite' },
+  { token: '{{hora}}', tip: 'Hora atual' },
+  { token: '{{data}}', tip: 'Data atual' },
+  { token: '{{protocolo}}', tip: 'Protocolo automático' },
+] as const;
+
 export default function EnvioUnico() {
   const router = useRouter();
   const notification = useNotification();
   const [sending, setSending] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [domains, setDomains] = useState<Domain[]>([]);
+  const subjectInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     to_email: '', to_name: '', from_name: '', from_email: '',
     reply_to: '', subject: '', body_html: '', domain_id: '',
     cpf: '', telefone: '', var1: '', var2: '', var3: '', var4: '', var5: '',
   });
+
+  const insertInSubject = (token: string) => {
+    const el = subjectInputRef.current;
+    const cur = form.subject || '';
+    if (!el) {
+      setForm(f => ({ ...f, subject: `${cur}${token}` }));
+      return;
+    }
+    const start = el.selectionStart ?? cur.length;
+    const end = el.selectionEnd ?? start;
+    const next = `${cur.slice(0, start)}${token}${cur.slice(end)}`;
+    setForm(f => ({ ...f, subject: next }));
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
 
   useEffect(() => {
     api.get('/email-marketing/domains').then(r => {
@@ -243,11 +278,44 @@ export default function EnvioUnico() {
 
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-6"><StepBadge n={5} /><h2 className="text-3xl font-black text-white">Mensagem</h2></div>
+            <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl text-sm text-blue-200 space-y-2">
+              <p className="font-bold text-blue-100">Variáveis no e-mail</p>
+              <p>
+                Clique nos botões abaixo (assunto) ou nos botões do editor (corpo) para inserir.
+                Os valores vêm do destinatário + cadastro da ficha. Sistema: {'{{saudacao}}'} {'{{hora}}'} {'{{data}}'} {'{{protocolo}}'}.
+              </p>
+              <p className="text-xs text-blue-200/70">
+                Dica: CPF/telefone no cadastro (etapa 4) só entram no e-mail se você usar {'{{cpf}}'} / {'{{telefone}}'} aqui.
+              </p>
+            </div>
             <div className="space-y-6">
               <div>
                 <label className={labelCls}>Assunto *</label>
-                <input type="text" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })}
-                  placeholder="Assunto do e-mail" className={inputCls} />
+                <input
+                  ref={subjectInputRef}
+                  type="text"
+                  value={form.subject}
+                  onChange={e => setForm({ ...form, subject: e.target.value })}
+                  placeholder="Ex.: {{saudacao}}, {{nome}} — seu protocolo {{protocolo}}"
+                  className={inputCls}
+                />
+                <div className="mt-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-white/50 mb-2">Inserir variável no assunto</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {EMAIL_VARS.map(({ token, tip }) => (
+                      <button
+                        key={`subj-${token}`}
+                        type="button"
+                        title={tip}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => insertInSubject(token)}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-mono border border-white/15 bg-white/5 text-white/85 hover:bg-blue-500/20 hover:text-blue-200 hover:border-blue-400/40 transition-all"
+                      >
+                        {token}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
               <div>
                 <label className={labelCls}>Corpo do E-mail *</label>
@@ -256,7 +324,7 @@ export default function EnvioUnico() {
                   onChange={html => setForm(f => ({ ...f, body_html: html }))}
                   accent="blue"
                   minHeight={320}
-                  placeholder="Digite ou cole o texto do e-mail. Use a barra para formatar e inserir link do WhatsApp."
+                  placeholder="Digite o e-mail. Use os botões de variáveis abaixo do editor ({{nome}}, {{cpf}}, {{protocolo}}…)."
                 />
               </div>
             </div>

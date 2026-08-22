@@ -91,7 +91,27 @@ function buildConversationEmail(opts: {
   return { subject, html, text };
 }
 
-function buildFichaEmail(ctx: ClientReplyContext, clientSubject: string): { subject: string; html: string; text: string } {
+function stripHtmlToText(html: string): string {
+  return String(html || '')
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\/\s*p\s*>/gi, '\n')
+    .replace(/<\/\s*div\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function buildFichaEmail(
+  ctx: ClientReplyContext,
+  clientSubject: string,
+  clientText: string,
+  clientHtml: string
+): { subject: string; html: string; text: string } {
   const who = ctx.clientName || ctx.clientEmail;
   const subjectBase = clientSubject || ctx.originalSubject || '';
   const subject = `[FICHA INTERNA] ${who}${subjectBase ? ` — ${subjectBase.replace(/^re:\s*/i, '')}` : ''}`;
@@ -110,6 +130,15 @@ function buildFichaEmail(ctx: ClientReplyContext, clientSubject: string): { subj
     row('Var5', ctx.var5, { always: true }),
   ].join('');
 
+  const lastReplyPlain =
+    String(clientText || '').trim() ||
+    stripHtmlToText(clientHtml) ||
+    '(sem conteúdo)';
+
+  const lastReplyHtml = clientHtml && /<\s*(p|div|br|table|html|body)\b/i.test(clientHtml)
+    ? clientHtml
+    : `<pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;color:#0f172a;margin:0;">${esc(lastReplyPlain)}</pre>`;
+
   const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#fffbeb;font-family:Segoe UI,Arial,sans-serif;">
   <div style="max-width:640px;margin:0 auto;padding:20px;">
     <div style="background:#fff;border:2px solid #f59e0b;border-radius:12px;overflow:hidden;">
@@ -124,6 +153,12 @@ function buildFichaEmail(ctx: ClientReplyContext, clientSubject: string): { subj
         <table style="width:100%;border-collapse:collapse;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;">
           ${ficheRows}
         </table>
+        <div style="margin-top:16px;">
+          <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:8px;">Última resposta do cliente</div>
+          <div style="border:1px solid #fcd34d;border-radius:8px;padding:14px;background:#fff7ed;">
+            ${lastReplyHtml}
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -143,6 +178,9 @@ function buildFichaEmail(ctx: ClientReplyContext, clientSubject: string): { subj
     `Var3: ${ctx.var3 || '—'}`,
     `Var4: ${ctx.var4 || '—'}`,
     `Var5: ${ctx.var5 || '—'}`,
+    '',
+    '--- Última resposta do cliente ---',
+    lastReplyPlain,
   ].join('\n');
 
   return { subject, html, text };
@@ -262,7 +300,7 @@ export async function forwardClientReplyToAttendant(opts: {
     clientText: opts.clientText,
     clientHtml: opts.clientHtml,
   });
-  const ficha = buildFichaEmail(ctx, opts.clientSubject);
+  const ficha = buildFichaEmail(ctx, opts.clientSubject, opts.clientText, opts.clientHtml);
 
   // 1) Conversa — Reply-To = cliente (atendente responde por AQUI)
   await sendMarketingEmail({
