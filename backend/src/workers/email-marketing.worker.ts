@@ -1,6 +1,7 @@
 import { pool } from '../database/connection';
 import { ensureEmailHtml, applyEmailVariables, generateProtocol, detectUsedEmailVars } from '../utils/email-html';
 import { sendMarketingEmail } from '../services/email-marketing-provider.service';
+import { buildInterceptReplyTo } from '../utils/email-reply-token';
 
 let isRunning = false;
 
@@ -272,13 +273,15 @@ async function processCampaigns() {
         fromEmail = buildFromEmail(fromEmail, domain);
 
         try {
+          const attendant = String(campaign.reply_to || '').trim();
+          const intercept = attendant ? buildInterceptReplyTo('r', Number(recipient.id)) : null;
           const sent = await sendMarketingEmail({
             domain,
             fromEmail,
             fromName,
             toEmail: recipient.email,
             toName: recipient.name,
-            replyTo: campaign.reply_to || fromEmail,
+            replyTo: intercept || attendant || fromEmail,
             subject,
             html,
             text: text || 'Por favor, habilite HTML para visualizar este e-mail.',

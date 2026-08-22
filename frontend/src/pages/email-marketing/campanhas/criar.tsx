@@ -457,7 +457,11 @@ export default function CriarCampanha() {
               <div>
                 <label className={labelCls}>Responder Para (Reply-To)</label>
                 <input type="email" value={replyTo} onChange={e => setReplyTo(e.target.value)}
-                  placeholder="respostas@seudominio.com" className={inputCls} />
+                  placeholder="atendimento@seudominio.com" className={inputCls} />
+                <p className="text-white/50 text-xs mt-2">
+                  E-mail do atendente. Quando o cliente responder, o sistema encaminha a resposta para cá
+                  com CPF, nome, telefone e variáveis (uso interno). Ao clicar em Responder, você fala com o cliente — sem reenviar a ficha.
+                </p>
               </div>
             </div>
           </div>

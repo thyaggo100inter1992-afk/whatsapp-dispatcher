@@ -1358,42 +1358,77 @@ export const sendSingle = async (req: Request, res: Response) => {
     const finalHtml = applyEmailVariables(prepared.html, recipVars);
     const finalText = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
     const finalSubject = applyEmailVariables(subject, recipVars, { escapeValues: false });
+
+    const userId = (req as any).user?.id || (req as any).tenant?.userId || null;
+    const userName = (req as any).user?.name || (req as any).user?.username || null;
+    const attendant = String(reply_to || '').trim() || null;
+    const cpfVal = req.body.cpf || null;
+    const phoneVal = req.body.telefone || req.body.phone || null;
+
+    let singleId: number | null = null;
     try {
+      const ins = await pool.query(
+        `INSERT INTO email_marketing_single_sends
+         (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id,
+          status, body_html, body_text, reply_to, cpf, phone, var1, var2, var3, var4, var5, protocol)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+         RETURNING id`,
+        [
+          tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, finalSubject, domain_id,
+          body_html || null, finalText || null, attendant,
+          cpfVal, phoneVal,
+          req.body.var1 || null, req.body.var2 || null, req.body.var3 || null, req.body.var4 || null, req.body.var5 || null,
+          protocol,
+        ]
+      );
+      singleId = Number(ins.rows[0]?.id) || null;
+    } catch {
+      const ins = await pool.query(
+        `INSERT INTO email_marketing_single_sends
+         (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id,
+          status, body_html, body_text, reply_to)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12)
+         RETURNING id`,
+        [
+          tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, finalSubject, domain_id,
+          body_html || null, finalText || null, attendant,
+        ]
+      );
+      singleId = Number(ins.rows[0]?.id) || null;
+    }
+
+    try {
+      const { buildInterceptReplyTo } = require('../utils/email-reply-token');
+      const intercept = (attendant && singleId) ? buildInterceptReplyTo('s', singleId) : null;
       const sent = await sendMarketingEmail({
         domain,
         fromEmail: finalFromEmail,
         fromName: String(from_name).trim(),
         toEmail: to_email,
         toName: to_name,
-        replyTo: reply_to || finalFromEmail,
+        replyTo: intercept || attendant || finalFromEmail,
         subject: finalSubject,
         html: finalHtml,
         text: finalText,
       });
 
-      const userId = (req as any).user?.id || (req as any).tenant?.userId || null;
-      const userName = (req as any).user?.name || (req as any).user?.username || null;
       const msgId = sent.messageId || null;
-      try {
-        await pool.query(
-          `INSERT INTO email_marketing_single_sends
-           (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, provider_message_id, status, body_html, body_text, reply_to, error_message)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,'sent',$11,$12,$13,NULL)`,
-          [
-            tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, finalSubject, domain_id, msgId,
-            body_html || null, finalText || null, reply_to || null,
-          ]
-        );
-      } catch {
-        await pool.query(
-          `INSERT INTO email_marketing_single_sends
-           (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status, body_html, body_text, reply_to, error_message)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'sent',$11,$12,$13,NULL)`,
-          [
-            tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, finalSubject, domain_id, msgId,
-            body_html || null, finalText || null, reply_to || null,
-          ]
-        );
+      if (singleId) {
+        try {
+          await pool.query(
+            `UPDATE email_marketing_single_sends
+             SET mailgun_message_id=$1, provider_message_id=$1, status='sent', error_message=NULL, updated_at=NOW()
+             WHERE id=$2`,
+            [msgId, singleId]
+          );
+        } catch {
+          await pool.query(
+            `UPDATE email_marketing_single_sends
+             SET mailgun_message_id=$1, status='sent', error_message=NULL, updated_at=NOW()
+             WHERE id=$2`,
+            [msgId, singleId]
+          );
+        }
       }
 
       res.json({ success: true, message_id: msgId, message: 'E-mail enviado com sucesso', from: finalFromEmail, provider: sent.provider });
@@ -1403,19 +1438,12 @@ export const sendSingle = async (req: Request, res: Response) => {
       const friendly = (status === 403 || /forbidden/i.test(msg))
         ? `Envio bloqueado (Forbidden). Domínio: ${domain}. Remetente: ${finalFromEmail}. Verifique se o domínio está ativo no provedor.`
         : msg;
-      try {
-        const userId = (req as any).user?.id || (req as any).tenant?.userId || null;
-        const userName = (req as any).user?.name || (req as any).user?.username || null;
+      if (singleId) {
         await pool.query(
-          `INSERT INTO email_marketing_single_sends
-           (tenant_id, user_id, user_name, to_email, to_name, from_email, from_name, subject, domain_id, mailgun_message_id, status, body_html, body_text, reply_to, error_message)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,'failed',$10,$11,$12,$13)`,
-          [
-            tenantId, userId, userName, to_email, to_name || null, finalFromEmail, from_name || null, subject, domain_id,
-            body_html || null, finalText || null, reply_to || null, friendly.slice(0, 500),
-          ]
+          `UPDATE email_marketing_single_sends SET status='failed', error_message=$1, updated_at=NOW() WHERE id=$2`,
+          [friendly.slice(0, 500), singleId]
         );
-      } catch (_) { /* histórico opcional */ }
+      }
       return res.status(status === 403 ? 400 : 500).json({ success: false, message: friendly });
     }
   } catch (error: any) {
@@ -2263,5 +2291,74 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[webhook-sendgrid] erro:', error.message);
     res.status(500).json({ success: false });
+  }
+};
+
+/**
+ * SendGrid Inbound Parse — quando o cliente responde o e-mail.
+ * URL: POST /api/webhook/sendgrid-inbound
+ * Encaminha ao Reply-To (atendente) com ficha do cliente (uso interno).
+ */
+export const sendgridInboundParse = async (req: Request, res: Response) => {
+  try {
+    const { parseInterceptReplyTo, extractEmailsFromHeader } = require('../utils/email-reply-token');
+    const { forwardClientReplyToAttendant } = require('../services/email-inbound-reply.service');
+
+    const body: any = req.body || {};
+    const toField = String(body.to || body.envelope || '');
+    let envelopeTo = '';
+    try {
+      const env = typeof body.envelope === 'string' ? JSON.parse(body.envelope) : body.envelope;
+      if (env?.to) envelopeTo = Array.isArray(env.to) ? env.to.join(' ') : String(env.to);
+    } catch { /* ignore */ }
+
+    const candidates = [
+      ...extractEmailsFromHeader(toField),
+      ...extractEmailsFromHeader(envelopeTo),
+      ...extractEmailsFromHeader(String(body.headers || '')),
+    ];
+
+    let parsed: { kind: 'r' | 's'; id: number } | null = null;
+    for (const addr of candidates) {
+      parsed = parseInterceptReplyTo(addr);
+      if (parsed) break;
+    }
+    // Fallback: varrer todos os valores do body
+    if (!parsed) {
+      for (const v of Object.values(body)) {
+        if (typeof v === 'string' && v.includes('@')) {
+          for (const addr of extractEmailsFromHeader(v)) {
+            parsed = parseInterceptReplyTo(addr);
+            if (parsed) break;
+          }
+        }
+        if (parsed) break;
+      }
+    }
+
+    if (!parsed) {
+      console.warn('[inbound-reply] token não encontrado no To:', toField || envelopeTo);
+      return res.status(200).json({ success: true, matched: false });
+    }
+
+    const fromRaw = String(body.from || '');
+    const fromEmails = extractEmailsFromHeader(fromRaw);
+    const clientFrom = fromEmails[0] || '';
+
+    const result = await forwardClientReplyToAttendant({
+      kind: parsed.kind,
+      id: parsed.id,
+      clientSubject: String(body.subject || ''),
+      clientText: String(body.text || ''),
+      clientHtml: String(body.html || ''),
+      clientFromEmail: clientFrom,
+    });
+
+    console.log(`[inbound-reply] ${parsed.kind}-${parsed.id} ->`, result);
+    return res.status(200).json({ success: true, matched: true, forwarded: result.ok, reason: result.reason });
+  } catch (error: any) {
+    console.error('[inbound-reply] erro:', error.message);
+    // Sempre 200 para o SendGrid não reenviar em loop infinito por bug nosso
+    return res.status(200).json({ success: false, message: error.message });
   }
 };

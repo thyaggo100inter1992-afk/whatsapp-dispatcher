@@ -297,11 +297,15 @@ router.use('/admin/sendgrid-credentials', authenticate, requireSuperAdmin, admin
 console.log('✅ Rota /admin/sendgrid-credentials registrada (apenas super_admin)');
 
 // Webhooks públicos (sem autenticação - tracking events)
-const { mailgunWebhook, sendgridWebhook } = require('../controllers/email-marketing.controller');
+const { mailgunWebhook, sendgridWebhook, sendgridInboundParse } = require('../controllers/email-marketing.controller');
+const multerInbound = require('multer');
+const inboundUpload = multerInbound({ storage: multerInbound.memoryStorage() });
 router.post('/webhook/mailgun', mailgunWebhook);
 console.log('✅ Webhook público Mailgun registrado em /webhook/mailgun');
 router.post('/webhook/sendgrid', sendgridWebhook);
 console.log('✅ Webhook público SendGrid registrado em /webhook/sendgrid');
+router.post('/webhook/sendgrid-inbound', inboundUpload.any(), sendgridInboundParse);
+console.log('✅ Inbound Parse SendGrid registrado em /webhook/sendgrid-inbound');
 
 const adminLandingRoutes = require('./admin/landing.routes');
 router.use('/admin/landing', authenticate, requireSuperAdmin, adminLandingRoutes);
