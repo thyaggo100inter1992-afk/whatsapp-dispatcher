@@ -723,12 +723,29 @@ export const createTemplate = async (req: Request, res: Response) => {
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
-    const { name, subject, body_html, body_text } = req.body;
-    if (!name || !subject) return res.status(400).json({ success: false, message: 'Nome e assunto obrigatórios' });
-    const result = await pool.query(
-      `INSERT INTO email_marketing_templates (tenant_id, name, subject, body_html, body_text) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [tenantId, name, subject, body_html || null, body_text || null]
-    );
+    const { name, subject, subjects, body_html, body_text } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ success: false, message: 'Nome do template obrigatório' });
+    }
+    const subjectsArr: string[] = Array.isArray(subjects)
+      ? subjects.map((s: string) => String(s || '').trim()).filter(Boolean)
+      : (subject && String(subject).trim() ? [String(subject).trim()] : []);
+    const subjectVal = subjectsArr[0] || '';
+
+    let result;
+    try {
+      result = await pool.query(
+        `INSERT INTO email_marketing_templates (tenant_id, name, subject, subjects, body_html, body_text)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [tenantId, String(name).trim(), subjectVal, JSON.stringify(subjectsArr), body_html || null, body_text || null]
+      );
+    } catch {
+      result = await pool.query(
+        `INSERT INTO email_marketing_templates (tenant_id, name, subject, body_html, body_text)
+         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [tenantId, String(name).trim(), subjectVal, body_html || null, body_text || null]
+      );
+    }
     res.json({ success: true, data: result.rows[0] });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -740,11 +757,31 @@ export const updateTemplate = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const { id } = req.params;
-    const { name, subject, body_html, body_text } = req.body;
-    const result = await pool.query(
-      `UPDATE email_marketing_templates SET name=$1, subject=$2, body_html=$3, body_text=$4, updated_at=NOW() WHERE id=$5 AND tenant_id=$6 RETURNING *`,
-      [name, subject, body_html || null, body_text || null, id, tenantId]
-    );
+    const { name, subject, subjects, body_html, body_text } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ success: false, message: 'Nome do template obrigatório' });
+    }
+    const subjectsArr: string[] = Array.isArray(subjects)
+      ? subjects.map((s: string) => String(s || '').trim()).filter(Boolean)
+      : (subject && String(subject).trim() ? [String(subject).trim()] : []);
+    const subjectVal = subjectsArr[0] || '';
+
+    let result;
+    try {
+      result = await pool.query(
+        `UPDATE email_marketing_templates
+         SET name=$1, subject=$2, subjects=$3, body_html=$4, body_text=$5, updated_at=NOW()
+         WHERE id=$6 AND tenant_id=$7 RETURNING *`,
+        [String(name).trim(), subjectVal, JSON.stringify(subjectsArr), body_html || null, body_text || null, id, tenantId]
+      );
+    } catch {
+      result = await pool.query(
+        `UPDATE email_marketing_templates
+         SET name=$1, subject=$2, body_html=$3, body_text=$4, updated_at=NOW()
+         WHERE id=$5 AND tenant_id=$6 RETURNING *`,
+        [String(name).trim(), subjectVal, body_html || null, body_text || null, id, tenantId]
+      );
+    }
     res.json({ success: true, data: result.rows[0] });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

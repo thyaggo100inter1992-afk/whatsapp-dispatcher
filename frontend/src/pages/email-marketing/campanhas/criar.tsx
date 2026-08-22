@@ -16,7 +16,7 @@ const EmailBodyEditor = dynamic(() => import('@/components/EmailBodyEditor'), { 
 
 interface Domain { id: number; domain: string; status: string; }
 interface EmailList { id: number; name: string; total_contacts: number; }
-interface Template { id: number; name: string; subject: string; body_html: string; }
+interface Template { id: number; name: string; subject: string; subjects?: string[] | string | null; body_html: string; }
 interface Sender { from_name: string; from_email: string; } // from_email = parte local (antes do @)
 
 /** Extrai só a parte antes do @ (remove domínio se o usuário colar e-mail completo) */
@@ -139,7 +139,18 @@ export default function CriarCampanha() {
     if (id) {
       const tpl = templates.find(t => t.id === parseInt(id));
       if (tpl) {
-        if (tpl.subject && subjects[0] === '') setSubjects([tpl.subject]);
+        const raw = (tpl as any).subjects;
+        let list: string[] = [];
+        if (Array.isArray(raw) && raw.length) {
+          list = raw.map((s: any) => String(s || '').trim()).filter(Boolean);
+        } else if (typeof raw === 'string' && raw.trim()) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) list = parsed.map((s: any) => String(s || '').trim()).filter(Boolean);
+          } catch { /* ignore */ }
+        }
+        if (!list.length && tpl.subject) list = [tpl.subject];
+        if (list.length && subjects.every(s => !s.trim())) setSubjects(list);
         if (tpl.body_html) setBodyHtml(tpl.body_html);
       }
     }

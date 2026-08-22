@@ -9,9 +9,36 @@ import { useConfirm } from '@/hooks/useConfirm';
 
 const EmailBodyEditor = dynamic(() => import('@/components/EmailBodyEditor'), { ssr: false });
 
-interface Template { id: number; name: string; subject: string; body_html: string; body_text: string; created_at: string; }
+interface Template {
+  id: number;
+  name: string;
+  subject: string;
+  subjects?: string[] | string | null;
+  body_html: string;
+  body_text: string;
+  created_at: string;
+}
 
-const emptyForm = { name: '', subject: '', body_html: '', body_text: '' };
+function parseSubjects(t: Partial<Template> | null | undefined): string[] {
+  if (!t) return [''];
+  const raw = t.subjects;
+  if (Array.isArray(raw) && raw.length) return raw.map(s => String(s || ''));
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) return parsed.map((s: any) => String(s || ''));
+    } catch { /* ignore */ }
+  }
+  if (t.subject) return [String(t.subject)];
+  return [''];
+}
+
+function subjectsLabel(t: Template): string {
+  const list = parseSubjects(t).map(s => s.trim()).filter(Boolean);
+  if (list.length === 0) return 'Sem assunto';
+  if (list.length === 1) return list[0];
+  return `${list[0]} (+${list.length - 1})`;
+}
 
 export default function Templates() {
   const router = useRouter();
@@ -22,39 +49,90 @@ export default function Templates() {
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState({ ...emptyForm });
+  const [formName, setFormName] = useState('');
+  const [formSubjects, setFormSubjects] = useState<string[]>(['']);
+  const [formBodyHtml, setFormBodyHtml] = useState('');
   const [preview, setPreview] = useState<Template | null>(null);
 
   useEffect(() => { loadTemplates(); }, []);
 
   const loadTemplates = async () => {
-    try { const r = await api.get('/email-marketing/templates'); setTemplates(r.data.data || []); }
-    catch { } finally { setLoading(false); }
+    try {
+      const r = await api.get('/email-marketing/templates');
+      setTemplates(r.data.data || []);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
   };
 
-  const openCreate = () => { setEditingId(null); setForm({ ...emptyForm }); setShowModal(true); };
-  const openEdit = (t: Template) => { setEditingId(t.id); setForm({ name: t.name, subject: t.subject, body_html: t.body_html || '', body_text: t.body_text || '' }); setShowModal(true); };
+  const openCreate = () => {
+    setEditingId(null);
+    setFormName('');
+    setFormSubjects(['']);
+    setFormBodyHtml('');
+    setShowModal(true);
+  };
+
+  const openEdit = (t: Template) => {
+    setEditingId(t.id);
+    setFormName(t.name || '');
+    setFormSubjects(parseSubjects(t));
+    setFormBodyHtml(t.body_html || '');
+    setShowModal(true);
+  };
+
+  const updateSubject = (i: number, value: string) => {
+    setFormSubjects(prev => prev.map((s, idx) => (idx === i ? value : s)));
+  };
+  const addSubject = () => setFormSubjects(prev => [...prev, '']);
+  const removeSubject = (i: number) => {
+    setFormSubjects(prev => (prev.length <= 1 ? [''] : prev.filter((_, idx) => idx !== i)));
+  };
 
   const handleSave = async () => {
-    if (!form.name || !form.subject) { notification.warning('Campos obrigatórios', 'Nome e assunto são obrigatórios.'); return; }
+    if (!formName.trim()) {
+      notification.warning('Campo obrigatório', 'Informe o nome do template.');
+      return;
+    }
+    const subjects = formSubjects.map(s => s.trim()).filter(Boolean);
     setSaving(true);
     try {
-      if (editingId) { await api.put(`/email-marketing/templates/${editingId}`, form); notification.success('Template atualizado!', ''); }
-      else { await api.post('/email-marketing/templates', form); notification.success('Template criado!', ''); }
-      setShowModal(false); loadTemplates();
-    } catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
-    finally { setSaving(false); }
+      const payload = {
+        name: formName.trim(),
+        subject: subjects[0] || '',
+        subjects,
+        body_html: formBodyHtml,
+        body_text: '',
+      };
+      if (editingId) {
+        await api.put(`/email-marketing/templates/${editingId}`, payload);
+        notification.success('Template atualizado!', '');
+      } else {
+        await api.post('/email-marketing/templates', payload);
+        notification.success('Template criado!', '');
+      }
+      setShowModal(false);
+      loadTemplates();
+    } catch (e: any) {
+      notification.error('Erro', e.response?.data?.message || e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (id: number, name: string) => {
     const ok = await confirm({ title: 'Excluir Template', message: `Excluir "${name}"?`, confirmText: 'Sim, Excluir', type: 'danger' });
     if (!ok) return;
-    try { await api.delete(`/email-marketing/templates/${id}`); notification.success('Excluído', ''); loadTemplates(); }
-    catch (e: any) { notification.error('Erro', e.response?.data?.message || e.message); }
+    try {
+      await api.delete(`/email-marketing/templates/${id}`);
+      notification.success('Excluído', '');
+      loadTemplates();
+    } catch (e: any) {
+      notification.error('Erro', e.response?.data?.message || e.message);
+    }
   };
 
-  const inputCls = 'w-full px-6 py-4 text-base bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-purple-500 focus:ring-4 focus:ring-purple-500/30 transition-all';
-  const labelCls = 'block text-base font-bold mb-3 text-white/90';
+  const inputCls = 'w-full px-4 py-3 text-base bg-dark-700/80 border-2 border-white/20 rounded-xl text-white placeholder-white/40 focus:border-purple-500 focus:ring-4 focus:ring-purple-500/30 transition-all';
+  const labelCls = 'block text-sm font-bold mb-2 text-white/90';
 
   return (
     <>
@@ -62,58 +140,128 @@ export default function Templates() {
       <notification.NotificationContainer />
       <ConfirmDialog />
 
-      {/* Modal Criar/Editar */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-dark-800 border-2 border-purple-500/40 rounded-2xl p-8 max-w-3xl w-full space-y-5 my-4 shadow-2xl shadow-purple-500/20">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-black text-white flex items-center gap-3">
-                <span className="bg-gradient-to-br from-purple-500 to-purple-600 text-white font-black w-10 h-10 rounded-xl flex items-center justify-center text-base shadow-lg">{editingId ? '✏️' : '+'}</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-dark-800 border-2 border-purple-500/40 rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl shadow-purple-500/20 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 flex-shrink-0">
+              <h2 className="text-xl font-black text-white flex items-center gap-3">
+                <span className="bg-gradient-to-br from-purple-500 to-purple-600 text-white font-black w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-lg">
+                  {editingId ? '✏️' : '+'}
+                </span>
                 {editingId ? 'Editar' : 'Criar'} Template
               </h2>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all"><FaTimes className="text-xl" /></button>
-            </div>
-            <div>
-              <label className={labelCls}>Nome do Template *</label>
-              <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-                placeholder="Ex: Boas-vindas" className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Assunto Padrão *</label>
-              <input type="text" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })}
-                placeholder="Assunto do e-mail" className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Corpo do E-mail</label>
-              <EmailBodyEditor
-                value={form.body_html}
-                onChange={html => setForm({ ...form, body_html: html })}
-                accent="purple"
-                minHeight={320}
-                placeholder="Digite ou cole o conteúdo do template..."
-              />
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={handleSave} disabled={saving}
-                className="flex-1 py-4 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl font-black text-lg flex items-center justify-center gap-3 disabled:opacity-50 shadow-xl shadow-purple-500/30 transition-all">
-                {saving ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />} {editingId ? 'Salvar Alterações' : 'Criar Template'}
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all"
+              >
+                <FaTimes className="text-xl" />
               </button>
-              <button onClick={() => setShowModal(false)} className="px-8 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-all">Cancelar</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
+              <div>
+                <label className={labelCls}>Nome do Template *</label>
+                <input
+                  type="text"
+                  value={formName}
+                  onChange={e => setFormName(e.target.value)}
+                  placeholder="Ex: Boas-vindas"
+                  className={inputCls}
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Assuntos <span className="text-white/40 font-normal">(opcional)</span></label>
+                <p className="text-xs text-white/50 mb-3">
+                  Pode deixar vazio ou cadastrar vários — na campanha o sistema varia o assunto a cada envio.
+                </p>
+                <div className="space-y-3">
+                  {formSubjects.map((s, i) => (
+                    <div key={i} className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <label className="block text-xs font-bold mb-1 text-white/60">Assunto {i + 1}</label>
+                        <input
+                          type="text"
+                          value={s}
+                          onChange={e => updateSubject(i, e.target.value)}
+                          placeholder={`Assunto ${i + 1}`}
+                          className={inputCls}
+                        />
+                      </div>
+                      {formSubjects.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeSubject(i)}
+                          className="mb-0.5 p-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 rounded-xl"
+                        >
+                          <FaTrash />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={addSubject}
+                    className="w-full py-3 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border-2 border-dashed border-purple-500/40 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                  >
+                    <FaPlus /> Adicionar assunto
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className={labelCls}>Corpo do E-mail</label>
+                <EmailBodyEditor
+                  value={formBodyHtml}
+                  onChange={html => setFormBodyHtml(html)}
+                  accent="purple"
+                  minHeight={200}
+                  placeholder="Digite ou cole o conteúdo do template..."
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 px-5 py-4 border-t border-white/10 flex-shrink-0 bg-dark-800">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 py-3.5 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl font-black text-base flex items-center justify-center gap-3 disabled:opacity-50 shadow-xl shadow-purple-500/30 transition-all"
+              >
+                {saving ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />}
+                {editingId ? 'Salvar Alterações' : 'Criar Template'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="px-6 py-3.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-all"
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Preview */}
       {preview && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[85vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b">
+            <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white z-10">
               <div>
                 <p className="text-sm text-gray-500 font-bold">{preview.name}</p>
-                <p className="font-bold text-gray-800">{preview.subject}</p>
+                <p className="font-bold text-gray-800">{subjectsLabel(preview)}</p>
+                {parseSubjects(preview).filter(Boolean).length > 1 && (
+                  <ul className="mt-1 text-xs text-gray-500 list-disc list-inside">
+                    {parseSubjects(preview).filter(Boolean).map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              <button onClick={() => setPreview(null)} className="p-2 hover:bg-gray-100 rounded-xl text-gray-500 transition-all"><FaTimes className="text-xl" /></button>
+              <button onClick={() => setPreview(null)} className="p-2 hover:bg-gray-100 rounded-xl text-gray-500 transition-all">
+                <FaTimes className="text-xl" />
+              </button>
             </div>
             <div className="p-6" dangerouslySetInnerHTML={{ __html: preview.body_html || '<p class="text-gray-400">Sem conteúdo HTML</p>' }} />
           </div>
@@ -122,8 +270,6 @@ export default function Templates() {
 
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
         <div className="max-w-7xl mx-auto space-y-8">
-
-          {/* HEADER */}
           <div className="relative overflow-hidden bg-gradient-to-r from-purple-600/30 via-purple-500/20 to-purple-600/30 backdrop-blur-xl border-2 border-purple-500/40 rounded-3xl p-10 shadow-2xl shadow-purple-500/20">
             <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
             <div className="relative flex items-center justify-between flex-wrap gap-4">
@@ -136,17 +282,20 @@ export default function Templates() {
                 </div>
                 <div>
                   <h1 className="text-5xl font-black text-white mb-2 tracking-tight">Templates</h1>
-                  <p className="text-xl text-white/80 font-medium">{templates.length} template{templates.length !== 1 ? 's' : ''} criado{templates.length !== 1 ? 's' : ''}</p>
+                  <p className="text-xl text-white/80 font-medium">
+                    {templates.length} template{templates.length !== 1 ? 's' : ''} criado{templates.length !== 1 ? 's' : ''}
+                  </p>
                 </div>
               </div>
-              <button onClick={openCreate}
-                className="px-8 py-4 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-2xl font-black text-lg transition-all flex items-center gap-3 shadow-xl shadow-purple-500/30 hover:scale-105">
+              <button
+                onClick={openCreate}
+                className="px-8 py-4 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-2xl font-black text-lg transition-all flex items-center gap-3 shadow-xl shadow-purple-500/30 hover:scale-105"
+              >
                 <FaPlus /> Novo Template
               </button>
             </div>
           </div>
 
-          {/* LISTA */}
           {loading ? (
             <div className="flex justify-center py-20"><FaSpinner className="text-5xl text-purple-400 animate-spin" /></div>
           ) : templates.length === 0 ? (
@@ -170,13 +319,15 @@ export default function Templates() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-lg font-black text-white truncate">{t.name}</h3>
-                      <p className="text-gray-400 text-sm truncate mt-0.5">{t.subject}</p>
+                      <p className="text-gray-400 text-sm truncate mt-0.5">{subjectsLabel(t)}</p>
                       <p className="text-gray-600 text-xs mt-1">{new Date(t.created_at).toLocaleDateString('pt-BR')}</p>
                     </div>
                   </div>
                   {t.body_html && (
                     <div className="bg-black/20 rounded-xl p-3 mb-4 max-h-16 overflow-hidden">
-                      <p className="text-gray-500 text-xs font-mono truncate">{t.body_html.replace(/<[^>]+>/g, ' ').trim().substring(0, 80)}...</p>
+                      <p className="text-gray-500 text-xs font-mono truncate">
+                        {t.body_html.replace(/<[^>]+>/g, ' ').trim().substring(0, 80)}...
+                      </p>
                     </div>
                   )}
                   <div className="flex gap-2">
