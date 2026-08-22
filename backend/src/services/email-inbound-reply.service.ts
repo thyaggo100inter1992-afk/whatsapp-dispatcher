@@ -127,17 +127,20 @@ function buildFichaEmail(
       </div>
       <div style="padding:16px;">
         <p style="margin:0 0 12px;font-size:12px;color:#92400e;">
-          Dados vindos do cadastro no disparador (não do texto do e-mail).
-          Use o outro e-mail da conversa (sem [FICHA] no assunto) para responder o cliente.
+          Uso interno. <strong>NÃO clique em Responder neste e-mail</strong> — ele não vai para o cliente,
+          mas a citação pode confundir. Responda só o outro e-mail (assunto <strong>sem</strong> [FICHA]).
         </p>
         <table style="width:100%;border-collapse:collapse;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;">
           ${ficheRows}
         </table>
         <div style="margin-top:16px;">
-          <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:8px;">Última resposta do cliente</div>
+          <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:8px;">Resposta do cliente</div>
           <div style="border:1px solid #fcd34d;border-radius:8px;padding:14px;background:#fff7ed;">
             ${lastReplyHtml}
           </div>
+          <p style="margin:8px 0 0;font-size:11px;color:#a16207;">
+            Cópia só para você ver aqui. Responder o cliente é no outro e-mail da conversa.
+          </p>
         </div>
       </div>
     </div>
@@ -145,8 +148,7 @@ function buildFichaEmail(
 </body></html>`;
 
   const text = [
-    'FICHA INTERNA (cadastro) — NÃO responda este e-mail ao cliente.',
-    'Responda pelo outro e-mail da conversa (sem [FICHA] no assunto).',
+    'FICHA INTERNA — NÃO responda este e-mail (use o outro, sem [FICHA]).',
     '',
     `Nome: ${ctx.clientName || '—'}`,
     `E-mail: ${ctx.clientEmail || '—'}`,
@@ -159,7 +161,7 @@ function buildFichaEmail(
     `Var4: ${ctx.var4 || '—'}`,
     `Var5: ${ctx.var5 || '—'}`,
     '',
-    '--- Última resposta do cliente ---',
+    '--- Resposta do cliente ---',
     lastReplyPlain,
   ].join('\n');
 
