@@ -300,7 +300,7 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
     }
     await pool.query(
       `UPDATE email_marketing_campaigns c SET
-         sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked')),
+         sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked','replied')),
          failed_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status='failed'),
          sent_in_session = COALESCE(sent_in_session,0)+1,
          updated_at = NOW()
@@ -325,7 +325,7 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
     }
     await pool.query(
       `UPDATE email_marketing_campaigns c SET
-         sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked')),
+         sent_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status IN ('sent','opened','clicked','replied')),
          failed_count = (SELECT COUNT(*)::int FROM email_marketing_recipients r WHERE r.campaign_id=c.id AND r.status='failed'),
          updated_at = NOW()
        WHERE c.id=$1`,

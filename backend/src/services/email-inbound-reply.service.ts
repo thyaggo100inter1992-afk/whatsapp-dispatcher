@@ -310,6 +310,63 @@ export async function forwardClientReplyToAttendant(opts: {
     text: ficha.text,
   });
 
+  // Marca destinatário da campanha como "respondido" (cards / log / relatório)
+  if (opts.kind === 'r') {
+    try {
+      const upd = await pool.query(
+        `UPDATE email_marketing_recipients
+         SET replied_at = COALESCE(replied_at, NOW()),
+             status = 'replied',
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING campaign_id`,
+        [opts.id]
+      );
+      const campaignId = upd.rows[0]?.campaign_id;
+      if (campaignId) {
+        await pool.query(
+          `UPDATE email_marketing_campaigns c SET
+             replied_count = COALESCE((
+               SELECT COUNT(*)::int FROM email_marketing_recipients r
+               WHERE r.campaign_id = c.id AND (r.replied_at IS NOT NULL OR r.status = 'replied')
+             ), 0),
+             sent_count = COALESCE((
+               SELECT COUNT(*)::int FROM email_marketing_recipients r
+               WHERE r.campaign_id = c.id AND (
+                 r.status IN ('sent','opened','clicked','replied')
+                 OR r.opened_at IS NOT NULL OR r.clicked_at IS NOT NULL OR r.replied_at IS NOT NULL
+               )
+             ), 0),
+             opened_count = COALESCE((
+               SELECT COUNT(*)::int FROM email_marketing_recipients r
+               WHERE r.campaign_id = c.id AND (
+                 r.opened_at IS NOT NULL OR r.clicked_at IS NOT NULL OR r.replied_at IS NOT NULL
+                 OR r.status IN ('opened','clicked','replied')
+               )
+             ), 0),
+             updated_at = NOW()
+           WHERE c.id = $1`,
+          [campaignId]
+        );
+      }
+    } catch (markErr: any) {
+      console.warn('[inbound-reply] não foi possível marcar replied:', markErr?.message || markErr);
+    }
+  } else if (opts.kind === 's') {
+    try {
+      await pool.query(
+        `UPDATE email_marketing_single_sends
+         SET replied_at = COALESCE(replied_at, NOW()),
+             status = 'replied',
+             updated_at = NOW()
+         WHERE id = $1`,
+        [opts.id]
+      );
+    } catch {
+      /* coluna replied_at pode ainda não existir no single send */
+    }
+  }
+
   console.log(
     `[inbound-reply] 2 e-mails ao atendente ${ctx.attendantEmail} | cliente=${ctx.clientEmail} | ${opts.kind}-${opts.id}`
   );

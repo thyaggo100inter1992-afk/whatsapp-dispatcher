@@ -5,7 +5,7 @@ import Head from 'next/head';
 import {
   FaBullhorn, FaArrowLeft, FaPlay, FaPause, FaBan, FaSpinner, FaSync,
   FaEnvelope, FaEye, FaMousePointer, FaExclamationTriangle, FaFlag,
-  FaTimesCircle, FaClock, FaCalendarAlt,
+  FaTimesCircle, FaClock, FaCalendarAlt, FaReply,
   FaUsers, FaListUl, FaTimes, FaSearch, FaEdit, FaDownload, FaSave, FaRedo, FaPlus, FaTrash
 } from 'react-icons/fa';
 import api from '@/services/api';
@@ -20,6 +20,7 @@ interface Campaign {
   from_name: string; from_email: string; from_senders?: Array<{ from_name: string; from_email: string }>;
   status: string; total_contacts: number; sent_count: number; failed_count: number;
   opened_count: number; clicked_count: number; bounced_count: number; complained_count: number;
+  replied_count?: number;
   domain_id?: number | null;
   domain_name: string; list_name: string; template_name: string;
   body_html?: string | null; body_text?: string | null; reply_to?: string | null;
@@ -67,7 +68,7 @@ interface Recipient {
   sent_from_email?: string | null;
   sent_domain?: string | null;
   error_message: string | null; sent_at: string | null;
-  opened_at: string | null; clicked_at: string | null; updated_at: string;
+  opened_at: string | null; clicked_at: string | null; replied_at?: string | null; updated_at: string;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -86,17 +87,18 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const RECIPIENT_STATUS: Record<string, { label: string; color: string }> = {
-  pending:   { label: 'Pendente',  color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' },
-  sent:      { label: 'Enviado',   color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
-  failed:    { label: 'Falhou',    color: 'bg-red-500/20 text-red-300 border-red-500/30' },
-  opened:    { label: 'Aberto',    color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
-  clicked:   { label: 'Clicado',   color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
-  bounced:   { label: 'Rejeitado', color: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
-  complained:{ label: 'Spam',      color: 'bg-red-500/20 text-red-300 border-red-500/30' },
+  pending:   { label: 'Pendente',   color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' },
+  sent:      { label: 'Enviado',    color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
+  failed:    { label: 'Falhou',     color: 'bg-red-500/20 text-red-300 border-red-500/30' },
+  opened:    { label: 'Aberto',     color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+  clicked:   { label: 'Clicado',    color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
+  replied:   { label: 'Respondido', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
+  bounced:   { label: 'Rejeitado',  color: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
+  complained:{ label: 'Spam',       color: 'bg-red-500/20 text-red-300 border-red-500/30' },
 };
 
 const POLL_INTERVAL = 3;
-const PROCESSED_STATUSES = new Set(['sent', 'failed', 'opened', 'clicked', 'bounced', 'complained']);
+const PROCESSED_STATUSES = new Set(['sent', 'failed', 'opened', 'clicked', 'replied', 'bounced', 'complained']);
 
 /** Exibe motivo de falha em português (traduz textos comuns do Mailgun/SMTP) */
 function formatErrorPt(raw: string | null | undefined): string {
@@ -474,6 +476,7 @@ export default function CampaignDetail() {
         ['Enviados', campaign.sent_count],
         ['Abertos', campaign.opened_count],
         ['Cliques', campaign.clicked_count],
+        ['Respondidos', campaign.replied_count || 0],
         ['Rejeitados', campaign.bounced_count],
         ['Spam', campaign.complained_count],
         ['Falhos', campaign.failed_count],
@@ -481,6 +484,7 @@ export default function CampaignDetail() {
         [],
         ['Taxa de Abertura (%)', campaign.sent_count > 0 ? ((campaign.opened_count / campaign.sent_count) * 100).toFixed(1) : '0.0'],
         ['Taxa de Cliques (%)', campaign.sent_count > 0 ? ((campaign.clicked_count / campaign.sent_count) * 100).toFixed(1) : '0.0'],
+        ['Taxa de Resposta (%)', campaign.sent_count > 0 ? (((campaign.replied_count || 0) / campaign.sent_count) * 100).toFixed(1) : '0.0'],
         ['Taxa de Falha (%)', campaign.total_contacts > 0 ? ((campaign.failed_count / campaign.total_contacts) * 100).toFixed(1) : '0.0'],
       ];
       const wsStats = XLSX.utils.aoa_to_sheet(stats);
@@ -496,7 +500,7 @@ export default function CampaignDetail() {
       if (used.var4) destHeader.push('Var4');
       if (used.var5) destHeader.push('Var5');
       if (used.protocolo) destHeader.push('Protocolo');
-      destHeader.push('Status', 'Domínio', 'Remetente', 'Enviado em', 'Aberto em', 'Clicado em', 'Motivo do erro');
+      destHeader.push('Status', 'Domínio', 'Remetente', 'Enviado em', 'Aberto em', 'Respondido em', 'Clicado em', 'Motivo do erro');
 
       const destinatarios = [
         destHeader,
@@ -519,6 +523,7 @@ export default function CampaignDetail() {
             r2.sent_from_email || '',
             r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : '',
             r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : '',
+            r2.replied_at ? new Date(r2.replied_at).toLocaleString('pt-BR') : '',
             r2.clicked_at ? new Date(r2.clicked_at).toLocaleString('pt-BR') : '',
             r2.error_message || '',
           );
@@ -589,6 +594,7 @@ export default function CampaignDetail() {
 
   const openRate = campaign && campaign.sent_count > 0 ? ((campaign.opened_count / campaign.sent_count) * 100).toFixed(1) : '0.0';
   const clickRate = campaign && campaign.sent_count > 0 ? ((campaign.clicked_count / campaign.sent_count) * 100).toFixed(1) : '0.0';
+  const replyRate = campaign && campaign.sent_count > 0 ? (((campaign.replied_count || 0) / campaign.sent_count) * 100).toFixed(1) : '0.0';
 
   const activityTime = (r: Recipient) =>
     new Date(r.sent_at || r.updated_at || 0).getTime();
@@ -893,7 +899,7 @@ export default function CampaignDetail() {
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por e-mail ou nome..." className="w-full pl-9 pr-4 py-2.5 bg-dark-700/80 border border-white/10 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-orange-500/50" />
               </div>
               <div className="flex gap-1.5 flex-wrap">
-                {(['all', 'pending', 'sent', 'opened', 'clicked', 'bounced', 'failed'] as const).map(s => (
+                {(['all', 'pending', 'sent', 'opened', 'clicked', 'replied', 'bounced', 'failed'] as const).map(s => (
                   <button key={s} onClick={() => setFilterStatus(s)}
                     className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${filterStatus === s ? 'bg-orange-500 text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
                     {s === 'all' ? `Todos (${recipients.length})` : `${RECIPIENT_STATUS[s]?.label} (${recipientCounts[s] || 0})`}
@@ -918,7 +924,7 @@ export default function CampaignDetail() {
                         if (usedVars.var4) headers.push('Var4');
                         if (usedVars.var5) headers.push('Var5');
                         if (usedVars.protocolo) headers.push('Protocolo');
-                        headers.push('Status', 'Domínio', 'Remetente', 'Enviado em', 'Aberto em', 'Clicado em', 'Erro');
+                        headers.push('Status', 'Domínio', 'Remetente', 'Enviado em', 'Aberto em', 'Respondido em', 'Clicado em', 'Erro');
                         return headers.map(h => (
                           <th key={h} className="text-left py-3 px-3 text-xs font-bold text-gray-400 uppercase">{h}</th>
                         ));
@@ -952,6 +958,7 @@ export default function CampaignDetail() {
                           </td>
                           <td className="py-3 px-3 text-gray-500 text-xs">{when ? new Date(when).toLocaleString('pt-BR') : '—'}</td>
                           <td className="py-3 px-3 text-purple-400 text-xs">{r.opened_at ? new Date(r.opened_at).toLocaleString('pt-BR') : '—'}</td>
+                          <td className="py-3 px-3 text-emerald-300 text-xs">{r.replied_at ? new Date(r.replied_at).toLocaleString('pt-BR') : '—'}</td>
                           <td className="py-3 px-3 text-indigo-400 text-xs">{r.clicked_at ? new Date(r.clicked_at).toLocaleString('pt-BR') : '—'}</td>
                           <td className="py-3 px-3 text-red-400 text-xs max-w-[180px] truncate">{r.error_message ? formatErrorPt(r.error_message) : '—'}</td>
                         </tr>
@@ -1181,13 +1188,14 @@ export default function CampaignDetail() {
               <div className="bg-gradient-to-r from-orange-500 to-yellow-500 h-full transition-all duration-500 rounded-lg" style={{ width: `${progress}%` }} />
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-3">
               {[
                 { label: 'Total', value: campaign.total_contacts, color: 'text-white', bg: 'from-white/10 to-white/5 border-white/10' },
                 { label: '⏳ Pendentes', value: Math.max(0, campaign.total_contacts - campaign.sent_count - campaign.failed_count), color: 'text-yellow-400', bg: 'from-yellow-500/10 to-yellow-600/5 border-yellow-500/20' },
                 { label: '📤 Enviados', value: campaign.sent_count, color: 'text-blue-400', bg: 'from-blue-500/10 to-blue-600/5 border-blue-500/20' },
                 { label: '✅ Abertos', value: campaign.opened_count, color: 'text-purple-400', bg: 'from-purple-500/10 to-purple-600/5 border-purple-500/20' },
                 { label: '👆 Cliques', value: campaign.clicked_count, color: 'text-indigo-400', bg: 'from-indigo-500/10 to-indigo-600/5 border-indigo-500/20' },
+                { label: '💬 Respondidos', value: campaign.replied_count || 0, color: 'text-emerald-400', bg: 'from-emerald-500/10 to-emerald-600/5 border-emerald-500/20' },
                 { label: '↩️ Rejeitados', value: campaign.bounced_count, color: 'text-orange-400', bg: 'from-orange-500/10 to-orange-600/5 border-orange-500/20' },
                 { label: '🚩 Spam', value: campaign.complained_count, color: 'text-red-400', bg: 'from-red-500/10 to-red-600/5 border-red-500/20' },
                 { label: '❌ Falhos', value: campaign.failed_count, color: 'text-red-400', bg: 'from-red-500/10 to-red-600/5 border-red-500/20' },
@@ -1201,10 +1209,11 @@ export default function CampaignDetail() {
 
             {/* Taxas */}
             {campaign.sent_count > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-4">
                 {[
                   { label: 'Taxa de Abertura', value: `${openRate}%`, color: 'text-purple-300', icon: '👁️' },
                   { label: 'Taxa de Cliques', value: `${clickRate}%`, color: 'text-indigo-300', icon: '👆' },
+                  { label: 'Taxa de Resposta', value: `${replyRate}%`, color: 'text-emerald-300', icon: '💬' },
                   { label: 'Taxa de Rejeição', value: `${campaign.sent_count > 0 ? ((campaign.bounced_count / campaign.sent_count) * 100).toFixed(1) : '0.0'}%`, color: 'text-orange-300', icon: '↩️' },
                   { label: 'Taxa de Falha', value: `${campaign.total_contacts > 0 ? ((campaign.failed_count / campaign.total_contacts) * 100).toFixed(1) : '0.0'}%`, color: 'text-red-300', icon: '❌' },
                 ].map((t, i) => (
@@ -1278,12 +1287,13 @@ export default function CampaignDetail() {
               </button>
             </div>
 
-            <div className="grid grid-cols-3 sm:grid-cols-7 gap-3 mb-8">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-8">
               {[
                 { label: 'Pendentes', key: 'pending', color: 'text-yellow-300 border-yellow-500/30 bg-yellow-500/10', icon: <FaClock /> },
                 { label: 'Enviados',  key: 'sent',    color: 'text-blue-300 border-blue-500/30 bg-blue-500/10',      icon: <FaEnvelope /> },
                 { label: 'Abertos',   key: 'opened',  color: 'text-purple-300 border-purple-500/30 bg-purple-500/10', icon: <FaEye /> },
                 { label: 'Clicados',  key: 'clicked', color: 'text-indigo-300 border-indigo-500/30 bg-indigo-500/10', icon: <FaMousePointer /> },
+                { label: 'Respondidos', key: 'replied', color: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10', icon: <FaReply /> },
                 { label: 'Rejeitados',key: 'bounced', color: 'text-orange-300 border-orange-500/30 bg-orange-500/10', icon: <FaExclamationTriangle /> },
                 { label: 'Spam',      key: 'complained',color:'text-red-300 border-red-500/30 bg-red-500/10',         icon: <FaFlag /> },
                 { label: 'Falhos',    key: 'failed',  color: 'text-red-300 border-red-500/30 bg-red-500/10',          icon: <FaTimesCircle /> },
@@ -1293,6 +1303,7 @@ export default function CampaignDetail() {
                   : item.key === 'sent' ? campaign.sent_count
                   : item.key === 'opened' ? campaign.opened_count
                   : item.key === 'clicked' ? campaign.clicked_count
+                  : item.key === 'replied' ? (campaign.replied_count || 0)
                   : item.key === 'bounced' ? campaign.bounced_count
                   : item.key === 'complained' ? campaign.complained_count
                   : campaign.failed_count;
@@ -1334,7 +1345,7 @@ export default function CampaignDetail() {
                   )}
                 </h4>
                 <div className="flex gap-2 flex-wrap">
-                  {(['all', 'sent', 'failed', 'opened', 'clicked', 'bounced', 'pending'] as const).map(s => (
+                  {(['all', 'sent', 'failed', 'opened', 'clicked', 'replied', 'bounced', 'pending'] as const).map(s => (
                     <button key={s} type="button" onClick={() => setFilterStatus(s)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                         filterStatus === s
@@ -1376,20 +1387,21 @@ export default function CampaignDetail() {
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Remetente</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Data / Hora</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Aberto em</th>
+                      <th className="text-left p-3 text-xs font-black text-white uppercase">Respondido em</th>
                       <th className="text-left p-3 text-xs font-black text-white uppercase">Motivo do Erro</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loadingRecipients && recipients.length === 0 ? (
                       <tr>
-                        <td colSpan={10 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
+                        <td colSpan={11 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
                           <FaSpinner className="animate-spin text-3xl text-orange-400 mx-auto mb-3" />
                           Carregando log de envio...
                         </td>
                       </tr>
                     ) : filteredRecipients.length === 0 ? (
                       <tr>
-                        <td colSpan={10 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
+                        <td colSpan={11 + [usedVars.var1, usedVars.var2, usedVars.var3, usedVars.var4, usedVars.var5, usedVars.protocolo].filter(Boolean).length} className="text-center py-12 text-gray-400">
                           <div className="text-5xl mb-3">📭</div>
                           {filterStatus === 'all'
                             ? 'Aguardando envios... Assim que sair um e-mail (sucesso ou erro), aparece aqui no topo.'
@@ -1434,6 +1446,9 @@ export default function CampaignDetail() {
                             </td>
                             <td className="p-3 text-purple-300 text-xs whitespace-nowrap">
                               {r.opened_at ? new Date(r.opened_at).toLocaleString('pt-BR') : '—'}
+                            </td>
+                            <td className="p-3 text-emerald-300 text-xs whitespace-nowrap font-semibold">
+                              {r.replied_at ? new Date(r.replied_at).toLocaleString('pt-BR') : '—'}
                             </td>
                             <td className="p-3 text-xs max-w-[320px]">
                               {r.error_message ? (
