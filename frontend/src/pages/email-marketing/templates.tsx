@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaFileAlt, FaArrowLeft, FaPlus, FaEdit, FaTrash, FaSpinner, FaCheckCircle, FaTimes, FaEye } from 'react-icons/fa';
+import { FaFileAlt, FaArrowLeft, FaPlus, FaEdit, FaTrash, FaSpinner, FaCheckCircle, FaTimes, FaEye, FaCopy } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -128,6 +128,25 @@ export default function Templates() {
       loadTemplates();
     } catch (e: any) {
       notification.error('Erro', e.response?.data?.message || e.message);
+    }
+  };
+
+  const handleClone = async (t: Template) => {
+    const subjects = parseSubjects(t).map(s => s.trim()).filter(Boolean);
+    try {
+      const r = await api.post('/email-marketing/templates', {
+        name: `${t.name} (cópia)`,
+        subject: subjects[0] || t.subject || '',
+        subjects,
+        body_html: t.body_html || '',
+        body_text: t.body_text || '',
+      });
+      notification.success('Template clonado!', 'Abra a cópia para ajustar o que precisar.');
+      await loadTemplates();
+      const created = r.data?.data;
+      if (created?.id) openEdit(created);
+    } catch (e: any) {
+      notification.error('Erro ao clonar', e.response?.data?.message || e.message);
     }
   };
 
@@ -330,12 +349,19 @@ export default function Templates() {
                       </p>
                     </div>
                   )}
-                  <div className="flex gap-2">
-                    <button onClick={() => setPreview(t)} className="flex-1 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 transition-all">
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setPreview(t)} className="flex-1 min-w-[5.5rem] py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 transition-all">
                       <FaEye /> Preview
                     </button>
-                    <button onClick={() => openEdit(t)} className="flex-1 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 transition-all">
+                    <button onClick={() => openEdit(t)} className="flex-1 min-w-[5.5rem] py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 transition-all">
                       <FaEdit /> Editar
+                    </button>
+                    <button
+                      onClick={() => handleClone(t)}
+                      title="Clonar template"
+                      className="flex-1 min-w-[5.5rem] py-2.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 transition-all"
+                    >
+                      <FaCopy /> Clonar
                     </button>
                     <button onClick={() => handleDelete(t.id, t.name)} className="py-2.5 px-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 rounded-xl text-sm transition-all">
                       <FaTrash />
