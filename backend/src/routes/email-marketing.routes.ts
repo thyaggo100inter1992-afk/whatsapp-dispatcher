@@ -24,6 +24,7 @@ router.get('/lists', ctrl.getLists);
 router.post('/lists', ctrl.createList);
 router.delete('/lists/:id', ctrl.deleteList);
 router.post('/lists/:list_id/import', upload.single('file'), ctrl.importContacts);
+router.post('/lists/:list_id/contacts', ctrl.addListContact);
 router.get('/lists/:list_id/contacts', ctrl.getContacts);
 
 // =============================================
@@ -70,14 +71,33 @@ router.delete('/restrictions/:id', ctrl.removeEmailRestriction);
 router.post('/restrictions/check-bulk', ctrl.checkEmailRestrictionsBulk);
 
 // =============================================
-// CAIXAS DE E-MAIL (inbox)
+// CAIXAS DE E-MAIL (inbox) — rotas estáticas ANTES de :id
 // =============================================
+router.get('/mailboxes/all/messages', mailboxCtrl.listAllMailboxMessages);
+
+router.get('/mailbox-folders', mailboxCtrl.listFolders);
+router.post('/mailbox-folders', mailboxCtrl.createFolder);
+router.patch('/mailbox-folders/:id', mailboxCtrl.updateFolder);
+router.delete('/mailbox-folders/:id', mailboxCtrl.deleteFolder);
+
+router.get('/mailbox-quick-replies', mailboxCtrl.listQuickReplies);
+router.post('/mailbox-quick-replies', mailboxCtrl.createQuickReply);
+router.patch('/mailbox-quick-replies/:id', mailboxCtrl.updateQuickReply);
+router.delete('/mailbox-quick-replies/:id', mailboxCtrl.deleteQuickReply);
+
 router.get('/mailboxes', mailboxCtrl.listMailboxes);
 router.post('/mailboxes', mailboxCtrl.createMailbox);
+router.patch('/mailboxes/:id', mailboxCtrl.updateMailbox);
 router.delete('/mailboxes/:id', mailboxCtrl.deleteMailbox);
+router.get('/mailboxes/:id/stats', mailboxCtrl.getMailboxStats);
 router.get('/mailboxes/:id/messages', mailboxCtrl.listMailboxMessages);
+router.post('/mailboxes/:id/messages/bulk-action', mailboxCtrl.bulkMessageAction);
 router.get('/mailboxes/:id/messages/:messageId', mailboxCtrl.getMailboxMessage);
-router.post('/mailboxes/:id/send', mailboxCtrl.sendMailboxMessage);
+router.post('/mailboxes/:id/messages/:messageId/action', mailboxCtrl.messageAction);
+router.get('/mailboxes/:id/messages/:messageId/thread', mailboxCtrl.getThread);
+router.get('/mailboxes/:id/messages/:messageId/eml', mailboxCtrl.downloadMessageEml);
+router.get('/mailboxes/:id/messages/:messageId/attachments.zip', mailboxCtrl.downloadAttachmentsZip);
+router.post('/mailboxes/:id/send', upload.array('attachments', 20), mailboxCtrl.sendMailboxMessage);
 router.patch('/mailboxes/:id/messages/:messageId', mailboxCtrl.moveMailboxMessage);
 
 export default router;

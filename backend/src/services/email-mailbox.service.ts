@@ -143,6 +143,40 @@ export async function findMailboxByEmail(email: string) {
   return r.rows[0] || null;
 }
 
+export function buildThreadKey(subject: string, participants: string[]) {
+  const normSubj = String(subject || '')
+    .replace(/^(re|fw|fwd|enc|res)\s*:\s*/gi, '')
+    .replace(/^(re|fw|fwd|enc|res)\s*:\s*/gi, '')
+    .trim()
+    .toLowerCase();
+  const parts = [...new Set(participants.map((p) => String(p || '').trim().toLowerCase()).filter(Boolean))].sort();
+  return `${normSubj}::${parts.join('|')}`.slice(0, 240);
+}
+
+export function detectPhishingHints(html: string, text: string): string[] {
+  const hints: string[] = [];
+  const src = `${html || ''}\n${text || ''}`;
+  const linkRe = /href=["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  const links: string[] = [];
+  while ((m = linkRe.exec(html || ''))) links.push(m[1]);
+  for (const href of links) {
+    try {
+      const u = new URL(href, 'https://example.invalid');
+      if (/^\d{1,3}(\.\d{1,3}){3}$/.test(u.hostname)) {
+        hints.push(`Link aponta para IP: ${u.hostname}`);
+      }
+      if (/^(bit\.ly|tinyurl\.com|t\.co|goo\.gl)$/i.test(u.hostname)) {
+        hints.push(`Link encurtado suspeito: ${u.hostname}`);
+      }
+    } catch { /* ignore */ }
+  }
+  if (/password|senha|verifique\s+sua\s+conta|urgent(e)?|bloquead/i.test(src) && links.length) {
+    hints.push('Texto com urgência + links — possível phishing');
+  }
+  return [...new Set(hints)].slice(0, 5);
+}
+
 export type InboundMulterFile = {
   fieldname: string;
   originalname?: string;
@@ -315,17 +349,31 @@ export async function ingestInboundToMailbox(opts: {
     });
     html = saved.html;
     attachments = saved.attachments;
-    if (attachments.length > 0 || html !== (opts.html || '')) {
-      await pool.query(
-        `UPDATE email_mailbox_messages
-         SET body_html=$1, attachments=$2::jsonb, updated_at=NOW()
-         WHERE id=$3`,
-        [html || null, JSON.stringify(attachments), messageId]
-      );
-    }
+    const threadKey = buildThreadKey(opts.subject || '', [mailbox.email, fromEmail || '']);
+    await pool.query(
+      `UPDATE email_mailbox_messages
+       SET body_html=$1, attachments=$2::jsonb, has_attachments=$3,
+           thread_key=$4, updated_at=NOW()
+       WHERE id=$5`,
+      [html || null, JSON.stringify(attachments), attachments.length > 0, threadKey, messageId]
+    );
   } catch (e: any) {
     console.warn('[inbound-mailbox] anexos:', e?.message || e);
   }
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { io } = require('../server');
+    if (io) {
+      io.emit('mailbox:new-message', {
+        tenantId: mailbox.tenant_id,
+        mailboxId: mailbox.id,
+        messageId,
+        subject: opts.subject,
+        fromEmail,
+      });
+    }
+  } catch { /* socket opcional */ }
 
   return {
     ok: true,
@@ -344,6 +392,14 @@ export async function sendFromMailbox(opts: {
   bodyHtml?: string | null;
   bodyText?: string | null;
   replyToMessageId?: number | null;
+  cc?: string[] | string | null;
+  bcc?: string[] | string | null;
+  attachments?: Array<{ filename: string; contentType?: string; content: Buffer; }> | null;
+  draftId?: number | null;
+  scheduledAt?: Date | string | null;
+  saveAsDraft?: boolean;
+  requestReadReceipt?: boolean;
+  appendSignature?: boolean;
 }) {
   const mb = await pool.query(
     `SELECT m.*, d.domain, d.status AS domain_status
@@ -359,43 +415,130 @@ export async function sendFromMailbox(opts: {
   }
 
   let inReplyTo: string | null = null;
+  let references: string | null = null;
   if (opts.replyToMessageId) {
     const prev = await pool.query(
-      `SELECT message_id, subject FROM email_mailbox_messages
+      `SELECT message_id, subject, from_email FROM email_mailbox_messages
        WHERE id=$1 AND mailbox_id=$2 AND tenant_id=$3`,
       [opts.replyToMessageId, opts.mailboxId, opts.tenantId]
     );
-    if (prev.rows[0]?.message_id) inReplyTo = prev.rows[0].message_id;
+    if (prev.rows[0]?.message_id) {
+      inReplyTo = prev.rows[0].message_id;
+      references = prev.rows[0].message_id;
+    }
   }
 
   const toEmail = String(opts.toEmail || '').trim().toLowerCase();
   if (!toEmail.includes('@')) throw new Error('Destinatário inválido');
   const subject = String(opts.subject || '').trim() || '(sem assunto)';
 
-  const draft = await pool.query(
-    `INSERT INTO email_mailbox_messages (
-       tenant_id, mailbox_id, direction, folder,
-       from_email, from_name, to_email, to_name, subject, body_html, body_text,
-       in_reply_to, is_read, status
-     ) VALUES (
-       $1,$2,'outbound','sent',
-       $3,$4,$5,$6,$7,$8,$9,
-       $10,TRUE,'pending'
-     ) RETURNING id`,
-    [
-      opts.tenantId,
-      opts.mailboxId,
-      mailbox.email,
-      mailbox.display_name || mailbox.local_part,
-      toEmail,
-      opts.toName || null,
-      subject,
-      opts.bodyHtml || null,
-      opts.bodyText || null,
-      inReplyTo,
-    ]
-  );
-  const rowId = Number(draft.rows[0].id);
+  let html = opts.bodyHtml || '';
+  let text = opts.bodyText || '';
+  if (opts.appendSignature !== false && mailbox.signature_enabled && mailbox.signature_html) {
+    html = `${html || ''}<br/><br/>--<br/>${mailbox.signature_html}`;
+    text = `${text || ''}\n\n--\n${String(mailbox.signature_html).replace(/<[^>]+>/g, '')}`;
+  }
+
+  const ccList = Array.isArray(opts.cc)
+    ? opts.cc
+    : String(opts.cc || '').split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+  const bccList = Array.isArray(opts.bcc)
+    ? opts.bcc
+    : String(opts.bcc || '').split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+
+  const threadKey = buildThreadKey(subject, [mailbox.email, toEmail, ...ccList]);
+  const hasAtt = Array.isArray(opts.attachments) && opts.attachments.length > 0;
+  const scheduledAt = opts.scheduledAt ? new Date(opts.scheduledAt) : null;
+  const isDraft = !!opts.saveAsDraft;
+  const isScheduled = !!(scheduledAt && scheduledAt.getTime() > Date.now() && !isDraft);
+
+  const folder = isDraft ? 'drafts' : (isScheduled ? 'drafts' : 'sent');
+  const status = isDraft ? 'draft' : (isScheduled ? 'scheduled' : 'pending');
+
+  let rowId = opts.draftId ? Number(opts.draftId) : 0;
+  const attMeta = (opts.attachments || []).map((a) => ({
+    filename: a.filename,
+    contentType: a.contentType || 'application/octet-stream',
+    size: a.content?.length || 0,
+  }));
+
+  if (rowId) {
+    const upd = await pool.query(
+      `UPDATE email_mailbox_messages SET
+         to_email=$1, to_name=$2, subject=$3, body_html=$4, body_text=$5,
+         cc=$6, bcc=$7, folder=$8, status=$9, scheduled_at=$10,
+         has_attachments=$11, request_read_receipt=$12, thread_key=$13,
+         in_reply_to=COALESCE($14, in_reply_to),
+         attachments=$15::jsonb, updated_at=NOW()
+       WHERE id=$16 AND mailbox_id=$17 AND tenant_id=$18
+       RETURNING id`,
+      [
+        toEmail, opts.toName || null, subject, html || null, text || null,
+        ccList.join(', ') || null, bccList.join(', ') || null,
+        folder, status, isScheduled ? scheduledAt : null,
+        hasAtt, !!opts.requestReadReceipt, threadKey,
+        inReplyTo,
+        JSON.stringify(attMeta),
+        rowId, opts.mailboxId, opts.tenantId,
+      ]
+    );
+    if (!upd.rows[0]) throw new Error('Rascunho não encontrado');
+  } else {
+    const draft = await pool.query(
+      `INSERT INTO email_mailbox_messages (
+         tenant_id, mailbox_id, direction, folder,
+         from_email, from_name, to_email, to_name, subject, body_html, body_text,
+         cc, bcc, in_reply_to, is_read, status, scheduled_at,
+         has_attachments, request_read_receipt, thread_key, attachments
+       ) VALUES (
+         $1,$2,'outbound',$3,
+         $4,$5,$6,$7,$8,$9,$10,
+         $11,$12,$13,TRUE,$14,$15,
+         $16,$17,$18,$19::jsonb
+       ) RETURNING id`,
+      [
+        opts.tenantId, opts.mailboxId, folder,
+        mailbox.email, mailbox.display_name || mailbox.local_part,
+        toEmail, opts.toName || null, subject, html || null, text || null,
+        ccList.join(', ') || null, bccList.join(', ') || null, inReplyTo,
+        status, isScheduled ? scheduledAt : null,
+        hasAtt, !!opts.requestReadReceipt, threadKey,
+        JSON.stringify(attMeta),
+      ]
+    );
+    rowId = Number(draft.rows[0].id);
+  }
+
+  // Persistir anexos em disco se houver
+  if (hasAtt && opts.attachments) {
+    const uploadDir = path.join(__dirname, '../../uploads/email-inbox', String(opts.tenantId), String(opts.mailboxId));
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const savedAtts: any[] = [];
+    for (const a of opts.attachments) {
+      const filename = safeFileName(a.filename);
+      const stored = `${rowId}-out-${Date.now()}-${filename}`;
+      fs.writeFileSync(path.join(uploadDir, stored), a.content);
+      savedAtts.push({
+        filename,
+        contentType: a.contentType || 'application/octet-stream',
+        size: a.content.length,
+        url: `/uploads/email-inbox/${opts.tenantId}/${opts.mailboxId}/${stored}`,
+      });
+    }
+    await pool.query(
+      `UPDATE email_mailbox_messages SET attachments=$1::jsonb WHERE id=$2`,
+      [JSON.stringify(savedAtts), rowId]
+    );
+  }
+
+  if (isDraft || isScheduled) {
+    return {
+      id: rowId,
+      status,
+      scheduled_at: isScheduled ? scheduledAt : null,
+      message: isDraft ? 'Rascunho salvo' : 'Envio agendado',
+    };
+  }
 
   try {
     const sent = await sendMarketingEmail({
@@ -406,19 +549,26 @@ export async function sendFromMailbox(opts: {
       toName: opts.toName,
       replyTo: mailbox.email,
       subject,
-      html: opts.bodyHtml,
-      text: opts.bodyText,
+      html,
+      text,
       tenantId: opts.tenantId,
-      skipUnsubscribeFooter: true, // caixa pessoal — sem rodapé de marketing
+      skipUnsubscribeFooter: true,
+      cc: ccList,
+      bcc: bccList,
+      attachments: opts.attachments || undefined,
+      inReplyTo,
+      references,
+      requestReadReceipt: !!opts.requestReadReceipt,
     });
 
     await pool.query(
       `UPDATE email_mailbox_messages SET
-         provider_message_id=$1, status='sent', sent_at=NOW(), updated_at=NOW()
+         folder='sent', provider_message_id=$1, status='sent', sent_at=NOW(),
+         scheduled_at=NULL, updated_at=NOW()
        WHERE id=$2`,
       [sent.messageId, rowId]
     );
-    return { id: rowId, messageId: sent.messageId, provider: sent.provider };
+    return { id: rowId, messageId: sent.messageId, provider: sent.provider, status: 'sent' };
   } catch (e: any) {
     await pool.query(
       `UPDATE email_mailbox_messages SET
@@ -428,4 +578,83 @@ export async function sendFromMailbox(opts: {
     );
     throw e;
   }
+}
+
+/** Processa e-mails agendados cujo horário já passou */
+export async function processScheduledMailboxSends() {
+  const due = await pool.query(
+    `SELECT id, tenant_id, mailbox_id, to_email, to_name, subject, body_html, body_text,
+            cc, bcc, attachments, request_read_receipt, in_reply_to
+     FROM email_mailbox_messages
+     WHERE status='scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= NOW()
+     ORDER BY scheduled_at ASC
+     LIMIT 20`
+  );
+  for (const row of due.rows) {
+    try {
+      const mb = await pool.query(
+        `SELECT m.*, d.domain, d.status AS domain_status
+         FROM email_mailboxes m
+         JOIN email_marketing_domains d ON d.id = m.domain_id
+         WHERE m.id=$1 AND m.tenant_id=$2`,
+        [row.mailbox_id, row.tenant_id]
+      );
+      if (!mb.rows[0]) continue;
+      const mailbox = mb.rows[0];
+      const atts: any[] = [];
+      const meta = Array.isArray(row.attachments) ? row.attachments : [];
+      for (const a of meta) {
+        if (!a?.url) continue;
+        const rel = String(a.url).replace(/^\/uploads\//, '');
+        const full = path.join(__dirname, '../../uploads', rel);
+        if (fs.existsSync(full)) {
+          atts.push({
+            filename: a.filename || path.basename(full),
+            contentType: a.contentType,
+            content: fs.readFileSync(full),
+          });
+        }
+      }
+      const sent = await sendMarketingEmail({
+        domain: mailbox.domain,
+        fromEmail: mailbox.email,
+        fromName: mailbox.display_name || mailbox.local_part || mailbox.email,
+        toEmail: row.to_email,
+        toName: row.to_name,
+        replyTo: mailbox.email,
+        subject: row.subject,
+        html: row.body_html,
+        text: row.body_text,
+        tenantId: row.tenant_id,
+        skipUnsubscribeFooter: true,
+        cc: row.cc,
+        bcc: row.bcc,
+        attachments: atts.length ? atts : undefined,
+        inReplyTo: row.in_reply_to,
+        requestReadReceipt: !!row.request_read_receipt,
+      });
+      await pool.query(
+        `UPDATE email_mailbox_messages SET
+           folder='sent', status='sent', provider_message_id=$1, sent_at=NOW(),
+           scheduled_at=NULL, updated_at=NOW()
+         WHERE id=$2`,
+        [sent.messageId, row.id]
+      );
+    } catch (e: any) {
+      await pool.query(
+        `UPDATE email_mailbox_messages SET status='failed', error_message=$1, updated_at=NOW() WHERE id=$2`,
+        [String(e.message || 'Erro').slice(0, 500), row.id]
+      );
+    }
+  }
+  return due.rows.length;
+}
+
+let scheduledTimer: NodeJS.Timeout | null = null;
+export function startMailboxScheduler() {
+  if (scheduledTimer) return;
+  scheduledTimer = setInterval(() => {
+    processScheduledMailboxSends().catch((e) => console.warn('[mailbox-scheduler]', e.message));
+  }, 30000);
+  console.log('✅ Scheduler da caixa de e-mail iniciado (30s)');
 }

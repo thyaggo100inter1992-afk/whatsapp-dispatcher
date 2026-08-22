@@ -26,7 +26,32 @@ export type MarketingSendInput = {
   singleSendId?: number | null;
   /** Encaminhamentos internos (reply ao atendente) — sem rodapé de cancelamento */
   skipUnsubscribeFooter?: boolean;
+  cc?: string[] | string | null;
+  bcc?: string[] | string | null;
+  /** Anexos em memória (base64 ou buffer) */
+  attachments?: Array<{
+    filename: string;
+    contentType?: string;
+    content: Buffer | string;
+    disposition?: 'attachment' | 'inline';
+    contentId?: string;
+  }> | null;
+  headers?: Record<string, string> | null;
+  inReplyTo?: string | null;
+  references?: string | null;
+  requestReadReceipt?: boolean;
 };
+
+function normalizeAddressList(value: string[] | string | null | undefined): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v || '').trim().toLowerCase()).filter((v) => v.includes('@'));
+  }
+  return String(value)
+    .split(/[,;]+/)
+    .map((v) => v.trim().toLowerCase())
+    .filter((v) => v.includes('@'));
+}
 
 export type MarketingSendResult = {
   provider: EmailMarketingProviderName;
@@ -85,6 +110,8 @@ async function sendViaMailgun(
   unsubscribeUrl?: string | null
 ): Promise<MarketingSendResult> {
   const mg = await getMailgunApiClient();
+  const cc = normalizeAddressList(input.cc);
+  const bcc = normalizeAddressList(input.bcc);
   const payload: any = {
     from: `${input.fromName} <${input.fromEmail}>`,
     to: [input.toName ? `${input.toName} <${input.toEmail}>` : input.toEmail],
@@ -96,9 +123,29 @@ async function sendViaMailgun(
     'o:tracking-clicks': 'yes',
     'o:tracking-opens': 'yes',
   };
+  if (cc.length) payload.cc = cc;
+  if (bcc.length) payload.bcc = bcc;
+  if (input.inReplyTo) payload['h:In-Reply-To'] = input.inReplyTo.startsWith('<') ? input.inReplyTo : `<${input.inReplyTo}>`;
+  if (input.references) payload['h:References'] = input.references;
+  if (input.requestReadReceipt) {
+    payload['h:Disposition-Notification-To'] = input.fromEmail;
+    payload['h:Return-Receipt-To'] = input.fromEmail;
+  }
+  if (input.headers) {
+    for (const [k, v] of Object.entries(input.headers)) {
+      if (v) payload[`h:${k}`] = v;
+    }
+  }
   if (unsubscribeUrl) {
     payload['h:List-Unsubscribe'] = `<${unsubscribeUrl}>`;
     payload['h:List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+  }
+  if (Array.isArray(input.attachments) && input.attachments.length) {
+    payload.attachment = input.attachments.map((a) => ({
+      filename: a.filename,
+      data: Buffer.isBuffer(a.content) ? a.content : Buffer.from(String(a.content), 'base64'),
+      contentType: a.contentType || 'application/octet-stream',
+    }));
   }
   const result = await mg.messages.create(input.domain, payload);
   const messageId = String(result.id || '').replace(/^<|>$/g, '');
@@ -114,6 +161,9 @@ async function sendViaSendGrid(
   const sgMail = require('@sendgrid/mail');
   sgMail.setApiKey(apiKey);
 
+  const cc = normalizeAddressList(input.cc);
+  const bcc = normalizeAddressList(input.bcc);
+
   const msg: any = {
     to: input.toName ? { email: input.toEmail, name: input.toName } : input.toEmail,
     from: { email: input.fromEmail, name: input.fromName },
@@ -126,11 +176,34 @@ async function sendViaSendGrid(
       openTracking: { enable: true },
     },
   };
+  if (cc.length) msg.cc = cc;
+  if (bcc.length) msg.bcc = bcc;
+
+  const headers: Record<string, string> = { ...(input.headers || {}) };
+  if (input.inReplyTo) {
+    headers['In-Reply-To'] = input.inReplyTo.startsWith('<') ? input.inReplyTo : `<${input.inReplyTo}>`;
+  }
+  if (input.references) headers['References'] = input.references;
+  if (input.requestReadReceipt) {
+    headers['Disposition-Notification-To'] = input.fromEmail;
+    headers['Return-Receipt-To'] = input.fromEmail;
+  }
   if (unsubscribeUrl) {
-    msg.headers = {
-      'List-Unsubscribe': `<${unsubscribeUrl}>`,
-      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-    };
+    headers['List-Unsubscribe'] = `<${unsubscribeUrl}>`;
+    headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+  }
+  if (Object.keys(headers).length) msg.headers = headers;
+
+  if (Array.isArray(input.attachments) && input.attachments.length) {
+    msg.attachments = input.attachments.map((a) => ({
+      content: Buffer.isBuffer(a.content)
+        ? a.content.toString('base64')
+        : String(a.content),
+      filename: a.filename,
+      type: a.contentType || 'application/octet-stream',
+      disposition: a.disposition || 'attachment',
+      contentId: a.contentId,
+    }));
   }
 
   const [response] = await sgMail.send(msg);

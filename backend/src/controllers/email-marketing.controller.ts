@@ -812,6 +812,62 @@ export const getContacts = async (req: Request, res: Response) => {
   }
 };
 
+/** Adiciona um contato avulso à lista */
+export const addListContact = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const { list_id } = req.params;
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const name = req.body.name != null ? String(req.body.name).trim() : null;
+    const cpf = req.body.cpf != null ? String(req.body.cpf).trim() : null;
+    const phone = req.body.phone != null ? String(req.body.phone).trim() : null;
+    const var1 = req.body.var1 != null ? String(req.body.var1).trim() : null;
+    const var2 = req.body.var2 != null ? String(req.body.var2).trim() : null;
+    const var3 = req.body.var3 != null ? String(req.body.var3).trim() : null;
+    const var4 = req.body.var4 != null ? String(req.body.var4).trim() : null;
+    const var5 = req.body.var5 != null ? String(req.body.var5).trim() : null;
+
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ success: false, message: 'E-mail inválido' });
+    }
+
+    const listCheck = await pool.query(
+      `SELECT id FROM email_marketing_lists WHERE id=$1 AND tenant_id=$2`,
+      [list_id, tenantId]
+    );
+    if (!listCheck.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Lista não encontrada' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO email_marketing_contacts (tenant_id, list_id, email, name, cpf, phone, var1, var2, var3, var4, var5)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (list_id, email) DO UPDATE SET
+         name = COALESCE(NULLIF(EXCLUDED.name, ''), email_marketing_contacts.name),
+         cpf = COALESCE(NULLIF(EXCLUDED.cpf, ''), email_marketing_contacts.cpf),
+         phone = COALESCE(NULLIF(EXCLUDED.phone, ''), email_marketing_contacts.phone),
+         var1 = COALESCE(NULLIF(EXCLUDED.var1, ''), email_marketing_contacts.var1),
+         var2 = COALESCE(NULLIF(EXCLUDED.var2, ''), email_marketing_contacts.var2),
+         var3 = COALESCE(NULLIF(EXCLUDED.var3, ''), email_marketing_contacts.var3),
+         var4 = COALESCE(NULLIF(EXCLUDED.var4, ''), email_marketing_contacts.var4),
+         var5 = COALESCE(NULLIF(EXCLUDED.var5, ''), email_marketing_contacts.var5),
+         updated_at = NOW()
+       RETURNING id, email, name, cpf, phone, var1, var2, var3, var4, var5, status, created_at`,
+      [tenantId, list_id, email, name || null, cpf || null, phone || null, var1, var2, var3, var4, var5]
+    );
+
+    await pool.query(
+      `UPDATE email_marketing_lists SET total_contacts=(SELECT COUNT(*) FROM email_marketing_contacts WHERE list_id=$1), updated_at=NOW() WHERE id=$1`,
+      [list_id]
+    );
+
+    res.json({ success: true, data: result.rows[0], message: 'Contato adicionado' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // =============================================
 // TEMPLATES
 // =============================================

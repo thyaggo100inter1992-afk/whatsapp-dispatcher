@@ -596,6 +596,10 @@ async function startServer() {
       startEmailMarketingWorker();
       console.log('✅ Email Marketing Worker iniciado');
 
+      // Scheduler de envios agendados da caixa de e-mail
+      const { startMailboxScheduler } = require('./services/email-mailbox.service');
+      startMailboxScheduler();
+
       // Iniciar Restriction Cleanup Worker
       console.log('🚀 Iniciando Restriction Cleanup Worker...');
       restrictionCleanupWorker.start();
