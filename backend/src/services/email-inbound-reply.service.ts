@@ -50,43 +50,23 @@ function buildConversationEmail(opts: {
   clientText: string;
   clientHtml: string;
 }): { subject: string; html: string; text: string } {
-  const { ctx, clientSubject, clientText, clientHtml } = opts;
+  const { clientSubject, clientText, clientHtml, ctx } = opts;
   const subjectBase = clientSubject || ctx.originalSubject || '(sem assunto)';
   const subject = subjectBase.toLowerCase().startsWith('re:')
     ? subjectBase
     : `Re: ${subjectBase}`;
 
+  // Somente a mensagem do cliente — sem banners/instruções do sistema.
+  // Se o atendente responder no Gmail, a citação não vaza texto interno para o cliente.
   const clientBody = clientHtml && /<\s*(p|div|br|table|html|body)\b/i.test(clientHtml)
     ? clientHtml
-    : `<pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;color:#1e293b;margin:0;">${esc(clientText || '(sem conteúdo)')}</pre>`;
+    : `<div style="white-space:pre-wrap;font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#111;line-height:1.5;">${esc(clientText || '(sem conteúdo)')}</div>`;
 
-  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif;">
-  <div style="max-width:640px;margin:0 auto;padding:20px;">
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
-      <div style="background:#0f766e;color:#fff;padding:12px 16px;font-size:13px;font-weight:700;">
-        Resposta do cliente — use este e-mail para responder
-      </div>
-      <div style="padding:16px;">
-        <p style="margin:0 0 12px;font-size:12px;color:#64748b;">
-          A ficha (CPF, telefone, etc.) chegou em um <strong>segundo e-mail separado</strong> com assunto começando em [FICHA].
-          Responda <strong>somente este</strong> para o cliente não receber dados internos.
-        </p>
-        <div style="font-size:12px;color:#64748b;margin-bottom:8px;">Mensagem do cliente:</div>
-        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;background:#fafafa;">
-          ${clientBody}
-        </div>
-      </div>
-    </div>
-  </div>
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:16px;font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#111;line-height:1.5;">
+${clientBody}
 </body></html>`;
 
-  const text = [
-    'Use ESTE e-mail para responder ao cliente.',
-    'A ficha interna veio em outro e-mail com assunto [FICHA].',
-    '',
-    '--- Mensagem do cliente ---',
-    clientText || '(sem conteúdo)',
-  ].join('\n');
+  const text = String(clientText || '').trim() || '(sem conteúdo)';
 
   return { subject, html, text };
 }
@@ -302,11 +282,12 @@ export async function forwardClientReplyToAttendant(opts: {
   });
   const ficha = buildFichaEmail(ctx, opts.clientSubject, opts.clientText, opts.clientHtml);
 
-  // 1) Conversa — Reply-To = cliente (atendente responde por AQUI)
+  // 1) Conversa — só a mensagem do cliente (sem texto de sistema). Reply-To = cliente.
+  //    fromName = nome do cliente para a citação no Gmail não parecer "sistema".
   await sendMarketingEmail({
     domain: ctx.domain,
     fromEmail: ctx.fromEmail,
-    fromName: `${ctx.fromName} (resposta)`,
+    fromName: ctx.clientName || ctx.clientEmail || 'Cliente',
     toEmail: ctx.attendantEmail,
     toName: null,
     replyTo: ctx.clientEmail || opts.clientFromEmail,
@@ -315,7 +296,7 @@ export async function forwardClientReplyToAttendant(opts: {
     text: conversation.text,
   });
 
-  // 2) Ficha — e-mail separado; Reply-To = atendente (não o cliente)
+  // 2) Ficha — e-mail separado com cadastro + última resposta; NÃO usar para responder o cliente
   await sendMarketingEmail({
     domain: ctx.domain,
     fromEmail: ctx.fromEmail,
