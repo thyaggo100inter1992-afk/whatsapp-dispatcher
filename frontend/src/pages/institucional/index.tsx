@@ -153,8 +153,11 @@ export default function InstitucionalHomePage() {
               <p className="inst-who-name">{INSTITUCIONAL.responsavel}</p>
               <p className="inst-who-role">{INSTITUCIONAL.cargo}</p>
               <p className="inst-who-meta">
+                <Link href={PATHS.equipe}>Ver página pública da administração →</Link>
+              </p>
+              <p className="inst-who-meta" style={{ marginTop: '0.45rem' }}>
                 <a href={INSTITUCIONAL.linkedin} target="_blank" rel="noopener noreferrer">
-                  Perfil no LinkedIn
+                  LinkedIn (quando perfil público)
                 </a>
               </p>
             </div>

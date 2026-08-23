@@ -33,5 +33,6 @@ export const PATHS = {
   privacidade: '/institucional/privacidade',
   cadastro: '/institucional/cadastro',
   amostra: '/institucional/amostra-email',
+  equipe: '/institucional/equipe',
   pdf: '/institucional/amostra-email-marketing.pdf',
 } as const;

@@ -6,6 +6,7 @@ import { INSTITUCIONAL, PATHS, enderecoCompleto } from '@/data/institucional';
 
 const nav = [
   { href: PATHS.home, label: 'Início' },
+  { href: PATHS.equipe, label: 'Equipe' },
   { href: PATHS.cadastro, label: 'Newsletter' },
   { href: PATHS.amostra, label: 'Exemplos' },
   { href: PATHS.privacidade, label: 'Privacidade' },
@@ -95,6 +96,7 @@ export default function InstitucionalLayout({
             </div>
             <div className="inst-footer-links">
               <Link href={PATHS.privacidade}>Política de Privacidade</Link>
+              <Link href={PATHS.equipe}>Equipe / Administração</Link>
               <Link href={PATHS.cadastro}>Newsletter</Link>
               <Link href={PATHS.amostra}>Exemplos de e-mail</Link>
               <a href={PATHS.pdf} download>
