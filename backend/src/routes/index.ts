@@ -42,6 +42,7 @@ const conversationsRoutes = require('./conversations.routes').default;
 const emailMarketingRoutes = require('./email-marketing.routes').default;
 const adminMailgunCredentialsRoutes = require('./admin/mailgun-credentials.routes').default;
 const adminSendgridCredentialsRoutes = require('./admin/sendgrid-credentials.routes').default;
+const adminNettEnviosCredentialsRoutes = require('./admin/nettsistemasenvios-credentials.routes').default;
 
 // Import rotas de administração
 const adminTenantsRoutes = require('./admin/tenants.routes');
@@ -300,8 +301,17 @@ console.log('✅ Rota /admin/mailgun-credentials registrada (apenas super_admin)
 router.use('/admin/sendgrid-credentials', authenticate, requireSuperAdmin, adminSendgridCredentialsRoutes);
 console.log('✅ Rota /admin/sendgrid-credentials registrada (apenas super_admin)');
 
+router.use('/admin/nettsistemasenvios-credentials', authenticate, requireSuperAdmin, adminNettEnviosCredentialsRoutes);
+console.log('✅ Rota /admin/nettsistemasenvios-credentials registrada (apenas super_admin)');
+
 // Webhooks públicos (sem autenticação - tracking events)
-const { mailgunWebhook, sendgridWebhook, sendgridInboundParse } = require('../controllers/email-marketing.controller');
+const {
+  mailgunWebhook,
+  sendgridWebhook,
+  sendgridInboundParse,
+  nettEnviosWebhook,
+  nettEnviosInboundParse,
+} = require('../controllers/email-marketing.controller');
 const multerInbound = require('multer');
 // E-mails com imagem/anexo: campos HTML e arquivos podem passar de 1MB (limite padrão do multer)
 const inboundUpload = multerInbound({
@@ -334,6 +344,17 @@ router.post('/webhook/sendgrid', sendgridWebhook);
 console.log('✅ Webhook público SendGrid registrado em /webhook/sendgrid');
 router.post('/webhook/sendgrid-inbound', inboundUploadMiddleware, sendgridInboundParse);
 console.log('✅ Inbound Parse SendGrid registrado em /webhook/sendgrid-inbound');
+
+router.post('/webhook/nettsistemasenvios', nettEnviosWebhook);
+router.post('/webhook/nettsistemasenvios/:domainId/:token', nettEnviosWebhook);
+console.log('✅ Webhook público nettsistemasenvios.com.br registrado');
+router.post('/webhook/nettsistemasenvios-inbound', inboundUploadMiddleware, nettEnviosInboundParse);
+router.post(
+  '/webhook/nettsistemasenvios-inbound/:domainId/:token',
+  inboundUploadMiddleware,
+  nettEnviosInboundParse
+);
+console.log('✅ Inbound nettsistemasenvios.com.br registrado');
 
 // Cancelamento de inscrição (público — link no rodapé de todos os e-mails)
 const { publicEmailUnsubscribe } = require('../controllers/email-marketing.controller');

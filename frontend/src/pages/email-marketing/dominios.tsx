@@ -40,6 +40,7 @@ export default function Dominios() {
   const [adding, setAdding] = useState(false);
   const [verifying, setVerifying] = useState<number | null>(null);
   const [newDomain, setNewDomain] = useState('');
+  const [newProvider, setNewProvider] = useState<'sendgrid' | 'mailgun' | 'nettsistemasenvios'>('nettsistemasenvios');
   const [showAdd, setShowAdd] = useState(false);
   const [showDns, setShowDns] = useState<Domain | null>(null);
 
@@ -125,7 +126,7 @@ export default function Dominios() {
     if (!newDomain) { notification.warning('Campo obrigatório', 'Informe o domínio.'); return; }
     setAdding(true);
     try {
-      const r = await api.post('/email-marketing/domains', { domain: newDomain });
+      const r = await api.post('/email-marketing/domains', { domain: newDomain, provider: newProvider });
       notification.success('Domínio adicionado!', 'Configure os DNS — o sistema verificará automaticamente em segundo plano.');
       setShowAdd(false); setNewDomain('');
       await loadDomains();
@@ -218,6 +219,21 @@ export default function Dominios() {
                 className={inputCls} />
               <p className="text-sm text-white/50 mt-2">
                 Recomendado: use um subdomínio dedicado como <code className="bg-white/10 px-1 rounded">mail.seudominio.com</code>
+              </p>
+            </div>
+            <div>
+              <label className="block text-base font-bold mb-3 text-white/90">Provedor de envio *</label>
+              <select
+                value={newProvider}
+                onChange={(e) => setNewProvider(e.target.value as any)}
+                className={inputCls}
+              >
+                <option value="nettsistemasenvios">nettsistemasenvios.com.br (SMTP próprio)</option>
+                <option value="sendgrid">SendGrid</option>
+                <option value="mailgun">Mailgun</option>
+              </select>
+              <p className="text-sm text-white/50 mt-2">
+                O domínio será registrado e verificado neste provedor. Envio e webhook seguem a mesma escolha.
               </p>
             </div>
             <div className="flex gap-3">
@@ -363,18 +379,33 @@ export default function Dominios() {
             {(() => {
               const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '');
               const dnsText = JSON.stringify(showDns.dns_records || []);
-              const looksSendgrid = /sendgrid\.net/i.test(dnsText) || showDns.provider === 'sendgrid';
-              const provider = looksSendgrid ? 'sendgrid' : (showDns.provider || 'mailgun');
-              const webhookPath = provider === 'sendgrid' ? '/api/webhook/sendgrid' : '/api/webhook/mailgun';
+              const p = String(showDns.provider || '').toLowerCase();
+              const looksSendgrid = /sendgrid\.net/i.test(dnsText) || p === 'sendgrid';
+              const looksNett = p === 'nettsistemasenvios' || p === 'nettsistemasenvios.com.br';
+              const provider = looksNett ? 'nettsistemasenvios' : looksSendgrid ? 'sendgrid' : (showDns.provider || 'mailgun');
+              const webhookPath =
+                provider === 'nettsistemasenvios'
+                  ? `/api/webhook/nettsistemasenvios/${showDns.id}`
+                  : provider === 'sendgrid'
+                    ? '/api/webhook/sendgrid'
+                    : '/api/webhook/mailgun';
               const webhookUrl = `${apiBase}${webhookPath}`;
+              const providerLabel =
+                provider === 'nettsistemasenvios'
+                  ? 'nettsistemasenvios.com.br'
+                  : provider === 'sendgrid'
+                    ? 'SendGrid'
+                    : 'Mailgun';
               return (
                 <div className="mt-5 bg-indigo-900/20 border border-indigo-500/30 rounded-xl p-4">
                   <p className="text-indigo-300 font-bold text-sm mb-1 flex items-center gap-2">🔗 URL de Rastreamento (Webhook)</p>
                   <p className="text-gray-400 text-xs mb-3">
-                    Provedor: <strong className="text-gray-300">{provider === 'sendgrid' ? 'SendGrid' : 'Mailgun'}</strong>.
-                    {provider === 'sendgrid'
-                      ? ' No SendGrid o sistema já tenta registrar sozinho; use esta URL se precisar configurar manualmente.'
-                      : ' Configure esta URL na seção Webhooks para rastrear aberturas, cliques e devoluções.'}
+                    Provedor: <strong className="text-gray-300">{providerLabel}</strong>.
+                    {provider === 'nettsistemasenvios'
+                      ? ' Webhook deste domínio é registrado automaticamente no SMTP — você não precisa colar manualmente.'
+                      : provider === 'sendgrid'
+                        ? ' No SendGrid o sistema já tenta registrar sozinho; use esta URL se precisar configurar manualmente.'
+                        : ' Configure esta URL na seção Webhooks para rastrear aberturas, cliques e devoluções.'}
                   </p>
                   <div className="flex items-center gap-2 bg-black/40 rounded-lg px-3 py-2 border border-white/10">
                     <code className="text-indigo-300 text-xs flex-1 break-all">{webhookUrl}</code>
@@ -489,11 +520,17 @@ export default function Dominios() {
                           <div className="flex flex-wrap gap-2 mt-1">
                             <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold border ${st.color}`}>{st.label}</span>
                             <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold border ${
-                              (d.provider === 'sendgrid' || /sendgrid\.net/i.test(JSON.stringify(d.dns_records || [])))
-                                ? 'text-blue-300 bg-blue-500/10 border-blue-500/30'
-                                : 'text-red-300 bg-red-500/10 border-red-500/30'
+                              String(d.provider || '').includes('nettsistemas')
+                                ? 'text-teal-300 bg-teal-500/10 border-teal-500/30'
+                                : (d.provider === 'sendgrid' || /sendgrid\.net/i.test(JSON.stringify(d.dns_records || [])))
+                                  ? 'text-blue-300 bg-blue-500/10 border-blue-500/30'
+                                  : 'text-red-300 bg-red-500/10 border-red-500/30'
                             }`}>
-                              {(d.provider === 'sendgrid' || /sendgrid\.net/i.test(JSON.stringify(d.dns_records || []))) ? 'SendGrid' : 'Mailgun'}
+                              {String(d.provider || '').includes('nettsistemas')
+                                ? 'nettsistemasenvios.com.br'
+                                : (d.provider === 'sendgrid' || /sendgrid\.net/i.test(JSON.stringify(d.dns_records || [])))
+                                  ? 'SendGrid'
+                                  : 'Mailgun'}
                             </span>
                           </div>
                           <p className="text-gray-500 text-xs mt-1.5 flex items-center gap-1">

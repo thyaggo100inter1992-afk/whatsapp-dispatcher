@@ -63,7 +63,7 @@ export default function AdminCredentials() {
   const notification = useNotification();
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'uazap' | 'novavida' | 'asaas' | 'mailgun' | 'sendgrid'>('uazap');
+  const [activeTab, setActiveTab] = useState<'uazap' | 'novavida' | 'asaas' | 'mailgun' | 'sendgrid' | 'nettsistemasenvios'>('uazap');
   const [uazapCredentials, setUazapCredentials] = useState<UazapCredential[]>([]);
   const [novaVidaCredentials, setNovaVidaCredentials] = useState<NovaVidaCredential[]>([]);
   const [asaasCredentials, setAsaasCredentials] = useState<AsaasCredential[]>([]);
@@ -163,6 +163,7 @@ export default function AdminCredentials() {
     loadCredentials();
     loadMailgunCredential();
     loadSendGridCredential();
+    loadNettCredential();
     loadEmailProviderSettings();
   }, []);
 
@@ -456,7 +457,10 @@ export default function AdminCredentials() {
   const [sendgridForm, setSendgridForm] = useState({ api_key: '' });
   const [sendgridConfigured, setSendgridConfigured] = useState(false);
   const [savingSendgrid, setSavingSendgrid] = useState(false);
-  const [activeEmailProvider, setActiveEmailProvider] = useState<'mailgun' | 'sendgrid'>('mailgun');
+  const [activeEmailProvider, setActiveEmailProvider] = useState<'mailgun' | 'sendgrid' | 'nettsistemasenvios'>('mailgun');
+  const [nettForm, setNettForm] = useState({ api_key: '', api_base_url: 'https://smtp1.nettsistemasenvios.com.br' });
+  const [nettConfigured, setNettConfigured] = useState(false);
+  const [savingNett, setSavingNett] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
 
   const loadMailgunCredential = async () => {
@@ -480,7 +484,44 @@ export default function AdminCredentials() {
       if (d?.active_provider) setActiveEmailProvider(d.active_provider);
       if (typeof d?.mailgun_configured === 'boolean') setMailgunConfigured(d.mailgun_configured);
       if (typeof d?.sendgrid_configured === 'boolean') setSendgridConfigured(d.sendgrid_configured);
+      if (typeof d?.nettsistemasenvios_configured === 'boolean') setNettConfigured(d.nettsistemasenvios_configured);
     } catch {}
+  };
+
+  const loadNettCredential = async () => {
+    try {
+      const res = await api.get('/admin/nettsistemasenvios-credentials');
+      setNettConfigured(!!res.data.configured);
+    } catch {}
+  };
+
+  const handleSaveNett = async () => {
+    if (!nettForm.api_key) {
+      notification.warning('Campo obrigatório', 'Informe a API Key de nettsistemasenvios.com.br');
+      return;
+    }
+    setSavingNett(true);
+    try {
+      const res = await api.post('/admin/nettsistemasenvios-credentials', {
+        api_key: nettForm.api_key,
+        api_base_url: nettForm.api_base_url,
+        activate: true,
+      });
+      notification.success(
+        'nettsistemasenvios.com.br',
+        res.data?.smtp_registered
+          ? 'API Key salva e SMTP/webhook registrados.'
+          : `API Key salva. SMTP: ${res.data?.smtp_error || 'verifique depois'}`
+      );
+      setNettConfigured(true);
+      setNettForm({ api_key: '', api_base_url: nettForm.api_base_url });
+      if (res.data?.active_provider) setActiveEmailProvider(res.data.active_provider);
+      await loadEmailProviderSettings();
+    } catch (error: any) {
+      notification.error('Erro ao salvar', error.response?.data?.message || error.message);
+    } finally {
+      setSavingNett(false);
+    }
   };
 
   const handleSaveMailgun = async () => {
@@ -522,12 +563,18 @@ export default function AdminCredentials() {
     }
   };
 
-  const handleSetActiveProvider = async (provider: 'mailgun' | 'sendgrid') => {
+  const handleSetActiveProvider = async (provider: 'mailgun' | 'sendgrid' | 'nettsistemasenvios') => {
     setSavingProvider(true);
     try {
       await api.post('/admin/sendgrid-credentials/settings/active', { active_provider: provider });
       setActiveEmailProvider(provider);
-      notification.success('Provedor ativo', provider === 'sendgrid' ? 'SendGrid' : 'Mailgun');
+      const label =
+        provider === 'sendgrid'
+          ? 'SendGrid'
+          : provider === 'nettsistemasenvios'
+            ? 'nettsistemasenvios.com.br'
+            : 'Mailgun';
+      notification.success('Provedor ativo', label);
     } catch (error: any) {
       notification.error('Erro', error.response?.data?.message || error.message);
     } finally {
@@ -628,6 +675,17 @@ export default function AdminCredentials() {
           >
             <FaEnvelope /> SendGrid {sendgridConfigured ? '✅' : '⚠️'}
             {activeEmailProvider === 'sendgrid' ? ' ★' : ''}
+          </button>
+          <button
+            onClick={() => setActiveTab('nettsistemasenvios')}
+            className={`flex-1 py-4 px-6 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'nettsistemasenvios'
+                ? 'bg-gradient-to-r from-teal-500 to-cyan-600 text-white shadow-lg scale-105'
+                : 'bg-white/10 text-gray-300 hover:bg-white/20'
+            }`}
+          >
+            <FaAt /> nettsistemasenvios {nettConfigured ? '✅' : '⚠️'}
+            {activeEmailProvider === 'nettsistemasenvios' ? ' ★' : ''}
           </button>
         </div>
 
@@ -1475,6 +1533,69 @@ export default function AdminCredentials() {
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'nettsistemasenvios' && (
+          <div className="space-y-6">
+            <div className={`rounded-2xl p-6 border-2 ${
+              activeEmailProvider === 'nettsistemasenvios'
+                ? 'bg-teal-500/10 border-teal-500/40'
+                : nettConfigured
+                  ? 'bg-green-500/10 border-green-500/40'
+                  : 'bg-yellow-500/10 border-yellow-500/40'
+            }`}>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <h3 className="text-lg font-black text-white">nettsistemasenvios.com.br</h3>
+                  <p className="text-gray-400 text-sm">
+                    SMTP externo (conexão). Não cria servidor aqui — só API Key + registro automático de webhook.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={savingProvider || !nettConfigured}
+                  onClick={() => handleSetActiveProvider('nettsistemasenvios')}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold border ${
+                    activeEmailProvider === 'nettsistemasenvios'
+                      ? 'bg-teal-500/30 border-teal-400 text-white'
+                      : 'border-white/20 text-white/70 hover:bg-white/10'
+                  }`}
+                >
+                  Usar como padrão
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-8 border-2 border-teal-500/30 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-300 mb-2">API Base URL</label>
+                <input
+                  type="text"
+                  value={nettForm.api_base_url}
+                  onChange={(e) => setNettForm({ ...nettForm, api_base_url: e.target.value })}
+                  className="w-full px-4 py-3 bg-black/40 border border-white/20 rounded-xl text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-300 mb-2">X-Api-Key *</label>
+                <input
+                  type="password"
+                  value={nettForm.api_key}
+                  onChange={(e) => setNettForm({ ...nettForm, api_key: e.target.value })}
+                  placeholder="Cole a API Key do SMTP"
+                  className="w-full px-4 py-3 bg-black/40 border border-white/20 rounded-xl text-white"
+                />
+              </div>
+              <button
+                type="button"
+                disabled={savingNett}
+                onClick={handleSaveNett}
+                className="px-6 py-3 bg-gradient-to-r from-teal-500 to-cyan-600 text-white rounded-xl font-bold disabled:opacity-50"
+              >
+                {savingNett ? 'Salvando…' : nettConfigured ? 'Atualizar e conectar SMTP' : 'Salvar e conectar SMTP'}
+              </button>
             </div>
           </div>
         )}

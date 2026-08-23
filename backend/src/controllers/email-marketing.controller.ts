@@ -223,7 +223,82 @@ export const addDomain = async (req: Request, res: Response) => {
     const { domain } = req.body;
     if (!domain) return res.status(400).json({ success: false, message: 'Domínio obrigatório' });
 
-    const provider = await getActiveEmailMarketingProvider();
+    const requested = String(req.body?.provider || '').toLowerCase().trim();
+    let provider: EmailMarketingProviderName;
+    if (requested === 'nettsistemasenvios' || requested === 'nettsistemasenvios.com.br') {
+      provider = 'nettsistemasenvios';
+    } else if (requested === 'sendgrid' || requested === 'mailgun') {
+      provider = requested as EmailMarketingProviderName;
+    } else {
+      provider = await getActiveEmailMarketingProvider();
+    }
+
+    // ========== nettsistemasenvios.com.br (SMTP externo) ==========
+    if (provider === 'nettsistemasenvios') {
+      const {
+        createNettEnviosDomain,
+        mapNettEnviosDnsRecords,
+        nettEnviosCanSend,
+        newWebhookToken,
+        registerNettEnviosDomainWebhooks,
+        ensureNettEnviosSmtpCredential,
+        NETTSISTEMAS_ENVIOS_LABEL,
+      } = require('../services/nettsistemasenvios.service');
+
+      try {
+        await ensureNettEnviosSmtpCredential('disparador');
+      } catch (e: any) {
+        console.warn('[addDomain] ensure smtp cred:', e?.message || e);
+      }
+
+      const apiDomain = await createNettEnviosDomain(domain);
+      const dnsRecords = mapNettEnviosDnsRecords(apiDomain);
+      const externalId = String(apiDomain?.id || apiDomain?.domain_id || '');
+      const token = newWebhookToken();
+      const canSend = nettEnviosCanSend(apiDomain);
+      const status = canSend ? 'active' : 'pending';
+
+      const result = await pool.query(
+        `INSERT INTO email_marketing_domains
+           (tenant_id, domain, mailgun_domain_id, sendgrid_domain_id, external_domain_id, smtp_login, smtp_password,
+            status, dns_records, provider, webhook_token, inbound_enabled, inbound_status)
+         VALUES ($1, $2, NULL, NULL, $3, $4, '', $5, $6, 'nettsistemasenvios', $7, TRUE, $8)
+         ON CONFLICT (tenant_id, domain) DO UPDATE SET
+           status=$5,
+           dns_records=$6,
+           external_domain_id=$3,
+           provider='nettsistemasenvios',
+           webhook_token=COALESCE(email_marketing_domains.webhook_token, $7),
+           inbound_enabled=TRUE,
+           inbound_status=$8,
+           updated_at=NOW()
+         RETURNING *`,
+        [
+          tenantId,
+          String(domain).trim().toLowerCase(),
+          externalId || null,
+          `postmaster@${domain}`,
+          status,
+          JSON.stringify(dnsRecords),
+          token,
+          canSend ? 'active' : 'pending',
+        ]
+      );
+      const row = result.rows[0];
+      const whToken = row.webhook_token || token;
+      try {
+        await registerNettEnviosDomainWebhooks(Number(row.id), whToken);
+      } catch (e: any) {
+        console.warn('[addDomain] webhook por domínio:', e?.message || e);
+      }
+      return res.json({
+        success: true,
+        data: row,
+        dns_records: dnsRecords,
+        provider: 'nettsistemasenvios',
+        provider_label: NETTSISTEMAS_ENVIOS_LABEL,
+      });
+    }
 
     // ========== SENDGRID ==========
     if (provider === 'sendgrid') {
@@ -322,6 +397,95 @@ export const verifyDomain = async (req: Request, res: Response) => {
 
     const domainName = domainRow.rows[0].domain;
     const domainProvider = String(domainRow.rows[0].provider || 'mailgun').toLowerCase();
+
+    // ========== nettsistemasenvios.com.br ==========
+    if (domainProvider === 'nettsistemasenvios' || domainProvider === 'nettsistemasenvios.com.br') {
+      const {
+        verifyNettEnviosDomain,
+        getNettEnviosDomain,
+        getNettEnviosDomainByName,
+        mapNettEnviosDnsRecords,
+        nettEnviosCanSend,
+        registerNettEnviosDomainWebhooks,
+        newWebhookToken,
+      } = require('../services/nettsistemasenvios.service');
+
+      let externalId = domainRow.rows[0].external_domain_id;
+      let apiDomain: any = null;
+      try {
+        if (externalId) {
+          try {
+            apiDomain = await verifyNettEnviosDomain(externalId);
+          } catch {
+            apiDomain = await getNettEnviosDomain(externalId);
+          }
+        } else {
+          apiDomain = await getNettEnviosDomainByName(domainName);
+          externalId = String(apiDomain?.id || '');
+        }
+      } catch (e: any) {
+        console.warn('[verify-domain] nettsistemasenvios:', e?.message || e);
+      }
+
+      let dnsRecords = mapNettEnviosDnsRecords(apiDomain || {});
+      if (!dnsRecords.length && Array.isArray(domainRow.rows[0].dns_records)) {
+        dnsRecords = domainRow.rows[0].dns_records;
+      }
+      const canSend = nettEnviosCanSend(apiDomain) || dnsRecords.some((r: any) => r.valid === 'valid');
+      // Checagem DNS local complementar
+      const checkedDns = await Promise.all(
+        dnsRecords.map(async (rec: any) => ({
+          ...rec,
+          valid: rec.valid === 'valid' ? 'valid' : await checkDnsRecord(rec, domainName),
+        }))
+      );
+      const allVerified = checkedDns.every((r: any) => r.valid === 'valid');
+      const spfOk = checkedDns.some(
+        (r: any) =>
+          (r.record_type || r.type || '').toUpperCase() === 'TXT' &&
+          String(r.value || '').toLowerCase().includes('v=spf1') &&
+          r.valid === 'valid'
+      );
+      const dkimOk = checkedDns.some(
+        (r: any) =>
+          (r.record_type || r.type || '').toUpperCase() === 'TXT' &&
+          String(r.name || r.host || '').toLowerCase().includes('_domainkey') &&
+          r.valid === 'valid'
+      );
+      const ready = canSend || (spfOk && dkimOk);
+      const newStatus = ready ? 'active' : 'unverified';
+      let token = domainRow.rows[0].webhook_token;
+      if (!token) {
+        token = newWebhookToken();
+      }
+      await pool.query(
+        `UPDATE email_marketing_domains SET
+           status=$1, dns_records=$2, external_domain_id=COALESCE(NULLIF($3,''), external_domain_id),
+           webhook_token=$4,
+           inbound_status=$5,
+           verified_at=${ready ? 'NOW()' : 'NULL'},
+           updated_at=NOW()
+         WHERE id=$6`,
+        [newStatus, JSON.stringify(checkedDns), externalId || '', token, ready ? 'active' : 'pending', id]
+      );
+      if (ready) {
+        try {
+          await registerNettEnviosDomainWebhooks(Number(id), token);
+        } catch (e: any) {
+          console.warn('[verify-domain] webhook domínio:', e?.message || e);
+        }
+      }
+      const updated = await pool.query(`SELECT * FROM email_marketing_domains WHERE id=$1`, [id]);
+      return res.json({
+        success: true,
+        verified: ready,
+        allVerified,
+        status: newStatus,
+        data: updated.rows[0],
+        dns_records: checkedDns,
+        provider: 'nettsistemasenvios',
+      });
+    }
 
     // ========== SENDGRID ==========
     if (domainProvider === 'sendgrid') {
@@ -2519,12 +2683,22 @@ export const getEmailMarketingProviderSettings = async (_req: Request, res: Resp
     const active = await getActiveEmailMarketingProvider();
     const mg = await pool.query(`SELECT id, region, is_active, created_at FROM mailgun_credentials WHERE is_active=TRUE LIMIT 1`);
     const sg = await pool.query(`SELECT id, is_active, created_at FROM sendgrid_credentials WHERE is_active=TRUE LIMIT 1`);
+    let nettConfigured = false;
+    try {
+      const ne = await pool.query(
+        `SELECT id FROM nettsistemasenvios_credentials WHERE is_active=TRUE LIMIT 1`
+      );
+      nettConfigured = ne.rows.length > 0;
+    } catch {
+      nettConfigured = !!process.env.NETTSISTEMAS_ENVIOS_API_KEY;
+    }
     res.json({
       success: true,
       data: {
         active_provider: active,
         mailgun_configured: mg.rows.length > 0,
         sendgrid_configured: sg.rows.length > 0,
+        nettsistemasenvios_configured: nettConfigured,
         mailgun: mg.rows[0] || null,
         sendgrid: sg.rows[0] || null,
       },
@@ -2536,9 +2710,15 @@ export const getEmailMarketingProviderSettings = async (_req: Request, res: Resp
 
 export const saveEmailMarketingProviderSettings = async (req: Request, res: Response) => {
   try {
-    const provider = String(req.body?.active_provider || '').toLowerCase() as EmailMarketingProviderName;
-    if (provider !== 'mailgun' && provider !== 'sendgrid') {
-      return res.status(400).json({ success: false, message: 'Provedor inválido (mailgun|sendgrid)' });
+    const raw = String(req.body?.active_provider || '').toLowerCase();
+    const provider = (
+      raw === 'nettsistemasenvios.com.br' ? 'nettsistemasenvios' : raw
+    ) as EmailMarketingProviderName;
+    if (provider !== 'mailgun' && provider !== 'sendgrid' && provider !== 'nettsistemasenvios') {
+      return res.status(400).json({
+        success: false,
+        message: 'Provedor inválido (mailgun|sendgrid|nettsistemasenvios)',
+      });
     }
     if (provider === 'sendgrid') {
       const sg = await pool.query(`SELECT id FROM sendgrid_credentials WHERE is_active=TRUE LIMIT 1`);
@@ -2550,6 +2730,15 @@ export const saveEmailMarketingProviderSettings = async (req: Request, res: Resp
       const mg = await pool.query(`SELECT id FROM mailgun_credentials WHERE is_active=TRUE LIMIT 1`);
       if (!mg.rows[0]) {
         return res.status(400).json({ success: false, message: 'Salve a chave Mailgun antes de ativar o provedor' });
+      }
+    }
+    if (provider === 'nettsistemasenvios') {
+      const ne = await pool.query(`SELECT id FROM nettsistemasenvios_credentials WHERE is_active=TRUE LIMIT 1`);
+      if (!ne.rows[0] && !process.env.NETTSISTEMAS_ENVIOS_API_KEY) {
+        return res.status(400).json({
+          success: false,
+          message: 'Salve a API Key de nettsistemasenvios.com.br antes de ativar',
+        });
       }
     }
     await setActiveEmailMarketingProvider(provider);
@@ -2607,6 +2796,127 @@ export const deleteSendGridCredential = async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// =============================================
+// ADMIN: nettsistemasenvios.com.br (SMTP externo)
+// =============================================
+
+export const getNettEnviosCredential = async (_req: Request, res: Response) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, api_base_url, smtp_host, smtp_port, smtp_user, smtp_tls, is_active, created_at, updated_at,
+              (smtp_password IS NOT NULL AND smtp_password <> '') AS has_smtp_password
+       FROM nettsistemasenvios_credentials WHERE is_active=TRUE ORDER BY id DESC LIMIT 1`
+    );
+    res.json({
+      success: true,
+      data: result.rows[0] || null,
+      configured: result.rows.length > 0 || !!process.env.NETTSISTEMAS_ENVIOS_API_KEY,
+      provider_label: 'nettsistemasenvios.com.br',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const saveNettEnviosCredential = async (req: Request, res: Response) => {
+  try {
+    const api_key = String(req.body?.api_key || '').trim();
+    const api_base_url = String(
+      req.body?.api_base_url || 'https://smtp1.nettsistemasenvios.com.br'
+    ).replace(/\/$/, '');
+    if (!api_key) return res.status(400).json({ success: false, message: 'API Key obrigatória' });
+
+    await pool.query(`UPDATE nettsistemasenvios_credentials SET is_active=FALSE WHERE is_active=TRUE`);
+    await pool.query(
+      `INSERT INTO nettsistemasenvios_credentials (api_key, api_base_url, is_active)
+       VALUES ($1, $2, TRUE)`,
+      [api_key, api_base_url]
+    );
+
+    const { ensureNettEnviosSmtpCredential } = require('../services/nettsistemasenvios.service');
+    let smtpOk = false;
+    let smtpError: string | null = null;
+    try {
+      await ensureNettEnviosSmtpCredential('disparador');
+      smtpOk = true;
+    } catch (e: any) {
+      smtpError = e?.message || String(e);
+      console.warn('[nett-envios] ensure credentials:', smtpError);
+    }
+
+    if (req.body?.activate !== false) {
+      await setActiveEmailMarketingProvider('nettsistemasenvios');
+    }
+
+    res.json({
+      success: true,
+      message: 'Credencial nettsistemasenvios.com.br salva',
+      smtp_registered: smtpOk,
+      smtp_error: smtpError,
+      active_provider: await getActiveEmailMarketingProvider(),
+      provider_label: 'nettsistemasenvios.com.br',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Webhook de eventos — nettsistemasenvios.com.br
+ * Formato igual ao array de eventos já suportado (delivered/open/click/...).
+ * Rotas por domínio: /api/webhook/nettsistemasenvios/:domainId/:token
+ */
+export const nettEnviosWebhook = async (req: Request, res: Response) => {
+  try {
+    const domainId = Number(req.params.domainId || 0);
+    const token = String(req.params.token || '');
+    if (domainId > 0) {
+      const r = await pool.query(
+        `SELECT id, webhook_token, provider FROM email_marketing_domains WHERE id=$1`,
+        [domainId]
+      );
+      const row = r.rows[0];
+      if (!row || !String(row.provider || '').includes('nettsistemas')) {
+        return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
+      }
+      if (row.webhook_token && token && row.webhook_token !== token) {
+        return res.status(403).json({ success: false, message: 'Token inválido' });
+      }
+      console.log(`[webhook-nettsistemasenvios] domínio=${domainId}`);
+    } else {
+      console.log('[webhook-nettsistemasenvios] fallback global');
+    }
+    return sendgridWebhook(req, res);
+  } catch (error: any) {
+    console.error('[webhook-nettsistemasenvios]', error.message);
+    res.status(500).json({ success: false });
+  }
+};
+
+export const nettEnviosInboundParse = async (req: Request, res: Response) => {
+  try {
+    const domainId = Number(req.params.domainId || 0);
+    const token = String(req.params.token || '');
+    if (domainId > 0) {
+      const r = await pool.query(
+        `SELECT id, webhook_token, provider FROM email_marketing_domains WHERE id=$1`,
+        [domainId]
+      );
+      const row = r.rows[0];
+      if (!row || !String(row.provider || '').includes('nettsistemas')) {
+        return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
+      }
+      if (row.webhook_token && token && row.webhook_token !== token) {
+        return res.status(403).json({ success: false, message: 'Token inválido' });
+      }
+    }
+    return sendgridInboundParse(req, res);
+  } catch (error: any) {
+    console.error('[webhook-nettsistemasenvios-inbound]', error.message);
+    res.status(500).json({ success: false });
   }
 };
 

@@ -8,7 +8,7 @@ import Mailgun from 'mailgun.js';
 import { pool } from '../database/connection';
 import { appendUnsubscribeFooter } from '../utils/email-unsubscribe';
 
-export type EmailMarketingProviderName = 'mailgun' | 'sendgrid';
+export type EmailMarketingProviderName = 'mailgun' | 'sendgrid' | 'nettsistemasenvios';
 
 export type MarketingSendInput = {
   domain: string;
@@ -70,10 +70,31 @@ export async function getActiveEmailMarketingProvider(): Promise<EmailMarketingP
       `SELECT active_provider FROM email_marketing_provider_settings WHERE id=1 LIMIT 1`
     );
     const p = String(r.rows[0]?.active_provider || 'mailgun').toLowerCase();
-    return p === 'sendgrid' ? 'sendgrid' : 'mailgun';
+    if (p === 'sendgrid') return 'sendgrid';
+    if (p === 'nettsistemasenvios' || p === 'nettsistemasenvios.com.br') return 'nettsistemasenvios';
+    return 'mailgun';
   } catch {
     return 'mailgun';
   }
+}
+
+/** Resolve provedor pelo domínio cadastrado (envio multi-provedor) */
+export async function resolveProviderForDomain(domain: string): Promise<EmailMarketingProviderName> {
+  try {
+    const r = await pool.query(
+      `SELECT provider FROM email_marketing_domains
+       WHERE LOWER(domain)=LOWER($1) AND is_active=TRUE
+       ORDER BY id DESC LIMIT 1`,
+      [domain]
+    );
+    const p = String(r.rows[0]?.provider || '').toLowerCase();
+    if (p === 'sendgrid') return 'sendgrid';
+    if (p === 'nettsistemasenvios' || p === 'nettsistemasenvios.com.br') return 'nettsistemasenvios';
+    if (p === 'mailgun') return 'mailgun';
+  } catch {
+    /* ignore */
+  }
+  return getActiveEmailMarketingProvider();
 }
 
 export async function setActiveEmailMarketingProvider(provider: EmailMarketingProviderName) {
@@ -243,7 +264,90 @@ async function sendViaSendGrid(
   return { provider: 'sendgrid', messageId };
 }
 
-/** Envia pelo provedor ativo (ou pelo informado) */
+async function sendViaNettSistemasEnvios(
+  input: MarketingSendInput,
+  unsubscribeUrl?: string | null
+): Promise<MarketingSendResult> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const nodemailer = require('nodemailer');
+  const {
+    getNettEnviosCredentials,
+  } = require('./nettsistemasenvios.service');
+  const creds = await getNettEnviosCredentials();
+  if (!creds.smtp_user || !creds.smtp_password) {
+    throw new Error('SMTP nettsistemasenvios.com.br sem usuário/senha. Salve as credenciais no admin.');
+  }
+
+  const toList = normalizeAddressList(
+    Array.isArray(input.toEmail) ? input.toEmail : String(input.toEmail || '')
+  );
+  if (!toList.length) throw new Error('Destinatário inválido');
+  const cc = normalizeAddressList(input.cc);
+  const bcc = normalizeAddressList(input.bcc);
+
+  const port = Number(creds.smtp_port || 587);
+  const transporter = nodemailer.createTransport({
+    host: creds.smtp_host || 'smtp1.nettsistemasenvios.com.br',
+    port,
+    secure: port === 465,
+    auth: {
+      user: creds.smtp_user,
+      pass: creds.smtp_password,
+    },
+    requireTLS: port === 587,
+  });
+
+  const headers: Record<string, string> = { ...(input.headers || {}) };
+  if (unsubscribeUrl) {
+    headers['List-Unsubscribe'] = `<${unsubscribeUrl}>`;
+    headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+  }
+  if (input.inReplyTo) {
+    headers['In-Reply-To'] = input.inReplyTo.startsWith('<') ? input.inReplyTo : `<${input.inReplyTo}>`;
+  }
+  if (input.references) headers['References'] = input.references;
+  if (input.requestReadReceipt) {
+    headers['Disposition-Notification-To'] = input.fromEmail;
+    headers['Return-Receipt-To'] = input.fromEmail;
+  }
+  if (input.customArgs) {
+    for (const [k, v] of Object.entries(input.customArgs)) {
+      if (v != null) headers[`X-${k}`] = String(v);
+    }
+  }
+
+  const attachments = Array.isArray(input.attachments)
+    ? input.attachments.map((a) => ({
+        filename: a.filename,
+        content: Buffer.isBuffer(a.content) ? a.content : Buffer.from(String(a.content), 'base64'),
+        contentType: a.contentType,
+        cid: a.contentId,
+        contentDisposition: a.disposition || 'attachment',
+      }))
+    : undefined;
+
+  const info = await transporter.sendMail({
+    from: input.fromName ? `"${input.fromName}" <${input.fromEmail}>` : input.fromEmail,
+    to:
+      toList.length === 1 && input.toName
+        ? `"${input.toName}" <${toList[0]}>`
+        : toList,
+    replyTo: input.replyTo || input.fromEmail,
+    subject: input.subject,
+    html: input.html || undefined,
+    text: input.text || 'Por favor, habilite HTML para visualizar este e-mail.',
+    cc: cc.length ? cc : undefined,
+    bcc: bcc.length ? bcc : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
+    attachments,
+  });
+
+  const messageId = String(info.messageId || info.response || '').replace(/^<|>$/g, '').trim();
+  if (!messageId) throw new Error('SMTP nettsistemasenvios.com.br não retornou message-id');
+  return { provider: 'nettsistemasenvios', messageId };
+}
+
+/** Envia pelo provedor do domínio (ou forceProvider / ativo) */
 export async function sendMarketingEmail(
   input: MarketingSendInput,
   forceProvider?: EmailMarketingProviderName
@@ -272,8 +376,11 @@ export async function sendMarketingEmail(
     unsubscribeUrl = withFooter.unsubscribeUrl;
   }
 
-  const provider = forceProvider || (await getActiveEmailMarketingProvider());
+  const provider =
+    forceProvider ||
+    (prepared.domain ? await resolveProviderForDomain(prepared.domain) : await getActiveEmailMarketingProvider());
   if (provider === 'sendgrid') return sendViaSendGrid(prepared, unsubscribeUrl);
+  if (provider === 'nettsistemasenvios') return sendViaNettSistemasEnvios(prepared, unsubscribeUrl);
   return sendViaMailgun(prepared, unsubscribeUrl);
 }
 
