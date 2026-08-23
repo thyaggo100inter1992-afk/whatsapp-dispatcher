@@ -6,39 +6,45 @@ function esc(s) {
 }
 
 const lines = [
-  'NETTSISTEMAS - Amostra de e-mail marketing',
+  'NETTSISTEMAS - Exemplo de e-mail marketing',
   '',
   'De: NETTSISTEMAS <contato@nettsistemas.com>',
-  'Assunto: Novidades da plataforma - comunicacao com seus clientes',
-  'Tipo: Marketing (amostra)',
+  'Assunto: Novidades - comunicacao com seus clientes',
+  'Tipo: Marketing (exemplo)',
   '',
   'Ola,',
   '',
-  'Esta e uma amostra de e-mail marketing da plataforma Disparador NettSistemas,',
-  'operada pela NETTSISTEMAS (CNPJ 65.528.559/0001-34).',
+  'Esta e uma amostra de e-mail marketing do servico prestado pela NETTSISTEMAS',
+  '(CNPJ 65.528.559/0001-34).',
   '',
-  'Solucao B2B: empresas clientes enviam campanhas as proprias bases, com opt-in',
-  'e cancelamento de inscricao. Segmentos: varejo, servicos locais, clinicas,',
-  'educacao e demais negocios.',
+  'Prestamos e-mail marketing e WhatsApp com operacao e controle nossos:',
+  'campanhas, listas, opt-in e cancelamento de inscricao ficam sob nossa gestao.',
+  'Atendemos varejo, servicos locais, clinicas, educacao e outros segmentos,',
+  'sempre com comunicacao legitima e rastreavel.',
   '',
   'Site: https://sistemasnettsistemas.com.br/institucional',
+  'Opt-in: https://sistemasnettsistemas.com.br/institucional/cadastro',
   '',
-  '--- RODAPE OBRIGATORIO ---',
-  'Cancelar inscricao:',
+  '--- RODAPE ---',
+  'Se voce nao deseja mais receber estes e-mails, cancele sua inscricao:',
   'https://api.sistemasnettsistemas.com.br/api/public/email-unsubscribe?t=exemplo-cancelamento',
+  '',
   'Politica de Privacidade:',
   'https://sistemasnettsistemas.com.br/institucional/privacidade',
-  'Endereco fisico: Rua BM27, S/N - Quadra 28, Lote 23, Casa 02,',
+  '',
+  'Endereco fisico:',
+  'Rua BM27, S/N - Quadra 28, Lote 23, Casa 02,',
   'Residencial Brisas da Mata, Goiania/GO, CEP 74475-364, Brasil',
-  'Contato: contato@nettsistemas.com / +55 (62) 99844-9494',
-  'Responsavel: Thiago Godinho Oliveira (Administrador)',
+  '',
+  'Contato empresa: contato@nettsistemas.com / +55 (62) 99844-9494',
+  'Administrador: Thiago Godinho Oliveira / +55 (62) 99178-5664',
 ];
 
 const contentLines = [];
 let y = 800;
 for (const line of lines) {
   contentLines.push('BT /F1 11 Tf 50 ' + y + ' Td (' + esc(line) + ') Tj ET');
-  y -= 16;
+  y -= 15;
 }
 const stream = contentLines.join('\n');
 const objs = [];

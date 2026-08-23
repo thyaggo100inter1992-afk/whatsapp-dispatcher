@@ -2,33 +2,39 @@
 1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj
 2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj
 3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj
-4 0 obj<< /Length 1829 >>stream
-BT /F1 11 Tf 50 800 Td (NETTSISTEMAS - Amostra de e-mail marketing) Tj ET
-BT /F1 11 Tf 50 784 Td () Tj ET
-BT /F1 11 Tf 50 768 Td (De: NETTSISTEMAS <contato@nettsistemas.com>) Tj ET
-BT /F1 11 Tf 50 752 Td (Assunto: Novidades da plataforma - comunicacao com seus clientes) Tj ET
-BT /F1 11 Tf 50 736 Td (Tipo: Marketing \(amostra\)) Tj ET
-BT /F1 11 Tf 50 720 Td () Tj ET
-BT /F1 11 Tf 50 704 Td (Ola,) Tj ET
-BT /F1 11 Tf 50 688 Td () Tj ET
-BT /F1 11 Tf 50 672 Td (Esta e uma amostra de e-mail marketing da plataforma Disparador NettSistemas,) Tj ET
-BT /F1 11 Tf 50 656 Td (operada pela NETTSISTEMAS \(CNPJ 65.528.559/0001-34\).) Tj ET
-BT /F1 11 Tf 50 640 Td () Tj ET
-BT /F1 11 Tf 50 624 Td (Solucao B2B: empresas clientes enviam campanhas as proprias bases, com opt-in) Tj ET
-BT /F1 11 Tf 50 608 Td (e cancelamento de inscricao. Segmentos: varejo, servicos locais, clinicas,) Tj ET
-BT /F1 11 Tf 50 592 Td (educacao e demais negocios.) Tj ET
-BT /F1 11 Tf 50 576 Td () Tj ET
+4 0 obj<< /Length 2185 >>stream
+BT /F1 11 Tf 50 800 Td (NETTSISTEMAS - Exemplo de e-mail marketing) Tj ET
+BT /F1 11 Tf 50 785 Td () Tj ET
+BT /F1 11 Tf 50 770 Td (De: NETTSISTEMAS <contato@nettsistemas.com>) Tj ET
+BT /F1 11 Tf 50 755 Td (Assunto: Novidades - comunicacao com seus clientes) Tj ET
+BT /F1 11 Tf 50 740 Td (Tipo: Marketing \(exemplo\)) Tj ET
+BT /F1 11 Tf 50 725 Td () Tj ET
+BT /F1 11 Tf 50 710 Td (Ola,) Tj ET
+BT /F1 11 Tf 50 695 Td () Tj ET
+BT /F1 11 Tf 50 680 Td (Esta e uma amostra de e-mail marketing do servico prestado pela NETTSISTEMAS) Tj ET
+BT /F1 11 Tf 50 665 Td (\(CNPJ 65.528.559/0001-34\).) Tj ET
+BT /F1 11 Tf 50 650 Td () Tj ET
+BT /F1 11 Tf 50 635 Td (Prestamos e-mail marketing e WhatsApp com operacao e controle nossos:) Tj ET
+BT /F1 11 Tf 50 620 Td (campanhas, listas, opt-in e cancelamento de inscricao ficam sob nossa gestao.) Tj ET
+BT /F1 11 Tf 50 605 Td (Atendemos varejo, servicos locais, clinicas, educacao e outros segmentos,) Tj ET
+BT /F1 11 Tf 50 590 Td (sempre com comunicacao legitima e rastreavel.) Tj ET
+BT /F1 11 Tf 50 575 Td () Tj ET
 BT /F1 11 Tf 50 560 Td (Site: https://sistemasnettsistemas.com.br/institucional) Tj ET
-BT /F1 11 Tf 50 544 Td () Tj ET
-BT /F1 11 Tf 50 528 Td (--- RODAPE OBRIGATORIO ---) Tj ET
-BT /F1 11 Tf 50 512 Td (Cancelar inscricao:) Tj ET
-BT /F1 11 Tf 50 496 Td (https://api.sistemasnettsistemas.com.br/api/public/email-unsubscribe?t=exemplo-cancelamento) Tj ET
-BT /F1 11 Tf 50 480 Td (Politica de Privacidade:) Tj ET
-BT /F1 11 Tf 50 464 Td (https://sistemasnettsistemas.com.br/institucional/privacidade) Tj ET
-BT /F1 11 Tf 50 448 Td (Endereco fisico: Rua BM27, S/N - Quadra 28, Lote 23, Casa 02,) Tj ET
-BT /F1 11 Tf 50 432 Td (Residencial Brisas da Mata, Goiania/GO, CEP 74475-364, Brasil) Tj ET
-BT /F1 11 Tf 50 416 Td (Contato: contato@nettsistemas.com / +55 \(62\) 99844-9494) Tj ET
-BT /F1 11 Tf 50 400 Td (Responsavel: Thiago Godinho Oliveira \(Administrador\)) Tj ET
+BT /F1 11 Tf 50 545 Td (Opt-in: https://sistemasnettsistemas.com.br/institucional/cadastro) Tj ET
+BT /F1 11 Tf 50 530 Td () Tj ET
+BT /F1 11 Tf 50 515 Td (--- RODAPE ---) Tj ET
+BT /F1 11 Tf 50 500 Td (Se voce nao deseja mais receber estes e-mails, cancele sua inscricao:) Tj ET
+BT /F1 11 Tf 50 485 Td (https://api.sistemasnettsistemas.com.br/api/public/email-unsubscribe?t=exemplo-cancelamento) Tj ET
+BT /F1 11 Tf 50 470 Td () Tj ET
+BT /F1 11 Tf 50 455 Td (Politica de Privacidade:) Tj ET
+BT /F1 11 Tf 50 440 Td (https://sistemasnettsistemas.com.br/institucional/privacidade) Tj ET
+BT /F1 11 Tf 50 425 Td () Tj ET
+BT /F1 11 Tf 50 410 Td (Endereco fisico:) Tj ET
+BT /F1 11 Tf 50 395 Td (Rua BM27, S/N - Quadra 28, Lote 23, Casa 02,) Tj ET
+BT /F1 11 Tf 50 380 Td (Residencial Brisas da Mata, Goiania/GO, CEP 74475-364, Brasil) Tj ET
+BT /F1 11 Tf 50 365 Td () Tj ET
+BT /F1 11 Tf 50 350 Td (Contato empresa: contato@nettsistemas.com / +55 \(62\) 99844-9494) Tj ET
+BT /F1 11 Tf 50 335 Td (Administrador: Thiago Godinho Oliveira / +55 \(62\) 99178-5664) Tj ET
 endstream
 endobj
 5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj
@@ -39,8 +45,8 @@ xref
 0000000056 00000 n 
 0000000111 00000 n 
 0000000233 00000 n 
-0000002112 00000 n 
+0000002468 00000 n 
 trailer<< /Size 6 /Root 1 0 R >>
 startxref
-2180
+2536
 %%EOF
