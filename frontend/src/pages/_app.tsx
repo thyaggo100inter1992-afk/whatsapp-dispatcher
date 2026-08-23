@@ -84,7 +84,10 @@ export default function App({ Component, pageProps }: AppProps) {
   
   // Rotas públicas (sem autenticação)
   const publicRoutes = ['/login', '/registro', '/site', '/landing'];
-  const isPublicRoute = publicRoutes.includes(router.pathname) || router.pathname.toLowerCase() === '/site';
+  const isPublicRoute =
+    publicRoutes.includes(router.pathname) ||
+    router.pathname.toLowerCase() === '/site' ||
+    router.pathname.startsWith('/institucional');
   
   // Se é rota pública, renderiza sem proteção
   if (isPublicRoute) {

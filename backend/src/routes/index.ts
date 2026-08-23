@@ -81,6 +81,10 @@ const router = Router();
 // Landing Page Pública
 const landingRoutes = require('./public/landing.routes');
 router.use('/public/landing', landingRoutes);
+
+const institucionalPublicRoutes = require('./public/institucional-public.routes').default;
+router.use('/public/institucional', institucionalPublicRoutes);
+console.log('✅ Rota /public/institucional registrada (opt-in institucional)');
 console.log('✅ Rotas de landing page pública registradas (sem autenticação)');
 
 // API Pública - Lista de Restrição (autenticação por email+senha no body)
