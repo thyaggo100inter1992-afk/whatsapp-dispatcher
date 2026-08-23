@@ -26,17 +26,26 @@ dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
+const corsOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://sistemasnettsistemas.com.br',
+  'http://sistemasnettsistemas.com.br',
+  'https://www.sistemasnettsistemas.com.br',
+  'http://www.sistemasnettsistemas.com.br',
+  'https://api.sistemasnettsistemas.com.br',
+  'http://api.sistemasnettsistemas.com.br',
+  // Variante sem o "s" (domínio digitado/errado em alguns acessos)
+  'https://sistemanettsistemas.com.br',
+  'http://sistemanettsistemas.com.br',
+  'https://www.sistemanettsistemas.com.br',
+  'https://api.sistemanettsistemas.com.br',
+  process.env.FRONTEND_URL || 'http://localhost:3000',
+].filter(Boolean);
+
 const io = new Server(httpServer, {
   cors: {
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'https://sistemasnettsistemas.com.br',
-      'http://sistemasnettsistemas.com.br',
-      'https://api.sistemasnettsistemas.com.br',
-      'http://api.sistemasnettsistemas.com.br',
-      process.env.FRONTEND_URL || 'http://localhost:3000'
-    ],
+    origin: corsOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -47,15 +56,7 @@ export { io };
 
 // Middlewares
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'https://sistemasnettsistemas.com.br',
-    'http://sistemasnettsistemas.com.br',
-    'https://api.sistemasnettsistemas.com.br',
-    'http://api.sistemasnettsistemas.com.br',
-    process.env.FRONTEND_URL || 'http://localhost:3000'
-  ],
+  origin: corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -169,6 +170,7 @@ app.use((req, res, next) => {
     (path.includes('/conversations') && path.includes('/messages/media')) ||
     path.includes('/webhook/mailgun') ||  // ✅ Webhook Mailgun — body já processado pelo express.text
     path.includes('/webhook/sendgrid') ||  // ✅ Webhook SendGrid
+    path.includes('/webhook/nettsistemasenvios') || // ✅ NettMail eventos + inbound (Multer)
     path.includes('/email-marketing/lists') || // ✅ Importação de contatos — usa Multer
     path.includes('/email-marketing/mailboxes') // ✅ Caixa de e-mail (envio/anexos)
   ) {
