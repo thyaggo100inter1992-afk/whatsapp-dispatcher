@@ -1128,6 +1128,21 @@ export default function CaixaEntrada() {
     const fields = readComposeFields();
     const tos = parseEmailList(fields.to_email);
 
+    const composeMailbox = mailboxes.find((m) => m.id === composeMailboxId);
+    const savedSig = String(composeMailbox?.signature_html || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!asDraft && compose.append_signature && !savedSig) {
+      notification.warning(
+        'Assinatura não salva',
+        'A opção Assinatura está marcada, mas esta caixa ainda não tem assinatura salva. Abra a engrenagem, crie a assinatura e clique em Salvar.'
+      );
+      setShowSettings(true);
+      return;
+    }
+
     setCompose((c) => ({
       ...c,
       to_email: tos.join(', ') || fields.to_email,
@@ -1296,6 +1311,15 @@ export default function CaixaEntrada() {
   /* ── Settings ── */
   const saveSettings = async () => {
     if (!mailboxId) return;
+    const plain = String(sigHtml || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (sigEnabled && !plain) {
+      notification.warning('Atenção', 'Escreva a assinatura no editor antes de salvar (ou desmarque "Usar assinatura").');
+      return;
+    }
     setSavingSettings(true);
     try {
       const r = await api.patch(`/email-marketing/mailboxes/${mailboxId}`, {
@@ -1304,7 +1328,7 @@ export default function CaixaEntrada() {
         display_name: displayName || null,
       });
       setMailboxes((prev) => prev.map((m) => (m.id === mailboxId ? { ...m, ...r.data.data } : m)));
-      notification.success('Salvo', 'Configurações da caixa atualizadas');
+      notification.success('Salvo', 'Configurações da caixa atualizadas — a assinatura será anexada nos próximos envios');
       setShowSettings(false);
     } catch (e: any) {
       notification.error('Erro', e.response?.data?.message || e.message);
@@ -2113,6 +2137,39 @@ export default function CaixaEntrada() {
                               </span>
                             ))}
                           </div>
+
+                        {compose.append_signature && (() => {
+                          const mb = mailboxes.find((m) => m.id === composeMailboxId);
+                          const hasSig = !!String(mb?.signature_html || '')
+                            .replace(/<[^>]+>/g, ' ')
+                            .replace(/&nbsp;/gi, ' ')
+                            .replace(/\s+/g, ' ')
+                            .trim();
+                          return (
+                            <div className={`rounded-lg border px-3 py-2 text-[12px] ${
+                              hasSig
+                                ? 'border-indigo-400/25 bg-indigo-500/10 text-indigo-100'
+                                : 'border-amber-400/30 bg-amber-500/10 text-amber-100'
+                            }`}>
+                              {hasSig ? (
+                                <div>
+                                  <p className="font-semibold text-[11px] uppercase tracking-wide opacity-70 mb-1">Assinatura que será anexada</p>
+                                  <div
+                                    className="prose prose-invert max-w-none text-[13px] leading-snug"
+                                    dangerouslySetInnerHTML={{ __html: mb?.signature_html || '' }}
+                                  />
+                                </div>
+                              ) : (
+                                <p>
+                                  Assinatura marcada, mas ainda não há conteúdo salvo nesta caixa.{' '}
+                                  <button type="button" className="underline font-semibold" onClick={() => setShowSettings(true)}>
+                                    Configurar agora
+                                  </button>
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {!!compose.quoted_html && (
                           <div className="rounded-lg border border-white/[0.08] overflow-hidden">

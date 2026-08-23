@@ -143,14 +143,68 @@ export async function findMailboxByEmail(email: string) {
   return r.rows[0] || null;
 }
 
+export function normalizeSubject(subject: string) {
+  let s = String(subject || '').trim();
+  let prev = '';
+  while (s !== prev) {
+    prev = s;
+    s = s.replace(/^(re|fw|fwd|enc|res|resp)\s*:\s*/i, '').trim();
+  }
+  return s.replace(/\s+/g, ' ').toLowerCase();
+}
+
 export function buildThreadKey(subject: string, participants: string[]) {
-  const normSubj = String(subject || '')
-    .replace(/^(re|fw|fwd|enc|res)\s*:\s*/gi, '')
-    .replace(/^(re|fw|fwd|enc|res)\s*:\s*/gi, '')
-    .trim()
-    .toLowerCase();
-  const parts = [...new Set(participants.map((p) => String(p || '').trim().toLowerCase()).filter(Boolean))].sort();
+  const normSubj = normalizeSubject(subject);
+  const parts = [...new Set(
+    participants.map((p) => String(p || '').trim().toLowerCase()).filter((p) => p.includes('@'))
+  )].sort();
   return `${normSubj}::${parts.join('|')}`.slice(0, 240);
+}
+
+async function resolveConversationThreadKey(opts: {
+  tenantId: number;
+  mailboxId: number;
+  mailboxEmail: string;
+  subject: string;
+  otherEmail: string;
+  inReplyTo?: string | null;
+}) {
+  const other = String(opts.otherEmail || '').trim().toLowerCase();
+  const computed = buildThreadKey(opts.subject, [opts.mailboxEmail, other]);
+  const inReply = String(opts.inReplyTo || '').replace(/^<|>$/g, '').trim();
+
+  if (inReply) {
+    const byRef = await pool.query(
+      `SELECT thread_key FROM email_mailbox_messages
+       WHERE mailbox_id=$1 AND tenant_id=$2
+         AND (message_id=$3 OR message_id LIKE $4 OR in_reply_to=$3)
+         AND thread_key IS NOT NULL AND TRIM(thread_key) <> ''
+       ORDER BY id DESC LIMIT 1`,
+      [opts.mailboxId, opts.tenantId, inReply, `${inReply}%`]
+    );
+    if (byRef.rows[0]?.thread_key) return String(byRef.rows[0].thread_key);
+  }
+
+  const recent = await pool.query(
+    `SELECT id, thread_key, subject, from_email, to_email
+     FROM email_mailbox_messages
+     WHERE mailbox_id=$1 AND tenant_id=$2
+       AND (
+         LOWER(from_email)=$3 OR LOWER(to_email)=$3
+         OR LOWER(from_email)=$4 OR LOWER(to_email)=$4
+         OR thread_key=$5
+       )
+     ORDER BY id DESC
+     LIMIT 60`,
+    [opts.mailboxId, opts.tenantId, other, String(opts.mailboxEmail || '').toLowerCase(), computed]
+  );
+  const want = normalizeSubject(opts.subject);
+  const hit = recent.rows.find((r: any) => {
+    if (r.thread_key && String(r.thread_key) === computed) return true;
+    return normalizeSubject(r.subject) === want;
+  });
+  if (hit?.thread_key) return String(hit.thread_key);
+  return computed;
 }
 
 export function detectPhishingHints(html: string, text: string): string[] {
@@ -193,6 +247,191 @@ function mailboxTrackingRank(status: string): number {
     replied: 6,
   };
   return map[String(status || '').toLowerCase()] ?? 0;
+}
+
+let recipientsTableReady = false;
+async function ensureMailboxRecipientsTable() {
+  if (recipientsTableReady) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_mailbox_message_recipients (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER NOT NULL,
+      mailbox_id INTEGER NOT NULL,
+      message_id INTEGER NOT NULL REFERENCES email_mailbox_messages(id) ON DELETE CASCADE,
+      email VARCHAR(255) NOT NULL,
+      name VARCHAR(255),
+      role VARCHAR(10) DEFAULT 'to',
+      tracking_status VARCHAR(30) DEFAULT 'pending',
+      delivered_at TIMESTAMPTZ,
+      opened_at TIMESTAMPTZ,
+      clicked_at TIMESTAMPTZ,
+      replied_at TIMESTAMPTZ,
+      bounced_at TIMESTAMPTZ,
+      error_message TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE (message_id, email)
+    )
+  `);
+  recipientsTableReady = true;
+}
+
+let signatureColsReady = false;
+/** Garante colunas de assinatura na tabela email_mailboxes */
+export async function ensureMailboxSignatureColumns() {
+  if (signatureColsReady) return;
+  await pool.query(`
+    ALTER TABLE email_mailboxes
+      ADD COLUMN IF NOT EXISTS signature_html TEXT,
+      ADD COLUMN IF NOT EXISTS signature_enabled BOOLEAN DEFAULT TRUE
+  `);
+  signatureColsReady = true;
+}
+
+/** HTML de assinatura “vazio” (editor rico às vezes deixa &lt;p&gt;&lt;br&gt;&lt;/p&gt;) */
+export function normalizeSignatureHtml(html: string | null | undefined): string {
+  const raw = String(html || '').trim();
+  if (!raw) return '';
+  const plain = raw
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return plain ? raw : '';
+}
+
+function parseEmailParts(raw: string | string[] | null | undefined): string[] {
+  const text = Array.isArray(raw) ? raw.join(',') : String(raw || '');
+  return text.split(/[,;\n]+/).map((s) => s.trim().toLowerCase()).filter((s) => s.includes('@'));
+}
+
+export async function upsertMailboxRecipients(opts: {
+  tenantId: number;
+  mailboxId: number;
+  messageId: number;
+  toEmail: string | string[];
+  toName?: string | null;
+  cc?: string | string[] | null;
+  bcc?: string | string[] | null;
+  trackingStatus?: string;
+}) {
+  await ensureMailboxRecipientsTable();
+  const toList = parseEmailParts(opts.toEmail);
+  const ccList = parseEmailParts(opts.cc);
+  const bccList = parseEmailParts(opts.bcc);
+  const rows: Array<{ email: string; name: string | null; role: string }> = [];
+  const seen = new Set<string>();
+  const push = (email: string, role: string, name?: string | null) => {
+    if (!email || seen.has(email)) return;
+    seen.add(email);
+    rows.push({ email, role, name: name || null });
+  };
+  toList.forEach((e, i) => push(e, 'to', i === 0 ? opts.toName : null));
+  ccList.forEach((e) => push(e, 'cc'));
+  bccList.forEach((e) => push(e, 'bcc'));
+  const status = opts.trackingStatus || 'pending';
+  for (const r of rows) {
+    await pool.query(
+      `INSERT INTO email_mailbox_message_recipients
+         (tenant_id, mailbox_id, message_id, email, name, role, tracking_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (message_id, email) DO UPDATE SET
+         name = COALESCE(EXCLUDED.name, email_mailbox_message_recipients.name),
+         role = EXCLUDED.role,
+         tracking_status = CASE
+           WHEN email_mailbox_message_recipients.tracking_status IN ('pending','draft') THEN EXCLUDED.tracking_status
+           ELSE email_mailbox_message_recipients.tracking_status
+         END,
+         updated_at = NOW()`,
+      [opts.tenantId, opts.mailboxId, opts.messageId, r.email, r.name, r.role, status]
+    );
+  }
+  return rows.length;
+}
+
+export async function listMailboxMessageRecipients(messageId: number) {
+  try {
+    await ensureMailboxRecipientsTable();
+    const r = await pool.query(
+      `SELECT id, email, name, role, tracking_status,
+              delivered_at, opened_at, clicked_at, replied_at, bounced_at, error_message
+       FROM email_mailbox_message_recipients
+       WHERE message_id=$1
+       ORDER BY CASE role WHEN 'to' THEN 0 WHEN 'cc' THEN 1 ELSE 2 END, id ASC`,
+      [messageId]
+    );
+    return r.rows;
+  } catch {
+    return [];
+  }
+}
+
+async function applyRecipientTracking(opts: {
+  messageId: number;
+  recipientEmail?: string | null;
+  mapped: string;
+  setDelivered: boolean;
+  setOpened: boolean;
+  setClicked: boolean;
+  setBounced: boolean;
+  eventAt: Date;
+  errMsg?: string | null;
+}) {
+  await ensureMailboxRecipientsTable();
+  const email = String(opts.recipientEmail || '').trim().toLowerCase();
+  if (!email.includes('@')) return;
+
+  const existing = await pool.query(
+    `SELECT tracking_status FROM email_mailbox_message_recipients
+     WHERE message_id=$1 AND LOWER(email)=$2 LIMIT 1`,
+    [opts.messageId, email]
+  );
+  const prev = String(existing.rows[0]?.tracking_status || 'sent').toLowerCase();
+  let next = opts.mapped;
+  if (prev === 'replied' && !['failed', 'bounced', 'complained'].includes(opts.mapped)) {
+    next = 'replied';
+  } else if (opts.mapped === 'opened' && prev === 'clicked') {
+    next = 'clicked';
+  } else if (
+    mailboxTrackingRank(opts.mapped) < mailboxTrackingRank(prev) &&
+    !['failed', 'bounced', 'complained'].includes(opts.mapped)
+  ) {
+    next = prev;
+  }
+
+  await pool.query(
+    `INSERT INTO email_mailbox_message_recipients
+       (tenant_id, mailbox_id, message_id, email, role, tracking_status,
+        delivered_at, opened_at, clicked_at, bounced_at, error_message)
+     SELECT tenant_id, mailbox_id, id, $2, 'to', $3,
+            CASE WHEN $4 THEN $7::timestamptz ELSE NULL END,
+            CASE WHEN $5 THEN $7::timestamptz ELSE NULL END,
+            CASE WHEN $6 THEN $7::timestamptz ELSE NULL END,
+            CASE WHEN $8 THEN $7::timestamptz ELSE NULL END,
+            $9
+     FROM email_mailbox_messages WHERE id=$1
+     ON CONFLICT (message_id, email) DO UPDATE SET
+       tracking_status = $3,
+       delivered_at = CASE WHEN $4 THEN COALESCE(email_mailbox_message_recipients.delivered_at, $7::timestamptz) ELSE email_mailbox_message_recipients.delivered_at END,
+       opened_at    = CASE WHEN $5 THEN COALESCE(email_mailbox_message_recipients.opened_at, $7::timestamptz) ELSE email_mailbox_message_recipients.opened_at END,
+       clicked_at   = CASE WHEN $6 THEN COALESCE(email_mailbox_message_recipients.clicked_at, $7::timestamptz) ELSE email_mailbox_message_recipients.clicked_at END,
+       bounced_at   = CASE WHEN $8 THEN COALESCE(email_mailbox_message_recipients.bounced_at, $7::timestamptz) ELSE email_mailbox_message_recipients.bounced_at END,
+       error_message = COALESCE($9, email_mailbox_message_recipients.error_message),
+       updated_at = NOW()`,
+    [
+      opts.messageId,
+      email,
+      next,
+      opts.setDelivered,
+      opts.setOpened,
+      opts.setClicked,
+      opts.eventAt.toISOString(),
+      opts.setBounced,
+      opts.errMsg || null,
+    ]
+  );
 }
 
 /**
@@ -315,6 +554,22 @@ export async function applyMailboxTrackingEvent(opts: {
       Number(row.id),
     ]
   );
+
+  try {
+    await applyRecipientTracking({
+      messageId: Number(row.id),
+      recipientEmail: recipient,
+      mapped,
+      setDelivered,
+      setOpened,
+      setClicked,
+      setBounced,
+      eventAt,
+      errMsg,
+    });
+  } catch (e) {
+    console.warn('[mailbox-tracking] recipient:', (e as any)?.message || e);
+  }
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -441,18 +696,42 @@ async function persistInboundAttachments(opts: {
   const fieldToUrl: Record<string, string> = {};
   const cidToUrl: Record<string, string> = {};
 
+  // Campos de formulário do inbound (não são arquivo)
+  const skipFields = new Set([
+    'to', 'from', 'subject', 'text', 'html', 'headers', 'envelope',
+    'charsets', 'spf', 'dkim', 'sender_ip', 'spam_score', 'spam_report',
+    'attachment-info', 'attachment_info', 'content-ids', 'content_ids',
+    'message-id', 'message_id', 'email', 'raw', 'mime',
+  ]);
+
+  let attIndex = 0;
   for (const file of files) {
     const field = String(file.fieldname || '');
-    // SendGrid: attachment1, attachment2... — ignora outros campos de formulário
-    if (!/^attachment\d+$/i.test(field)) continue;
-    if (!file.buffer || !Buffer.isBuffer(file.buffer)) continue;
+    const fieldLower = field.toLowerCase();
+    if (skipFields.has(fieldLower)) continue;
+    if (!file.buffer || !Buffer.isBuffer(file.buffer) || file.buffer.length === 0) continue;
 
-    const meta = attachmentInfo[field] || {};
-    const filename = safeFileName(meta.filename || meta.name || file.originalname || `${field}.bin`);
+    // SendGrid: attachment1, attachment2...
+    // NettMail / outros: file, files, attachment, upload, ou qualquer binário
+    const isSgAttachment = /^attachment\d+$/i.test(field);
+    const isGenericFile =
+      /^(file|files|attachment|attachments|upload|uploads|part)\d*$/i.test(field) ||
+      (!!file.mimetype && !/^text\//i.test(file.mimetype) && fieldLower !== 'html' && fieldLower !== 'text');
+    if (!isSgAttachment && !isGenericFile) {
+      // ainda aceita se tiver originalname de arquivo real
+      if (!file.originalname || file.originalname === field) continue;
+    }
+
+    attIndex += 1;
+    const meta = attachmentInfo[field] || attachmentInfo[`attachment${attIndex}`] || {};
+    const filename = safeFileName(
+      meta.filename || meta.name || file.originalname || `${field || 'file'}-${attIndex}.bin`
+    );
     const stored = `${opts.messageId}-${Date.now()}-${filename}`;
     fs.writeFileSync(path.join(uploadDir, stored), file.buffer);
     const url = `/uploads/email-inbox/${opts.tenantId}/${opts.mailboxId}/${stored}`;
     fieldToUrl[field] = url;
+    fieldToUrl[`attachment${attIndex}`] = url;
 
     const contentId = String(meta['content-id'] || meta.content_id || '')
       .replace(/[<>]/g, '')
@@ -501,6 +780,7 @@ export async function ingestInboundToMailbox(opts: {
   text: string;
   html: string;
   messageId?: string | null;
+  inReplyTo?: string | null;
   files?: InboundMulterFile[];
   attachmentInfoRaw?: any;
   contentIdsRaw?: any;
@@ -520,28 +800,59 @@ export async function ingestInboundToMailbox(opts: {
   const nameMatch = String(opts.fromRaw || '').match(/^"?([^"<]+)"?\s*</);
   if (nameMatch) fromName = nameMatch[1].trim();
 
-  const ins = await pool.query(
-    `INSERT INTO email_mailbox_messages (
-       tenant_id, mailbox_id, direction, folder,
-       from_email, from_name, to_email, subject, body_html, body_text,
-       message_id, is_read, status, received_at, attachments
-     ) VALUES (
-       $1,$2,'inbound','inbox',
-       $3,$4,$5,$6,$7,$8,
-       $9,FALSE,'received',NOW(),'[]'::jsonb
-     ) RETURNING id`,
-    [
-      mailbox.tenant_id,
-      mailbox.id,
-      fromEmail || null,
-      fromName,
-      mailbox.email,
-      opts.subject || '(sem assunto)',
-      opts.html || null,
-      opts.text || null,
-      opts.messageId || null,
-    ]
-  );
+  const threadKey = await resolveConversationThreadKey({
+    tenantId: mailbox.tenant_id,
+    mailboxId: mailbox.id,
+    mailboxEmail: mailbox.email,
+    subject: opts.subject || '',
+    otherEmail: fromEmail || '',
+    inReplyTo: opts.inReplyTo || null,
+  });
+
+  let ins;
+  try {
+    ins = await pool.query(
+      `INSERT INTO email_mailbox_messages (
+         tenant_id, mailbox_id, direction, folder,
+         from_email, from_name, to_email, subject, body_html, body_text,
+         message_id, in_reply_to, is_read, status, received_at, attachments, thread_key
+       ) VALUES (
+         $1,$2,'inbound','inbox',
+         $3,$4,$5,$6,$7,$8,
+         $9,$10,FALSE,'received',NOW(),'[]'::jsonb,$11
+       ) RETURNING id`,
+      [
+        mailbox.tenant_id,
+        mailbox.id,
+        fromEmail || null,
+        fromName,
+        mailbox.email,
+        opts.subject || '(sem assunto)',
+        opts.html || null,
+        opts.text || null,
+        opts.messageId || null,
+        opts.inReplyTo || null,
+        threadKey,
+      ]
+    );
+  } catch (e: any) {
+    if (!/in_reply_to|thread_key|column .* does not exist/i.test(String(e.message || ''))) throw e;
+    ins = await pool.query(
+      `INSERT INTO email_mailbox_messages (
+         tenant_id, mailbox_id, direction, folder,
+         from_email, from_name, to_email, subject, body_html, body_text,
+         message_id, is_read, status, received_at, attachments
+       ) VALUES (
+         $1,$2,'inbound','inbox',
+         $3,$4,$5,$6,$7,$8,
+         $9,FALSE,'received',NOW(),'[]'::jsonb
+       ) RETURNING id`,
+      [
+        mailbox.tenant_id, mailbox.id, fromEmail || null, fromName, mailbox.email,
+        opts.subject || '(sem assunto)', opts.html || null, opts.text || null, opts.messageId || null,
+      ]
+    );
+  }
 
   const messageId = Number(ins.rows[0].id);
   let html = opts.html || '';
@@ -558,7 +869,6 @@ export async function ingestInboundToMailbox(opts: {
     });
     html = saved.html;
     attachments = saved.attachments;
-    const threadKey = buildThreadKey(opts.subject || '', [mailbox.email, fromEmail || '']);
     await pool.query(
       `UPDATE email_mailbox_messages
        SET body_html=$1, attachments=$2::jsonb, has_attachments=$3,
@@ -620,8 +930,10 @@ export async function sendFromMailbox(opts: {
   scheduledAt?: Date | string | null;
   saveAsDraft?: boolean;
   requestReadReceipt?: boolean;
-  appendSignature?: boolean;
+  appendSignature?: boolean | null;
 }) {
+  await ensureMailboxSignatureColumns();
+
   const mb = await pool.query(
     `SELECT m.*, d.domain, d.status AS domain_status
      FROM email_mailboxes m
@@ -659,9 +971,25 @@ export async function sendFromMailbox(opts: {
 
   let html = opts.bodyHtml || '';
   let text = opts.bodyText || '';
-  if (opts.appendSignature !== false && mailbox.signature_enabled && mailbox.signature_html) {
-    html = `${html || ''}<br/><br/>--<br/>${mailbox.signature_html}`;
-    text = `${text || ''}\n\n--\n${String(mailbox.signature_html).replace(/<[^>]+>/g, '')}`;
+  const sigHtml = normalizeSignatureHtml(mailbox.signature_html);
+  const wantSignature = opts.appendSignature !== false;
+  const settingsAllowSig = mailbox.signature_enabled !== false;
+  // Checkbox do compose = true: anexa se houver conteúdo (mesmo com "Usar assinatura" desligado nas configs)
+  // Default: anexa só se configs permitem + há conteúdo
+  if (wantSignature && sigHtml && (settingsAllowSig || opts.appendSignature === true)) {
+    html = `${html || ''}<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb">${sigHtml}</div>`;
+    const sigText = String(sigHtml)
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    text = `${text || ''}\n\n--\n${sigText}`;
+  } else if (opts.appendSignature === true && !opts.saveAsDraft && !sigHtml) {
+    throw new Error(
+      'Assinatura marcada, mas esta caixa não tem assinatura salva. Abra a engrenagem da caixa, crie a assinatura e clique em Salvar.'
+    );
   }
 
   const ccList = Array.isArray(opts.cc)
@@ -800,6 +1128,20 @@ export async function sendFromMailbox(opts: {
        WHERE id=$2`,
       [sent.messageId, rowId]
     );
+    try {
+      await upsertMailboxRecipients({
+        tenantId: opts.tenantId,
+        mailboxId: opts.mailboxId,
+        messageId: rowId,
+        toEmail: toList,
+        toName: opts.toName,
+        cc: ccList,
+        bcc: bccList,
+        trackingStatus: 'sent',
+      });
+    } catch (e) {
+      console.warn('[mailbox-send] recipients:', (e as any)?.message || e);
+    }
     return { id: rowId, messageId: sent.messageId, provider: sent.provider, status: 'sent' };
   } catch (e: any) {
     await pool.query(
@@ -879,6 +1221,18 @@ export async function processScheduledMailboxSends() {
          WHERE id=$2`,
         [sent.messageId, row.id]
       );
+      try {
+        await upsertMailboxRecipients({
+          tenantId: row.tenant_id,
+          mailboxId: row.mailbox_id,
+          messageId: row.id,
+          toEmail: row.to_email,
+          toName: row.to_name,
+          cc: row.cc,
+          bcc: row.bcc,
+          trackingStatus: 'sent',
+        });
+      } catch { /* tabela pode ainda não existir na 1ª vez */ }
     } catch (e: any) {
       await pool.query(
         `UPDATE email_mailbox_messages SET status='failed', error_message=$1, updated_at=NOW() WHERE id=$2`,

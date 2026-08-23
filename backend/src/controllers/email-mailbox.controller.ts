@@ -12,6 +12,10 @@ import {
   sendFromMailbox,
   detectPhishingHints,
   buildThreadKey,
+  normalizeSubject,
+  ensureMailboxSignatureColumns,
+  normalizeSignatureHtml,
+  listMailboxMessageRecipients,
 } from '../services/email-mailbox.service';
 
 const execFileAsync = promisify(execFile);
@@ -164,6 +168,7 @@ export const listMailboxes = async (req: Request, res: Response) => {
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
+    await ensureMailboxSignatureColumns();
     const result = await pool.query(
       `SELECT m.*, d.domain, d.status AS domain_status, d.inbound_status,
               (SELECT COUNT(*)::int FROM email_mailbox_messages msg
@@ -268,6 +273,8 @@ export const updateMailbox = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { signature_html, signature_enabled, display_name } = req.body;
 
+    await ensureMailboxSignatureColumns();
+
     const sets: string[] = [];
     const vals: any[] = [];
     let i = 1;
@@ -277,8 +284,9 @@ export const updateMailbox = async (req: Request, res: Response) => {
       vals.push(display_name === null || display_name === '' ? null : String(display_name));
     }
     if (signature_html !== undefined) {
+      const normalized = normalizeSignatureHtml(signature_html);
       sets.push(`signature_html=$${i++}`);
-      vals.push(signature_html === null ? null : String(signature_html));
+      vals.push(normalized || null);
     }
     if (signature_enabled !== undefined) {
       sets.push(`signature_enabled=$${i++}`);
@@ -289,46 +297,26 @@ export const updateMailbox = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Nenhum campo para atualizar' });
     }
 
+    if (signature_enabled === true && signature_html !== undefined && !normalizeSignatureHtml(signature_html)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Marcou "Usar assinatura", mas o conteúdo da assinatura está vazio. Escreva a assinatura e salve de novo.',
+      });
+    }
+
     sets.push('updated_at=NOW()');
     vals.push(id, tenantId);
 
-    try {
-      const result = await pool.query(
-        `UPDATE email_mailboxes SET ${sets.join(', ')}
-         WHERE id=$${i++} AND tenant_id=$${i}
-         RETURNING *`,
-        vals
-      );
-      if (!result.rows[0]) {
-        return res.status(404).json({ success: false, message: 'Caixa não encontrada' });
-      }
-      res.json({ success: true, data: result.rows[0], message: 'Caixa atualizada' });
-    } catch (e: any) {
-      if (/signature_html|signature_enabled|column .* does not exist/i.test(String(e.message || ''))) {
-        // Fallback sem colunas novas
-        if (display_name === undefined) {
-          return res.status(400).json({
-            success: false,
-            message: 'Colunas de assinatura ainda não migradas. Execute a migration da caixa de e-mail.',
-          });
-        }
-        const result = await pool.query(
-          `UPDATE email_mailboxes SET display_name=$1, updated_at=NOW()
-           WHERE id=$2 AND tenant_id=$3 RETURNING *`,
-          [display_name || null, id, tenantId]
-        );
-        if (!result.rows[0]) {
-          return res.status(404).json({ success: false, message: 'Caixa não encontrada' });
-        }
-        return res.json({
-          success: true,
-          data: result.rows[0],
-          message: 'Nome atualizado (assinatura pendente de migration)',
-          migration_pending: true,
-        });
-      }
-      throw e;
+    const result = await pool.query(
+      `UPDATE email_mailboxes SET ${sets.join(', ')}
+       WHERE id=$${i++} AND tenant_id=$${i}
+       RETURNING *`,
+      vals
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Caixa não encontrada' });
     }
+    res.json({ success: true, data: result.rows[0], message: 'Caixa atualizada' });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -464,20 +452,55 @@ async function queryMailboxMessages(opts: {
 
   params.push(opts.limit);
 
+  if (opts.threadKey) {
+    const sql = `
+      SELECT m.id, m.mailbox_id, m.direction, m.folder, m.from_email, m.from_name,
+             m.to_email, m.to_name, m.subject, m.is_read, m.status,
+             m.received_at, m.sent_at, m.created_at, m.scheduled_at,
+             m.cc, m.custom_folder_id, m.thread_key,
+             m.tracking_status, m.delivered_at, m.opened_at, m.clicked_at, m.replied_at, m.bounced_at,
+             COALESCE(m.is_starred, FALSE) AS is_starred,
+             COALESCE(m.has_attachments, FALSE) AS has_attachments,
+             LEFT(COALESCE(m.body_text, ''), 160) AS preview,
+             mb.email AS mailbox_email,
+             1 AS thread_count
+      FROM email_mailbox_messages m
+      JOIN email_mailboxes mb ON mb.id = m.mailbox_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY COALESCE(m.received_at, m.sent_at, m.created_at) DESC
+      LIMIT $${i}`;
+    return pool.query(sql, params);
+  }
+
   const sql = `
-    SELECT m.id, m.mailbox_id, m.direction, m.folder, m.from_email, m.from_name,
-           m.to_email, m.to_name, m.subject, m.is_read, m.status,
-           m.received_at, m.sent_at, m.created_at, m.scheduled_at,
-           m.cc, m.custom_folder_id, m.thread_key,
-           m.tracking_status, m.delivered_at, m.opened_at, m.clicked_at, m.replied_at, m.bounced_at,
-           COALESCE(m.is_starred, FALSE) AS is_starred,
-           COALESCE(m.has_attachments, FALSE) AS has_attachments,
-           LEFT(COALESCE(m.body_text, ''), 160) AS preview,
-           mb.email AS mailbox_email
-    FROM email_mailbox_messages m
-    JOIN email_mailboxes mb ON mb.id = m.mailbox_id
-    WHERE ${where.join(' AND ')}
-    ORDER BY COALESCE(m.received_at, m.sent_at, m.created_at) DESC
+    SELECT * FROM (
+      SELECT DISTINCT ON (x.thread_group)
+             x.id, x.mailbox_id, x.direction, x.folder, x.from_email, x.from_name,
+             x.to_email, x.to_name, x.subject, x.is_read, x.status,
+             x.received_at, x.sent_at, x.created_at, x.scheduled_at,
+             x.cc, x.custom_folder_id, x.thread_key,
+             x.tracking_status, x.delivered_at, x.opened_at, x.clicked_at, x.replied_at, x.bounced_at,
+             x.is_starred, x.has_attachments,
+             LEFT(COALESCE(x.body_text, ''), 160) AS preview,
+             mb.email AS mailbox_email,
+             x.thread_count,
+             x.thread_unread
+      FROM (
+        SELECT m.*,
+               COALESCE(NULLIF(TRIM(m.thread_key), ''), 'solo:' || m.id::text) AS thread_group,
+               COUNT(*) OVER (
+                 PARTITION BY COALESCE(NULLIF(TRIM(m.thread_key), ''), 'solo:' || m.id::text)
+               ) AS thread_count,
+               BOOL_OR(m.is_read = FALSE) OVER (
+                 PARTITION BY COALESCE(NULLIF(TRIM(m.thread_key), ''), 'solo:' || m.id::text)
+               ) AS thread_unread
+        FROM email_mailbox_messages m
+        WHERE ${where.join(' AND ')}
+      ) x
+      JOIN email_mailboxes mb ON mb.id = x.mailbox_id
+      ORDER BY x.thread_group, COALESCE(x.received_at, x.sent_at, x.created_at) DESC, x.id DESC
+    ) t
+    ORDER BY COALESCE(t.received_at, t.sent_at, t.created_at) DESC, t.id DESC
     LIMIT $${i}`;
 
   return pool.query(sql, params);
@@ -522,12 +545,16 @@ export const listMailboxMessages = async (req: Request, res: Response) => {
 
       res.json({
         success: true,
-        data: result.rows,
+        data: result.rows.map((r: any) => ({
+          ...r,
+          is_read: r.thread_unread === true ? false : r.is_read,
+          thread_count: Number(r.thread_count || 1),
+        })),
         unread_count: unreadQ.rows[0]?.n || 0,
         folder,
       });
     } catch (e: any) {
-      if (/is_starred|has_attachments|custom_folder|thread_key|cc|column .* does not exist/i.test(String(e.message || ''))) {
+      if (/is_starred|has_attachments|custom_folder|thread_key|cc|thread_group|distinct on|column .* does not exist/i.test(String(e.message || ''))) {
         const result = await pool.query(
           `SELECT id, mailbox_id, direction, folder, from_email, from_name, to_email, to_name, subject,
                   is_read, status, received_at, sent_at, created_at,
@@ -580,7 +607,15 @@ export const listAllMailboxMessages = async (req: Request, res: Response) => {
         threadKey,
         limit,
       });
-      res.json({ success: true, data: result.rows, folder });
+      res.json({
+        success: true,
+        data: result.rows.map((r: any) => ({
+          ...r,
+          is_read: r.thread_unread === true ? false : r.is_read,
+          thread_count: Number(r.thread_count || 1),
+        })),
+        folder,
+      });
     } catch (e: any) {
       if (/does not exist/i.test(String(e.message || ''))) {
         return res.json({ success: true, data: [], migration_pending: true });
@@ -618,6 +653,7 @@ export const getMailboxMessage = async (req: Request, res: Response) => {
     }
 
     const phishing_hints = detectPhishingHints(msg.body_html || '', msg.body_text || '');
+    const recipients = await listMailboxMessageRecipients(Number(msg.id));
 
     res.json({
       success: true,
@@ -626,6 +662,7 @@ export const getMailboxMessage = async (req: Request, res: Response) => {
         is_starred: !!msg.is_starred,
         has_attachments: !!msg.has_attachments,
         phishing_hints,
+        recipients,
       },
     });
   } catch (error: any) {
@@ -715,7 +752,7 @@ export const sendMailboxMessage = async (req: Request, res: Response) => {
       scheduledAt: scheduled_at || null,
       saveAsDraft,
       requestReadReceipt: parseBool(request_read_receipt) === true,
-      appendSignature: parseBool(append_signature) !== false,
+      appendSignature: parseBool(append_signature),
     });
 
     const msg =
@@ -1146,11 +1183,48 @@ export const createQuickReply = async (req: Request, res: Response) => {
       if (!mb) return res.status(404).json({ success: false, message: 'Caixa não encontrada' });
     }
 
-    const result = await pool.query(
-      `INSERT INTO email_mailbox_quick_replies (tenant_id, mailbox_id, title, body_html)
-       VALUES ($1,$2,$3,$4) RETURNING *`,
-      [tenantId, mailboxId, title.slice(0, 150), bodyHtml]
-    );
+    const savedAtts: any[] = [];
+    const rawAtts = Array.isArray(req.body.attachments_base64) ? req.body.attachments_base64 : [];
+    if (rawAtts.length) {
+      const uploadDir = path.join(__dirname, '../../uploads/email-quick-replies', String(tenantId));
+      fs.mkdirSync(uploadDir, { recursive: true });
+      for (const a of rawAtts) {
+        if (!a?.content) continue;
+        try {
+          const content = Buffer.from(String(a.content), 'base64');
+          if (!content.length || content.length > 15 * 1024 * 1024) continue;
+          const filename = String(a.filename || 'arquivo').replace(/[^\w.\- ()\[\]]+/g, '_').slice(0, 120);
+          const stored = `${Date.now()}-${filename}`;
+          fs.writeFileSync(path.join(uploadDir, stored), content);
+          savedAtts.push({
+            filename,
+            contentType: a.contentType || 'application/octet-stream',
+            size: content.length,
+            url: `/uploads/email-quick-replies/${tenantId}/${stored}`,
+          });
+        } catch { /* skip bad file */ }
+      }
+    }
+
+    let result;
+    try {
+      result = await pool.query(
+        `INSERT INTO email_mailbox_quick_replies (tenant_id, mailbox_id, title, body_html, attachments)
+         VALUES ($1,$2,$3,$4,$5::jsonb) RETURNING *`,
+        [tenantId, mailboxId, title.slice(0, 150), bodyHtml, JSON.stringify(savedAtts)]
+      );
+    } catch (e: any) {
+      if (/attachments/i.test(String(e.message || ''))) {
+        await pool.query(`ALTER TABLE email_mailbox_quick_replies ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb`);
+        result = await pool.query(
+          `INSERT INTO email_mailbox_quick_replies (tenant_id, mailbox_id, title, body_html, attachments)
+           VALUES ($1,$2,$3,$4,$5::jsonb) RETURNING *`,
+          [tenantId, mailboxId, title.slice(0, 150), bodyHtml, JSON.stringify(savedAtts)]
+        );
+      } else {
+        throw e;
+      }
+    }
     res.json({ success: true, data: result.rows[0], message: 'Resposta rápida criada' });
   } catch (error: any) {
     if (/does not exist/i.test(String(error.message || ''))) {
@@ -1247,11 +1321,21 @@ export const getThread = async (req: Request, res: Response) => {
                 COALESCE(is_starred, FALSE) AS is_starred,
                 COALESCE(has_attachments, FALSE) AS has_attachments, attachments
          FROM email_mailbox_messages
-         WHERE mailbox_id=$1 AND tenant_id=$2 AND thread_key=$3
-         ORDER BY COALESCE(received_at, sent_at, created_at) ASC`,
-        [id, tenantId, threadKey]
+         WHERE mailbox_id=$1 AND tenant_id=$2
+           AND (
+             ($3 <> '' AND thread_key=$3)
+             OR LOWER(from_email)=LOWER($4) OR LOWER(to_email)=LOWER($4)
+             OR LOWER(from_email)=LOWER($5) OR LOWER(to_email)=LOWER($5)
+           )
+         ORDER BY COALESCE(received_at, sent_at, created_at) ASC
+         LIMIT 80`,
+        [id, tenantId, threadKey || '', base.rows[0].from_email || '', base.rows[0].to_email || '']
       );
-      res.json({ success: true, data: result.rows, thread_key: threadKey });
+      const want = normalizeSubject(base.rows[0].subject);
+      const data = result.rows.filter((r: any) =>
+        (threadKey && r.thread_key === threadKey) || normalizeSubject(r.subject) === want
+      );
+      res.json({ success: true, data: data.length ? data : result.rows.slice(-1), thread_key: threadKey });
     } catch (e: any) {
       if (/thread_key|does not exist/i.test(String(e.message || ''))) {
         return res.json({
