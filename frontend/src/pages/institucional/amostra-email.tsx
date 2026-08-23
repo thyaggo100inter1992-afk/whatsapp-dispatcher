@@ -77,7 +77,7 @@ export default function InstitucionalAmostraPage() {
               <br />
               {enderecoCompleto()}
               <br />
-              {INSTITUCIONAL.email} · {INSTITUCIONAL.telefoneFmt}
+              {INSTITUCIONAL.email} · Empresa {INSTITUCIONAL.telefoneFmt}
             </p>
           </div>
         </div>

@@ -77,10 +77,15 @@ export default function InstitucionalLayout({
                 <a href={`mailto:${INSTITUCIONAL.email}`}>{INSTITUCIONAL.email}</a>
               </p>
               <p>
+                Empresa:{' '}
                 <a href={`https://wa.me/55${INSTITUCIONAL.telefone}`}>{INSTITUCIONAL.telefoneFmt}</a>
               </p>
               <p>
                 {INSTITUCIONAL.responsavel} · {INSTITUCIONAL.cargo}
+              </p>
+              <p>
+                Admin:{' '}
+                <a href={`https://wa.me/55${INSTITUCIONAL.telefoneAdmin}`}>{INSTITUCIONAL.telefoneAdminFmt}</a>
               </p>
               <p>
                 <a href={INSTITUCIONAL.linkedin} target="_blank" rel="noopener noreferrer">

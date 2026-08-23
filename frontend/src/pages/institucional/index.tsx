@@ -163,7 +163,12 @@ export default function InstitucionalHomePage() {
                 <a href={`mailto:${INSTITUCIONAL.email}`}>{INSTITUCIONAL.email}</a>
               </p>
               <p>
+                Telefone da empresa:{' '}
                 <a href={`https://wa.me/55${INSTITUCIONAL.telefone}`}>{INSTITUCIONAL.telefoneFmt}</a>
+              </p>
+              <p>
+                Telefone do administrador:{' '}
+                <a href={`https://wa.me/55${INSTITUCIONAL.telefoneAdmin}`}>{INSTITUCIONAL.telefoneAdminFmt}</a>
               </p>
               <p>CNPJ {INSTITUCIONAL.cnpj}</p>
               <p>{enderecoCompleto()}</p>

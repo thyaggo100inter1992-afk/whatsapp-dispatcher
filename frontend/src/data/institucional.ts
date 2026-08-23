@@ -1,4 +1,4 @@
-/** Dados públicos da NETTSISTEMAS — site institucional (SendGrid / compliance) */
+/** Dados públicos da NETTSISTEMAS — site institucional */
 export const INSTITUCIONAL = {
   razaoSocial: 'NETTSISTEMAS',
   nomeFantasia: 'NETTSISTEMAS',
@@ -9,8 +9,12 @@ export const INSTITUCIONAL = {
   cidade: 'Goiânia',
   uf: 'GO',
   cep: '74475-364',
+  /** Telefone comercial da empresa */
   telefone: '62998449494',
   telefoneFmt: '+55 (62) 99844-9494',
+  /** Telefone do administrador (Thiago) */
+  telefoneAdmin: '62991785664',
+  telefoneAdminFmt: '+55 (62) 99178-5664',
   email: 'contato@nettsistemas.com',
   dominio: 'sistemasnettsistemas.com.br',
   siteBase: 'https://sistemasnettsistemas.com.br',

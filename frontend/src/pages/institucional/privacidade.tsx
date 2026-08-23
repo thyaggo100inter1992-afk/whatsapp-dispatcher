@@ -83,7 +83,8 @@ export default function InstitucionalPrivacidadePage() {
           <div>
             <h2 style={{ fontSize: '1.05rem', margin: '0 0 0.4rem', color: '#e8eef7' }}>9. Contato</h2>
             <p>
-              Dúvidas: {INSTITUCIONAL.email} · {INSTITUCIONAL.telefoneFmt}
+              Dúvidas: {INSTITUCIONAL.email} · Empresa {INSTITUCIONAL.telefoneFmt} · Admin{' '}
+              {INSTITUCIONAL.telefoneAdminFmt}
               <br />
               Responsável: {INSTITUCIONAL.responsavel} ({INSTITUCIONAL.cargo})
             </p>
