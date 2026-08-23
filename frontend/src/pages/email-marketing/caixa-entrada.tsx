@@ -1623,28 +1623,39 @@ export default function CaixaEntrada() {
                       key={m.id}
                       type="button"
                       onClick={() => openMailboxCard(m.id)}
-                      className={`relative text-left bg-gradient-to-br ${p.box} border rounded-xl px-2.5 py-2 transition-all hover:brightness-110 ${
-                        active ? 'ring-2 ring-white/50' : ''
-                      } ${alerting ? 'animate-pulse ring-2 ring-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.55)]' : ''}`}
+                      className={`relative text-left border rounded-xl px-2.5 py-2 transition-all hover:brightness-110 ${
+                        active
+                          ? 'bg-gradient-to-br from-indigo-600 to-violet-700 border-indigo-300 shadow-[0_0_0_3px_rgba(129,140,248,0.55),0_8px_24px_rgba(79,70,229,0.45)] scale-[1.03] z-10'
+                          : `bg-gradient-to-br ${p.box}`
+                      } ${alerting && !active ? 'animate-pulse ring-2 ring-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.55)]' : ''} ${
+                        alerting && active ? 'animate-pulse' : ''
+                      }`}
                     >
+                      {active && (
+                        <span className="absolute -top-2 right-2 px-2 py-0.5 rounded-full bg-white text-indigo-700 text-[9px] font-black uppercase tracking-wide shadow-md">
+                          Em uso
+                        </span>
+                      )}
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className={`${p.icon} p-1.5 rounded-lg flex-shrink-0`}>
+                        <div className={`${active ? 'bg-white/20 text-white' : p.icon} p-1.5 rounded-lg flex-shrink-0`}>
                           <FaInbox className="text-sm" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1">
-                            <p className="text-white text-[13px] font-bold truncate leading-tight">
+                            <p className={`text-[13px] font-bold truncate leading-tight ${active ? 'text-white' : 'text-white'}`}>
                               {m.display_name || m.email.split('@')[0]}
                             </p>
                             {m.unread_count > 0 && (
-                              <span className={`ml-auto flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full ${p.badge} text-white text-[10px] font-black flex items-center justify-center`}>
+                              <span className={`ml-auto flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full ${active ? 'bg-white text-indigo-700' : p.badge} text-[10px] font-black flex items-center justify-center ${active ? '' : 'text-white'}`}>
                                 {m.unread_count > 99 ? '99+' : m.unread_count}
                               </span>
                             )}
                           </div>
-                          <p className="text-white/55 text-[10px] truncate leading-tight">{m.email}</p>
-                          <p className={`text-[10px] font-semibold mt-0.5 ${alerting ? 'text-emerald-300' : active ? 'text-white/80' : 'text-white/40'}`}>
-                            {alerting ? 'Novo e-mail' : active ? 'Aberta' : m.unread_count > 0 ? 'Não lidos' : 'Abrir'}
+                          <p className={`text-[10px] truncate leading-tight ${active ? 'text-white/80' : 'text-white/55'}`}>{m.email}</p>
+                          <p className={`text-[10px] font-bold mt-0.5 ${
+                            alerting ? 'text-emerald-300' : active ? 'text-white' : 'text-white/40'
+                          }`}>
+                            {alerting ? 'Novo e-mail' : active ? '● Caixa aberta' : m.unread_count > 0 ? 'Não lidos' : 'Abrir'}
                           </p>
                         </div>
                       </div>
