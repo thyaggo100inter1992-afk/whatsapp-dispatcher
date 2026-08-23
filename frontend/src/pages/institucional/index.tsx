@@ -5,120 +5,140 @@ import { INSTITUCIONAL, PATHS, enderecoCompleto } from '@/data/institucional';
 export default function InstitucionalHomePage() {
   return (
     <InstitucionalLayout
-      title="Empresa e modelo de negócio"
-      description="NETTSISTEMAS — plataforma B2B de e-mail marketing e comunicação para outras empresas, com entrega via SendGrid e práticas de opt-in."
+      title="Comunicação inteligente para empresas"
+      description="NETTSISTEMAS — plataforma B2B de e-mail marketing e WhatsApp para empresas de todos os segmentos."
     >
       <section className="inst-hero inst-wrap">
-        <p style={{ color: '#2dd4bf', fontWeight: 800, letterSpacing: '0.08em', fontSize: '0.75rem', marginBottom: '0.75rem' }}>
-          SITE INSTITUCIONAL · COMPLIANCE / SENDGRID
-        </p>
-        <h1>{INSTITUCIONAL.nomeFantasia}</h1>
+        <p className="inst-kicker">Tecnologia · Comunicação · Resultados</p>
+        <h1>
+          Comunicação que conecta
+          <span className="inst-hero-accent"> sua empresa aos clientes</span>
+        </h1>
         <p className="lead">
-          Somos uma empresa de tecnologia que oferece uma <strong style={{ color: '#e8eef7' }}>plataforma SaaS B2B</strong> de
-          comunicação (e-mail marketing e WhatsApp) para <strong style={{ color: '#e8eef7' }}>outras empresas</strong>. Nossos
-          clientes usam o sistema para falar com as bases deles — comércio, serviços locais, saúde, educação, prestadores e
-          demais segmentos.
+          A {INSTITUCIONAL.nomeFantasia} desenvolve a plataforma{' '}
+          <strong className="inst-strong">{INSTITUCIONAL.produto}</strong>, uma solução SaaS para empresas enviarem
+          campanhas de e-mail marketing e mensagens com organização, rastreio e respeito ao consentimento do destinatário.
         </p>
         <div className="inst-cta-row">
           <Link href={PATHS.cadastro} className="inst-btn inst-btn-primary">
-            Página de opt-in (cadastro)
+            Receber novidades
           </Link>
           <Link href={PATHS.amostra} className="inst-btn inst-btn-ghost">
-            Ver amostra de e-mail
+            Ver exemplo de e-mail
           </Link>
-          <a href={PATHS.pdf} className="inst-btn inst-btn-ghost" download>
-            Baixar amostra PDF
-          </a>
+          <Link href={PATHS.privacidade} className="inst-btn inst-btn-ghost">
+            Privacidade
+          </Link>
         </div>
       </section>
 
       <section className="inst-section inst-wrap">
-        <h2>Modelo de negócio</h2>
+        <div className="inst-section-head">
+          <h2>O que fazemos</h2>
+          <p>Plataforma completa para empresas que precisam se comunicar com clientes e leads de forma profissional.</p>
+        </div>
         <div className="inst-grid">
           <article className="inst-card">
-            <h3>O que vendemos</h3>
+            <h3>Plataforma B2B</h3>
             <p>
-              Licença/uso da plataforma <strong style={{ color: '#e8eef7' }}>{INSTITUCIONAL.produto}</strong>: disparo e gestão
-              de campanhas de e-mail marketing e canais de mensagem para empresas clientes.
+              Oferecemos o {INSTITUCIONAL.produto} para outras empresas: disparo e gestão de campanhas de e-mail e canais
+              de mensagem em um só lugar.
             </p>
           </article>
           <article className="inst-card">
-            <h3>Como usamos a SendGrid</h3>
+            <h3>Entrega confiável</h3>
             <p>
-              A SendGrid é o <strong style={{ color: '#e8eef7' }}>provedor de entrega (API)</strong>. A NETTSISTEMAS opera a
-              plataforma; cada empresa-cliente envia para a própria audiência, com consentimento e opt-out.
+              Utilizamos infraestrutura profissional de envio de e-mail. Cada empresa-cliente fala com a própria audiência,
+              com consentimento e opção de cancelamento.
             </p>
           </article>
           <article className="inst-card">
-            <h3>Segmentos atendidos</h3>
+            <h3>Para vários segmentos</h3>
             <p>
-              Múltiplos setores: serviços locais, varejo, clínicas, educação, prestadores, e-commerce e outros negócios que
-              precisam de comunicação legítima com clientes e leads.
+              Atendemos serviços locais, varejo, clínicas, educação, prestadores, e-commerce e outros negócios que precisam
+              de comunicação clara e legítima.
             </p>
           </article>
         </div>
       </section>
 
       <section className="inst-section inst-wrap">
-        <h2>Tipos de e-mail</h2>
-        <ul className="inst-list">
-          <li>
-            <strong style={{ color: '#e8eef7' }}>Marketing</strong> — campanhas, novidades e ofertas enviadas pelos clientes da
-            plataforma às bases com opt-in.
-          </li>
-          <li>
-            <strong style={{ color: '#e8eef7' }}>Transacional</strong> — avisos operacionais (confirmações, senhas, recibos e
-            notificações do sistema), quando aplicável.
-          </li>
-        </ul>
+        <div className="inst-section-head">
+          <h2>Tipos de comunicação</h2>
+          <p>A plataforma cobre tanto campanhas quanto avisos operacionais.</p>
+        </div>
+        <div className="inst-grid inst-grid-2">
+          <article className="inst-card inst-card-accent">
+            <h3>E-mail marketing</h3>
+            <p>Campanhas, novidades e ofertas enviadas pelas empresas-clientes às bases com inscrição voluntária.</p>
+          </article>
+          <article className="inst-card inst-card-accent">
+            <h3>E-mail transacional</h3>
+            <p>Confirmações, senhas, recibos e notificações do sistema — quando o fluxo do negócio exige.</p>
+          </article>
+        </div>
       </section>
 
       <section className="inst-section inst-wrap">
-        <h2>Conformidade e prova de uso</h2>
+        <div className="inst-section-head">
+          <h2>Transparência e boas práticas</h2>
+          <p>Políticas claras, inscrição consciente e respeito ao direito de cancelar.</p>
+        </div>
         <div className="inst-grid">
           <article className="inst-card">
-            <h3>Opt-in</h3>
-            <p>
-              Cadastro público com consentimento explícito:{' '}
-              <Link href={PATHS.cadastro}>{INSTITUCIONAL.siteBase}{PATHS.cadastro}</Link>
-            </p>
+            <h3>Inscrição</h3>
+            <p>Cadastro público com consentimento explícito para receber comunicações da {INSTITUCIONAL.nomeFantasia}.</p>
+            <Link href={PATHS.cadastro} className="inst-card-link">
+              Ir para o formulário →
+            </Link>
           </article>
           <article className="inst-card">
             <h3>Cancelar inscrição</h3>
             <p>
-              Todo e-mail de marketing inclui link de cancelamento (List-Unsubscribe / rodapé). A amostra demonstra o
-              elemento obrigatório.
+              Todo e-mail de marketing traz link para cancelar o recebimento. Assim o destinatário controla o que recebe.
             </p>
+            <Link href={PATHS.amostra} className="inst-card-link">
+              Ver no exemplo →
+            </Link>
           </article>
           <article className="inst-card">
-            <h3>Privacidade e endereço</h3>
+            <h3>Privacidade</h3>
             <p>
-              Política publicada em{' '}
-              <Link href={PATHS.privacidade}>{PATHS.privacidade}</Link>. Endereço físico no rodapé dos e-mails:{' '}
-              {enderecoCompleto()}.
+              Política publicada e endereço comercial no rodapé das comunicações. Tratamos dados com responsabilidade.
             </p>
+            <Link href={PATHS.privacidade} className="inst-card-link">
+              Ler política →
+            </Link>
           </article>
         </div>
       </section>
 
       <section className="inst-section inst-wrap">
-        <h2>Responsável pela conta</h2>
-        <div className="inst-card">
-          <p>
-            <strong style={{ color: '#e8eef7' }}>{INSTITUCIONAL.responsavel}</strong> — {INSTITUCIONAL.cargo}
-          </p>
-          <p style={{ marginTop: '0.5rem' }}>
-            LinkedIn:{' '}
-            <a href={INSTITUCIONAL.linkedin} target="_blank" rel="noopener noreferrer">
-              {INSTITUCIONAL.linkedin}
-            </a>
-          </p>
-          <p style={{ marginTop: '0.5rem' }}>
-            Contato: {INSTITUCIONAL.email} · {INSTITUCIONAL.telefoneFmt}
-          </p>
-          <p style={{ marginTop: '0.5rem' }}>
-            CNPJ {INSTITUCIONAL.cnpj} · {enderecoCompleto()}
-          </p>
+        <div className="inst-section-head">
+          <h2>Quem somos</h2>
+        </div>
+        <div className="inst-card inst-card-wide">
+          <div className="inst-who">
+            <div>
+              <p className="inst-who-name">{INSTITUCIONAL.responsavel}</p>
+              <p className="inst-who-role">{INSTITUCIONAL.cargo}</p>
+              <p className="inst-who-meta">
+                <a href={INSTITUCIONAL.linkedin} target="_blank" rel="noopener noreferrer">
+                  Perfil no LinkedIn
+                </a>
+              </p>
+            </div>
+            <div className="inst-who-meta">
+              <p>
+                <a href={`mailto:${INSTITUCIONAL.email}`}>{INSTITUCIONAL.email}</a>
+              </p>
+              <p>
+                <a href={`https://wa.me/55${INSTITUCIONAL.telefone}`}>{INSTITUCIONAL.telefoneFmt}</a>
+              </p>
+              <p>CNPJ {INSTITUCIONAL.cnpj}</p>
+              <p>{enderecoCompleto()}</p>
+            </div>
+          </div>
         </div>
       </section>
     </InstitucionalLayout>

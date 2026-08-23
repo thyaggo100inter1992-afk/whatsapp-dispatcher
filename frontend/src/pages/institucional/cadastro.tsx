@@ -59,14 +59,14 @@ export default function InstitucionalCadastroPage() {
   return (
     <InstitucionalLayout
       title="Cadastro e opt-in"
-      description="Página de inscrição com consentimento explícito para comunicações da NETTSISTEMAS / Disparador NettSistemas."
+      description="Página de inscrição na newsletter da NETTSISTEMAS — consentimento explícito para comunicações."
     >
       <section className="inst-hero inst-wrap" style={{ paddingBottom: '1rem' }}>
-        <h1 style={{ maxWidth: '14ch' }}>Cadastro / Opt-in</h1>
+        <p className="inst-kicker">Newsletter</p>
+        <h1 style={{ maxWidth: '12ch' }}>Receba novidades</h1>
         <p className="lead">
-          Esta página demonstra o fluxo de <strong style={{ color: '#e8eef7' }}>consentimento explícito</strong> para receber
-          comunicações. Empresas clientes da plataforma também coletam opt-in em seus próprios canais antes de disparar
-          campanhas.
+          Cadastre-se para receber conteúdos e atualizações da {INSTITUCIONAL.razaoSocial}. O envio só ocorre com o seu
+          consentimento, e você pode cancelar quando quiser.
         </p>
       </section>
 
@@ -75,7 +75,7 @@ export default function InstitucionalCadastroPage() {
           <h2 style={{ marginTop: 0, fontSize: '1.1rem' }}>Quero receber novidades</h2>
           <p style={{ marginBottom: '1rem' }}>
             Ao enviar, você autoriza a {INSTITUCIONAL.razaoSocial} a enviar e-mails sobre o produto{' '}
-            {INSTITUCIONAL.produto}. Você pode cancelar a qualquer momento.
+            {INSTITUCIONAL.produto}.
           </p>
 
           {ok && (
@@ -123,13 +123,10 @@ export default function InstitucionalCadastroPage() {
         </div>
 
         <div className="inst-card" style={{ marginTop: '1rem', maxWidth: 560 }}>
-          <h3>Prova para provedores (SendGrid)</h3>
+          <h3>Depois da inscrição</h3>
           <p>
-            URL pública desta página de opt-in:{' '}
-            <strong style={{ color: '#e8eef7' }}>
-              {INSTITUCIONAL.siteBase}
-              {PATHS.cadastro}
-            </strong>
+            Você pode cancelar a qualquer momento pelos links nos e-mails. Consulte também nossa{' '}
+            <Link href={PATHS.privacidade}>Política de Privacidade</Link>.
           </p>
         </div>
       </section>

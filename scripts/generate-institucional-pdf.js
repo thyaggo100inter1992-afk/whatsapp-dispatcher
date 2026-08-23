@@ -25,7 +25,7 @@ const lines = [
   '',
   '--- RODAPE OBRIGATORIO ---',
   'Cancelar inscricao:',
-  'https://api.sistemasnettsistemas.com.br/api/public/email-unsubscribe?t=demo-sample-for-compliance',
+  'https://api.sistemasnettsistemas.com.br/api/public/email-unsubscribe?t=exemplo-cancelamento',
   'Politica de Privacidade:',
   'https://sistemasnettsistemas.com.br/institucional/privacidade',
   'Endereco fisico: Rua BM27, S/N - Quadra 28, Lote 23, Casa 02,',

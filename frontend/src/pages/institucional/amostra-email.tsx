@@ -3,25 +3,24 @@ import InstitucionalLayout from '@/components/institucional/InstitucionalLayout'
 import { INSTITUCIONAL, PATHS, enderecoCompleto } from '@/data/institucional';
 
 const UNSUBSCRIBE_DEMO =
-  'https://api.sistemasnettsistemas.com.br/api/public/email-unsubscribe?t=demo-sample-for-compliance';
+  'https://api.sistemasnettsistemas.com.br/api/public/email-unsubscribe?t=exemplo-cancelamento';
 
 export default function InstitucionalAmostraPage() {
   return (
     <InstitucionalLayout
-      title="Amostra de e-mail marketing"
-      description="Exemplo de conteúdo de e-mail marketing da NETTSISTEMAS com cancelamento de inscrição, privacidade e endereço físico."
+      title="Exemplos de e-mail"
+      description="Exemplo de e-mail marketing da NETTSISTEMAS com cancelamento de inscrição, privacidade e endereço."
     >
       <section className="inst-hero inst-wrap" style={{ paddingBottom: '1rem' }}>
-        <h1 style={{ maxWidth: '16ch' }}>Amostra de e-mail</h1>
+        <p className="inst-kicker">Comunicação</p>
+        <h1 style={{ maxWidth: '14ch' }}>Exemplo de e-mail</h1>
         <p className="lead">
-          Exemplo do tipo de conteúdo enviado em campanhas de marketing pela plataforma. O rodapé inclui os elementos
-          obrigatórios: <strong style={{ color: '#e8eef7' }}>cancelar inscrição</strong>,{' '}
-          <strong style={{ color: '#e8eef7' }}>política de privacidade</strong> e{' '}
-          <strong style={{ color: '#e8eef7' }}>endereço físico</strong>.
+          Modelo do tipo de mensagem que pode ser enviada em campanhas. No rodapé ficam sempre o link para cancelar, a
+          política de privacidade e o endereço comercial.
         </p>
         <div className="inst-cta-row">
           <a href={PATHS.pdf} className="inst-btn inst-btn-primary" download>
-            Baixar PDF da amostra
+            Baixar exemplo em PDF
           </a>
           <Link href={PATHS.privacidade} className="inst-btn inst-btn-ghost">
             Política de Privacidade
@@ -85,19 +84,16 @@ export default function InstitucionalAmostraPage() {
 
         <div className="inst-grid" style={{ marginTop: '1.25rem' }}>
           <article className="inst-card">
-            <h3>✓ Unsubscribe</h3>
-            <p>Link “Cancelar inscrição” visível no rodapé (e suporte a List-Unsubscribe na API).</p>
+            <h3>Cancelar inscrição</h3>
+            <p>Link visível no rodapé de toda campanha de marketing.</p>
           </article>
           <article className="inst-card">
-            <h3>✓ Privacidade</h3>
-            <p>
-              Link para {INSTITUCIONAL.siteBase}
-              {PATHS.privacidade}
-            </p>
+            <h3>Privacidade</h3>
+            <p>Acesso à política completa da empresa.</p>
           </article>
           <article className="inst-card">
-            <h3>✓ Endereço físico</h3>
-            <p>{enderecoCompleto()}</p>
+            <h3>Endereço comercial</h3>
+            <p className="inst-break">{enderecoCompleto()}</p>
           </article>
         </div>
       </section>

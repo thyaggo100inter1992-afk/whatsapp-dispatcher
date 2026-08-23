@@ -2,7 +2,7 @@
 1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj
 2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj
 3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj
-4 0 obj<< /Length 1835 >>stream
+4 0 obj<< /Length 1829 >>stream
 BT /F1 11 Tf 50 800 Td (NETTSISTEMAS - Amostra de e-mail marketing) Tj ET
 BT /F1 11 Tf 50 784 Td () Tj ET
 BT /F1 11 Tf 50 768 Td (De: NETTSISTEMAS <contato@nettsistemas.com>) Tj ET
@@ -22,7 +22,7 @@ BT /F1 11 Tf 50 560 Td (Site: https://sistemasnettsistemas.com.br/institucional)
 BT /F1 11 Tf 50 544 Td () Tj ET
 BT /F1 11 Tf 50 528 Td (--- RODAPE OBRIGATORIO ---) Tj ET
 BT /F1 11 Tf 50 512 Td (Cancelar inscricao:) Tj ET
-BT /F1 11 Tf 50 496 Td (https://api.sistemasnettsistemas.com.br/api/public/email-unsubscribe?t=demo-sample-for-compliance) Tj ET
+BT /F1 11 Tf 50 496 Td (https://api.sistemasnettsistemas.com.br/api/public/email-unsubscribe?t=exemplo-cancelamento) Tj ET
 BT /F1 11 Tf 50 480 Td (Politica de Privacidade:) Tj ET
 BT /F1 11 Tf 50 464 Td (https://sistemasnettsistemas.com.br/institucional/privacidade) Tj ET
 BT /F1 11 Tf 50 448 Td (Endereco fisico: Rua BM27, S/N - Quadra 28, Lote 23, Casa 02,) Tj ET
@@ -39,8 +39,8 @@ xref
 0000000056 00000 n 
 0000000111 00000 n 
 0000000233 00000 n 
-0000002118 00000 n 
+0000002112 00000 n 
 trailer<< /Size 6 /Root 1 0 R >>
 startxref
-2186
+2180
 %%EOF

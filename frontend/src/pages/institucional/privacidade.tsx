@@ -54,8 +54,8 @@ export default function InstitucionalPrivacidadePage() {
           <div>
             <h2 style={{ fontSize: '1.05rem', margin: '0 0 0.4rem', color: '#e8eef7' }}>5. Compartilhamento</h2>
             <p>
-              Utilizamos provedores de infraestrutura e entrega de e-mail (incluindo Twilio SendGrid) estritamente para
-              prestar o serviço. Não vendemos listas de contatos.
+              Utilizamos provedores de infraestrutura e entrega de e-mail estritamente para prestar o serviço. Não
+              vendemos listas de contatos.
             </p>
           </div>
           <div>
