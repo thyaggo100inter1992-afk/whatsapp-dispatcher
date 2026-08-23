@@ -16,6 +16,19 @@ function stripInvisible(s: string): string {
   return s.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '');
 }
 
+/** Extrai só o primeiro nome de um nome completo (ex.: "João Silva Santos" → "João") */
+export function extractFirstName(fullName: string | null | undefined): string {
+  const raw = String(fullName || '').trim().replace(/\s+/g, ' ');
+  if (!raw) return '';
+  // Se parece e-mail (fallback quando nome = email), usa a parte antes do @
+  if (raw.includes('@')) {
+    const local = raw.split('@')[0] || '';
+    const token = local.split(/[._+-]/)[0] || local;
+    return token ? token.charAt(0).toUpperCase() + token.slice(1).toLowerCase() : '';
+  }
+  return raw.split(' ')[0] || '';
+}
+
 export type EmailMergeVars = {
   nome?: string | null;
   email?: string | null;
@@ -61,6 +74,7 @@ export function detectUsedEmailVars(...parts: Array<string | null | undefined>):
   cpf: boolean;
   telefone: boolean;
   nome: boolean;
+  primeiro_nome: boolean;
   email: boolean;
   saudacao: boolean;
   hora: boolean;
@@ -78,6 +92,7 @@ export function detectUsedEmailVars(...parts: Array<string | null | undefined>):
     cpf: has('cpf'),
     telefone: has('telefone') || has('phone') || has('celular'),
     nome: has('nome') || has('name'),
+    primeiro_nome: has('primeiro_nome') || has('primeironome') || has('first_name') || has('firstname'),
     email: has('email') || has('e-mail'),
     saudacao: has('saudacao') || has('dia'),
     hora: has('hora'),
@@ -127,7 +142,7 @@ export function buildSystemEmailVars(now = new Date(), protocol?: string | null)
 }
 
 /**
- * Substitui {{nome}}, {{email}}, {{cpf}}, {{telefone}}, {{var1}}…{{var5}},
+ * Substitui {{nome}}, {{primeiro_nome}}, {{email}}, {{cpf}}, {{telefone}}, {{var1}}…{{var5}},
  * {{hora}}, {{data}}, {{protocolo}}, {{saudacao}} de forma robusta.
  */
 export function applyEmailVariables(
@@ -139,10 +154,16 @@ export function applyEmailVariables(
   let s = stripInvisible(String(content));
 
   const sys = buildSystemEmailVars(new Date(), vars.protocolo);
+  const nomeCompleto = String(vars.nome || vars.email || '').trim();
+  const primeiroNome = extractFirstName(vars.nome || vars.email || '');
 
   const rawMap: Record<string, string> = {
-    nome: String(vars.nome || vars.email || '').trim(),
-    name: String(vars.nome || vars.email || '').trim(),
+    nome: nomeCompleto,
+    name: nomeCompleto,
+    primeiro_nome: primeiroNome,
+    primeironome: primeiroNome,
+    first_name: primeiroNome,
+    firstname: primeiroNome,
     email: String(vars.email || '').trim(),
     cpf: String(vars.cpf || '').trim(),
     telefone: String(vars.telefone || vars.phone || '').trim(),

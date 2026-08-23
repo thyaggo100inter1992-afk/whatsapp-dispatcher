@@ -45,7 +45,8 @@ function extractLocalPart(value: string): string {
 }
 
 const EMAIL_VARS = [
-  { token: '{{nome}}', tip: 'Nome do destinatário' },
+  { token: '{{nome}}', tip: 'Nome completo do destinatário' },
+  { token: '{{primeiro_nome}}', tip: 'Só o primeiro nome (mesmo com nome completo na lista)' },
   { token: '{{email}}', tip: 'E-mail do destinatário' },
   { token: '{{cpf}}', tip: 'CPF (cadastro)' },
   { token: '{{telefone}}', tip: 'Telefone (cadastro)' },
@@ -321,7 +322,7 @@ export default function EnvioUnico() {
                 <h2 className="text-3xl font-black text-white">Cadastro do cliente (ficha)</h2>
                 <p className="text-white/60 text-sm mt-1">
                   Uso interno. Não vai no e-mail do cliente — só na ficha quando ele responder.
-                  Se quiser mostrar algo no e-mail, use {'{{nome}}'}, {'{{cpf}}'} etc. no texto (opcional).
+                  Se quiser mostrar algo no e-mail, use {'{{nome}}'}, {'{{primeiro_nome}}'}, {'{{cpf}}'} etc. no texto (opcional).
                 </p>
               </div>
             </div>

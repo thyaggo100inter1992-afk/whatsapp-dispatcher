@@ -1056,7 +1056,7 @@ export default function CriarCampanha() {
               <div className="space-y-4">
                 <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-300 space-y-2">
                   <p><strong>Modelo Excel:</strong> colunas email | nome | cpf | telefone | var1…var5 (todas opcionais exceto e-mail). Aceita <strong>.xlsx</strong> ou CSV.</p>
-                  <p className="text-xs text-blue-200/80">No texto do e-mail use: {'{{nome}}'} {'{{cpf}}'} {'{{telefone}}'} {'{{var1}}'}…{'{{var5}}'} · sistema: {'{{saudacao}}'} {'{{hora}}'} {'{{data}}'} {'{{protocolo}}'}</p>
+                  <p className="text-xs text-blue-200/80">No texto do e-mail use: {'{{nome}}'} {'{{primeiro_nome}}'} {'{{cpf}}'} {'{{telefone}}'} {'{{var1}}'}…{'{{var5}}'} · sistema: {'{{saudacao}}'} {'{{hora}}'} {'{{data}}'} {'{{protocolo}}'}</p>
                   <p className="text-xs text-green-300/90 font-bold">E-mails iguais (clonados) são removidos automaticamente — só entra 1 de cada.</p>
                 </div>
                 {recipientSource === 'csv' && (

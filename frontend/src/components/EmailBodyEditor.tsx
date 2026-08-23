@@ -650,7 +650,8 @@ export default function EmailBodyEditor({
           <p className="text-[11px] font-bold uppercase tracking-wide text-white/50 mb-2">Contato</p>
           <div className="flex flex-wrap gap-1.5">
             {[
-              { token: '{{nome}}', tip: 'Nome do destinatário' },
+              { token: '{{nome}}', tip: 'Nome completo do destinatário' },
+              { token: '{{primeiro_nome}}', tip: 'Só o primeiro nome (mesmo com nome completo na lista)' },
               { token: '{{email}}', tip: 'E-mail do destinatário' },
               { token: '{{cpf}}', tip: 'CPF' },
               { token: '{{telefone}}', tip: 'Telefone' },
