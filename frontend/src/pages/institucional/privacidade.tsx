@@ -6,13 +6,13 @@ export default function InstitucionalPrivacidadePage() {
   return (
     <InstitucionalLayout
       title="Política de Privacidade"
-      description="Política de Privacidade da NETTSISTEMAS — tratamento de dados pessoais na plataforma B2B de comunicação."
+      description="Política de Privacidade da NETTSISTEMAS — tratamento de dados no serviço de e-mail marketing e WhatsApp."
     >
       <section className="inst-hero inst-wrap" style={{ paddingBottom: '1rem' }}>
         <h1 style={{ maxWidth: '18ch' }}>Política de Privacidade</h1>
         <p className="lead">
-          Esta política descreve como a {INSTITUCIONAL.razaoSocial} trata dados pessoais no contexto da plataforma{' '}
-          {INSTITUCIONAL.produto} e das comunicações por e-mail.
+          Esta política descreve como a {INSTITUCIONAL.razaoSocial} trata dados pessoais no serviço de comunicação
+          (e-mail marketing, e-mail transacional e WhatsApp).
         </p>
         <p style={{ color: '#9fb0c7', fontSize: '0.9rem' }}>Última atualização: 22 de agosto de 2026</p>
       </section>
@@ -30,15 +30,15 @@ export default function InstitucionalPrivacidadePage() {
             <h2 style={{ fontSize: '1.05rem', margin: '0 0 0.4rem', color: '#e8eef7' }}>2. Dados coletados</h2>
             <ul className="inst-list">
               <li>Dados de cadastro de leads/opt-in: nome, e-mail e consentimento.</li>
-              <li>Dados de contas empresariais na plataforma: identificação, contato e uso do serviço.</li>
-              <li>Dados técnicos de entrega de e-mail (status de envio, abertura e clique), quando habilitado pelo provedor.</li>
-              <li>Comunicações enviadas pelos clientes da plataforma às respectivas bases (o cliente é responsável pela base).</li>
+              <li>Dados de clientes do serviço: identificação, contato e uso contratado.</li>
+              <li>Dados técnicos de entrega de e-mail (status de envio, abertura e clique), quando aplicável.</li>
+              <li>Bases e comunicações tratadas no âmbito do serviço prestado pela {INSTITUCIONAL.razaoSocial}.</li>
             </ul>
           </div>
           <div>
             <h2 style={{ fontSize: '1.05rem', margin: '0 0 0.4rem', color: '#e8eef7' }}>3. Finalidades</h2>
             <ul className="inst-list">
-              <li>Prestar o serviço SaaS de comunicação e e-mail marketing/transacional.</li>
+              <li>Prestar o serviço de e-mail marketing, e-mail transacional e WhatsApp.</li>
               <li>Enviar comunicações com base em consentimento (opt-in) ou relação contratual.</li>
               <li>Cumprir obrigações legais e de segurança (antispam, abuse, auditoria).</li>
               <li>Melhorar a qualidade do serviço e suporte.</li>

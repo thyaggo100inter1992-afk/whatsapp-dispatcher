@@ -5,19 +5,20 @@ import { INSTITUCIONAL, PATHS, enderecoCompleto } from '@/data/institucional';
 export default function InstitucionalHomePage() {
   return (
     <InstitucionalLayout
-      title="Comunicação inteligente para empresas"
-      description="NETTSISTEMAS — plataforma B2B de e-mail marketing e WhatsApp para empresas de todos os segmentos."
+      title="E-mail marketing e WhatsApp"
+      description="NETTSISTEMAS presta serviços de e-mail marketing e WhatsApp com operação e controle próprios para empresas de vários segmentos."
     >
       <section className="inst-hero inst-wrap">
-        <p className="inst-kicker">Tecnologia · Comunicação · Resultados</p>
+        <p className="inst-kicker">Serviço · Comunicação · Resultados</p>
         <h1>
-          Comunicação que conecta
-          <span className="inst-hero-accent"> sua empresa aos clientes</span>
+          E-mail marketing e WhatsApp
+          <span className="inst-hero-accent"> com operação controlada</span>
         </h1>
         <p className="lead">
-          A {INSTITUCIONAL.nomeFantasia} desenvolve a plataforma{' '}
-          <strong className="inst-strong">{INSTITUCIONAL.produto}</strong>, uma solução SaaS para empresas enviarem
-          campanhas de e-mail marketing e mensagens com organização, rastreio e respeito ao consentimento do destinatário.
+          A {INSTITUCIONAL.nomeFantasia} presta o serviço de{' '}
+          <strong className="inst-strong">e-mail marketing e WhatsApp</strong> para empresas. Nós operamos o envio,
+          monitoramos a entrega e mantemos as boas práticas (consentimento, cancelamento e privacidade) — não é um
+          “abra a conta e se vire”: o controle do serviço fica conosco.
         </p>
         <div className="inst-cta-row">
           <Link href={PATHS.cadastro} className="inst-btn inst-btn-primary">
@@ -34,29 +35,32 @@ export default function InstitucionalHomePage() {
 
       <section className="inst-section inst-wrap">
         <div className="inst-section-head">
-          <h2>O que fazemos</h2>
-          <p>Plataforma completa para empresas que precisam se comunicar com clientes e leads de forma profissional.</p>
+          <h2>O que vendemos</h2>
+          <p>
+            Prestação de serviço de comunicação digital: campanhas e avisos por e-mail e WhatsApp, com a{' '}
+            {INSTITUCIONAL.nomeFantasia} responsável pela operação.
+          </p>
         </div>
         <div className="inst-grid">
           <article className="inst-card">
-            <h3>Plataforma B2B</h3>
+            <h3>Serviço de e-mail marketing</h3>
             <p>
-              Oferecemos o {INSTITUCIONAL.produto} para outras empresas: disparo e gestão de campanhas de e-mail e canais
-              de mensagem em um só lugar.
+              Planejamos e executamos campanhas de e-mail para a base do cliente, com conteúdo, listas, rastreio e
+              cancelamento de inscrição.
             </p>
           </article>
           <article className="inst-card">
-            <h3>Entrega confiável</h3>
+            <h3>Serviço de WhatsApp</h3>
             <p>
-              Utilizamos infraestrutura profissional de envio de e-mail. Cada empresa-cliente fala com a própria audiência,
-              com consentimento e opção de cancelamento.
+              Comunicação via WhatsApp integrada ao mesmo padrão de operação: envio organizado, acompanhamento e regras
+              de uso legítimo.
             </p>
           </article>
           <article className="inst-card">
-            <h3>Para vários segmentos</h3>
+            <h3>Controle operacional nosso</h3>
             <p>
-              Atendemos serviços locais, varejo, clínicas, educação, prestadores, e-commerce e outros negócios que precisam
-              de comunicação clara e legítima.
+              A {INSTITUCIONAL.nomeFantasia} gerencia a ferramenta, a infraestrutura de envio e as políticas. O cliente
+              contrata o serviço; nós conduzimos e supervisionamos o processo.
             </p>
           </article>
         </div>
@@ -64,17 +68,47 @@ export default function InstitucionalHomePage() {
 
       <section className="inst-section inst-wrap">
         <div className="inst-section-head">
-          <h2>Tipos de comunicação</h2>
-          <p>A plataforma cobre tanto campanhas quanto avisos operacionais.</p>
+          <h2>Para quem é</h2>
+          <p>Atendemos empresas de vários segmentos que precisam se comunicar com clientes e leads.</p>
+        </div>
+        <div className="inst-grid">
+          <article className="inst-card">
+            <h3>Segmentos</h3>
+            <p>
+              Serviços locais, varejo, clínicas, educação, prestadores, e-commerce e outros negócios — sempre com envio
+              sob nossa operação.
+            </p>
+          </article>
+          <article className="inst-card">
+            <h3>Entrega profissional</h3>
+            <p>
+              Usamos infraestrutura séria de envio de e-mail e acompanhamos status (enviado, entregue, abertura, clique)
+              para manter qualidade.
+            </p>
+          </article>
+          <article className="inst-card">
+            <h3>Ferramenta {INSTITUCIONAL.produto}</h3>
+            <p>
+              Sistema interno da {INSTITUCIONAL.nomeFantasia} para operar os disparos com organização, histórico e
+              conformidade.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section className="inst-section inst-wrap">
+        <div className="inst-section-head">
+          <h2>Tipos de e-mail</h2>
+          <p>No serviço de e-mail, trabalhamos com marketing e avisos operacionais.</p>
         </div>
         <div className="inst-grid inst-grid-2">
           <article className="inst-card inst-card-accent">
             <h3>E-mail marketing</h3>
-            <p>Campanhas, novidades e ofertas enviadas pelas empresas-clientes às bases com inscrição voluntária.</p>
+            <p>Campanhas, novidades e ofertas para bases com inscrição voluntária, operadas pela nossa equipe/sistema.</p>
           </article>
           <article className="inst-card inst-card-accent">
             <h3>E-mail transacional</h3>
-            <p>Confirmações, senhas, recibos e notificações do sistema — quando o fluxo do negócio exige.</p>
+            <p>Confirmações, senhas, recibos e notificações — quando o fluxo do cliente exige.</p>
           </article>
         </div>
       </section>
@@ -82,30 +116,26 @@ export default function InstitucionalHomePage() {
       <section className="inst-section inst-wrap">
         <div className="inst-section-head">
           <h2>Transparência e boas práticas</h2>
-          <p>Políticas claras, inscrição consciente e respeito ao direito de cancelar.</p>
+          <p>Consentimento, cancelamento e privacidade fazem parte do serviço.</p>
         </div>
         <div className="inst-grid">
           <article className="inst-card">
             <h3>Inscrição</h3>
-            <p>Cadastro público com consentimento explícito para receber comunicações da {INSTITUCIONAL.nomeFantasia}.</p>
+            <p>Formulário público com consentimento explícito para comunicações da {INSTITUCIONAL.nomeFantasia}.</p>
             <Link href={PATHS.cadastro} className="inst-card-link">
               Ir para o formulário →
             </Link>
           </article>
           <article className="inst-card">
             <h3>Cancelar inscrição</h3>
-            <p>
-              Todo e-mail de marketing traz link para cancelar o recebimento. Assim o destinatário controla o que recebe.
-            </p>
+            <p>Todo e-mail de marketing inclui link para cancelar o recebimento.</p>
             <Link href={PATHS.amostra} className="inst-card-link">
               Ver no exemplo →
             </Link>
           </article>
           <article className="inst-card">
             <h3>Privacidade</h3>
-            <p>
-              Política publicada e endereço comercial no rodapé das comunicações. Tratamos dados com responsabilidade.
-            </p>
+            <p>Política publicada e endereço comercial no rodapé das comunicações.</p>
             <Link href={PATHS.privacidade} className="inst-card-link">
               Ler política →
             </Link>

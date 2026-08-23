@@ -35,24 +35,24 @@ export default function InstitucionalAmostraPage() {
               <strong>De:</strong> {INSTITUCIONAL.nomeFantasia} &lt;{INSTITUCIONAL.email}&gt;
             </div>
             <div>
-              <strong>Assunto:</strong> Novidades da plataforma — comunicação com seus clientes
+              <strong>Assunto:</strong> Novidades — comunicação com seus clientes
             </div>
             <div>
-              <strong>Tipo:</strong> Marketing (amostra)
+              <strong>Tipo:</strong> Marketing (exemplo)
             </div>
           </div>
           <div className="inst-email-body">
             <p>Olá,</p>
             <p>
-              Esta é uma <strong>amostra de e-mail marketing</strong> da plataforma {INSTITUCIONAL.produto}, operada pela{' '}
-              {INSTITUCIONAL.razaoSocial}.
+              Esta é uma <strong>amostra de e-mail marketing</strong> do serviço prestado pela {INSTITUCIONAL.razaoSocial}.
             </p>
             <p>
-              Nossa solução B2B permite que empresas enviem campanhas e avisos aos próprios clientes, com controle de
-              listas, opt-in e cancelamento de inscrição.
+              Prestamos e-mail marketing e WhatsApp com operação e controle nossos: campanhas, listas, opt-in e
+              cancelamento de inscrição ficam sob nossa gestão.
             </p>
             <p>
-              Seja no varejo, serviços locais, clínicas ou outros segmentos, o foco é comunicação legítima e rastreável.
+              Atendemos varejo, serviços locais, clínicas e outros segmentos, sempre com comunicação legítima e
+              rastreável.
             </p>
             <p>
               <a href={`${INSTITUCIONAL.siteBase}${PATHS.home}`} style={{ color: '#0369a1', fontWeight: 700 }}>

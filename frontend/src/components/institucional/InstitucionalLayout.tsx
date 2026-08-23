@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import { ReactNode } from 'react';
+import SystemLogo from '@/components/SystemLogo';
 import { INSTITUCIONAL, PATHS, enderecoCompleto } from '@/data/institucional';
 
 const nav = [
@@ -41,10 +42,12 @@ export default function InstitucionalLayout({
         <header className="inst-header">
           <div className="inst-wrap inst-header-inner">
             <Link href={PATHS.home} className="inst-brand">
-              <span className="inst-brand-mark" aria-hidden />
+              <span className="inst-logo-slot">
+                <SystemLogo size="small" showFallback={false} className="inst-system-logo" />
+              </span>
               <span>
                 <strong>{INSTITUCIONAL.nomeFantasia}</strong>
-                <small>Plataforma B2B de comunicação</small>
+                <small>E-mail marketing e WhatsApp</small>
               </span>
             </Link>
             <nav className="inst-nav" aria-label="Principal">
@@ -62,6 +65,9 @@ export default function InstitucionalLayout({
         <footer className="inst-footer">
           <div className="inst-wrap inst-footer-grid">
             <div>
+              <div className="inst-footer-logo">
+                <SystemLogo size="small" showFallback={false} />
+              </div>
               <p className="inst-footer-brand">{INSTITUCIONAL.razaoSocial}</p>
               <p>CNPJ {INSTITUCIONAL.cnpj}</p>
               <p className="inst-break">{enderecoCompleto()}</p>
@@ -153,7 +159,7 @@ export default function InstitucionalLayout({
           align-items: center;
           justify-content: space-between;
           gap: 1rem;
-          padding: 0.95rem 0;
+          padding: 0.85rem 0;
           flex-wrap: wrap;
         }
         .inst-brand {
@@ -164,13 +170,29 @@ export default function InstitucionalLayout({
           color: inherit;
           min-width: 0;
         }
-        .inst-brand-mark {
+        .inst-logo-slot {
           flex-shrink: 0;
-          width: 2.35rem;
-          height: 2.35rem;
-          border-radius: 0.8rem;
-          background: linear-gradient(140deg, var(--accent), var(--accent2));
-          box-shadow: 0 8px 24px rgba(45, 212, 191, 0.25);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 2.6rem;
+          min-height: 2.6rem;
+        }
+        .inst-logo-slot img,
+        .inst-system-logo img {
+          height: 2.6rem !important;
+          width: auto !important;
+          max-width: 7.5rem;
+          object-fit: contain;
+        }
+        .inst-footer-logo {
+          margin-bottom: 0.65rem;
+        }
+        .inst-footer-logo img {
+          height: 2.8rem !important;
+          width: auto !important;
+          max-width: 9rem;
+          object-fit: contain;
         }
         .inst-brand strong {
           display: block;
