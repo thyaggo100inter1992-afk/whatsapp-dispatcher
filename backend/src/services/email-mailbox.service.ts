@@ -15,12 +15,37 @@ const INBOUND_WEBHOOK_URL =
   process.env.EMAIL_MARKETING_SENDGRID_INBOUND_URL ||
   'https://api.sistemasnettsistemas.com.br/api/webhook/sendgrid-inbound';
 
-export function buildInboundDnsRecords(domain: string) {
+const SENDGRID_MX = 'mx.sendgrid.net';
+const NETT_MX = 'smtp1.nettsistemasenvios.com.br';
+
+export function isNettMailProvider(provider?: string | null) {
+  return String(provider || '').toLowerCase().includes('nettsistemasenvios');
+}
+
+export function inboundMxHostForProvider(provider?: string | null) {
+  return isNettMailProvider(provider) ? NETT_MX : SENDGRID_MX;
+}
+
+export function isSendGridMxValue(value?: string | null) {
+  return /sendgrid\.net/i.test(String(value || ''));
+}
+
+function mxMatchesExpected(exchange: string, expected: string) {
+  const ex = String(exchange || '').toLowerCase().replace(/\.$/, '');
+  const want = String(expected || '').toLowerCase().replace(/\.$/, '');
+  if (!ex || !want) return false;
+  if (ex === want || ex.endsWith(`.${want}`)) return true;
+  if (want.includes('sendgrid.net')) return ex === SENDGRID_MX || ex.endsWith('.sendgrid.net');
+  if (want.includes('nettsistemasenvios')) return ex.includes('nettsistemasenvios');
+  return false;
+}
+
+export function buildInboundDnsRecords(domain: string, provider?: string | null) {
   return [
     {
       record_type: 'MX',
       name: domain,
-      value: 'mx.sendgrid.net',
+      value: inboundMxHostForProvider(provider),
       priority: 10,
       valid: 'unknown',
       _inbound: true,
@@ -29,46 +54,53 @@ export function buildInboundDnsRecords(domain: string) {
 }
 
 /**
- * Caixa de e-mail exige MX exclusivo do SendGrid.
- * Se houver Mailgun/outro MX junto, o envio cai aleatoriamente no servidor errado
- * e o remetente recebe bounce "550 Relaying denied".
+ * Caixa de e-mail exige MX exclusivo do provedor do domínio.
+ * SendGrid: mx.sendgrid.net
+ * SMTP próprio: smtp1.nettsistemasenvios.com.br
  */
-export async function checkInboundMxOnly(domain: string): Promise<{
+export async function checkInboundMxOnly(
+  domain: string,
+  expectedMx?: string | null
+): Promise<{
   ok: boolean;
+  hasExpected: boolean;
   hasSendgrid: boolean;
   conflicts: string[];
   hint?: string;
 }> {
+  const expected = String(expectedMx || SENDGRID_MX).toLowerCase().replace(/\.$/, '');
   try {
     const results = await resolveMx(String(domain || '').trim().toLowerCase());
     const exchanges = results.map((r) =>
       String(r.exchange || '').toLowerCase().replace(/\.$/, '')
     );
-    const hasSendgrid = exchanges.some(
-      (ex) => ex === 'mx.sendgrid.net' || ex.endsWith('.sendgrid.net')
-    );
-    const conflicts = exchanges.filter((ex) => !ex.includes('sendgrid.net'));
+    const hasExpected = exchanges.some((ex) => mxMatchesExpected(ex, expected));
+    const conflicts = exchanges.filter((ex) => !mxMatchesExpected(ex, expected));
+    const hasSendgrid = exchanges.some((ex) => mxMatchesExpected(ex, SENDGRID_MX));
 
-    if (!hasSendgrid) {
+    if (!hasExpected) {
       return {
         ok: false,
-        hasSendgrid: false,
+        hasExpected: false,
+        hasSendgrid,
         conflicts,
-        hint: 'Adicione o MX mx.sendgrid.net no DNS do domínio.',
+        hint: `Adicione o MX ${expected} no DNS do domínio.`,
       };
     }
     if (conflicts.length > 0) {
       return {
         ok: false,
-        hasSendgrid: true,
+        hasExpected: true,
+        hasSendgrid,
         conflicts,
-        hint: `Remova os outros MX do DNS (deixe só mx.sendgrid.net). Conflito atual: ${conflicts.join(', ')}. Com MX misturados o e-mail pode cair no servidor errado e voltar com "Relaying denied".`,
+        hint: `Remova os outros MX do DNS (deixe só ${expected}). Conflito atual: ${conflicts.join(', ')}. Com MX misturados o e-mail pode cair no servidor errado e voltar com "Relaying denied".`,
       };
     }
-    return { ok: true, hasSendgrid: true, conflicts: [] };
+    return { ok: true, hasExpected: true, hasSendgrid, conflicts: [] };
   } catch {
     return {
       ok: false,
+      hasExpected: false,
       hasSendgrid: false,
       conflicts: [],
       hint: 'MX ainda não encontrado no DNS. Aguarde a propagação.',

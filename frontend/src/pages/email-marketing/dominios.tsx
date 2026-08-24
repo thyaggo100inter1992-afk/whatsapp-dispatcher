@@ -118,8 +118,16 @@ export default function Dominios() {
   };
 
   const loadDomains = async () => {
-    try { const r = await api.get('/email-marketing/domains'); setDomains(r.data.data || []); }
-    catch { } finally { setLoading(false); }
+    try {
+      const r = await api.get('/email-marketing/domains');
+      setDomains(r.data.data || []);
+    } catch (e: any) {
+      console.error('[dominios] falha ao carregar:', e);
+      notification.error('Erro ao carregar domínios', e.response?.data?.message || e.message || 'Falha na API');
+      setDomains([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAdd = async () => {
@@ -300,24 +308,45 @@ export default function Dominios() {
             {/* Registros DNS */}
             {showDns.dns_records && Array.isArray(showDns.dns_records) && showDns.dns_records.length > 0 ? (
               <div className="space-y-3">
-                {showDns.dns_records.map((rec: any, i: number) => {
+                {showDns.dns_records.filter((rec: any) => {
+                  const p = String(showDns.provider || '').toLowerCase();
+                  if (p.includes('nettsistemas') && /sendgrid\.net/i.test(String(rec.value || ''))) return false;
+                  return true;
+                }).map((rec: any, i: number) => {
                   const type = (rec.record_type || rec.type || '').toUpperCase();
                   const isDmarc = !!(rec._is_dmarc || (rec.name || '').startsWith('_dmarc.'));
                   const isInbound = !!rec._inbound;
-                  const recName = rec.name || (type === 'MX' ? showDns.domain : '');
+                  const isGoogle = !!(
+                    rec._is_google_postmaster ||
+                    /google-site-verification/i.test(String(rec.value || '')) ||
+                    /postmaster/i.test(String(rec.label || ''))
+                  );
+                  const recLabel = String(rec.label || '').trim();
+                  const recName = rec.name || rec.host || (type === 'MX' ? showDns.domain : '');
                   return (
                     <div key={i} className={`rounded-xl p-4 border ${
                       isInbound ? 'bg-cyan-900/20 border-cyan-500/30'
+                        : isGoogle ? 'bg-emerald-900/20 border-emerald-500/30'
                         : isDmarc ? 'bg-purple-900/20 border-purple-500/30'
                         : 'bg-black/30 border-white/10'
                     }`}>
                       <div className="flex items-center gap-2 mb-3 flex-wrap">
                         <span className={`px-2 py-0.5 rounded text-xs font-bold text-white uppercase ${
-                          isInbound ? 'bg-cyan-500/40' : isDmarc ? 'bg-purple-500/40' : 'bg-white/10'
+                          isInbound ? 'bg-cyan-500/40' : isGoogle ? 'bg-emerald-500/40' : isDmarc ? 'bg-purple-500/40' : 'bg-white/10'
                         }`}>{type}</span>
                         {isInbound && (
                           <span className="px-2 py-0.5 bg-cyan-500/20 border border-cyan-500/40 rounded text-xs font-bold text-cyan-300">
                             Obrigatório — Caixa de E-mail
+                          </span>
+                        )}
+                        {isGoogle && (
+                          <span className="px-2 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded text-xs font-bold text-emerald-300">
+                            {recLabel || 'Google Postmaster'} — Recomendado — reputação Gmail
+                          </span>
+                        )}
+                        {!isGoogle && recLabel && (
+                          <span className="px-2 py-0.5 bg-white/10 border border-white/20 rounded text-xs font-bold text-gray-200">
+                            {recLabel}
                           </span>
                         )}
                         {isDmarc && <span className="px-2 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-xs font-bold text-purple-300">🛡️ DMARC — Recomendado contra spam</span>}
@@ -332,8 +361,15 @@ export default function Dominios() {
                         <div className="mb-3 p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-xs text-cyan-300">
                           <strong>Obrigatório:</strong>{' '}
                           {Array.isArray(rec.mx_conflicts) && rec.mx_conflicts.length > 0
-                            ? <>Remova os outros MX do DNS (deixe <strong>só</strong> <code>mx.sendgrid.net</code>). Conflito: {rec.mx_conflicts.join(', ')}. Com MX misturados o e-mail cai no servidor errado e volta com &quot;Relaying denied&quot;.</>
+                            ? <>Remova os outros MX do DNS (deixe <strong>só</strong> <code>{rec.value}</code>). Conflito: {rec.mx_conflicts.join(', ')}. Com MX misturados o e-mail cai no servidor errado e volta com &quot;Relaying denied&quot;.</>
                             : <>Adicione este MX no DNS para a caixa receber mensagens. A verificação roda automaticamente junto com os demais.</>}
+                          {rec.hint ? <div className="mt-1 opacity-90">{rec.hint}</div> : null}
+                        </div>
+                      )}
+                      {isGoogle && rec.valid !== 'valid' && (
+                        <div className="mb-3 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs text-emerald-300">
+                          <strong>Recomendado — reputação Gmail.</strong> Cole este TXT no DNS do domínio.
+                          O botão Verificar confirma o registro. Não trava o envio (SPF + DKIM já liberam).
                           {rec.hint ? <div className="mt-1 opacity-90">{rec.hint}</div> : null}
                         </div>
                       )}
