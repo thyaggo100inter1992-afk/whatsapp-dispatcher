@@ -458,7 +458,12 @@ export default function AdminCredentials() {
   const [sendgridConfigured, setSendgridConfigured] = useState(false);
   const [savingSendgrid, setSavingSendgrid] = useState(false);
   const [activeEmailProvider, setActiveEmailProvider] = useState<'mailgun' | 'sendgrid' | 'nettsistemasenvios'>('mailgun');
-  const [nettForm, setNettForm] = useState({ api_key: '', api_base_url: 'https://smtp1.nettsistemasenvios.com.br' });
+  const [nettForm, setNettForm] = useState({
+    api_key: '',
+    api_base_url: 'https://smtp1.nettsistemasenvios.com.br',
+    default_daily_limit: 0,
+    default_monthly_limit: 0,
+  });
   const [nettConfigured, setNettConfigured] = useState(false);
   const [savingNett, setSavingNett] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
@@ -492,6 +497,15 @@ export default function AdminCredentials() {
     try {
       const res = await api.get('/admin/nettsistemasenvios-credentials');
       setNettConfigured(!!res.data.configured);
+      const d = res.data?.data;
+      if (d) {
+        setNettForm((prev) => ({
+          ...prev,
+          api_base_url: d.api_base_url || prev.api_base_url,
+          default_daily_limit: Number(d.default_daily_limit ?? 0) || 0,
+          default_monthly_limit: Number(d.default_monthly_limit ?? 0) || 0,
+        }));
+      }
     } catch {}
   };
 
@@ -505,6 +519,8 @@ export default function AdminCredentials() {
       const res = await api.post('/admin/nettsistemasenvios-credentials', {
         api_key: nettForm.api_key,
         api_base_url: nettForm.api_base_url,
+        default_daily_limit: Number(nettForm.default_daily_limit) || 0,
+        default_monthly_limit: Number(nettForm.default_monthly_limit) || 0,
         activate: true,
       });
       notification.success(
@@ -514,7 +530,12 @@ export default function AdminCredentials() {
           : `API Key salva. SMTP: ${res.data?.smtp_error || 'verifique depois'}`
       );
       setNettConfigured(true);
-      setNettForm({ api_key: '', api_base_url: nettForm.api_base_url });
+      setNettForm({
+        api_key: '',
+        api_base_url: nettForm.api_base_url,
+        default_daily_limit: Number(nettForm.default_daily_limit) || 0,
+        default_monthly_limit: Number(nettForm.default_monthly_limit) || 0,
+      });
       if (res.data?.active_provider) setActiveEmailProvider(res.data.active_provider);
       await loadEmailProviderSettings();
     } catch (error: any) {
@@ -1587,6 +1608,30 @@ export default function AdminCredentials() {
                   placeholder="Cole a API Key do SMTP"
                   className="w-full px-4 py-3 bg-black/40 border border-white/20 rounded-xl text-white"
                 />
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-300 mb-2">Limite diário padrão</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={nettForm.default_daily_limit}
+                    onChange={(e) => setNettForm({ ...nettForm, default_daily_limit: Number(e.target.value) || 0 })}
+                    className="w-full px-4 py-3 bg-black/40 border border-white/20 rounded-xl text-white"
+                  />
+                  <p className="text-xs text-white/40 mt-1">0 = sem limite. Usado na criação do cliente SMTP.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-300 mb-2">Limite mensal padrão</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={nettForm.default_monthly_limit}
+                    onChange={(e) => setNettForm({ ...nettForm, default_monthly_limit: Number(e.target.value) || 0 })}
+                    className="w-full px-4 py-3 bg-black/40 border border-white/20 rounded-xl text-white"
+                  />
+                  <p className="text-xs text-white/40 mt-1">0 = sem limite. Enviado como monthly_limit.</p>
+                </div>
               </div>
               <button
                 type="button"

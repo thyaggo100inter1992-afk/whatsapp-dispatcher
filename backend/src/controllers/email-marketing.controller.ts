@@ -252,7 +252,13 @@ export const getDomains = async (req: Request, res: Response) => {
        FROM email_marketing_domains WHERE tenant_id = $1 ORDER BY created_at DESC`,
       [tenantId]
     );
-    const { buildInboundDnsRecords, checkInboundMxOnly } = require('../services/email-mailbox.service');
+    const {
+      buildInboundDnsRecords,
+      checkInboundMxOnly,
+      isNettMailProvider,
+      isSendGridMxValue,
+      inboundMxHostForProvider,
+    } = require('../services/email-mailbox.service');
     // Garantir que DMARC + MX de recebimento sempre aparecem
     const rows = await Promise.all(result.rows.map(async (row: any) => {
       const dns: any[] = Array.isArray(row.dns_records) ? [...row.dns_records] : [];
@@ -266,12 +272,22 @@ export const getDomains = async (req: Request, res: Response) => {
           _is_dmarc: true
         });
       }
+      if (isNettMailProvider(row.provider)) {
+        const dnsClean = dns.filter((r: any) => !isSendGridMxValue(r.value));
+        return {
+          ...row,
+          dns_records: dnsClean,
+          inbound_dns_records: [],
+          inbound_enabled: row.inbound_enabled !== false,
+          inbound_status: row.inbound_status || 'pending',
+        };
+      }
       let inboundDns: any[] = Array.isArray(row.inbound_dns_records) ? [...row.inbound_dns_records] : [];
       if (inboundDns.length === 0) {
-        inboundDns = buildInboundDnsRecords(row.domain);
+        inboundDns = buildInboundDnsRecords(row.domain, row.provider);
       }
       try {
-        const mxCheck = await checkInboundMxOnly(row.domain);
+        const mxCheck = await checkInboundMxOnly(row.domain, inboundMxHostForProvider(row.provider));
         inboundDns = inboundDns.map((r: any) => ({
           ...r,
           _inbound: true,
@@ -325,6 +341,7 @@ export const addDomain = async (req: Request, res: Response) => {
         newWebhookToken,
         registerNettEnviosDomainWebhooks,
         ensureNettEnviosSmtpCredential,
+        upsertNettEnviosUser,
         NETTSISTEMAS_ENVIOS_LABEL,
       } = require('../services/nettsistemasenvios.service');
 
@@ -335,6 +352,11 @@ export const addDomain = async (req: Request, res: Response) => {
       }
 
       const apiDomain = await createNettEnviosDomain(domain, tenantId);
+      try {
+        await upsertNettEnviosUser({ tenantId: Number(tenantId), domain: String(domain) });
+      } catch (e: any) {
+        console.warn('[addDomain] upsert smtp user/limits:', e?.message || e);
+      }
       const dnsRecords = mapNettEnviosDnsRecords(apiDomain);
       const externalId = String(apiDomain?.id || apiDomain?.domain_id || '');
       const token = newWebhookToken();
@@ -2980,8 +3002,15 @@ export const deleteSendGridCredential = async (req: Request, res: Response) => {
 
 export const getNettEnviosCredential = async (_req: Request, res: Response) => {
   try {
+    await pool.query(`
+      ALTER TABLE nettsistemasenvios_credentials
+        ADD COLUMN IF NOT EXISTS default_daily_limit INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS default_monthly_limit INTEGER DEFAULT 0
+    `).catch(() => {});
     const result = await pool.query(
       `SELECT id, api_base_url, smtp_host, smtp_port, smtp_user, smtp_tls, is_active, created_at, updated_at,
+              COALESCE(default_daily_limit, 0) AS default_daily_limit,
+              COALESCE(default_monthly_limit, 0) AS default_monthly_limit,
               (smtp_password IS NOT NULL AND smtp_password <> '') AS has_smtp_password
        FROM nettsistemasenvios_credentials WHERE is_active=TRUE ORDER BY id DESC LIMIT 1`
     );
@@ -2998,17 +3027,27 @@ export const getNettEnviosCredential = async (_req: Request, res: Response) => {
 
 export const saveNettEnviosCredential = async (req: Request, res: Response) => {
   try {
+    await pool.query(`
+      ALTER TABLE nettsistemasenvios_credentials
+        ADD COLUMN IF NOT EXISTS default_daily_limit INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS default_monthly_limit INTEGER DEFAULT 0
+    `).catch(() => {});
+
     const api_key = String(req.body?.api_key || '').trim();
     const api_base_url = String(
       req.body?.api_base_url || 'https://smtp1.nettsistemasenvios.com.br'
     ).replace(/\/$/, '');
+    const defaultDaily = Math.max(0, Number(req.body?.default_daily_limit ?? 0) || 0);
+    const defaultMonthly = Math.max(0, Number(req.body?.default_monthly_limit ?? 0) || 0);
+
     if (!api_key) return res.status(400).json({ success: false, message: 'API Key obrigatória' });
 
     await pool.query(`UPDATE nettsistemasenvios_credentials SET is_active=FALSE WHERE is_active=TRUE`);
     await pool.query(
-      `INSERT INTO nettsistemasenvios_credentials (api_key, api_base_url, is_active)
-       VALUES ($1, $2, TRUE)`,
-      [api_key, api_base_url]
+      `INSERT INTO nettsistemasenvios_credentials
+         (api_key, api_base_url, default_daily_limit, default_monthly_limit, is_active)
+       VALUES ($1, $2, $3, $4, TRUE)`,
+      [api_key, api_base_url, defaultDaily, defaultMonthly]
     );
 
     const { ensureNettEnviosSmtpCredential } = require('../services/nettsistemasenvios.service');
@@ -3031,7 +3070,9 @@ export const saveNettEnviosCredential = async (req: Request, res: Response) => {
       message: 'Credencial nettsistemasenvios.com.br salva',
       smtp_registered: smtpOk,
       smtp_error: smtpError,
-      active_provider: await getActiveEmailMarketingProvider(),
+      default_daily_limit: defaultDaily,
+      default_monthly_limit: defaultMonthly,
+      active_provider: req.body?.activate === false ? await getActiveEmailMarketingProvider() : 'nettsistemasenvios',
       provider_label: 'nettsistemasenvios.com.br',
     });
   } catch (error: any) {
@@ -3126,6 +3167,27 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
 
     const nettDomainId = Number((req as any).nettDomainId || 0) || 0;
     const isNettMailHook = nettDomainId > 0 || String(req.originalUrl || req.url || '').includes('nettsistemasenvios');
+
+    // Nett SMTP: limite diário/mensal — notifica tenant (pode vir junto com dropped)
+    for (const ev of events) {
+      const eventType = String(ev?.event || '').toLowerCase();
+      if (eventType !== 'limit_reached') continue;
+      try {
+        const { handleSmtpLimitReached } = require('../services/nettsistemasenvios.service');
+        await handleSmtpLimitReached({
+          tenant: ev?.tenant,
+          username: ev?.username,
+          limit_type: ev?.limit_type,
+          limit: ev?.limit,
+          sent: ev?.sent,
+          reason: ev?.reason,
+          email: ev?.email,
+          domainId: nettDomainId || undefined,
+        });
+      } catch (e: any) {
+        console.error('[webhook] limit_reached:', e?.message || e);
+      }
+    }
 
     for (const ev of events) {
       const eventType = String(ev?.event || '').toLowerCase();

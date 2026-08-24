@@ -736,10 +736,48 @@ const updateTenant = async (req, res) => {
       console.log(`✅ Usando funcionalidades padrão do plano`);
     }
 
+    // Limites SMTP (e-mail) — sync com nettsistemasenvios /v1/users
+    const { email_smtp_daily_limit, email_smtp_monthly_limit } = req.body;
+    if (email_smtp_daily_limit !== undefined || email_smtp_monthly_limit !== undefined) {
+      try {
+        await query(`
+          ALTER TABLE tenants
+            ADD COLUMN IF NOT EXISTS email_smtp_daily_limit INTEGER DEFAULT NULL,
+            ADD COLUMN IF NOT EXISTS email_smtp_monthly_limit INTEGER DEFAULT NULL
+        `);
+        await query(
+          `UPDATE tenants SET
+             email_smtp_daily_limit = $1,
+             email_smtp_monthly_limit = $2,
+             updated_at = NOW()
+           WHERE id = $3`,
+          [
+            email_smtp_daily_limit === '' || email_smtp_daily_limit === null
+              ? null
+              : Math.max(0, Number(email_smtp_daily_limit)),
+            email_smtp_monthly_limit === '' || email_smtp_monthly_limit === null
+              ? null
+              : Math.max(0, Number(email_smtp_monthly_limit)),
+            id,
+          ]
+        );
+        try {
+          const { upsertNettEnviosUser } = require('../../services/nettsistemasenvios.service');
+          await upsertNettEnviosUser({ tenantId: Number(id) });
+        } catch (syncErr) {
+          console.warn('[tenants] sync smtp limits:', syncErr?.message || syncErr);
+        }
+      } catch (limErr) {
+        console.warn('[tenants] email smtp limits:', limErr?.message || limErr);
+      }
+    }
+
+    const refreshed = await query(`SELECT * FROM tenants WHERE id = $1`, [id]);
+
     res.json({
       success: true,
       message: 'Tenant atualizado com sucesso',
-      data: result.rows[0]
+      data: refreshed.rows[0] || result.rows[0]
     });
   } catch (error) {
     console.error('❌ Erro ao atualizar tenant:', error);

@@ -182,10 +182,25 @@ export async function registerNettEnviosDomainWebhooks(domainId: number, token: 
   return urls;
 }
 
-export async function createNettEnviosDomain(domain: string) {
+export function buildNettEnviosSmtpName(tenantId: number | string) {
+  return `Tenant ${Number(tenantId)}`;
+}
+
+/**
+ * Cria o domínio no SMTP próprio.
+ * Envia tenant_id + smtp_name ("Tenant 123") para o painel não gerar nome aleatório.
+ */
+export async function createNettEnviosDomain(domain: string, tenantId: number | string) {
+  const id = Number(tenantId);
+  const smtpName = buildNettEnviosSmtpName(id);
   return apiFetch('/v1/domains', {
     method: 'POST',
-    body: { domain: String(domain).trim().toLowerCase() },
+    body: {
+      domain: String(domain).trim().toLowerCase(),
+      tenant_id: id,
+      smtp_name: smtpName,
+      name: smtpName,
+    },
   });
 }
 
@@ -201,6 +216,16 @@ export async function getNettEnviosDomainByName(domain: string) {
   return apiFetch(`/v1/domains/by-name/${encodeURIComponent(domain)}`);
 }
 
+function isGooglePostmasterRecord(r: any): boolean {
+  const label = String(r.label || '');
+  const value = String(r.value || '');
+  return (
+    /google-site-verification/i.test(value) ||
+    /postmaster/i.test(label) ||
+    /google site verification/i.test(label)
+  );
+}
+
 /** Normaliza dns[] da API para o formato da tela do disparador */
 export function mapNettEnviosDnsRecords(apiDomain: any): any[] {
   const list = Array.isArray(apiDomain?.dns) ? apiDomain.dns : [];
@@ -213,6 +238,8 @@ export function mapNettEnviosDnsRecords(apiDomain: any): any[] {
         : status.includes('aguard') || status === 'pending'
           ? 'unknown'
           : r.valid || 'unknown';
+    const google = isGooglePostmasterRecord(r);
+    const rawLabel = String(r.label || '').trim();
     return {
       record_type: type,
       type,
@@ -220,10 +247,14 @@ export function mapNettEnviosDnsRecords(apiDomain: any): any[] {
       host: r.host || r.name || '',
       value: r.value || '',
       priority: r.priority,
-      label: r.label || '',
-      required: r.required !== false,
+      label: google ? (rawLabel || 'Google Postmaster') : rawLabel,
+      hint: google ? 'Recomendado — reputação Gmail' : (r.hint || ''),
+      required: r.required === true ? true : r.required === false ? false : r.required !== false,
       status: r.status || '',
       valid,
+      _is_google_postmaster: google,
+      google_ok: apiDomain?.google_ok === true,
+      google_connected: apiDomain?.google_connected === true,
     };
   });
 }
@@ -239,4 +270,185 @@ export function nettEnviosCanSend(apiDomain: any): boolean {
     const s = String(d.status || d.valid || '').toLowerCase();
     return s.includes('verific') || s === 'valid' || s === 'verified';
   });
+}
+
+export type NettSmtpLimits = { daily_limit: number; monthly_limit: number };
+
+/** Resolve limites do tenant (coluna própria → padrão da credencial → 0). 0 = sem limite. */
+export async function resolveTenantSmtpLimits(tenantId: number): Promise<NettSmtpLimits> {
+  await pool.query(`
+    ALTER TABLE tenants
+      ADD COLUMN IF NOT EXISTS email_smtp_daily_limit INTEGER DEFAULT NULL,
+      ADD COLUMN IF NOT EXISTS email_smtp_monthly_limit INTEGER DEFAULT NULL
+  `).catch(() => {});
+  await pool.query(`
+    ALTER TABLE nettsistemasenvios_credentials
+      ADD COLUMN IF NOT EXISTS default_daily_limit INTEGER DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS default_monthly_limit INTEGER DEFAULT 0
+  `).catch(() => {});
+
+  const t = await pool.query(
+    `SELECT email_smtp_daily_limit, email_smtp_monthly_limit FROM tenants WHERE id=$1`,
+    [tenantId]
+  );
+  const row = t.rows[0] || {};
+  let daily =
+    row.email_smtp_daily_limit != null && row.email_smtp_daily_limit !== ''
+      ? Number(row.email_smtp_daily_limit)
+      : null;
+  let monthly =
+    row.email_smtp_monthly_limit != null && row.email_smtp_monthly_limit !== ''
+      ? Number(row.email_smtp_monthly_limit)
+      : null;
+
+  if (daily == null || monthly == null) {
+    const c = await pool.query(
+      `SELECT default_daily_limit, default_monthly_limit
+       FROM nettsistemasenvios_credentials WHERE is_active=TRUE ORDER BY id DESC LIMIT 1`
+    );
+    const cred = c.rows[0] || {};
+    if (daily == null) daily = Number(cred.default_daily_limit ?? 0);
+    if (monthly == null) monthly = Number(cred.default_monthly_limit ?? 0);
+  }
+
+  return {
+    daily_limit: Number.isFinite(daily as number) ? Math.max(0, Number(daily)) : 0,
+    monthly_limit: Number.isFinite(monthly as number) ? Math.max(0, Number(monthly)) : 0,
+  };
+}
+
+/**
+ * Cria/atualiza o cliente SMTP no painel externo com daily_limit e monthly_limit.
+ * POST /v1/users (fallback PUT /v1/users/:username).
+ */
+export async function upsertNettEnviosUser(opts: {
+  tenantId: number;
+  username?: string;
+  daily_limit?: number;
+  monthly_limit?: number;
+  domain?: string;
+}): Promise<any> {
+  const limits =
+    opts.daily_limit != null && opts.monthly_limit != null
+      ? { daily_limit: opts.daily_limit, monthly_limit: opts.monthly_limit }
+      : await resolveTenantSmtpLimits(opts.tenantId);
+
+  const smtpName = buildNettEnviosSmtpName(opts.tenantId);
+  const username =
+    String(opts.username || '').trim() ||
+    (opts.domain ? `tenant${opts.tenantId}@${String(opts.domain).trim().toLowerCase()}` : `tenant${opts.tenantId}`);
+
+  const body = {
+    username,
+    tenant: String(opts.tenantId),
+    tenant_id: Number(opts.tenantId),
+    smtp_name: smtpName,
+    name: smtpName,
+    daily_limit: limits.daily_limit,
+    monthly_limit: limits.monthly_limit,
+  };
+
+  console.log('[nett-smtp] upsert user limits:', body);
+
+  try {
+    return await apiFetch('/v1/users', { method: 'POST', body });
+  } catch (e1: any) {
+    try {
+      return await apiFetch(`/v1/users/${encodeURIComponent(username)}`, { method: 'PUT', body });
+    } catch (e2: any) {
+      try {
+        return await apiFetch(`/v1/users/${encodeURIComponent(username)}`, { method: 'PATCH', body });
+      } catch (e3: any) {
+        const msg = e3?.message || e2?.message || e1?.message || 'falha ao sincronizar usuário SMTP';
+        console.warn('[nett-smtp] upsert user falhou:', msg);
+        throw new Error(msg);
+      }
+    }
+  }
+}
+
+/** Notifica o tenant (popup) e pausa campanhas de e-mail em envio ao bater limite SMTP. */
+export async function handleSmtpLimitReached(ev: {
+  tenant?: string | number;
+  username?: string;
+  limit_type?: string;
+  limit?: number;
+  sent?: number;
+  reason?: string;
+  email?: string;
+  domainId?: number;
+}): Promise<void> {
+  let tenantId = Number(ev.tenant || 0) || 0;
+
+  if (!tenantId && ev.domainId) {
+    const d = await pool.query(`SELECT tenant_id FROM email_marketing_domains WHERE id=$1`, [ev.domainId]);
+    tenantId = Number(d.rows[0]?.tenant_id || 0) || 0;
+  }
+
+  if (!tenantId && ev.username) {
+    const m = String(ev.username).match(/tenant(\d+)/i);
+    if (m) tenantId = Number(m[1]) || 0;
+  }
+
+  if (!tenantId) {
+    console.warn('[nett-smtp] limit_reached sem tenant identificável:', ev);
+    return;
+  }
+
+  const limitType = String(ev.limit_type || '').toLowerCase() === 'monthly' ? 'monthly' : 'daily';
+  const label = limitType === 'monthly' ? 'mensal' : 'diário';
+  const limit = Number(ev.limit || 0);
+  const sent = Number(ev.sent || 0);
+  const reason = String(ev.reason || '').trim();
+
+  const title = `Limite ${label} de e-mail atingido`;
+  const message =
+    `Seu limite ${label} de envio de e-mail foi atingido` +
+    (limit > 0 ? ` (${sent || limit}/${limit})` : '') +
+    (reason ? `. Motivo: ${reason}` : '.') +
+    ` As campanhas em andamento foram pausadas. Ajuste o limite com o suporte ou aguarde a renovação do período.`;
+
+  // Evita spam: 1 alerta por tipo a cada 6h
+  const dup = await pool.query(
+    `SELECT id FROM admin_notifications
+     WHERE is_active = TRUE AND deleted_at IS NULL
+       AND title = $1
+       AND recipient_type = 'specific'
+       AND recipient_list->'tenant_ids' @> to_jsonb($2::int)
+       AND created_at > NOW() - INTERVAL '6 hours'
+     LIMIT 1`,
+    [title, tenantId]
+  );
+
+  if (!dup.rows[0]) {
+    await pool.query(
+      `INSERT INTO admin_notifications (
+         title, message, type, link_url, link_text,
+         recipient_type, recipient_list, is_active
+       ) VALUES ($1,$2,'warning',$3,'Ver campanhas','specific',$4,TRUE)`,
+      [
+        title,
+        message,
+        '/email-marketing/campanhas',
+        JSON.stringify({ tenant_ids: [tenantId] }),
+      ]
+    );
+    console.log(`[nett-smtp] notificação limite ${label} → tenant ${tenantId}`);
+  } else {
+    console.log(`[nett-smtp] limite ${label} tenant ${tenantId} — notificação já enviada recentemente`);
+  }
+
+  const paused = await pool.query(
+    `UPDATE email_marketing_campaigns
+     SET status='paused', updated_at=NOW()
+     WHERE tenant_id=$1 AND status='sending'
+     RETURNING id`,
+    [tenantId]
+  );
+  if (paused.rows.length) {
+    console.log(
+      `[nett-smtp] pausadas ${paused.rows.length} campanha(s) do tenant ${tenantId}:`,
+      paused.rows.map((r: any) => r.id).join(',')
+    );
+  }
 }

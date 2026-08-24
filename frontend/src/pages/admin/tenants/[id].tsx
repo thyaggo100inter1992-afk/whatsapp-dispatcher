@@ -260,6 +260,8 @@ export default function TenantDetailsPage() {
     limite_campanhas_simultaneas_customizado: null as number | null,
     limite_mensagens_dia_customizado: null as number | null,
     limite_novavida_mes_customizado: null as number | null,
+    email_smtp_daily_limit: null as number | null,
+    email_smtp_monthly_limit: null as number | null,
     funcionalidades_customizadas: false,
     funcionalidades_config: {} as any,
     uazap_credential_id: null as number | null,
@@ -354,6 +356,8 @@ export default function TenantDetailsPage() {
         limite_campanhas_simultaneas_customizado: tenantData.limite_campanhas_simultaneas_customizado,
         limite_mensagens_dia_customizado: tenantData.limite_mensagens_dia_customizado,
         limite_novavida_mes_customizado: tenantData.limite_novavida_mes_customizado,
+        email_smtp_daily_limit: tenantData.email_smtp_daily_limit ?? null,
+        email_smtp_monthly_limit: tenantData.email_smtp_monthly_limit ?? null,
         funcionalidades_customizadas: tenantData.funcionalidades_customizadas || false,
         funcionalidades_config: tenantData.funcionalidades_config || {},
         uazap_credential_id: tenantData.uazap_credential_id || null,
@@ -2820,6 +2824,41 @@ export default function TenantDetailsPage() {
                   </p>
                 </div>
               )}
+
+              <div className="mt-6 p-5 bg-teal-500/10 border-2 border-teal-500/30 rounded-xl space-y-4">
+                <h4 className="text-white font-bold">Limites SMTP (e-mail marketing)</h4>
+                <p className="text-sm text-white/50">Enviados ao provedor como daily_limit / monthly_limit. 0 = sem limite. Vazio = padrão das credenciais.</p>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-300 mb-2">Limite diário de e-mails</label>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Ex: 50000 ou 0"
+                      value={editForm.email_smtp_daily_limit ?? ''}
+                      onChange={(e) => setEditForm({
+                        ...editForm,
+                        email_smtp_daily_limit: e.target.value === '' ? null : Number(e.target.value),
+                      })}
+                      className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-teal-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-300 mb-2">Limite mensal de e-mails</label>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Ex: 1000000 ou 0"
+                      value={editForm.email_smtp_monthly_limit ?? ''}
+                      onChange={(e) => setEditForm({
+                        ...editForm,
+                        email_smtp_monthly_limit: e.target.value === '' ? null : Number(e.target.value),
+                      })}
+                      className="w-full px-4 py-3 bg-black/30 border-2 border-white/20 rounded-lg text-white focus:border-teal-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
 
               <button
                 onClick={handleSave}
