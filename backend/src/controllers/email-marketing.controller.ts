@@ -3035,7 +3035,7 @@ export const saveNettEnviosCredential = async (req: Request, res: Response) => {
 
     const api_key = String(req.body?.api_key || '').trim();
     const api_base_url = String(
-      req.body?.api_base_url || 'https://smtp1.nettsistemasenvios.com.br'
+      req.body?.api_base_url || 'https://nettsistemasenvios.com.br'
     ).replace(/\/$/, '');
     const defaultDaily = Math.max(0, Number(req.body?.default_daily_limit ?? 0) || 0);
     const defaultMonthly = Math.max(0, Number(req.body?.default_monthly_limit ?? 0) || 0);

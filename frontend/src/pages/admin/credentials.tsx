@@ -460,7 +460,7 @@ export default function AdminCredentials() {
   const [activeEmailProvider, setActiveEmailProvider] = useState<'mailgun' | 'sendgrid' | 'nettsistemasenvios'>('mailgun');
   const [nettForm, setNettForm] = useState({
     api_key: '',
-    api_base_url: 'https://smtp1.nettsistemasenvios.com.br',
+    api_base_url: 'https://nettsistemasenvios.com.br',
     default_daily_limit: 0,
     default_monthly_limit: 0,
   });

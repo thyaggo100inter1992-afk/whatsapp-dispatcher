@@ -8,7 +8,7 @@ import { pool } from '../database/connection';
 export const NETTSISTEMAS_ENVIOS_PROVIDER = 'nettsistemasenvios' as const;
 export const NETTSISTEMAS_ENVIOS_LABEL = 'nettsistemasenvios.com.br';
 
-const DEFAULT_API_BASE = 'https://smtp1.nettsistemasenvios.com.br';
+const DEFAULT_API_BASE = 'https://nettsistemasenvios.com.br';
 const PUBLIC_API =
   process.env.API_PUBLIC_URL ||
   process.env.BACKEND_PUBLIC_URL ||
@@ -47,9 +47,13 @@ export async function getNettEnviosCredentials(): Promise<NettEnviosCreds> {
   );
   if (r.rows[0]?.api_key) {
     const row = r.rows[0];
+    let apiBase = String(row.api_base_url || DEFAULT_API_BASE).replace(/\/$/, '');
+    if (/smtp1\.nettsistemasenvios\.com\.br/i.test(apiBase)) {
+      apiBase = DEFAULT_API_BASE;
+    }
     return {
       api_key: String(row.api_key),
-      api_base_url: String(row.api_base_url || DEFAULT_API_BASE).replace(/\/$/, ''),
+      api_base_url: apiBase,
       smtp_host: row.smtp_host || null,
       smtp_port: row.smtp_port != null ? Number(row.smtp_port) : 587,
       smtp_port_ssl: row.smtp_port_ssl != null ? Number(row.smtp_port_ssl) : 465,
@@ -74,28 +78,54 @@ export async function getNettEnviosCredentials(): Promise<NettEnviosCreds> {
 
 async function apiFetch(path: string, opts: { method?: string; body?: any } = {}) {
   const creds = await getNettEnviosCredentials();
-  const url = `${creds.api_base_url}${path.startsWith('/') ? path : `/${path}`}`;
-  const res = await fetch(url, {
-    method: opts.method || 'GET',
-    headers: {
-      'X-Api-Key': creds.api_key,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: opts.body != null ? JSON.stringify(opts.body) : undefined,
-  });
-  const text = await res.text();
-  let data: any = null;
+  let base = String(creds.api_base_url || DEFAULT_API_BASE).replace(/\/$/, '');
+  // smtp1.* deixou de resolver (NXDOMAIN) — API ficou no domínio raiz
+  if (/smtp1\.nettsistemasenvios\.com\.br/i.test(base)) {
+    base = DEFAULT_API_BASE;
+  }
+
+  const tryOnce = async (apiBase: string) => {
+    const url = `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: opts.method || 'GET',
+        headers: {
+          'X-Api-Key': creds.api_key,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: opts.body != null ? JSON.stringify(opts.body) : undefined,
+      });
+    } catch (netErr: any) {
+      const cause = netErr?.cause?.code || netErr?.code || '';
+      throw new Error(
+        `nettsistemasenvios.com.br: sem conexão com ${apiBase} (${netErr?.message || 'fetch failed'}${cause ? ` / ${cause}` : ''})`
+      );
+    }
+    const text = await res.text();
+    let data: any = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { raw: text };
+    }
+    if (!res.ok) {
+      const msg = data?.message || data?.detail || data?.error || data?.raw || res.statusText || `HTTP ${res.status}`;
+      throw new Error(`nettsistemasenvios.com.br: ${msg}`);
+    }
+    return data;
+  };
+
   try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = { raw: text };
+    return await tryOnce(base);
+  } catch (e: any) {
+    if (base !== DEFAULT_API_BASE && /fetch failed|ENOTFOUND|ECONNREFUSED|sem conexão/i.test(String(e?.message || ''))) {
+      console.warn(`[nett-smtp] fallback API ${base} → ${DEFAULT_API_BASE}`);
+      return tryOnce(DEFAULT_API_BASE);
+    }
+    throw e;
   }
-  if (!res.ok) {
-    const msg = data?.message || data?.error || data?.raw || res.statusText || `HTTP ${res.status}`;
-    throw new Error(`nettsistemasenvios.com.br: ${msg}`);
-  }
-  return data;
 }
 
 export async function ensureNettEnviosSmtpCredential(username = 'disparador') {
