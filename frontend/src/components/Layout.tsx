@@ -55,6 +55,14 @@ export default function Layout({ children }: LayoutProps) {
       };
     }
 
+    if (router.pathname.startsWith('/email-marketing')) {
+      return {
+        titulo: 'E-mail Marketing',
+        subtitulo: 'Campanhas, envios e caixa de e-mail',
+        icon: FaEnvelope
+      };
+    }
+
     // Padrão - API Oficial
     return {
       titulo: 'Disparador NettSistemas',
@@ -68,9 +76,18 @@ export default function Layout({ children }: LayoutProps) {
   // Verificar se está em página compartilhada (Função Extra)
   const paginasCompartilhadas = ['/consultar-dados', '/proxies', '/verificar-numeros', '/uaz/verificar-numeros'];
   const isPaginaCompartilhada = paginasCompartilhadas.includes(router.pathname);
+  const isEmailMarketing = router.pathname.startsWith('/email-marketing');
 
   // Função inteligente para o botão Início
   const handleInicioClick = () => {
+    if (isEmailMarketing) {
+      if (router.pathname === '/email-marketing') {
+        router.push('/');
+      } else {
+        router.push('/email-marketing');
+      }
+      return;
+    }
     if (isPaginaCompartilhada) {
       // Se é Função Extra, vai direto para escolha de conexão
       router.push('/');
@@ -135,7 +152,11 @@ export default function Layout({ children }: LayoutProps) {
                 onClick={handleInicioClick}
                 className="group flex items-center gap-2 px-5 py-3 rounded-lg font-semibold text-base transition-all duration-200 whitespace-nowrap bg-primary-600 text-white shadow-lg shadow-primary-500/40 hover:bg-primary-700"
                 title={
-                  isPaginaCompartilhada
+                  isEmailMarketing
+                    ? router.pathname === '/email-marketing'
+                      ? 'Voltar para o menu de integrações'
+                      : 'Voltar para o E-mail Marketing'
+                    : isPaginaCompartilhada
                     ? 'Voltar para escolha de conexão' 
                     : router.pathname === '/dashboard-oficial' 
                     ? 'Voltar para escolha de conexão' 
@@ -147,7 +168,7 @@ export default function Layout({ children }: LayoutProps) {
               </button>
               
               {/* Botões de Configurações - Esconder em Funções Extras e verificar permissão */}
-              {!isPaginaCompartilhada && showConfiguracoes && navigation.map((item) => {
+              {!isPaginaCompartilhada && !isEmailMarketing && showConfiguracoes && navigation.map((item) => {
                 const Icon = item.icon;
                 const isActive = router.pathname === item.href || 
                                  (item.href !== '/dashboard-oficial' && router.pathname.startsWith(item.href));
