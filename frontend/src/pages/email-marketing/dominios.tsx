@@ -336,13 +336,14 @@ export default function Dominios() {
         </div>
       )}
 
-      {/* Modal DNS */}
+      {/* Modal DNS — cabe na viewport com scroll interno */}
       {showDns && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-dark-800 border-2 border-yellow-500/40 rounded-2xl p-8 max-w-3xl w-full my-4 shadow-2xl shadow-yellow-500/10">
-            <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
-              <h2 className="text-xl font-black text-white">🔧 Registros DNS — {showDns.domain}</h2>
-              <div className="flex items-center gap-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-dark-800 border-2 border-yellow-500/40 rounded-2xl w-full max-w-3xl max-h-[min(92vh,900px)] shadow-2xl shadow-yellow-500/10 flex flex-col overflow-hidden">
+            <div className="flex-shrink-0 px-5 sm:px-8 pt-5 sm:pt-6 pb-3 border-b border-white/10">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <h2 className="text-lg sm:text-xl font-black text-white truncate pr-2">🔧 Registros DNS — {showDns.domain}</h2>
+              <div className="flex items-center gap-2 flex-shrink-0">
                 {Array.isArray(showDns.dns_records) && showDns.dns_records.length > 0 && (
                   <button
                     type="button"
@@ -350,7 +351,7 @@ export default function Dominios() {
                       downloadBindZone(showDns.domain, showDns.dns_records, showDns.provider);
                       notification.success('Arquivo baixado', 'Importe no Cloudflare: DNS → Importar zona');
                     }}
-                    className="px-3 py-2 rounded-lg text-sm font-bold bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/30 flex items-center gap-2"
+                    className="px-3 py-2 rounded-lg text-xs sm:text-sm font-bold bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/30 flex items-center gap-2"
                   >
                     <FaDownload /> Baixar arquivo DNS
                   </button>
@@ -358,10 +359,12 @@ export default function Dominios() {
                 <button onClick={() => setShowDns(null)} className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all" title="Fechar — verificação continua em segundo plano"><FaTimes className="text-xl" /></button>
               </div>
             </div>
-            <p className="text-xs text-white/50 mb-4">
+            <p className="text-xs text-white/50 mt-2">
               Mais rápido: baixe o arquivo .txt e no Cloudflare use <strong className="text-white/70">DNS → Importar zona</strong>.
             </p>
+            </div>
 
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-8 py-4">
             {/* Banner status */}
             {showDns.status === 'active' && showDns.dns_records && Array.isArray(showDns.dns_records) && showDns.dns_records.every((r: any) => r.valid === 'valid') ? (
               <div className="bg-green-500/20 border border-green-500/40 rounded-xl p-4 mb-5 flex items-center gap-3">
@@ -487,7 +490,7 @@ export default function Dominios() {
                         <div className="flex items-start gap-2">
                           <span className="text-gray-500 w-24 flex-shrink-0 pt-0.5">Valor:</span>
                           <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <code className="text-blue-300 break-all text-xs">{rec.value}</code>
+                            <code className="text-blue-300 break-all text-xs max-h-28 overflow-y-auto block w-full">{rec.value}</code>
                             <button onClick={() => copyToClipboard(rec.value)} className="flex-shrink-0 p-1 hover:bg-white/10 rounded text-gray-500 hover:text-gray-300" title="Copiar"><FaCopy /></button>
                           </div>
                         </div>
@@ -551,21 +554,24 @@ export default function Dominios() {
                 </div>
               );
             })()}
+            </div>
 
+            <div className="flex-shrink-0 px-5 sm:px-8 py-4 border-t border-white/10 bg-dark-800">
             {/* Botão fechar ou verificar */}
             {(() => {
               const allOk = showDns.dns_records && Array.isArray(showDns.dns_records) && showDns.dns_records.every((r: any) => r.valid === 'valid');
               return allOk ? (
-                <button onClick={() => setShowDns(null)} className="w-full mt-6 py-4 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all shadow-xl shadow-green-500/30">
+                <button onClick={() => setShowDns(null)} className="w-full py-3.5 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-black text-base flex items-center justify-center gap-2 transition-all shadow-xl shadow-green-500/30">
                   <FaCheckCircle /> Fechar
                 </button>
               ) : (
                 <button onClick={() => handleVerify(showDns.id)} disabled={verifying === showDns.id || bgChecking}
-                  className="w-full mt-6 py-4 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 text-white rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all shadow-xl">
+                  className="w-full py-3.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 text-white rounded-xl font-black text-base flex items-center justify-center gap-2 transition-all shadow-xl">
                   {verifying === showDns.id || bgChecking ? <><FaSpinner className="animate-spin" /> Verificando...</> : <><FaSync /> Verificar Agora</>}
                 </button>
               );
             })()}
+            </div>
           </div>
         </div>
       )}
