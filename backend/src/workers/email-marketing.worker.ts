@@ -237,10 +237,36 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
 
   const recipient = recipResult.rows[0];
 
-  let html    = campaign.body_html;
-  let text    = campaign.body_text;
+  // Índice estável de rotação (remetente × assunto × corpo)
+  const rotRow = await pool.query(
+    `SELECT COUNT(*)::int AS n
+     FROM email_marketing_recipients
+     WHERE campaign_id=$1 AND status <> 'pending' AND id <= $2`,
+    [campaign.id, recipient.id]
+  );
+  const rotIndex = Math.max(0, Number(rotRow.rows[0]?.n || 1) - 1);
 
-  if (campaign.template_id && !html) {
+  // Corpos: body_htmls[] (rotação) → body_html único → template
+  let bodiesArr: string[] = [];
+  try {
+    const raw = campaign.body_htmls
+      ? (typeof campaign.body_htmls === 'string' ? JSON.parse(campaign.body_htmls) : campaign.body_htmls)
+      : null;
+    if (Array.isArray(raw)) {
+      bodiesArr = raw.map((h: any) => String(h || '').trim()).filter((h: string) => {
+        const plain = h.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
+        return !!plain;
+      });
+    }
+  } catch { /* ignore */ }
+  if (!bodiesArr.length && campaign.body_html) {
+    bodiesArr = [String(campaign.body_html)];
+  }
+
+  let html = bodiesArr.length ? pickRotating(bodiesArr, rotIndex) : '';
+  let text = campaign.body_text || null;
+
+  if (!html && campaign.template_id) {
     const tpl = await pool.query(
       `SELECT body_html, body_text FROM email_marketing_templates WHERE id=$1`,
       [campaign.template_id]
@@ -261,7 +287,8 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
     html,
     text,
     campaign.subject,
-    ...(Array.isArray(subjectsPreview) ? subjectsPreview : [])
+    ...(Array.isArray(subjectsPreview) ? subjectsPreview : []),
+    ...(bodiesArr.length ? bodiesArr : [])
   );
 
   let protocol: string | null = null;
@@ -295,15 +322,7 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
   html = applyEmailVariables(prepared.html, recipVars);
   text = applyEmailVariables(prepared.text, recipVars, { escapeValues: false });
 
-  // === ROTAÇÃO DE REMETENTES × DOMÍNIOS (índice estável pelo destinatário) ===
-  const rotRow = await pool.query(
-    `SELECT COUNT(*)::int AS n
-     FROM email_marketing_recipients
-     WHERE campaign_id=$1 AND status <> 'pending' AND id <= $2`,
-    [campaign.id, recipient.id]
-  );
-  const rotIndex = Math.max(0, Number(rotRow.rows[0]?.n || 1) - 1);
-
+  // === ROTAÇÃO DE REMETENTES × DOMÍNIOS ===
   const rotationPool = await buildRotationPool(campaign);
   let fromName  = campaign.from_name;
   let fromEmail = campaign.from_email;
@@ -413,6 +432,11 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
       text: text || 'Por favor, habilite HTML para visualizar este e-mail.',
       tenantId: Number(campaign.tenant_id) || null,
       campaignId: Number(campaign.id) || null,
+      customArgs: {
+        recipient_id: String(recipient.id),
+        campaign_id: String(campaign.id),
+        domain_id: String(campaign.domain_id || ''),
+      },
     });
 
     const msgId = sent.messageId;

@@ -24,7 +24,7 @@ interface Campaign {
   domain_id?: number | null;
   domain_ids?: number[] | null;
   domain_name: string; list_name: string; template_name: string;
-  body_html?: string | null; body_text?: string | null; reply_to?: string | null;
+  body_html?: string | null; body_text?: string | null; body_htmls?: string[] | null; reply_to?: string | null;
   created_at: string; started_at: string | null; completed_at: string | null; scheduled_at: string | null;
   work_start_time: string | null; work_end_time: string | null;
   delay_seconds_min: number; delay_seconds_max: number;
@@ -218,7 +218,7 @@ export default function CampaignDetail() {
     reply_to: '',
     senders: [{ from_name: '', from_email: '' }] as Array<{ from_name: string; from_email: string }>,
     subjects: [''] as string[],
-    body_html: '',
+    body_htmls: [''] as string[],
     work_start_time: '',
     work_end_time: '',
     delay_seconds_min: 1,
@@ -374,7 +374,11 @@ export default function CampaignDetail() {
       reply_to: campaign.reply_to || '',
       senders: localSenders.length ? localSenders : [{ from_name: '', from_email: '' }],
       subjects: (campaign.subjects?.length ? campaign.subjects : [campaign.subject || '']).map(String),
-      body_html: campaign.body_html || '',
+      body_htmls: (
+        Array.isArray(campaign.body_htmls) && campaign.body_htmls.length
+          ? campaign.body_htmls
+          : [campaign.body_html || '']
+      ).map(String),
       work_start_time: campaign.work_start_time || '08:00',
       work_end_time: campaign.work_end_time || '20:00',
       delay_seconds_min: campaign.delay_seconds_min || 1,
@@ -427,7 +431,11 @@ export default function CampaignDetail() {
         reply_to: editForm.reply_to || null,
         from_senders: locals,
         subjects: subjectsClean,
-        body_html: editForm.body_html || null,
+        body_html: editForm.body_htmls.map(h => h.trim()).filter(Boolean)[0] || null,
+        body_htmls: editForm.body_htmls.map(h => h.trim()).filter(h => {
+          const plain = h.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim();
+          return !!plain;
+        }),
         work_start_time: editForm.work_start_time,
         work_end_time: editForm.work_end_time,
         delay_seconds_min: editForm.delay_seconds_min,
@@ -945,16 +953,44 @@ export default function CampaignDetail() {
                 </div>
               </div>
 
-              {/* Mensagem */}
+              {/* Mensagens / Modelos (rotação) */}
               <div>
-                <label className="block text-sm font-bold text-white/80 mb-2">✉️ Mensagem / Modelo</label>
-                <EmailBodyEditor
-                  value={editForm.body_html}
-                  onChange={html => setEditForm(f => ({ ...f, body_html: html }))}
-                  accent="orange"
-                  minHeight={260}
-                  placeholder="Edite o conteúdo da mensagem..."
-                />
+                <label className="block text-sm font-bold text-white/80 mb-2">✉️ Modelos de mensagem (rotação)</label>
+                <div className="space-y-4">
+                  {editForm.body_htmls.map((html, i) => (
+                    <div key={i} className="rounded-xl border border-orange-500/20 bg-black/20 p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-bold text-orange-300">Modelo {i + 1}</span>
+                        {editForm.body_htmls.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setEditForm(f => ({ ...f, body_htmls: f.body_htmls.filter((_, idx) => idx !== i) }))}
+                            className="px-2 text-red-400"
+                          >
+                            <FaTrash />
+                          </button>
+                        )}
+                      </div>
+                      <EmailBodyEditor
+                        value={html}
+                        onChange={v => setEditForm(f => ({
+                          ...f,
+                          body_htmls: f.body_htmls.map((x, idx) => (idx === i ? v : x)),
+                        }))}
+                        accent="orange"
+                        minHeight={220}
+                        placeholder={`Modelo ${i + 1}...`}
+                      />
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setEditForm(f => ({ ...f, body_htmls: [...f.body_htmls, ''] }))}
+                    className="text-sm text-orange-300 font-bold flex items-center gap-1"
+                  >
+                    <FaPlus /> Adicionar modelo
+                  </button>
+                </div>
               </div>
 
               {/* Horário */}

@@ -120,6 +120,38 @@ function requireTenant(req: Request, res: Response): number | null {
   return tenantId;
 }
 
+/** HTML de corpo “vazio” (editor rico às vezes deixa &lt;p&gt;&lt;br&gt;&lt;/p&gt;) */
+function isUsableEmailBody(html: any): boolean {
+  const raw = String(html || '').trim();
+  if (!raw) return false;
+  const plain = raw
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return !!plain;
+}
+
+/** Normaliza body_htmls[] + body_html legado → array de HTMLs usáveis */
+function normalizeCampaignBodyHtmls(body_htmls: any, body_html: any): string[] {
+  const fromArr = Array.isArray(body_htmls)
+    ? body_htmls.map((h: any) => String(h || '').trim()).filter((h: string) => isUsableEmailBody(h))
+    : [];
+  if (fromArr.length) return fromArr;
+  const single = String(body_html || '').trim();
+  return isUsableEmailBody(single) ? [single] : [];
+}
+
+let bodyHtmlsColReady = false;
+async function ensureCampaignBodyHtmlsColumn() {
+  if (bodyHtmlsColReady) return;
+  await pool.query(`ALTER TABLE email_marketing_campaigns ADD COLUMN IF NOT EXISTS body_htmls JSONB`);
+  bodyHtmlsColReady = true;
+}
+
+
 // Registra (ou atualiza) webhooks no Mailgun para um domínio
 async function registerMailgunWebhooks(domain: string): Promise<void> {
   try {
@@ -1177,7 +1209,7 @@ export const createCampaign = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const {
-      name, reply_to, domain_id, domain_ids, list_id, template_id, body_html, body_text,
+      name, reply_to, domain_id, domain_ids, list_id, template_id, body_html, body_text, body_htmls,
       // Legado (compat)
       subject, from_name, from_email,
       // Novos campos avançados
@@ -1190,6 +1222,10 @@ export const createCampaign = async (req: Request, res: Response) => {
       pause_after, pause_duration_minutes,
       ignore_email_restrictions,
     } = req.body;
+
+    await ensureCampaignBodyHtmlsColumn();
+    const bodiesArr = normalizeCampaignBodyHtmls(body_htmls, body_html);
+    const primaryBodyHtml = bodiesArr[0] || body_html || null;
 
     const requestedDomainIds: number[] = Array.isArray(domain_ids) && domain_ids.length > 0
       ? domain_ids.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
@@ -1332,7 +1368,7 @@ export const createCampaign = async (req: Request, res: Response) => {
         JSON.stringify(sendersArr), JSON.stringify(subjectsArr),
         reply_to || null, primaryDomainId, JSON.stringify(orderedDomains.map(d => d.id)),
         hasList ? list_id : null, template_id || null,
-        body_html || null, body_text || null,
+        primaryBodyHtml, body_text || null,
         delay_seconds_min || 1, delay_seconds_min || 1, delay_seconds_max || 3,
         scheduled_at || null, work_start_time || '08:00', work_end_time || '20:00',
         pause_after || 0, pause_duration_minutes || 30,
@@ -1365,7 +1401,7 @@ export const createCampaign = async (req: Request, res: Response) => {
             JSON.stringify(sendersArr), JSON.stringify(subjectsArr),
             reply_to || null, primaryDomainId, JSON.stringify(orderedDomains.map(d => d.id)),
             hasList ? list_id : null, template_id || null,
-            body_html || null, body_text || null,
+            primaryBodyHtml, body_text || null,
             delay_seconds_min || 1, delay_seconds_min || 1, delay_seconds_max || 3,
             scheduled_at || null, work_start_time || '08:00', work_end_time || '20:00',
             pause_after || 0, pause_duration_minutes || 30,
@@ -1395,7 +1431,7 @@ export const createCampaign = async (req: Request, res: Response) => {
           subjectsArr[0], sendersArr[0].from_name, sendersArr[0].from_email,
           JSON.stringify(sendersArr), JSON.stringify(subjectsArr),
           reply_to || null, primaryDomainId, hasList ? list_id : null, template_id || null,
-          body_html || null, body_text || null,
+          primaryBodyHtml, body_text || null,
           delay_seconds_min || 1, delay_seconds_min || 1, delay_seconds_max || 3,
           scheduled_at || null, work_start_time || '08:00', work_end_time || '20:00',
           pause_after || 0, pause_duration_minutes || 30,
@@ -1407,6 +1443,22 @@ export const createCampaign = async (req: Request, res: Response) => {
     }
 
     const campaignId = result.rows[0].id;
+
+    // Persiste rotação de corpos (vários modelos / textos)
+    if (bodiesArr.length > 0) {
+      try {
+        const upd = await pool.query(
+          `UPDATE email_marketing_campaigns
+           SET body_htmls=$1::jsonb, body_html=$2, updated_at=NOW()
+           WHERE id=$3
+           RETURNING *`,
+          [JSON.stringify(bodiesArr), bodiesArr[0], campaignId]
+        );
+        if (upd.rows[0]) result.rows[0] = upd.rows[0];
+      } catch (e: any) {
+        console.warn('[createCampaign] body_htmls:', e?.message || e);
+      }
+    }
 
     // Destinatários manuais/colar/CSV — já entram na fila da campanha
     for (const r of uniqueInline) {
@@ -1541,8 +1593,10 @@ export const updateCampaign = async (req: Request, res: Response) => {
       scheduled_at,
       domain_id, from_senders, from_name, from_email,
       subjects, subject, reply_to,
-      body_html, body_text,
+      body_html, body_text, body_htmls,
     } = req.body;
+
+    await ensureCampaignBodyHtmlsColumn();
 
     const sets: string[] = [];
     const vals: any[] = [];
@@ -1557,7 +1611,16 @@ export const updateCampaign = async (req: Request, res: Response) => {
     if (pause_duration_minutes !== undefined) push('pause_duration_minutes', Number(pause_duration_minutes));
     if (scheduled_at !== undefined) push('scheduled_at', scheduled_at || null);
     if (reply_to !== undefined) push('reply_to', reply_to || null);
-    if (body_html !== undefined) push('body_html', body_html || null);
+
+    if (body_htmls !== undefined || body_html !== undefined) {
+      const bodiesArr = normalizeCampaignBodyHtmls(body_htmls, body_html);
+      push('body_html', bodiesArr[0] || body_html || null);
+      if (body_htmls !== undefined || bodiesArr.length > 0) {
+        push('body_htmls', JSON.stringify(bodiesArr.length ? bodiesArr : []));
+      }
+    } else if (body_text !== undefined) {
+      /* only text below */
+    }
     if (body_text !== undefined) push('body_text', body_text || null);
 
     // Domínio(s) + remetentes (sempre expande usuario × todos os domínios)
@@ -1984,6 +2047,9 @@ export const sendSingle = async (req: Request, res: Response) => {
         text: finalText,
         tenantId,
         singleSendId: singleId,
+        customArgs: singleId
+          ? { single_send_id: String(singleId), domain_id: String(domain_id) }
+          : undefined,
       });
 
       const msgId = sent.messageId || null;
@@ -2138,6 +2204,10 @@ export const resendSingleSend = async (req: Request, res: Response) => {
         text: finalText,
         tenantId,
         singleSendId: Number(id) || null,
+        customArgs: {
+          single_send_id: String(id),
+          domain_id: String(domain_id),
+        },
       });
 
       const msgId = sent.messageId || null;
@@ -2885,10 +2955,13 @@ export const nettEnviosWebhook = async (req: Request, res: Response) => {
       if (row.webhook_token && token && row.webhook_token !== token) {
         return res.status(403).json({ success: false, message: 'Token inválido' });
       }
+      (req as any).nettDomainId = domainId;
       console.log(`[webhook-nettsistemasenvios] domínio=${domainId}`);
     } else {
+      (req as any).nettDomainId = 0;
       console.log('[webhook-nettsistemasenvios] fallback global');
     }
+    // NettMail usa payload estilo SendGrid; matching de ID é tratado em sendgridWebhook
     return sendgridWebhook(req, res);
   } catch (error: any) {
     console.error('[webhook-nettsistemasenvios]', error.message);
@@ -2946,6 +3019,9 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
       unsubscribe: 'complained',
     };
 
+    const nettDomainId = Number((req as any).nettDomainId || 0) || 0;
+    const isNettMailHook = nettDomainId > 0 || String(req.originalUrl || req.url || '').includes('nettsistemasenvios');
+
     for (const ev of events) {
       const eventType = String(ev?.event || '').toLowerCase();
       const newStatus = statusMap[eventType];
@@ -2953,13 +3029,33 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
 
       // SendGrid: X-Message-Id no envio = "abc123"
       // no webhook sg_message_id = "abc123.filter0001.xxx.yyy" — precisa casar pelo prefixo
-      const rawMessageId = String(ev?.sg_message_id || ev?.['smtp-id'] || '').replace(/^<|>$/g, '').trim();
+      // NettMail: gera ID próprio (ex. 1787….nettmail) ≠ Message-ID do nodemailer
+      const rawMessageId = String(
+        ev?.sg_message_id || ev?.['smtp-id'] || ev?.smtp_id || ev?.message_id || ''
+      ).replace(/^<|>$/g, '').trim();
       const messageId = rawMessageId;
       const baseMessageId = rawMessageId.split('.')[0] || rawMessageId;
       const recipient = String(ev?.email || '').trim().toLowerCase();
       if (!messageId || !recipient) continue;
 
-      console.log(`[webhook-sendgrid] event=${eventType} email=${recipient} msg=${messageId} base=${baseMessageId}`);
+      const looksNettMailId = /\.nettmail$/i.test(messageId) || isNettMailHook;
+      const customSingleSendId = Number(
+        ev?.single_send_id ||
+        ev?.unique_args?.single_send_id ||
+        ev?.custom_args?.single_send_id ||
+        0
+      ) || null;
+      const customRecipientId = Number(
+        ev?.recipient_id ||
+        ev?.unique_args?.recipient_id ||
+        ev?.custom_args?.recipient_id ||
+        0
+      ) || null;
+
+      console.log(
+        `[webhook-sendgrid] event=${eventType} email=${recipient} msg=${messageId} base=${baseMessageId}` +
+          (nettDomainId ? ` nettDomain=${nettDomainId}` : '')
+      );
 
       const deliveryError =
         eventType === 'bounce' || eventType === 'dropped'
@@ -2967,7 +3063,7 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
           : null;
 
       // Reusa a mesma lógica do Mailgun: busca recipient e atualiza
-      const current = await pool.query(
+      let current = await pool.query(
         `SELECT id, campaign_id, status, opened_at, clicked_at
          FROM email_marketing_recipients
          WHERE LOWER(email)=$2
@@ -2980,6 +3076,48 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
          LIMIT 1`,
         [messageId, recipient, baseMessageId, `${baseMessageId}%`]
       );
+
+      // Fallback NettMail: ID do provedor ≠ Message-ID SMTP — casa por recipient_id / e-mail+domínio
+      if (!current.rows[0] && looksNettMailId) {
+        if (customRecipientId) {
+          current = await pool.query(
+            `SELECT id, campaign_id, status, opened_at, clicked_at
+             FROM email_marketing_recipients WHERE id=$1 LIMIT 1`,
+            [customRecipientId]
+          );
+        }
+        if (!current.rows[0]) {
+          current = await pool.query(
+            `SELECT r.id, r.campaign_id, r.status, r.opened_at, r.clicked_at
+             FROM email_marketing_recipients r
+             JOIN email_marketing_campaigns c ON c.id = r.campaign_id
+             JOIN email_marketing_domains d ON d.id = c.domain_id
+             WHERE LOWER(r.email)=$1
+               AND r.status IN ('sent','opened','clicked','replied')
+               AND (
+                 ($2::int > 0 AND c.domain_id = $2)
+                 OR ($2::int = 0 AND d.provider ILIKE '%nettsistemas%')
+               )
+               AND r.updated_at > NOW() - INTERVAL '14 days'
+             ORDER BY r.id DESC
+             LIMIT 1`,
+            [recipient, nettDomainId]
+          );
+        }
+        if (current.rows[0]) {
+          await pool.query(
+            `UPDATE email_marketing_recipients
+             SET provider_message_id=COALESCE(NULLIF(provider_message_id,''), $1),
+                 mailgun_message_id=COALESCE(NULLIF(mailgun_message_id,''), $1),
+                 updated_at=NOW()
+             WHERE id=$2`,
+            [messageId, current.rows[0].id]
+          );
+          console.log(
+            `[webhook-sendgrid] nettmail match recipient id=${current.rows[0].id} -> bind msg=${messageId}`
+          );
+        }
+      }
 
       if (current.rows[0]) {
         const row = current.rows[0];
@@ -3060,20 +3198,28 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
       }
 
       // single sends
-      if (deliveryError) {
-        await pool.query(
-          `UPDATE email_marketing_single_sends
-           SET status=$1, error_message=$2,
-               opened_at=CASE WHEN $3 IN ('open','click') THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
-               clicked_at=CASE WHEN $3='click' THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
-               updated_at=NOW()
-           WHERE mailgun_message_id=$4 OR provider_message_id=$4
-              OR mailgun_message_id=$5 OR provider_message_id=$5
-              OR mailgun_message_id LIKE $6 OR provider_message_id LIKE $6
-              OR $4 LIKE mailgun_message_id || '%' OR $4 LIKE provider_message_id || '%'`,
-          [newStatus, deliveryError, eventType, messageId, baseMessageId, `${baseMessageId}%`]
-        );
-      } else {
+      let singleMatched = false;
+
+      const updateSingleById = async (singleId: number) => {
+        if (deliveryError) {
+          const upd = await pool.query(
+            `UPDATE email_marketing_single_sends
+             SET status=$1, error_message=$2,
+                 opened_at=CASE WHEN $3 IN ('open','click') THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
+                 clicked_at=CASE WHEN $3='click' THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
+                 provider_message_id=$4,
+                 mailgun_message_id=COALESCE(NULLIF(mailgun_message_id,''), $4),
+                 updated_at=NOW()
+             WHERE id=$5
+             RETURNING id, status`,
+            [newStatus, deliveryError, eventType, messageId, singleId]
+          );
+          if (upd.rowCount) {
+            singleMatched = true;
+            console.log(`[webhook-sendgrid] single_send atualizado id=${upd.rows[0].id} -> ${upd.rows[0].status}`);
+          }
+          return;
+        }
         const upd = await pool.query(
           `UPDATE email_marketing_single_sends
            SET status=CASE
@@ -3084,19 +3230,65 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
                END,
                opened_at=CASE WHEN $2 IN ('open','click') THEN COALESCE(opened_at, NOW()) ELSE opened_at END,
                clicked_at=CASE WHEN $2='click' THEN COALESCE(clicked_at, NOW()) ELSE clicked_at END,
+               provider_message_id=$3,
+               mailgun_message_id=COALESCE(NULLIF(mailgun_message_id,''), $3),
                updated_at=NOW()
-           WHERE mailgun_message_id=$3 OR provider_message_id=$3
-              OR mailgun_message_id=$4 OR provider_message_id=$4
-              OR mailgun_message_id LIKE $5 OR provider_message_id LIKE $5
-              OR $3 LIKE mailgun_message_id || '%' OR $3 LIKE provider_message_id || '%'
+           WHERE id=$4
            RETURNING id, status`,
-          [newStatus, eventType, messageId, baseMessageId, `${baseMessageId}%`]
+          [newStatus, eventType, messageId, singleId]
         );
-        if (!upd.rowCount && !current.rows[0]) {
-          console.warn(`[webhook-sendgrid] sem match para msg=${messageId} email=${recipient}`);
-        } else if (upd.rowCount) {
+        if (upd.rowCount) {
+          singleMatched = true;
           console.log(`[webhook-sendgrid] single_send atualizado id=${upd.rows[0].id} -> ${upd.rows[0].status}`);
         }
+      };
+
+      // 1) match por message-id (SendGrid / IDs já vinculados)
+      {
+        const byMsg = await pool.query(
+          `SELECT id FROM email_marketing_single_sends
+           WHERE mailgun_message_id=$1 OR provider_message_id=$1
+              OR mailgun_message_id=$2 OR provider_message_id=$2
+              OR mailgun_message_id LIKE $3 OR provider_message_id LIKE $3
+              OR $1 LIKE mailgun_message_id || '%' OR $1 LIKE provider_message_id || '%'
+           ORDER BY id DESC LIMIT 1`,
+          [messageId, baseMessageId, `${baseMessageId}%`]
+        );
+        if (byMsg.rows[0]) await updateSingleById(Number(byMsg.rows[0].id));
+      }
+
+      // 2) Fallback NettMail: custom single_send_id ou e-mail + domínio da URL
+      if (!singleMatched && looksNettMailId) {
+        if (customSingleSendId) {
+          await updateSingleById(customSingleSendId);
+        }
+        if (!singleMatched) {
+          const found = await pool.query(
+            `SELECT s.id
+             FROM email_marketing_single_sends s
+             JOIN email_marketing_domains d ON d.id = s.domain_id
+             WHERE LOWER(s.to_email)=$1
+               AND s.status IN ('sent','opened','clicked','pending')
+               AND (
+                 ($2::int > 0 AND s.domain_id = $2)
+                 OR ($2::int = 0 AND d.provider ILIKE '%nettsistemas%')
+               )
+               AND s.updated_at > NOW() - INTERVAL '14 days'
+             ORDER BY s.id DESC
+             LIMIT 1`,
+            [recipient, nettDomainId]
+          );
+          if (found.rows[0]) {
+            await updateSingleById(Number(found.rows[0].id));
+            console.log(
+              `[webhook-sendgrid] nettmail fallback single_send id=${found.rows[0].id} email=${recipient}`
+            );
+          }
+        }
+      }
+
+      if (!singleMatched && !current.rows[0]) {
+        console.warn(`[webhook-sendgrid] sem match para msg=${messageId} email=${recipient}`);
       }
 
       // Caixa de e-mail (conversa) — tracking interno
@@ -3181,6 +3373,93 @@ export const sendgridInboundParse = async (req: Request, res: Response) => {
       try {
         const { ingestInboundToMailbox } = require('../services/email-mailbox.service');
         const fromRaw = String(body.from || '');
+        let files = Array.isArray((req as any).files) ? [...(req as any).files] : [];
+
+        // NettMail / JSON: anexos em base64 no body (além do multipart SendGrid)
+        let rawAtts: any = body.attachments || body.files || body.attachment || null;
+        if (typeof rawAtts === 'string') {
+          const s = rawAtts.trim();
+          if (s.startsWith('[') || s.startsWith('{')) {
+            try {
+              rawAtts = JSON.parse(s);
+            } catch {
+              rawAtts = null;
+            }
+          } else if (/^\d+$/.test(s)) {
+            // SendGrid: "attachments" = quantidade (ex.: "1"); arquivos vêm em attachment1...
+            rawAtts = null;
+          } else {
+            rawAtts = null;
+          }
+        }
+        if (rawAtts && !Array.isArray(rawAtts) && typeof rawAtts === 'object') {
+          rawAtts = Object.keys(rawAtts).map((k) => ({
+            ...(rawAtts[k] || {}),
+            filename: rawAtts[k]?.filename || rawAtts[k]?.name || k,
+            fieldname: k,
+          }));
+        }
+        if (Array.isArray(rawAtts) && rawAtts.length) {
+          rawAtts.forEach((a: any, idx: number) => {
+            const b64 = String(a?.content || a?.data || a?.base64 || a?.file || '')
+              .replace(/^data:[^;]+;base64,/, '')
+              .trim();
+            if (!b64) return;
+            try {
+              const buf = Buffer.from(b64, 'base64');
+              if (!buf.length) return;
+              files.push({
+                fieldname: String(a?.fieldname || `attachment${idx + 1}`),
+                originalname: String(a?.filename || a?.name || `file-${idx + 1}.bin`),
+                mimetype: String(a?.contentType || a?.type || a?.content_type || 'application/octet-stream'),
+                buffer: buf,
+                size: buf.length,
+              });
+            } catch { /* ignore bad base64 */ }
+          });
+        }
+
+        // attachment-info às vezes traz content/base64 por campo
+        try {
+          let info: any = body['attachment-info'] || body.attachment_info;
+          if (typeof info === 'string' && info.trim().startsWith('{')) info = JSON.parse(info);
+          if (info && typeof info === 'object') {
+            Object.keys(info).forEach((key, idx) => {
+              const a = info[key] || {};
+              const b64 = String(a.content || a.data || a.base64 || '')
+                .replace(/^data:[^;]+;base64,/, '')
+                .trim();
+              if (!b64) return;
+              if (files.some((f: any) => f.fieldname === key)) return;
+              try {
+                const buf = Buffer.from(b64, 'base64');
+                if (!buf.length) return;
+                files.push({
+                  fieldname: key || `attachment${idx + 1}`,
+                  originalname: String(a.filename || a.name || `${key}.bin`),
+                  mimetype: String(a.type || a.contentType || 'application/octet-stream'),
+                  buffer: buf,
+                  size: buf.length,
+                });
+              } catch { /* ignore */ }
+            });
+          }
+        } catch { /* ignore */ }
+
+        console.log(
+          `[inbound-mailbox] fields=${Object.keys(body).join(',')} files=${files.map((f: any) => `${f.fieldname}:${f.originalname || ''}:${f.size || 0}`).join('|') || 'none'}`
+        );
+        try {
+          const _att = body.attachments;
+          const _ai = body['attachment-info'] || body.attachment_info;
+          console.log(
+            `[inbound-mailbox] attachments type=${typeof _att} preview=${String(_att ?? '').slice(0, 300)}`
+          );
+          console.log(
+            `[inbound-mailbox] attachment-info type=${typeof _ai} preview=${String(_ai ?? '').slice(0, 300)}`
+          );
+        } catch { /* ignore */ }
+
         const ingested = await ingestInboundToMailbox({
           toCandidates: candidates.length
             ? candidates
@@ -3191,7 +3470,9 @@ export const sendgridInboundParse = async (req: Request, res: Response) => {
           html: String(body.html || ''),
           messageId: String(body.headers || '').match(/Message-Id:\s*<([^>]+)>/i)?.[1]
             || String(body['message-id'] || '') || null,
-          files: Array.isArray((req as any).files) ? (req as any).files : [],
+          inReplyTo: String(body.headers || '').match(/In-Reply-To:\s*<([^>]+)>/i)?.[1]
+            || String(body['in-reply-to'] || '') || null,
+          files,
           attachmentInfoRaw: body['attachment-info'] || body.attachment_info,
           contentIdsRaw: body['content-ids'] || body.content_ids,
         });

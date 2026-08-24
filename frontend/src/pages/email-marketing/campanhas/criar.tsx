@@ -147,7 +147,8 @@ export default function CriarCampanha() {
   const [domainIds, setDomainIds] = useState<number[]>([]);
   const [listId, setListId] = useState('');
   const [templateId, setTemplateId] = useState('');
-  const [bodyHtml, setBodyHtml] = useState('');
+  const [bodyHtmls, setBodyHtmls] = useState<string[]>(['']);
+  const [loadTplForIndex, setLoadTplForIndex] = useState<number | null>(null);
   const [replyTo, setReplyTo] = useState('');
 
   const [recipientSource, setRecipientSource] = useState<RecipientSource>('list');
@@ -210,7 +211,48 @@ export default function CriarCampanha() {
     // Sempre sobe os assuntos do template (ou deixa em branco se o template não tiver)
     setSubjects(list.length ? list : ['']);
     setSubjectMode('manual');
-    if (tpl.body_html) setBodyHtml(tpl.body_html);
+    if (tpl.body_html) {
+      setBodyHtmls(prev => {
+        const next = [...prev];
+        // Preenche o 1º modelo se estiver vazio; senão adiciona como novo modelo
+        const firstPlain = String(next[0] || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim();
+        if (!firstPlain) {
+          next[0] = tpl.body_html;
+          return next;
+        }
+        return [...next, tpl.body_html];
+      });
+    }
+  };
+
+  const isBodyFilled = (html: string) => {
+    const plain = String(html || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return !!plain;
+  };
+
+  const finalBodies: string[] = bodyHtmls.filter(isBodyFilled);
+
+  const addBodyVariant = () => setBodyHtmls(prev => [...prev, '']);
+  const removeBodyVariant = (i: number) =>
+    setBodyHtmls(prev => (prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i)));
+  const updateBodyVariant = (i: number, html: string) =>
+    setBodyHtmls(prev => prev.map((h, idx) => (idx === i ? html : h)));
+
+  const loadTemplateIntoBody = (index: number, tplId: string) => {
+    setLoadTplForIndex(null);
+    if (!tplId) return;
+    const tpl = templates.find(t => t.id === parseInt(tplId, 10));
+    if (!tpl?.body_html) return;
+    updateBodyVariant(index, tpl.body_html);
+    const hasSubjects = subjects.some(s => String(s || '').trim());
+    if (!hasSubjects && tpl.subject) {
+      setSubjects([String(tpl.subject).trim()]);
+      setSubjectMode('manual');
+    }
   };
 
   const handleSenderCsvUpload = async (file: File) => {
@@ -539,7 +581,8 @@ export default function CriarCampanha() {
         list_id: recipientSource === 'list' ? listId : null,
         recipients: recipientsPayload,
         template_id: templateId || null,
-        body_html: bodyHtml || null,
+        body_html: finalBodies[0] || null,
+        body_htmls: finalBodies.length ? finalBodies : undefined,
         delay_seconds_min: delayMin,
         delay_seconds_max: delayMax,
         scheduled_at: scheduledAt,
@@ -1171,31 +1214,94 @@ export default function CriarCampanha() {
 
           {/* ══ 5. CONTEÚDO ══ */}
           <div className={sectionCls}>
-            <div className="flex items-center gap-4 mb-6">
+            <div className="flex items-center gap-4 mb-2">
               <StepBadge n={5} />
-              <h2 className="text-3xl font-black text-white">Conteúdo do E-mail</h2>
-            </div>
-            <div className="space-y-6">
               <div>
-                <label className={labelCls}>Template (opcional)</label>
+                <h2 className="text-3xl font-black text-white">Modelos de mensagem</h2>
+                <p className="text-white/60 text-sm mt-1">
+                  Cadastre um ou vários textos/templates — o sistema rotaciona a cada envio (igual aos assuntos)
+                </p>
+              </div>
+            </div>
+            <div className="space-y-6 mt-4">
+              <div>
+                <label className={labelCls}>Carregar template salvo (opcional)</label>
                 <select value={templateId} onChange={e => handleTemplateSelect(e.target.value)} className={inputCls}>
-                  <option value="">Usar HTML personalizado abaixo</option>
+                  <option value="">Escolher template para preencher um modelo…</option>
                   {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
                 <p className="text-sm text-white/50 mt-2">
-                  Ao escolher um template, o corpo e os <strong className="text-white/70">assuntos</strong> sobem automaticamente na seção 4 (Assuntos). Se o template não tiver assunto, os campos ficam em branco.
+                  Se o 1º modelo estiver vazio, preenche ele. Se já tiver conteúdo, <strong className="text-white/70">adiciona um novo modelo</strong> e sobe os assuntos do template.
                 </p>
               </div>
-              <div>
-                <label className={labelCls}>Corpo do E-mail</label>
-                <EmailBodyEditor
-                  value={bodyHtml}
-                  onChange={setBodyHtml}
-                  accent="orange"
-                  minHeight={300}
-                  placeholder="Digite ou cole o conteúdo. Use a barra para formatar e inserir WhatsApp."
-                />
-              </div>
+
+              {bodyHtmls.map((html, i) => (
+                <div key={i} className="rounded-2xl border-2 border-orange-500/25 bg-black/20 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                      <FaEnvelope className="text-orange-400" />
+                      Modelo {i + 1}{i === 0 ? ' *' : ''}
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      {templates.length > 0 && (
+                        loadTplForIndex === i ? (
+                          <select
+                            autoFocus
+                            className="bg-dark-700 border border-white/20 rounded-lg text-sm text-white px-3 py-2"
+                            defaultValue=""
+                            onChange={e => loadTemplateIntoBody(i, e.target.value)}
+                            onBlur={() => setLoadTplForIndex(null)}
+                          >
+                            <option value="">Template…</option>
+                            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setLoadTplForIndex(i)}
+                            className="px-3 py-2 text-xs font-bold rounded-lg bg-white/10 text-white/70 hover:bg-white/15 border border-white/15"
+                          >
+                            Usar template
+                          </button>
+                        )
+                      )}
+                      {bodyHtmls.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeBodyVariant(i)}
+                          className="p-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 border-2 border-red-500/30 rounded-xl transition-all"
+                          title="Remover modelo"
+                        >
+                          <FaTrash />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <EmailBodyEditor
+                    value={html}
+                    onChange={v => updateBodyVariant(i, v)}
+                    accent="orange"
+                    minHeight={260}
+                    placeholder={`Digite ou cole o modelo ${i + 1}. Use variáveis como {{primeiro_nome}}.`}
+                  />
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={addBodyVariant}
+                className="w-full py-4 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border-2 border-dashed border-orange-500/40 rounded-xl text-base font-bold flex items-center justify-center gap-2 transition-all"
+              >
+                <FaPlus /> Adicionar outro modelo / texto
+              </button>
+
+              {finalBodies.length > 0 && (
+                <div className="p-4 bg-orange-500/10 border-2 border-orange-500/30 rounded-xl">
+                  <p className="text-orange-300 font-bold text-sm flex items-center gap-2">
+                    <FaRandom /> {finalBodies.length} modelo{finalBodies.length > 1 ? 's' : ''} cadastrado{finalBodies.length > 1 ? 's' : ''} — rotação automática a cada envio
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1331,6 +1437,7 @@ export default function CriarCampanha() {
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Domínios:</span><br /><span className="text-white font-bold">{domainIds.length} selecionado{domainIds.length > 1 ? 's' : ''}</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Remetentes:</span><br /><span className="text-white font-bold">{finalSenders.length} (rotação)</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Assuntos:</span><br /><span className="text-white font-bold">{finalSubjects.length} cadastrado{finalSubjects.length > 1 ? 's' : ''}</span></div>
+                <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Modelos:</span><br /><span className="text-white font-bold">{Math.max(finalBodies.length, 1)} (rotação)</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Contatos:</span><br /><span className="text-white font-bold">{recipientCount.toLocaleString('pt-BR')}</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Delay:</span><br /><span className="text-white font-bold">{delayMin}s – {delayMax}s aleatório</span></div>
                 <div className="bg-white/5 rounded-xl p-3"><span className="text-gray-400">Horário:</span><br /><span className="text-white font-bold">{workStart} às {workEnd}</span></div>
