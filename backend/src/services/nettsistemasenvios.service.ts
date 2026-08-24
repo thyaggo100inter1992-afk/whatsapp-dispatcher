@@ -246,6 +246,215 @@ export async function getNettEnviosDomainByName(domain: string) {
   return apiFetch(`/v1/domains/by-name/${encodeURIComponent(domain)}`);
 }
 
+/**
+ * Remove domínio no painel SMTP (NettMail).
+ * Preferência: POST /v1/domains/delete — fallbacks DELETE by-name / by-id.
+ * 404 = já não existe (ok).
+ */
+export async function deleteNettEnviosDomain(opts: {
+  domain: string;
+  externalId?: string | number | null;
+}): Promise<{ ok: boolean; deleted?: boolean; missing?: boolean; raw?: any }> {
+  const domain = String(opts.domain || '').trim().toLowerCase();
+  if (!domain) return { ok: false };
+
+  try {
+    const raw = await apiFetch('/v1/domains/delete', {
+      method: 'POST',
+      body: { domain },
+    });
+    console.log('[nett-smtp] domínio apagado no SMTP:', domain, raw);
+    return { ok: true, deleted: true, raw };
+  } catch (e1: any) {
+    const msg1 = String(e1?.message || '');
+    if (/404|not found|não encontr/i.test(msg1)) {
+      return { ok: true, missing: true };
+    }
+  }
+
+  try {
+    const raw = await apiFetch(`/v1/domains/by-name/${encodeURIComponent(domain)}`, {
+      method: 'DELETE',
+    });
+    return { ok: true, deleted: true, raw };
+  } catch (e2: any) {
+    const msg2 = String(e2?.message || '');
+    if (/404|not found|não encontr/i.test(msg2)) {
+      return { ok: true, missing: true };
+    }
+  }
+
+  if (opts.externalId) {
+    try {
+      const raw = await apiFetch(`/v1/domains/${encodeURIComponent(String(opts.externalId))}`, {
+        method: 'DELETE',
+      });
+      return { ok: true, deleted: true, raw };
+    } catch (e3: any) {
+      const msg3 = String(e3?.message || '');
+      if (/404|not found|não encontr/i.test(msg3)) {
+        return { ok: true, missing: true };
+      }
+      console.warn('[nett-smtp] delete domain falhou:', msg3);
+      throw e3;
+    }
+  }
+
+  console.warn('[nett-smtp] delete domain falhou para', domain);
+  return { ok: false };
+}
+
+/** Apaga domínio local no disparador (sem chamar SMTP de volta). */
+export async function deleteLocalEmailDomain(opts: {
+  domain: string;
+  tenantId?: number | null;
+}): Promise<{ deleted: boolean; id?: number }> {
+  const domain = String(opts.domain || '').trim().toLowerCase();
+  if (!domain) return { deleted: false };
+
+  let q = `SELECT id, tenant_id FROM email_marketing_domains WHERE LOWER(domain)=$1`;
+  const params: any[] = [domain];
+  if (opts.tenantId) {
+    q += ` AND tenant_id=$2`;
+    params.push(Number(opts.tenantId));
+  }
+  q += ` LIMIT 1`;
+  const found = await pool.query(q, params);
+  const row = found.rows[0];
+  if (!row) return { deleted: false };
+
+  const id = Number(row.id);
+  const tenantId = Number(row.tenant_id);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE email_marketing_campaigns SET domain_id=NULL WHERE domain_id=$1 AND tenant_id=$2`,
+      [id, tenantId]
+    );
+    await client.query(
+      `UPDATE email_marketing_single_sends SET domain_id=NULL WHERE domain_id=$1 AND tenant_id=$2`,
+      [id, tenantId]
+    );
+    await client.query(`DELETE FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
+    await client.query('COMMIT');
+    console.log(`[nett-smtp] domínio local apagado via webhook: ${domain} (id=${id}, tenant=${tenantId})`);
+    return { deleted: true, id };
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** Ativa/desativa domínio local (painel SMTP). */
+export async function setLocalEmailDomainActive(opts: {
+  domain: string;
+  tenantId?: number | null;
+  active: boolean;
+  canSend?: boolean;
+}): Promise<{ updated: boolean }> {
+  const domain = String(opts.domain || '').trim().toLowerCase();
+  if (!domain) return { updated: false };
+
+  let q = `SELECT id, tenant_id FROM email_marketing_domains WHERE LOWER(domain)=$1`;
+  const params: any[] = [domain];
+  if (opts.tenantId) {
+    q += ` AND tenant_id=$2`;
+    params.push(Number(opts.tenantId));
+  }
+  q += ` LIMIT 1`;
+  const found = await pool.query(q, params);
+  const row = found.rows[0];
+  if (!row) return { updated: false };
+
+  const active = !!opts.active;
+  const status = active || opts.canSend === true ? 'active' : 'unverified';
+  await pool.query(
+    `UPDATE email_marketing_domains
+     SET is_active=$1, status=$2, updated_at=NOW()
+     WHERE id=$3`,
+    [active, status, row.id]
+  );
+  console.log(
+    `[nett-smtp] domínio ${domain} → ${active ? 'ativado' : 'desativado'} (status=${status})`
+  );
+  return { updated: true };
+}
+
+/**
+ * Eventos administrativos do NettMail no webhook (não são tracking de e-mail).
+ * domain_deleted | domain_status_changed | smtp_user_status_changed
+ */
+export async function handleNettAdminWebhookEvent(ev: any): Promise<boolean> {
+  const eventType = String(ev?.event || '').toLowerCase();
+  const source = String(ev?.source || '').toLowerCase();
+  const isAdmin =
+    source === 'nettmail_admin' ||
+    ['domain_deleted', 'domain_status_changed', 'smtp_user_status_changed'].includes(eventType);
+  if (!isAdmin) return false;
+
+  const domain = String(ev?.domain || '').trim().toLowerCase();
+  const tenantId = Number(ev?.tenant_id || ev?.tenant || 0) || null;
+  const action = String(ev?.action || '').toLowerCase();
+
+  if (eventType === 'domain_deleted') {
+    if (!domain) {
+      console.warn('[nett-smtp] domain_deleted sem domain:', ev);
+      return true;
+    }
+    await deleteLocalEmailDomain({ domain, tenantId });
+    return true;
+  }
+
+  if (eventType === 'domain_status_changed') {
+    if (!domain) {
+      console.warn('[nett-smtp] domain_status_changed sem domain:', ev);
+      return true;
+    }
+    const active =
+      action === 'activate' ||
+      ev?.active === true ||
+      ev?.can_send === true;
+    const deactivate =
+      action === 'deactivate' ||
+      ev?.active === false ||
+      ev?.can_send === false;
+    await setLocalEmailDomainActive({
+      domain,
+      tenantId,
+      active: deactivate ? false : active,
+      canSend: ev?.can_send,
+    });
+    return true;
+  }
+
+  if (eventType === 'smtp_user_status_changed') {
+    // Sem tabela dedicada de smtp users no disparador — log + se tiver domain no username, espelha status
+    const username = String(ev?.username || '').trim().toLowerCase();
+    console.log(
+      `[nett-smtp] smtp_user_status_changed user=${username} action=${action} active=${ev?.active}`
+    );
+    const at = username.indexOf('@');
+    if (at > 0) {
+      const userDomain = username.slice(at + 1);
+      if (userDomain) {
+        const active = action === 'activate' || ev?.active === true;
+        const deactivate = action === 'deactivate' || ev?.active === false;
+        await setLocalEmailDomainActive({
+          domain: userDomain,
+          tenantId,
+          active: deactivate ? false : active,
+        });
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
 function isGooglePostmasterRecord(r: any): boolean {
   const label = String(r.label || '');
   const value = String(r.value || '');

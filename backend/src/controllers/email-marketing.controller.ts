@@ -859,12 +859,16 @@ export const deleteDomain = async (req: Request, res: Response) => {
     const { id } = req.params;
 
     const domainRow = await client.query(
-      `SELECT id, domain FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`,
+      `SELECT id, domain, provider, external_domain_id FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`,
       [id, tenantId]
     );
     if (!domainRow.rows[0]) {
       return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
     }
+
+    const domainName = String(domainRow.rows[0].domain || '');
+    const provider = String(domainRow.rows[0].provider || '').toLowerCase();
+    const externalId = domainRow.rows[0].external_domain_id;
 
     await client.query('BEGIN');
     // Campanhas e envios únicos podem referenciar o domínio — desvincula antes de excluir
@@ -885,7 +889,18 @@ export const deleteDomain = async (req: Request, res: Response) => {
     if (!deleted.rows[0]) {
       return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
     }
-    res.json({ success: true, message: `Domínio ${domainRow.rows[0].domain} removido.` });
+
+    // SMTP próprio: apaga também no NettMail (não deixa órfão)
+    if (provider.includes('nettsistemas')) {
+      try {
+        const { deleteNettEnviosDomain } = require('../services/nettsistemasenvios.service');
+        await deleteNettEnviosDomain({ domain: domainName, externalId });
+      } catch (e: any) {
+        console.warn('[deleteDomain] sync SMTP:', e?.message || e);
+      }
+    }
+
+    res.json({ success: true, message: `Domínio ${domainName} removido.` });
   } catch (error: any) {
     try { await client.query('ROLLBACK'); } catch { /* ignore */ }
     const msg = String(error?.message || '');
@@ -3167,6 +3182,23 @@ export const sendgridWebhook = async (req: Request, res: Response) => {
 
     const nettDomainId = Number((req as any).nettDomainId || 0) || 0;
     const isNettMailHook = nettDomainId > 0 || String(req.originalUrl || req.url || '').includes('nettsistemasenvios');
+    const nettEventHeader = String(req.headers['x-nettmail-event'] || '').toLowerCase();
+    if (nettEventHeader) {
+      console.log(`[webhook-nettsistemasenvios] X-Nettmail-Event=${nettEventHeader}`);
+    }
+
+    // NettMail admin: domain_deleted / domain_status_changed / smtp_user_status_changed
+    for (const ev of events) {
+      try {
+        const { handleNettAdminWebhookEvent } = require('../services/nettsistemasenvios.service');
+        const handled = await handleNettAdminWebhookEvent(ev);
+        if (handled) {
+          console.log(`[webhook-nettsistemasenvios] admin event=${ev?.event} domain=${ev?.domain || '-'} action=${ev?.action || '-'}`);
+        }
+      } catch (e: any) {
+        console.error('[webhook] nett admin event:', e?.message || e);
+      }
+    }
 
     // Nett SMTP: limite diário/mensal — notifica tenant (pode vir junto com dropped)
     for (const ev of events) {
