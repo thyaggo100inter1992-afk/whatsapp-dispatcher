@@ -12,6 +12,8 @@ interface EmailBodyEditorProps {
   onChange: (html: string) => void;
   placeholder?: string;
   minHeight?: number;
+  /** Se definido, limita a altura e rola por dentro. Sem isso, o editor cresce com o conteúdo. */
+  maxHeight?: number;
   accent?: Accent;
 }
 
@@ -62,6 +64,7 @@ export default function EmailBodyEditor({
   onChange,
   placeholder = 'Digite ou cole o conteúdo do e-mail...',
   minHeight = 280,
+  maxHeight,
   accent = 'blue',
 }: EmailBodyEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -616,8 +619,13 @@ export default function EmailBodyEditor({
           onMouseUp={saveSelection}
           onBlur={() => { saveSelection(); emit(); }}
           data-placeholder={placeholder}
-          className="email-body-editor px-4 py-3 text-[15px] leading-relaxed outline-none overflow-y-auto bg-white"
-          style={{ minHeight, color: '#111111', caretColor: textColor }}
+          className={`email-body-editor px-4 py-3 text-[15px] leading-relaxed outline-none bg-white ${maxHeight ? 'overflow-y-auto' : 'overflow-visible'}`}
+          style={{
+            minHeight,
+            ...(maxHeight ? { maxHeight } : {}),
+            color: '#111111',
+            caretColor: textColor,
+          }}
         />
       </div>
 
@@ -631,15 +639,15 @@ export default function EmailBodyEditor({
             onChange(e.target.value);
           }}
           className="w-full px-4 py-3 bg-dark-900 text-green-300 font-mono text-sm outline-none resize-y"
-          style={{ minHeight }}
+          style={{ minHeight, ...(maxHeight ? { maxHeight } : {}) }}
           spellCheck={false}
         />
       )}
 
       {mode === 'preview' && (
         <div
-          className="px-4 py-3 bg-white overflow-y-auto prose max-w-none"
-          style={{ minHeight, color: '#111111' }}
+          className={`px-4 py-3 bg-white prose max-w-none ${maxHeight ? 'overflow-y-auto' : 'overflow-visible'}`}
+          style={{ minHeight, ...(maxHeight ? { maxHeight } : {}), color: '#111111' }}
           dangerouslySetInnerHTML={{ __html: value || lastEmitted.current || '<p style="color:#999">Sem conteúdo</p>' }}
         />
       )}

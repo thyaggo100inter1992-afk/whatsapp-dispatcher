@@ -1277,10 +1277,10 @@ export default function CriarCampanha() {
                 </div>
               </div>
 
-              {/* Lista com checkbox */}
+              {/* Lista com checkbox (só seleção — editor abre em painel completo abaixo) */}
               <div className="max-h-[420px] overflow-y-auto space-y-2 pr-1">
                 {templates.length === 0 ? (
-                  <p className="text-white/40 text-sm p-4 text-center">Nenhum template salvo. Crie em Templates ou adicione um texto personalizado abaixo.</p>
+                  <p className="text-white/40 text-sm p-4 text-center">Nenhum template salvo. Crie em Templates ou adicione um modelo abaixo.</p>
                 ) : filteredTemplates.length === 0 ? (
                   <p className="text-white/40 text-sm p-4 text-center">Nenhum template com esses filtros. Ajuste a busca ou a exclusão.</p>
                 ) : (
@@ -1292,7 +1292,7 @@ export default function CriarCampanha() {
                         key={t.id}
                         className={`rounded-xl border-2 transition-all ${
                           selected ? 'border-orange-500/50 bg-orange-500/10' : 'border-white/10 bg-black/20'
-                        }`}
+                        } ${editing ? 'ring-2 ring-orange-400/40' : ''}`}
                       >
                         <div className="flex items-center gap-3 p-3">
                           <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
@@ -1307,13 +1307,17 @@ export default function CriarCampanha() {
                               <p className="text-[11px] text-white/40 truncate">
                                 {isBodyFilled(resolveTemplateBody(t.id)) ? 'Com conteúdo' : 'Sem conteúdo'}
                                 {templateOverrides[t.id] !== undefined ? ' · editado nesta campanha' : ''}
+                                {editing ? ' · editando abaixo' : ''}
                               </p>
                             </div>
                           </label>
                           {selected && (
                             <button
                               type="button"
-                              onClick={() => setEditingTemplateId(editing ? null : t.id)}
+                              onClick={() => {
+                                setEditingCustomIndex(null);
+                                setEditingTemplateId(editing ? null : t.id);
+                              }}
                               className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-white/10 text-white/80 hover:bg-white/15 border border-white/15 flex-shrink-0"
                             >
                               <FaEdit /> {editing ? 'Fechar' : 'Editar'}
@@ -1321,33 +1325,51 @@ export default function CriarCampanha() {
                             </button>
                           )}
                         </div>
-                        {selected && editing && (
-                          <div className="px-3 pb-3">
-                            <p className="text-[11px] text-white/40 mb-2">
-                              Edição só nesta campanha. Não altera o template salvo e não muda os assuntos.
-                            </p>
-                            <EmailBodyEditor
-                              value={resolveTemplateBody(t.id)}
-                              onChange={(html) => setTemplateOverrides((o) => ({ ...o, [t.id]: html }))}
-                              accent="orange"
-                              minHeight={220}
-                              placeholder="Edite o conteúdo deste modelo..."
-                            />
-                          </div>
-                        )}
                       </div>
                     );
                   })
                 )}
               </div>
 
-              {/* Textos personalizados (sem template) */}
+              {/* Editor do template selecionado — painel completo (fora da lista com scroll) */}
+              {editingTemplateId != null && selectedTemplateIds.includes(editingTemplateId) && (() => {
+                const editingTpl = templates.find((t) => t.id === editingTemplateId);
+                if (!editingTpl) return null;
+                return (
+                  <div className="rounded-xl border-2 border-orange-500/50 bg-orange-500/10 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-orange-200 truncate">{editingTpl.name}</p>
+                        <p className="text-[11px] text-white/40">
+                          Edição só nesta campanha. Não altera o template salvo e não muda os assuntos.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditingTemplateId(null)}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white/10 text-white/70 border border-white/15 flex-shrink-0"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                    <EmailBodyEditor
+                      value={resolveTemplateBody(editingTemplateId)}
+                      onChange={(html) => setTemplateOverrides((o) => ({ ...o, [editingTemplateId]: html }))}
+                      accent="orange"
+                      minHeight={520}
+                      placeholder="Edite o conteúdo deste modelo..."
+                    />
+                  </div>
+                );
+              })()}
+
+              {/* Modelos feitos na hora (sem template salvo) */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-bold text-white/70">Textos feitos na hora (opcional)</p>
-                  <button type="button" onClick={addCustomBody}
+                  <p className="text-sm font-bold text-white/70">Modelos feitos na hora (opcional)</p>
+                  <button type="button" onClick={() => { setEditingTemplateId(null); addCustomBody(); }}
                     className="px-3 py-2 text-xs font-bold rounded-lg bg-orange-500/15 text-orange-200 border border-orange-500/30 hover:bg-orange-500/25 flex items-center gap-1">
-                    <FaPlus /> Novo texto
+                    <FaPlus /> Novo modelo
                   </button>
                 </div>
                 {customBodies.map((html, i) => {
@@ -1355,9 +1377,12 @@ export default function CriarCampanha() {
                   return (
                     <div key={i} className="rounded-xl border-2 border-dashed border-orange-500/30 bg-black/15 p-3">
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-sm font-bold text-orange-300">Texto personalizado {i + 1}</span>
+                        <span className="text-sm font-bold text-orange-300">Modelo personalizado {i + 1}</span>
                         <div className="flex items-center gap-2">
-                          <button type="button" onClick={() => setEditingCustomIndex(open ? null : i)}
+                          <button type="button" onClick={() => {
+                            setEditingTemplateId(null);
+                            setEditingCustomIndex(open ? null : i);
+                          }}
                             className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white/10 text-white/70 border border-white/15">
                             {open ? 'Fechar' : 'Editar'}
                           </button>
@@ -1372,8 +1397,8 @@ export default function CriarCampanha() {
                           value={html}
                           onChange={(v) => updateCustomBody(i, v)}
                           accent="orange"
-                          minHeight={220}
-                          placeholder="Escreva o texto deste modelo..."
+                          minHeight={520}
+                          placeholder="Escreva o conteúdo deste modelo..."
                         />
                       ) : (
                         <p className="text-xs text-white/40">
@@ -1391,7 +1416,7 @@ export default function CriarCampanha() {
                     <FaRandom /> {finalBodies.length} modelo{finalBodies.length > 1 ? 's' : ''} na rotação
                     {selectedTemplateIds.length > 0 ? ` (${selectedTemplateIds.length} template${selectedTemplateIds.length > 1 ? 's' : ''}` : ''}
                     {customBodies.filter(isBodyFilled).length > 0
-                      ? `${selectedTemplateIds.length > 0 ? ' + ' : ' ('}${customBodies.filter(isBodyFilled).length} texto${customBodies.filter(isBodyFilled).length > 1 ? 's' : ''}`
+                      ? `${selectedTemplateIds.length > 0 ? ' + ' : ' ('}${customBodies.filter(isBodyFilled).length} modelo${customBodies.filter(isBodyFilled).length > 1 ? 's' : ''} na hora`
                       : ''}
                     {selectedTemplateIds.length > 0 || customBodies.filter(isBodyFilled).length > 0 ? ')' : ''}
                   </p>
