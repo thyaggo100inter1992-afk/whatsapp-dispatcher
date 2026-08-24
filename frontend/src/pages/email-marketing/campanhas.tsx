@@ -357,10 +357,15 @@ export default function Campanhas() {
 
                     {/* Botões de ação */}
                     <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-white/10">
-                      {['draft', 'scheduled'].includes(c.status) && (
+                      {c.status === 'draft' && (
                         <button onClick={() => handleStart(c.id)} className="px-4 py-2.5 bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/40 rounded-xl font-bold text-sm flex items-center gap-2 transition-all">
                           <FaPlay /> Iniciar
                         </button>
+                      )}
+                      {c.status === 'scheduled' && (
+                        <span className="px-4 py-2.5 bg-purple-500/15 text-purple-200 border border-purple-500/30 rounded-xl font-bold text-sm flex items-center gap-2">
+                          <FaCalendarAlt /> Inicia automaticamente
+                        </span>
                       )}
                       {c.status === 'paused' && (
                         <button onClick={() => handleStart(c.id)} className="px-4 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 rounded-xl font-bold text-sm flex items-center gap-2 transition-all">

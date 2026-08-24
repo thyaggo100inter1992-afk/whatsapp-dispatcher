@@ -18,6 +18,57 @@ import {
   ensureSendGridEventWebhook,
   EmailMarketingProviderName,
 } from '../services/email-marketing-provider.service';
+import { normalizeBrazilScheduleToUtc } from '../utils/timezone';
+
+/** Carrega contatos da lista na fila da campanha e atualiza total_contacts. */
+async function ensureEmailCampaignRecipientsFromList(
+  tenantId: number,
+  campaignId: number,
+  listId: number | null | undefined
+): Promise<number> {
+  if (!listId) {
+    const totalOnly = await pool.query(
+      `SELECT COUNT(*)::int as total FROM email_marketing_recipients WHERE campaign_id=$1`,
+      [campaignId]
+    );
+    return Number(totalOnly.rows[0]?.total || 0);
+  }
+
+  const contacts = await pool.query(
+    `SELECT email, name, cpf, phone, var1, var2, var3, var4, var5
+     FROM email_marketing_contacts
+     WHERE list_id=$1 AND tenant_id=$2 AND status='active'`,
+    [listId, tenantId]
+  );
+  for (const c of contacts.rows) {
+    await pool.query(
+      `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name, cpf, phone, var1, var2, var3, var4, var5)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (campaign_id, email) DO UPDATE SET
+         name = COALESCE(NULLIF(EXCLUDED.name, ''), email_marketing_recipients.name),
+         cpf = COALESCE(NULLIF(EXCLUDED.cpf, ''), email_marketing_recipients.cpf),
+         phone = COALESCE(NULLIF(EXCLUDED.phone, ''), email_marketing_recipients.phone),
+         var1 = COALESCE(NULLIF(EXCLUDED.var1, ''), email_marketing_recipients.var1),
+         var2 = COALESCE(NULLIF(EXCLUDED.var2, ''), email_marketing_recipients.var2),
+         var3 = COALESCE(NULLIF(EXCLUDED.var3, ''), email_marketing_recipients.var3),
+         var4 = COALESCE(NULLIF(EXCLUDED.var4, ''), email_marketing_recipients.var4),
+         var5 = COALESCE(NULLIF(EXCLUDED.var5, ''), email_marketing_recipients.var5),
+         updated_at = NOW()`,
+      [
+        tenantId, campaignId, c.email, c.name, c.cpf || null, c.phone || null,
+        c.var1 || null, c.var2 || null, c.var3 || null, c.var4 || null, c.var5 || null,
+      ]
+    );
+  }
+
+  const total = await pool.query(
+    `SELECT COUNT(*)::int as total FROM email_marketing_recipients WHERE campaign_id=$1`,
+    [campaignId]
+  );
+  const count = Number(total.rows[0]?.total || 0);
+  await pool.query(`UPDATE email_marketing_campaigns SET total_contacts=$1 WHERE id=$2`, [count, campaignId]);
+  return count;
+}
 
 const resolveTxt  = promisify(dns.resolveTxt);
 const resolveMx   = promisify(dns.resolveMx);
@@ -283,7 +334,7 @@ export const addDomain = async (req: Request, res: Response) => {
         console.warn('[addDomain] ensure smtp cred:', e?.message || e);
       }
 
-      const apiDomain = await createNettEnviosDomain(domain);
+      const apiDomain = await createNettEnviosDomain(domain, tenantId);
       const dnsRecords = mapNettEnviosDnsRecords(apiDomain);
       const externalId = String(apiDomain?.id || apiDomain?.domain_id || '');
       const token = newWebhookToken();
@@ -1334,9 +1385,34 @@ export const createCampaign = async (req: Request, res: Response) => {
       });
     }
 
-    // Define status inicial: se agendado para o futuro -> 'scheduled', senão -> 'draft'
-    const initStatus = scheduled_at && new Date(scheduled_at) > new Date() ? 'scheduled' : 'draft';
+    // Agendamento em horário de Brasília → UTC no banco
+    let scheduledAtUtc: Date | null = null;
+    if (scheduled_at) {
+      try {
+        scheduledAtUtc = normalizeBrazilScheduleToUtc(String(scheduled_at)).date;
+      } catch {
+        return res.status(400).json({
+          success: false,
+          message: 'Data/hora de agendamento inválida. Use data e hora no horário de Brasília.',
+        });
+      }
+    }
+
+    const isFutureSchedule = !!(scheduledAtUtc && scheduledAtUtc.getTime() > Date.now());
+    // Sem data futura → sending (inicia já; worker respeita work hours da campanha em BRT)
+    // Com data futura → scheduled (worker ativa no horário)
+    const initStatus = isFutureSchedule ? 'scheduled' : 'sending';
+    const scheduledAtDb = scheduledAtUtc ? scheduledAtUtc.toISOString() : null;
     const ignoreRestrictions = !!ignore_email_restrictions;
+
+    console.log('🕐 [email-campaign] agendamento:', {
+      recebido: scheduled_at || null,
+      utc: scheduledAtDb,
+      brasilia: scheduledAtUtc
+        ? scheduledAtUtc.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+        : null,
+      status: initStatus,
+    });
 
     let result;
     try {
@@ -1370,7 +1446,7 @@ export const createCampaign = async (req: Request, res: Response) => {
         hasList ? list_id : null, template_id || null,
         primaryBodyHtml, body_text || null,
         delay_seconds_min || 1, delay_seconds_min || 1, delay_seconds_max || 3,
-        scheduled_at || null, work_start_time || '08:00', work_end_time || '20:00',
+        scheduledAtDb, work_start_time || '08:00', work_end_time || '20:00',
         pause_after || 0, pause_duration_minutes || 30,
         initStatus,
         uniqueInline.length,
@@ -1403,7 +1479,7 @@ export const createCampaign = async (req: Request, res: Response) => {
             hasList ? list_id : null, template_id || null,
             primaryBodyHtml, body_text || null,
             delay_seconds_min || 1, delay_seconds_min || 1, delay_seconds_max || 3,
-            scheduled_at || null, work_start_time || '08:00', work_end_time || '20:00',
+            scheduledAtDb, work_start_time || '08:00', work_end_time || '20:00',
             pause_after || 0, pause_duration_minutes || 30,
             initStatus,
             uniqueInline.length,
@@ -1433,7 +1509,7 @@ export const createCampaign = async (req: Request, res: Response) => {
           reply_to || null, primaryDomainId, hasList ? list_id : null, template_id || null,
           primaryBodyHtml, body_text || null,
           delay_seconds_min || 1, delay_seconds_min || 1, delay_seconds_max || 3,
-          scheduled_at || null, work_start_time || '08:00', work_end_time || '20:00',
+          scheduledAtDb, work_start_time || '08:00', work_end_time || '20:00',
           pause_after || 0, pause_duration_minutes || 30,
           initStatus,
           uniqueInline.length,
@@ -1482,16 +1558,51 @@ export const createCampaign = async (req: Request, res: Response) => {
       );
     }
 
-    if (uniqueInline.length > 0) {
-      const total = await pool.query(
-        `SELECT COUNT(*)::int as total FROM email_marketing_recipients WHERE campaign_id=$1`,
+    // Lista + total — campanha já sai pronta (sem precisar clicar em Iniciar)
+    const totalRecipients = await ensureEmailCampaignRecipientsFromList(
+      tenantId,
+      campaignId,
+      hasList ? Number(list_id) : null
+    );
+
+    if (totalRecipients === 0) {
+      await pool.query(
+        `UPDATE email_marketing_campaigns SET status='draft', updated_at=NOW() WHERE id=$1`,
         [campaignId]
       );
-      await pool.query(`UPDATE email_marketing_campaigns SET total_contacts=$1 WHERE id=$2`, [total.rows[0].total, campaignId]);
-      result.rows[0].total_contacts = total.rows[0].total;
+      return res.status(400).json({
+        success: false,
+        message: 'Campanha sem destinatários. Adicione uma lista ou contatos manuais.',
+        data: { id: campaignId },
+      });
     }
 
-    res.json({ success: true, data: result.rows[0] });
+    if (initStatus === 'sending') {
+      await pool.query(
+        `UPDATE email_marketing_campaigns
+         SET status='sending', started_at=NOW(), sent_in_session=0, pause_started_at=NULL,
+             total_contacts=$1, updated_at=NOW()
+         WHERE id=$2`,
+        [totalRecipients, campaignId]
+      );
+      result.rows[0].status = 'sending';
+      result.rows[0].started_at = new Date();
+    } else {
+      await pool.query(
+        `UPDATE email_marketing_campaigns SET total_contacts=$1, updated_at=NOW() WHERE id=$2`,
+        [totalRecipients, campaignId]
+      );
+    }
+    result.rows[0].total_contacts = totalRecipients;
+    result.rows[0].scheduled_at = scheduledAtDb;
+
+    res.json({
+      success: true,
+      data: result.rows[0],
+      message: initStatus === 'scheduled'
+        ? 'Campanha agendada (horário de Brasília). O envio começa automaticamente na data/hora definida.'
+        : 'Campanha iniciada. O envio começa automaticamente (respeitando o horário de trabalho da campanha).',
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -1509,42 +1620,23 @@ export const startCampaign = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Campanha não pode ser iniciada no status atual' });
     }
 
-    // Carrega contatos da lista (sem duplicar — unique em campaign_id+email)
-    if (campaign.rows[0].list_id) {
-      const contacts = await pool.query(
-        `SELECT email, name, cpf, phone, var1, var2, var3, var4, var5 FROM email_marketing_contacts WHERE list_id=$1 AND tenant_id=$2 AND status='active'`,
-        [campaign.rows[0].list_id, tenantId]
-      );
-      for (const c of contacts.rows) {
-        await pool.query(
-          `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name, cpf, phone, var1, var2, var3, var4, var5)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-           ON CONFLICT (campaign_id, email) DO UPDATE SET
-             name = COALESCE(NULLIF(EXCLUDED.name, ''), email_marketing_recipients.name),
-             cpf = COALESCE(NULLIF(EXCLUDED.cpf, ''), email_marketing_recipients.cpf),
-             phone = COALESCE(NULLIF(EXCLUDED.phone, ''), email_marketing_recipients.phone),
-             var1 = COALESCE(NULLIF(EXCLUDED.var1, ''), email_marketing_recipients.var1),
-             var2 = COALESCE(NULLIF(EXCLUDED.var2, ''), email_marketing_recipients.var2),
-             var3 = COALESCE(NULLIF(EXCLUDED.var3, ''), email_marketing_recipients.var3),
-             var4 = COALESCE(NULLIF(EXCLUDED.var4, ''), email_marketing_recipients.var4),
-             var5 = COALESCE(NULLIF(EXCLUDED.var5, ''), email_marketing_recipients.var5),
-             updated_at = NOW()`,
-          [
-            tenantId, id, c.email, c.name, c.cpf || null, c.phone || null,
-            c.var1 || null, c.var2 || null, c.var3 || null, c.var4 || null, c.var5 || null,
-          ]
-        );
-      }
-    }
-
-    const total = await pool.query(
-      `SELECT COUNT(*)::int as total FROM email_marketing_recipients WHERE campaign_id=$1`,
-      [id]
+    const totalCount = await ensureEmailCampaignRecipientsFromList(
+      tenantId,
+      Number(id),
+      campaign.rows[0].list_id ? Number(campaign.rows[0].list_id) : null
     );
-    if (!total.rows[0].total) {
+    if (!totalCount) {
       return res.status(400).json({ success: false, message: 'Campanha sem destinatários. Adicione uma lista ou contatos manuais.' });
     }
-    await pool.query(`UPDATE email_marketing_campaigns SET total_contacts=$1 WHERE id=$2`, [total.rows[0].total, id]);
+
+    // Se ainda está agendada para o futuro (BRT→UTC), mantém scheduled
+    const sched = campaign.rows[0].scheduled_at ? new Date(campaign.rows[0].scheduled_at) : null;
+    if (campaign.rows[0].status === 'scheduled' && sched && sched.getTime() > Date.now()) {
+      return res.json({
+        success: true,
+        message: 'Campanha permanece agendada. O envio começa automaticamente na data/hora definida (horário de Brasília).',
+      });
+    }
 
     await pool.query(
       `UPDATE email_marketing_campaigns SET status='sending', started_at=NOW(), sent_in_session=0, pause_started_at=NULL, updated_at=NOW() WHERE id=$1`,
@@ -1609,7 +1701,20 @@ export const updateCampaign = async (req: Request, res: Response) => {
     if (delay_seconds_max !== undefined) push('delay_seconds_max', Number(delay_seconds_max));
     if (pause_after !== undefined) push('pause_after', Number(pause_after));
     if (pause_duration_minutes !== undefined) push('pause_duration_minutes', Number(pause_duration_minutes));
-    if (scheduled_at !== undefined) push('scheduled_at', scheduled_at || null);
+    if (scheduled_at !== undefined) {
+      if (!scheduled_at) {
+        push('scheduled_at', null);
+      } else {
+        try {
+          push('scheduled_at', normalizeBrazilScheduleToUtc(String(scheduled_at)).date.toISOString());
+        } catch {
+          return res.status(400).json({
+            success: false,
+            message: 'Data/hora de agendamento inválida. Use horário de Brasília.',
+          });
+        }
+      }
+    }
     if (reply_to !== undefined) push('reply_to', reply_to || null);
 
     if (body_htmls !== undefined || body_html !== undefined) {

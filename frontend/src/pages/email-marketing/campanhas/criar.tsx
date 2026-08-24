@@ -548,7 +548,9 @@ export default function CriarCampanha() {
     ignoreRestrictions: boolean;
     excludeEmails: string[];
   }) => {
-    const scheduledAt = scheduleDate && scheduleTime ? `${scheduleDate}T${scheduleTime}:00` : null;
+    const scheduledAt = scheduleDate && scheduleTime
+      ? `${scheduleDate}T${scheduleTime}:00-03:00`
+      : null;
     setSaving(true);
     try {
       const excludeSet = new Set(opts.excludeEmails.map(e => e.toLowerCase()));
@@ -601,8 +603,10 @@ export default function CriarCampanha() {
         ignore_email_restrictions: opts.ignoreRestrictions,
       });
       notification.success(
-        scheduledAt ? 'Campanha agendada!' : 'Campanha criada!',
-        scheduledAt ? `Será enviada em ${scheduleDate} às ${scheduleTime}.` : 'Acesse a lista para iniciar o envio.'
+        scheduledAt ? 'Campanha agendada!' : 'Campanha iniciada!',
+        scheduledAt
+          ? `Envio automático em ${scheduleDate} às ${scheduleTime} (Brasília), dentro do horário de trabalho.`
+          : 'Envio automático iniciado (respeitando o horário de trabalho da campanha).'
       );
       router.push('/email-marketing/campanhas');
     } catch (error: any) {
@@ -1434,7 +1438,11 @@ export default function CriarCampanha() {
 
             <div className="mb-6 p-6 bg-purple-500/10 border-2 border-purple-500/30 rounded-xl">
               <h3 className="text-xl font-bold mb-4 text-purple-300">📅 Data e Hora de Início (Opcional)</h3>
-              <p className="text-sm text-white/70 mb-4">Defina quando a campanha deve começar. Deixe em branco para iniciar manualmente.</p>
+              <p className="text-sm text-white/70 mb-4">
+                Horário de <span className="text-white font-bold">Brasília</span>. Deixe em branco para iniciar na hora
+                (dentro do horário de trabalho desta campanha). Com data/hora, o envio começa automaticamente nesse momento —
+                sem precisar clicar em Iniciar.
+              </p>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-base font-bold mb-2 text-white/90">Data de Início</label>
@@ -1442,18 +1450,22 @@ export default function CriarCampanha() {
                     className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30 transition-all" />
                 </div>
                 <div>
-                  <label className="block text-base font-bold mb-2 text-white/90">Hora de Início</label>
+                  <label className="block text-base font-bold mb-2 text-white/90">Hora de Início (Brasília)</label>
                   <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)}
                     className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30 transition-all" />
                 </div>
               </div>
               {scheduleDate && scheduleTime ? (
                 <div className="mt-4 p-4 bg-green-500/10 border-2 border-green-500/30 rounded-xl">
-                  <p className="text-base text-green-300 font-bold">✅ Campanha iniciará em: <span className="text-white">{scheduleDate} às {scheduleTime}</span></p>
+                  <p className="text-base text-green-300 font-bold">
+                    ✅ Agendada para <span className="text-white">{scheduleDate} às {scheduleTime}</span> (Brasília) — inicia sozinha
+                  </p>
                 </div>
               ) : (
-                <div className="mt-4 p-4 bg-yellow-500/10 border-2 border-yellow-500/30 rounded-xl">
-                  <p className="text-base text-yellow-300 font-bold">⚡ Campanha ficará como <span className="text-white">RASCUNHO</span> para iniciar manualmente</p>
+                <div className="mt-4 p-4 bg-orange-500/10 border-2 border-orange-500/30 rounded-xl">
+                  <p className="text-base text-orange-300 font-bold">
+                    ⚡ Sem agendamento → inicia <span className="text-white">na hora</span>, dentro do horário de trabalho da campanha
+                  </p>
                 </div>
               )}
             </div>
@@ -1476,7 +1488,7 @@ export default function CriarCampanha() {
                   </div>
                   <div className="p-4 bg-white/5 rounded-xl">
                     <ul className="text-sm text-white/70 space-y-1">
-                      <li>📌 Envia somente entre {workStart} e {workEnd} todos os dias</li>
+                      <li>📌 Envia somente entre {workStart} e {workEnd} (horário de Brasília)</li>
                       <li>⏸ Passou do horário → <span className="text-yellow-300 font-bold">PAUSA automática</span></li>
                       <li>▶️ Chegou o horário → <span className="text-green-300 font-bold">RETOMA automática</span></li>
                     </ul>

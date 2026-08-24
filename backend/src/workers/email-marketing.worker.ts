@@ -2,6 +2,7 @@ import { pool } from '../database/connection';
 import { ensureEmailHtml, applyEmailVariables, generateProtocol, detectUsedEmailVars } from '../utils/email-html';
 import { sendMarketingEmail } from '../services/email-marketing-provider.service';
 import { buildInterceptReplyTo } from '../utils/email-reply-token';
+import { isWithinBrazilWorkHours } from '../utils/timezone';
 
 let isRunning = false;
 
@@ -43,24 +44,6 @@ function formatSendError(err: any, fromEmail: string, domain: string): string {
   }
   const extra = details && details !== msg ? ` — ${details}` : '';
   return `${msg}${extra}`.slice(0, 500);
-}
-
-// Verifica se o horário atual (America/Sao_Paulo) está dentro da janela de trabalho
-function isWithinWorkHours(startTime: string, endTime: string): boolean {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'America/Sao_Paulo',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date());
-  const hour = Number(parts.find(p => p.type === 'hour')?.value || 0);
-  const minute = Number(parts.find(p => p.type === 'minute')?.value || 0);
-  const [startH, startM] = (startTime || '08:00').split(':').map(Number);
-  const [endH, endM] = (endTime || '20:00').split(':').map(Number);
-  const currentMinutes = hour * 60 + minute;
-  const startMinutes = startH * 60 + startM;
-  const endMinutes = endH * 60 + endM;
-  return currentMinutes >= startMinutes && currentMinutes < endMinutes;
 }
 
 // Delay aleatório entre min e max segundos
@@ -165,11 +148,11 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
   const check = await pool.query(`SELECT status FROM email_marketing_campaigns WHERE id=$1`, [campaign.id]);
   if (check.rows[0]?.status !== 'sending') return;
 
-  // Verifica horário de trabalho
+  // Verifica horário de trabalho da campanha (Brasília)
   const workStart = campaign.work_start_time || '08:00';
   const workEnd   = campaign.work_end_time   || '20:00';
-  if (!isWithinWorkHours(workStart, workEnd)) {
-    console.log(`⏰ Campanha ${campaign.id} fora do horário de trabalho (${workStart}-${workEnd}), aguardando...`);
+  if (!isWithinBrazilWorkHours(workStart, workEnd)) {
+    console.log(`⏰ Campanha ${campaign.id} fora do horário de trabalho BRT (${workStart}-${workEnd}), aguardando...`);
     return;
   }
 
@@ -506,19 +489,63 @@ async function processOneCampaignTick(campaign: any): Promise<void> {
   await randomDelay(minSec, maxSec);
 }
 
+async function ensureListRecipientsForCampaign(campaign: any): Promise<void> {
+  const listId = campaign.list_id ? Number(campaign.list_id) : null;
+  const tenantId = campaign.tenant_id ? Number(campaign.tenant_id) : null;
+  if (!listId || !tenantId) return;
+
+  const contacts = await pool.query(
+    `SELECT email, name, cpf, phone, var1, var2, var3, var4, var5
+     FROM email_marketing_contacts
+     WHERE list_id=$1 AND tenant_id=$2 AND status='active'`,
+    [listId, tenantId]
+  );
+  for (const c of contacts.rows) {
+    await pool.query(
+      `INSERT INTO email_marketing_recipients (tenant_id, campaign_id, email, name, cpf, phone, var1, var2, var3, var4, var5)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (campaign_id, email) DO NOTHING`,
+      [
+        tenantId, campaign.id, c.email, c.name, c.cpf || null, c.phone || null,
+        c.var1 || null, c.var2 || null, c.var3 || null, c.var4 || null, c.var5 || null,
+      ]
+    );
+  }
+  const total = await pool.query(
+    `SELECT COUNT(*)::int as total FROM email_marketing_recipients WHERE campaign_id=$1`,
+    [campaign.id]
+  );
+  await pool.query(
+    `UPDATE email_marketing_campaigns SET total_contacts=$1, updated_at=NOW() WHERE id=$2`,
+    [total.rows[0].total, campaign.id]
+  );
+}
+
 async function processCampaigns() {
   if (isRunning) return;
   isRunning = true;
 
   try {
-    // 1. Ativar campanhas agendadas cujo horário chegou
-    await pool.query(`
+    // 1. Ativar campanhas agendadas cujo horário (UTC salvo a partir de Brasília) chegou
+    const due = await pool.query(`
       UPDATE email_marketing_campaigns
       SET status='sending', started_at=NOW(), sent_in_session=0, updated_at=NOW()
       WHERE status='scheduled'
         AND scheduled_at IS NOT NULL
         AND scheduled_at <= NOW()
+      RETURNING id, tenant_id, list_id, name, scheduled_at
     `);
+
+    for (const row of due.rows) {
+      console.log(
+        `▶️ Campanha agendada ${row.id} (${row.name}) ativada — scheduled_at=${row.scheduled_at}`
+      );
+      try {
+        await ensureListRecipientsForCampaign(row);
+      } catch (e: any) {
+        console.error(`❌ Falha ao carregar lista da campanha ${row.id}:`, e?.message || e);
+      }
+    }
 
     // Recupera recipients travados em 'sending' (crash / timeout)
     await pool.query(`
