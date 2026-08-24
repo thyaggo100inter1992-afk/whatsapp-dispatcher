@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaGlobe, FaArrowLeft, FaPlus, FaTrash, FaSync, FaCheckCircle, FaSpinner, FaCopy, FaTimes, FaClock, FaWifi, FaExclamationTriangle } from 'react-icons/fa';
+import { FaGlobe, FaArrowLeft, FaPlus, FaTrash, FaSync, FaCheckCircle, FaSpinner, FaCopy, FaTimes, FaClock, FaWifi, FaExclamationTriangle, FaDownload } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -30,6 +30,87 @@ const STATUS = {
 };
 
 const POLL_INTERVAL = 30;
+
+/** Host FQDN com ponto final (BIND / Cloudflare Importar zona) */
+function toFqdnHost(host: string, domain: string): string {
+  const root = String(domain || '').trim().toLowerCase().replace(/\.$/, '');
+  let h = String(host || '').trim().replace(/\.$/, '');
+  if (!h || h === '@' || h === root) return `${root}.`;
+  const lower = h.toLowerCase();
+  if (lower === root || lower.endsWith(`.${root}`)) return `${h}.`;
+  return `${h}.${root}.`;
+}
+
+function formatBindTxtValue(value: string): string {
+  const raw = String(value || '').trim().replace(/^"|"$/g, '');
+  const escaped = raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `"${escaped}"`;
+}
+
+/** Gera zona BIND a partir de dns_records (dns[] do SMTP / SendGrid / Mailgun). */
+function buildBindZoneFile(domain: string, records: any[], providerLabel = 'NettSistemas Envios'): string {
+  const root = String(domain || '').trim().toLowerCase().replace(/\.$/, '');
+  const lines: string[] = [
+    `; Registros DNS para ${root} — ${providerLabel}`,
+    `; Importe este arquivo no Cloudflare: DNS → Importar zona`,
+    `; Gerado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} (horário de Brasília)`,
+    '',
+  ];
+
+  const list = Array.isArray(records) ? records : [];
+  for (const rec of list) {
+    const type = String(rec.record_type || rec.type || 'TXT').toUpperCase();
+    if (!['TXT', 'MX', 'CNAME', 'A', 'AAAA', 'NS', 'SRV'].includes(type)) continue;
+
+    const hostRaw = String(rec.host || rec.name || root).trim();
+    const fqdn = toFqdnHost(hostRaw, root);
+    const label = String(rec.label || '').trim();
+    if (label) lines.push(`; ${label}`);
+
+    const ttl = 300;
+    let value = String(rec.value || '').trim();
+    if (!value) continue;
+
+    if (type === 'MX') {
+      const prio = rec.priority != null && rec.priority !== '' ? Number(rec.priority) : 10;
+      let target = value.replace(/\.$/, '');
+      if (!target.includes('.')) target = `${target}.${root}`;
+      lines.push(`${fqdn.padEnd(40)} ${ttl}  IN  MX  ${prio} ${target}.`);
+    } else if (type === 'TXT') {
+      lines.push(`${fqdn.padEnd(40)} ${ttl}  IN  TXT  ${formatBindTxtValue(value)}`);
+    } else if (type === 'CNAME') {
+      let target = value.replace(/\.$/, '');
+      if (target && !target.includes('.')) target = `${target}.${root}`;
+      lines.push(`${fqdn.padEnd(40)} ${ttl}  IN  CNAME  ${target}.`);
+    } else {
+      lines.push(`${fqdn.padEnd(40)} ${ttl}  IN  ${type}  ${value}`);
+    }
+  }
+
+  lines.push('');
+  return lines.join('\n');
+}
+
+function downloadBindZone(domain: string, records: any[], provider?: string | null) {
+  const p = String(provider || '').toLowerCase();
+  const label = p.includes('nettsistemas')
+    ? 'NettSistemas Envios'
+    : p.includes('sendgrid')
+      ? 'SendGrid'
+      : p.includes('mailgun')
+        ? 'Mailgun'
+        : 'Disparador';
+  const content = buildBindZoneFile(domain, records, label);
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${String(domain).replace(/^\.+|\.+$/g, '')}-dns-cloudflare.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 export default function Dominios() {
   const router = useRouter();
@@ -259,10 +340,27 @@ export default function Dominios() {
       {showDns && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-dark-800 border-2 border-yellow-500/40 rounded-2xl p-8 max-w-3xl w-full my-4 shadow-2xl shadow-yellow-500/10">
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
               <h2 className="text-xl font-black text-white">🔧 Registros DNS — {showDns.domain}</h2>
-              <button onClick={() => setShowDns(null)} className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all" title="Fechar — verificação continua em segundo plano"><FaTimes className="text-xl" /></button>
+              <div className="flex items-center gap-2">
+                {Array.isArray(showDns.dns_records) && showDns.dns_records.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      downloadBindZone(showDns.domain, showDns.dns_records, showDns.provider);
+                      notification.success('Arquivo baixado', 'Importe no Cloudflare: DNS → Importar zona');
+                    }}
+                    className="px-3 py-2 rounded-lg text-sm font-bold bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/30 flex items-center gap-2"
+                  >
+                    <FaDownload /> Baixar arquivo DNS
+                  </button>
+                )}
+                <button onClick={() => setShowDns(null)} className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all" title="Fechar — verificação continua em segundo plano"><FaTimes className="text-xl" /></button>
+              </div>
             </div>
+            <p className="text-xs text-white/50 mb-4">
+              Mais rápido: baixe o arquivo .txt e no Cloudflare use <strong className="text-white/70">DNS → Importar zona</strong>.
+            </p>
 
             {/* Banner status */}
             {showDns.status === 'active' && showDns.dns_records && Array.isArray(showDns.dns_records) && showDns.dns_records.every((r: any) => r.valid === 'valid') ? (
@@ -504,7 +602,9 @@ export default function Dominios() {
           <div className="bg-blue-500/10 border-2 border-blue-500/30 rounded-2xl p-5 text-sm text-blue-300 flex items-start gap-4">
             <FaExclamationTriangle className="text-blue-400 text-xl flex-shrink-0 mt-0.5" />
             <div>
-              <strong>ℹ️ Como funciona:</strong> Ao adicionar um domínio, o sistema exibe os registros DNS para configurar. Após configurar no seu provedor, o sistema verifica automaticamente a cada {POLL_INTERVAL} segundos — mesmo com o modal fechado.
+              <strong>ℹ️ Como funciona:</strong> Ao adicionar um domínio, o sistema exibe os registros DNS.
+              Use <strong>Baixar arquivo DNS</strong> e importe no Cloudflare em <strong>DNS → Importar zona</strong>.
+              Depois o sistema verifica automaticamente a cada {POLL_INTERVAL} segundos — mesmo com o modal fechado.
             </div>
           </div>
 
@@ -589,6 +689,18 @@ export default function Dominios() {
                         {d.dns_records && (
                           <button onClick={() => setShowDns(d)} className="px-4 py-2.5 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/40 rounded-xl font-bold text-sm flex items-center gap-2 transition-all">
                             🔧 Ver DNS
+                          </button>
+                        )}
+                        {Array.isArray(d.dns_records) && d.dns_records.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              downloadBindZone(d.domain, d.dns_records, d.provider);
+                              notification.success('Arquivo baixado', 'Importe no Cloudflare: DNS → Importar zona');
+                            }}
+                            className="px-4 py-2.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 rounded-xl font-bold text-sm flex items-center gap-2 transition-all"
+                          >
+                            <FaDownload /> Baixar DNS
                           </button>
                         )}
                         {domainHasPendingRecords(d) && (
