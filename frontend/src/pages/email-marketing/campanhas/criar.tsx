@@ -6,7 +6,7 @@ import {
   FaBullhorn, FaArrowLeft, FaCheckCircle, FaSpinner, FaPlus, FaTrash,
   FaEnvelope, FaRandom, FaClock, FaPause, FaCalendarAlt, FaInfoCircle,
   FaClipboard, FaUpload, FaListUl, FaFileExcel, FaRocket, FaUsers,
-  FaExclamationTriangle, FaBolt, FaChartLine,
+  FaExclamationTriangle, FaBolt, FaChartLine, FaSearch, FaTimes, FaEdit, FaChevronDown, FaChevronUp,
 } from 'react-icons/fa';
 import * as XLSX from 'xlsx';
 import api from '@/services/api';
@@ -146,9 +146,16 @@ export default function CriarCampanha() {
   const [domainId, setDomainId] = useState(''); // legado / primeiro selecionado
   const [domainIds, setDomainIds] = useState<number[]>([]);
   const [listId, setListId] = useState('');
-  const [templateId, setTemplateId] = useState('');
-  const [bodyHtmls, setBodyHtmls] = useState<string[]>(['']);
-  const [loadTplForIndex, setLoadTplForIndex] = useState<number | null>(null);
+  /** Templates salvos selecionados (rotação) — só o corpo, sem puxar assunto */
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<number[]>([]);
+  /** Edição opcional do HTML de um template selecionado */
+  const [templateOverrides, setTemplateOverrides] = useState<Record<number, string>>({});
+  const [editingTemplateId, setEditingTemplateId] = useState<number | null>(null);
+  /** Textos escritos na hora (sem template) */
+  const [customBodies, setCustomBodies] = useState<string[]>([]);
+  const [editingCustomIndex, setEditingCustomIndex] = useState<number | null>(null);
+  const [tplSearchQuery, setTplSearchQuery] = useState('');
+  const [tplExcludeQuery, setTplExcludeQuery] = useState('');
   const [replyTo, setReplyTo] = useState('');
 
   const [recipientSource, setRecipientSource] = useState<RecipientSource>('list');
@@ -188,43 +195,6 @@ export default function CriarCampanha() {
     }).catch(() => {});
   }, []);
 
-  const handleTemplateSelect = (id: string) => {
-    setTemplateId(id);
-    if (!id) return;
-    const tpl = templates.find(t => t.id === parseInt(id, 10));
-    if (!tpl) return;
-
-    const raw = (tpl as any).subjects;
-    let list: string[] = [];
-    if (Array.isArray(raw) && raw.length) {
-      list = raw.map((s: any) => String(s || '').trim()).filter(Boolean);
-    } else if (typeof raw === 'string' && raw.trim()) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) list = parsed.map((s: any) => String(s || '').trim()).filter(Boolean);
-      } catch { /* ignore */ }
-    }
-    if (!list.length && tpl.subject && String(tpl.subject).trim()) {
-      list = [String(tpl.subject).trim()];
-    }
-
-    // Sempre sobe os assuntos do template (ou deixa em branco se o template não tiver)
-    setSubjects(list.length ? list : ['']);
-    setSubjectMode('manual');
-    if (tpl.body_html) {
-      setBodyHtmls(prev => {
-        const next = [...prev];
-        // Preenche o 1º modelo se estiver vazio; senão adiciona como novo modelo
-        const firstPlain = String(next[0] || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim();
-        if (!firstPlain) {
-          next[0] = tpl.body_html;
-          return next;
-        }
-        return [...next, tpl.body_html];
-      });
-    }
-  };
-
   const isBodyFilled = (html: string) => {
     const plain = String(html || '')
       .replace(/<[^>]+>/g, ' ')
@@ -234,26 +204,64 @@ export default function CriarCampanha() {
     return !!plain;
   };
 
-  const finalBodies: string[] = bodyHtmls.filter(isBodyFilled);
+  const filteredTemplates = templates.filter((t) => {
+    const name = String(t.name || '').toLowerCase();
+    if (tplSearchQuery.trim() && !name.includes(tplSearchQuery.trim().toLowerCase())) return false;
+    if (tplExcludeQuery.trim() && name.includes(tplExcludeQuery.trim().toLowerCase())) return false;
+    return true;
+  });
 
-  const addBodyVariant = () => setBodyHtmls(prev => [...prev, '']);
-  const removeBodyVariant = (i: number) =>
-    setBodyHtmls(prev => (prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i)));
-  const updateBodyVariant = (i: number, html: string) =>
-    setBodyHtmls(prev => prev.map((h, idx) => (idx === i ? html : h)));
-
-  const loadTemplateIntoBody = (index: number, tplId: string) => {
-    setLoadTplForIndex(null);
-    if (!tplId) return;
-    const tpl = templates.find(t => t.id === parseInt(tplId, 10));
-    if (!tpl?.body_html) return;
-    updateBodyVariant(index, tpl.body_html);
-    const hasSubjects = subjects.some(s => String(s || '').trim());
-    if (!hasSubjects && tpl.subject) {
-      setSubjects([String(tpl.subject).trim()]);
-      setSubjectMode('manual');
-    }
+  const toggleTemplate = (id: number) => {
+    setSelectedTemplateIds((prev) => {
+      if (prev.includes(id)) {
+        setTemplateOverrides((o) => {
+          const next = { ...o };
+          delete next[id];
+          return next;
+        });
+        if (editingTemplateId === id) setEditingTemplateId(null);
+        return prev.filter((x) => x !== id);
+      }
+      return [...prev, id];
+    });
   };
+
+  const selectAllFilteredTemplates = () => {
+    setSelectedTemplateIds((prev) => {
+      const set = new Set(prev);
+      filteredTemplates.forEach((t) => set.add(t.id));
+      return Array.from(set);
+    });
+  };
+
+  const clearSelectedTemplates = () => {
+    setSelectedTemplateIds([]);
+    setTemplateOverrides({});
+    setEditingTemplateId(null);
+  };
+
+  const resolveTemplateBody = (id: number): string => {
+    if (templateOverrides[id] !== undefined) return templateOverrides[id];
+    return templates.find((t) => t.id === id)?.body_html || '';
+  };
+
+  const finalBodies: string[] = [
+    ...selectedTemplateIds.map(resolveTemplateBody).filter(isBodyFilled),
+    ...customBodies.filter(isBodyFilled),
+  ];
+
+  const addCustomBody = () => {
+    setCustomBodies((prev) => [...prev, '']);
+    setEditingCustomIndex(customBodies.length);
+  };
+
+  const removeCustomBody = (i: number) => {
+    setCustomBodies((prev) => prev.filter((_, idx) => idx !== i));
+    setEditingCustomIndex(null);
+  };
+
+  const updateCustomBody = (i: number, html: string) =>
+    setCustomBodies((prev) => prev.map((h, idx) => (idx === i ? html : h)));
 
   const handleSenderCsvUpload = async (file: File) => {
     try {
@@ -580,7 +588,7 @@ export default function CriarCampanha() {
         domain_ids: domainIds,
         list_id: recipientSource === 'list' ? listId : null,
         recipients: recipientsPayload,
-        template_id: templateId || null,
+        template_id: selectedTemplateIds[0] || null,
         body_html: finalBodies[0] || null,
         body_htmls: finalBodies.length ? finalBodies : undefined,
         delay_seconds_min: delayMin,
@@ -1212,93 +1220,180 @@ export default function CriarCampanha() {
             )}
           </div>
 
-          {/* ══ 5. CONTEÚDO ══ */}
+          {/* ══ 5. MODELOS DE MENSAGEM ══ */}
           <div className={sectionCls}>
             <div className="flex items-center gap-4 mb-2">
               <StepBadge n={5} />
               <div>
                 <h2 className="text-3xl font-black text-white">Modelos de mensagem</h2>
                 <p className="text-white/60 text-sm mt-1">
-                  Cadastre um ou vários textos/templates — o sistema rotaciona a cada envio (igual aos assuntos)
+                  Selecione vários templates salvos (filtros iguais à campanha WhatsApp). Assuntos ficam só na seção 4 — não vêm do template.
                 </p>
               </div>
             </div>
-            <div className="space-y-6 mt-4">
-              <div>
-                <label className={labelCls}>Carregar template salvo (opcional)</label>
-                <select value={templateId} onChange={e => handleTemplateSelect(e.target.value)} className={inputCls}>
-                  <option value="">Escolher template para preencher um modelo…</option>
-                  {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-                <p className="text-sm text-white/50 mt-2">
-                  Se o 1º modelo estiver vazio, preenche ele. Se já tiver conteúdo, <strong className="text-white/70">adiciona um novo modelo</strong> e sobe os assuntos do template.
-                </p>
+
+            <div className="space-y-5 mt-4">
+              {/* Filtros */}
+              <div className="p-5 bg-dark-700/50 rounded-xl border border-white/10 space-y-4">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold mb-2 text-white/90 flex items-center gap-2">
+                      <FaSearch /> Buscar template
+                    </label>
+                    <input
+                      type="text"
+                      className={inputCls}
+                      placeholder="Digite para buscar pelo nome..."
+                      value={tplSearchQuery}
+                      onChange={(e) => setTplSearchQuery(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2 text-white/90 flex items-center gap-2">
+                      <FaTimes /> Excluir que contenham
+                    </label>
+                    <input
+                      type="text"
+                      className={inputCls}
+                      placeholder="Digite para excluir pelo nome..."
+                      value={tplExcludeQuery}
+                      onChange={(e) => setTplExcludeQuery(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button type="button" onClick={selectAllFilteredTemplates}
+                    className="px-4 py-2 rounded-lg text-sm font-bold bg-orange-500/20 text-orange-200 border border-orange-500/40 hover:bg-orange-500/30">
+                    Selecionar todos filtrados ({filteredTemplates.length})
+                  </button>
+                  <button type="button" onClick={clearSelectedTemplates}
+                    className="px-4 py-2 rounded-lg text-sm font-bold bg-white/10 text-white/70 border border-white/15 hover:bg-white/15">
+                    Limpar seleção
+                  </button>
+                  <span className="text-sm text-white/50 ml-auto">
+                    {selectedTemplateIds.length} selecionado{selectedTemplateIds.length !== 1 ? 's' : ''}
+                    {(tplSearchQuery || tplExcludeQuery) ? ` · ${filteredTemplates.length} na lista` : ''}
+                  </span>
+                </div>
               </div>
 
-              {bodyHtmls.map((html, i) => (
-                <div key={i} className="rounded-2xl border-2 border-orange-500/25 bg-black/20 p-4 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                      <FaEnvelope className="text-orange-400" />
-                      Modelo {i + 1}{i === 0 ? ' *' : ''}
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      {templates.length > 0 && (
-                        loadTplForIndex === i ? (
-                          <select
-                            autoFocus
-                            className="bg-dark-700 border border-white/20 rounded-lg text-sm text-white px-3 py-2"
-                            defaultValue=""
-                            onChange={e => loadTemplateIntoBody(i, e.target.value)}
-                            onBlur={() => setLoadTplForIndex(null)}
-                          >
-                            <option value="">Template…</option>
-                            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                          </select>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setLoadTplForIndex(i)}
-                            className="px-3 py-2 text-xs font-bold rounded-lg bg-white/10 text-white/70 hover:bg-white/15 border border-white/15"
-                          >
-                            Usar template
+              {/* Lista com checkbox */}
+              <div className="max-h-[420px] overflow-y-auto space-y-2 pr-1">
+                {templates.length === 0 ? (
+                  <p className="text-white/40 text-sm p-4 text-center">Nenhum template salvo. Crie em Templates ou adicione um texto personalizado abaixo.</p>
+                ) : filteredTemplates.length === 0 ? (
+                  <p className="text-white/40 text-sm p-4 text-center">Nenhum template com esses filtros. Ajuste a busca ou a exclusão.</p>
+                ) : (
+                  filteredTemplates.map((t) => {
+                    const selected = selectedTemplateIds.includes(t.id);
+                    const editing = editingTemplateId === t.id;
+                    return (
+                      <div
+                        key={t.id}
+                        className={`rounded-xl border-2 transition-all ${
+                          selected ? 'border-orange-500/50 bg-orange-500/10' : 'border-white/10 bg-black/20'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 p-3">
+                          <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => toggleTemplate(t.id)}
+                              className="w-5 h-5 accent-orange-500 flex-shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-white font-bold truncate">{t.name}</p>
+                              <p className="text-[11px] text-white/40 truncate">
+                                {isBodyFilled(resolveTemplateBody(t.id)) ? 'Com conteúdo' : 'Sem conteúdo'}
+                                {templateOverrides[t.id] !== undefined ? ' · editado nesta campanha' : ''}
+                              </p>
+                            </div>
+                          </label>
+                          {selected && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingTemplateId(editing ? null : t.id)}
+                              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-white/10 text-white/80 hover:bg-white/15 border border-white/15 flex-shrink-0"
+                            >
+                              <FaEdit /> {editing ? 'Fechar' : 'Editar'}
+                              {editing ? <FaChevronUp /> : <FaChevronDown />}
+                            </button>
+                          )}
+                        </div>
+                        {selected && editing && (
+                          <div className="px-3 pb-3">
+                            <p className="text-[11px] text-white/40 mb-2">
+                              Edição só nesta campanha. Não altera o template salvo e não muda os assuntos.
+                            </p>
+                            <EmailBodyEditor
+                              value={resolveTemplateBody(t.id)}
+                              onChange={(html) => setTemplateOverrides((o) => ({ ...o, [t.id]: html }))}
+                              accent="orange"
+                              minHeight={220}
+                              placeholder="Edite o conteúdo deste modelo..."
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Textos personalizados (sem template) */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-bold text-white/70">Textos feitos na hora (opcional)</p>
+                  <button type="button" onClick={addCustomBody}
+                    className="px-3 py-2 text-xs font-bold rounded-lg bg-orange-500/15 text-orange-200 border border-orange-500/30 hover:bg-orange-500/25 flex items-center gap-1">
+                    <FaPlus /> Novo texto
+                  </button>
+                </div>
+                {customBodies.map((html, i) => {
+                  const open = editingCustomIndex === i;
+                  return (
+                    <div key={i} className="rounded-xl border-2 border-dashed border-orange-500/30 bg-black/15 p-3">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-sm font-bold text-orange-300">Texto personalizado {i + 1}</span>
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => setEditingCustomIndex(open ? null : i)}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white/10 text-white/70 border border-white/15">
+                            {open ? 'Fechar' : 'Editar'}
                           </button>
-                        )
-                      )}
-                      {bodyHtmls.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeBodyVariant(i)}
-                          className="p-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 border-2 border-red-500/30 rounded-xl transition-all"
-                          title="Remover modelo"
-                        >
-                          <FaTrash />
-                        </button>
+                          <button type="button" onClick={() => removeCustomBody(i)}
+                            className="p-2 text-red-300 hover:bg-red-500/20 rounded-lg">
+                            <FaTrash />
+                          </button>
+                        </div>
+                      </div>
+                      {open ? (
+                        <EmailBodyEditor
+                          value={html}
+                          onChange={(v) => updateCustomBody(i, v)}
+                          accent="orange"
+                          minHeight={220}
+                          placeholder="Escreva o texto deste modelo..."
+                        />
+                      ) : (
+                        <p className="text-xs text-white/40">
+                          {isBodyFilled(html) ? 'Conteúdo preenchido — clique em Editar para ver/alterar' : 'Vazio — clique em Editar para escrever'}
+                        </p>
                       )}
                     </div>
-                  </div>
-                  <EmailBodyEditor
-                    value={html}
-                    onChange={v => updateBodyVariant(i, v)}
-                    accent="orange"
-                    minHeight={260}
-                    placeholder={`Digite ou cole o modelo ${i + 1}. Use variáveis como {{primeiro_nome}}.`}
-                  />
-                </div>
-              ))}
-
-              <button
-                type="button"
-                onClick={addBodyVariant}
-                className="w-full py-4 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border-2 border-dashed border-orange-500/40 rounded-xl text-base font-bold flex items-center justify-center gap-2 transition-all"
-              >
-                <FaPlus /> Adicionar outro modelo / texto
-              </button>
+                  );
+                })}
+              </div>
 
               {finalBodies.length > 0 && (
                 <div className="p-4 bg-orange-500/10 border-2 border-orange-500/30 rounded-xl">
                   <p className="text-orange-300 font-bold text-sm flex items-center gap-2">
-                    <FaRandom /> {finalBodies.length} modelo{finalBodies.length > 1 ? 's' : ''} cadastrado{finalBodies.length > 1 ? 's' : ''} — rotação automática a cada envio
+                    <FaRandom /> {finalBodies.length} modelo{finalBodies.length > 1 ? 's' : ''} na rotação
+                    {selectedTemplateIds.length > 0 ? ` (${selectedTemplateIds.length} template${selectedTemplateIds.length > 1 ? 's' : ''}` : ''}
+                    {customBodies.filter(isBodyFilled).length > 0
+                      ? `${selectedTemplateIds.length > 0 ? ' + ' : ' ('}${customBodies.filter(isBodyFilled).length} texto${customBodies.filter(isBodyFilled).length > 1 ? 's' : ''}`
+                      : ''}
+                    {selectedTemplateIds.length > 0 || customBodies.filter(isBodyFilled).length > 0 ? ')' : ''}
                   </p>
                 </div>
               )}
