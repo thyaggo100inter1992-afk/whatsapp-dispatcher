@@ -31,63 +31,171 @@ const STATUS = {
 
 const POLL_INTERVAL = 30;
 
-/** Host FQDN com ponto final (BIND / Cloudflare Importar zona) */
-function toFqdnHost(host: string, domain: string): string {
+function isGoogleDnsRecord(rec: any): boolean {
+  return !!(
+    rec?._is_google_postmaster ||
+    /google-site-verification/i.test(String(rec?.value || '')) ||
+    /postmaster/i.test(String(rec?.label || ''))
+  );
+}
+
+function isExportableDnsRecord(rec: any, provider?: string | null): boolean {
+  const p = String(provider || '').toLowerCase();
+  if (p.includes('nettsistemas') && /sendgrid\.net/i.test(String(rec?.value || ''))) return false;
+  return String(rec?.value || '').trim() !== '';
+}
+
+/** Garante DMARC (6º registro típico) — SMTP às vezes não manda no dns[]. */
+function ensureDmarcRecord(domain: string, records: any[]): any[] {
+  const list = Array.isArray(records) ? [...records] : [];
+  const root = String(domain || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, '');
+  if (!root) return list;
+  const hasDmarc = list.some(
+    (r) =>
+      r?._is_dmarc ||
+      String(r?.host || r?.name || '')
+        .toLowerCase()
+        .includes('_dmarc')
+  );
+  if (!hasDmarc) {
+    list.push({
+      record_type: 'TXT',
+      type: 'TXT',
+      name: `_dmarc.${root}`,
+      host: `_dmarc.${root}`,
+      value: `v=DMARC1; p=none; rua=mailto:dmarc@${root}`,
+      valid: 'unknown',
+      _is_dmarc: true,
+      label: 'DMARC',
+    });
+  }
+  return list;
+}
+
+/** Mesmos registros da tela (inclui DMARC + Google Postmaster). */
+function recordsForCloudflareExport(domain: string, records: any[], provider?: string | null): any[] {
+  const list = ensureDmarcRecord(domain, records).filter((r) => isExportableDnsRecord(r, provider));
+  const seen = new Set<string>();
+  const unique: any[] = [];
+  for (const rec of list) {
+    const type = String(rec.record_type || rec.type || 'TXT').toUpperCase();
+    const host = String(rec.host || rec.name || '').trim().toLowerCase();
+    const value = String(rec.value || '').trim().toLowerCase();
+    const key = `${type}|${host}|${value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(rec);
+  }
+  const rank = (rec: any) => {
+    const type = String(rec.record_type || rec.type || '').toUpperCase();
+    const value = String(rec.value || '');
+    const name = String(rec.host || rec.name || '').toLowerCase();
+    if (type === 'MX') return 1;
+    if (type === 'CNAME') return 2;
+    if (type === 'TXT' && /^v=spf1/i.test(value)) return 3;
+    if (type === 'TXT' && name.includes('_domainkey')) return 4;
+    if (type === 'TXT' && (name.includes('_dmarc') || rec._is_dmarc)) return 5;
+    if (type === 'TXT' && isGoogleDnsRecord(rec)) return 6;
+    return 7;
+  };
+  return unique.sort((a, b) => rank(a) - rank(b));
+}
+
+function asciiLabel(text: string): string {
+  return String(text || '')
+    .replace(/[—–]/g, '-')
+    .replace(/[^\x20-\x7E]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Host BIND: @ na raiz (Cloudflare importa 2 TXT no mesmo host se usar @). */
+function toBindOwner(host: string, domain: string): string {
   const root = String(domain || '').trim().toLowerCase().replace(/\.$/, '');
   let h = String(host || '').trim().replace(/\.$/, '');
-  if (!h || h === '@' || h === root) return `${root}.`;
+  if (!h || h === '@' || h.toLowerCase() === root) return '@';
   const lower = h.toLowerCase();
-  if (lower === root || lower.endsWith(`.${root}`)) return `${h}.`;
-  return `${h}.${root}.`;
+  if (lower === root) return '@';
+  if (lower.endsWith(`.${root}`)) {
+    const sub = h.slice(0, h.length - root.length - 1);
+    return sub || '@';
+  }
+  return h;
 }
 
 function formatBindTxtValue(value: string): string {
   const raw = String(value || '').trim().replace(/^"|"$/g, '');
   const escaped = raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  return `"${escaped}"`;
+  if (escaped.length <= 255) return `"${escaped}"`;
+  const parts: string[] = [];
+  for (let i = 0; i < escaped.length; i += 255) {
+    parts.push(`"${escaped.slice(i, i + 255)}"`);
+  }
+  return parts.join(' ');
 }
 
-/** Gera zona BIND a partir de dns_records (dns[] do SMTP / SendGrid / Mailgun). */
-function buildBindZoneFile(domain: string, records: any[], providerLabel = 'NettSistemas Envios'): string {
+function recordKindLabel(rec: any): string {
+  const type = String(rec.record_type || rec.type || 'TXT').toUpperCase();
+  const value = String(rec.value || '');
+  const name = String(rec.host || rec.name || '').toLowerCase();
+  if (isGoogleDnsRecord(rec)) return 'Google Postmaster (TXT na raiz, junto com o SPF)';
+  if (type === 'TXT' && /^v=spf1/i.test(value)) return 'SPF';
+  if (type === 'TXT' && name.includes('_domainkey')) return 'DKIM';
+  if (type === 'TXT' && (name.includes('_dmarc') || rec._is_dmarc)) return 'DMARC';
+  if (type === 'MX') return 'MX - caixa de e-mail';
+  if (type === 'CNAME') return asciiLabel(rec.label || 'CNAME - rastreio');
+  return asciiLabel(rec.label || type);
+}
+
+/** Zona BIND completa para Cloudflare (todos os registros da tela, inclusive Google Postmaster). */
+function buildBindZoneFile(
+  domain: string,
+  records: any[],
+  providerLabel = 'NettSistemas Envios',
+  provider?: string | null
+): string {
   const root = String(domain || '').trim().toLowerCase().replace(/\.$/, '');
+  const list = recordsForCloudflareExport(domain, records, provider);
   const lines: string[] = [
-    `; Registros DNS para ${root} — ${providerLabel}`,
-    `; Importe este arquivo no Cloudflare: DNS → Importar zona`,
-    `; Gerado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} (horário de Brasília)`,
+    `; DNS ${root} - ${asciiLabel(providerLabel)}`,
+    `; ${list.length} registro(s) - arquivo completo para Cloudflare`,
+    `; Importe em: DNS -> Importar zona  (desmarque "Proxy imported DNS records")`,
+    `; Gerado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,
+    `$ORIGIN ${root}.`,
+    '$TTL 300',
     '',
   ];
 
-  const list = Array.isArray(records) ? records : [];
   for (const rec of list) {
     const type = String(rec.record_type || rec.type || 'TXT').toUpperCase();
     if (!['TXT', 'MX', 'CNAME', 'A', 'AAAA', 'NS', 'SRV'].includes(type)) continue;
 
-    const hostRaw = String(rec.host || rec.name || root).trim();
-    const fqdn = toFqdnHost(hostRaw, root);
-    const label = String(rec.label || '').trim();
-    if (label) lines.push(`; ${label}`);
-
-    const ttl = 300;
     let value = String(rec.value || '').trim();
     if (!value) continue;
+
+    const owner = toBindOwner(String(rec.host || rec.name || root), root);
+    lines.push(`; ${recordKindLabel(rec)}`);
 
     if (type === 'MX') {
       const prio = rec.priority != null && rec.priority !== '' ? Number(rec.priority) : 10;
       let target = value.replace(/\.$/, '');
       if (!target.includes('.')) target = `${target}.${root}`;
-      lines.push(`${fqdn.padEnd(40)} ${ttl}  IN  MX  ${prio} ${target}.`);
+      lines.push(`${owner.padEnd(24)} 300  IN  MX     ${prio} ${target}. ; cf-proxied=false`);
     } else if (type === 'TXT') {
-      lines.push(`${fqdn.padEnd(40)} ${ttl}  IN  TXT  ${formatBindTxtValue(value)}`);
+      lines.push(`${owner.padEnd(24)} 300  IN  TXT    ${formatBindTxtValue(value)} ; cf-proxied=false`);
     } else if (type === 'CNAME') {
       let target = value.replace(/\.$/, '');
       if (target && !target.includes('.')) target = `${target}.${root}`;
-      lines.push(`${fqdn.padEnd(40)} ${ttl}  IN  CNAME  ${target}.`);
+      lines.push(`${owner.padEnd(24)} 300  IN  CNAME  ${target}. ; cf-proxied=false`);
     } else {
-      lines.push(`${fqdn.padEnd(40)} ${ttl}  IN  ${type}  ${value}`);
+      lines.push(`${owner.padEnd(24)} 300  IN  ${type.padEnd(5)}  ${value} ; cf-proxied=false`);
     }
+    lines.push('');
   }
 
-  lines.push('');
   return lines.join('\n');
 }
 
@@ -100,7 +208,8 @@ function downloadBindZone(domain: string, records: any[], provider?: string | nu
       : p.includes('mailgun')
         ? 'Mailgun'
         : 'Disparador';
-  const content = buildBindZoneFile(domain, records, label);
+  const exportRecords = recordsForCloudflareExport(domain, records, provider);
+  const content = buildBindZoneFile(domain, exportRecords, label, provider);
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -110,6 +219,7 @@ function downloadBindZone(domain: string, records: any[], provider?: string | nu
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+  return exportRecords.length;
 }
 
 export default function Dominios() {
@@ -120,6 +230,7 @@ export default function Dominios() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [verifying, setVerifying] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [newDomain, setNewDomain] = useState('');
   const [newProvider, setNewProvider] = useState<'sendgrid' | 'mailgun' | 'nettsistemasenvios'>('nettsistemasenvios');
   const [showAdd, setShowAdd] = useState(false);
@@ -263,13 +374,17 @@ export default function Dominios() {
       type: 'danger',
     });
     if (!ok) return;
+    setDeletingId(id);
+    setDomains((prev) => prev.filter((d) => d.id !== id));
+    if (showDns?.id === id) setShowDns(null);
     try {
-      await api.delete(`/email-marketing/domains/${id}`);
+      await api.delete(`/email-marketing/domains/${id}`, { timeout: 12000 });
       notification.success('Domínio removido', `"${domain}" foi excluído.`);
-      if (showDns?.id === id) setShowDns(null);
-      loadDomains();
     } catch (e: any) {
       notification.error('Erro ao excluir', e.response?.data?.message || e.message);
+      loadDomains();
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -348,8 +463,11 @@ export default function Dominios() {
                   <button
                     type="button"
                     onClick={() => {
-                      downloadBindZone(showDns.domain, showDns.dns_records, showDns.provider);
-                      notification.success('Arquivo baixado', 'Importe no Cloudflare: DNS → Importar zona');
+                      const n = downloadBindZone(showDns.domain, showDns.dns_records, showDns.provider);
+                      notification.success(
+                        'Arquivo completo baixado',
+                        `${n} registros (MX, SPF, DKIM, CNAME, DMARC e Google quando houver). Importe no Cloudflare: DNS → Importar zona`
+                      );
                     }}
                     className="px-3 py-2 rounded-lg text-xs sm:text-sm font-bold bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/30 flex items-center gap-2"
                   >
@@ -409,11 +527,7 @@ export default function Dominios() {
             {/* Registros DNS */}
             {showDns.dns_records && Array.isArray(showDns.dns_records) && showDns.dns_records.length > 0 ? (
               <div className="space-y-3">
-                {showDns.dns_records.filter((rec: any) => {
-                  const p = String(showDns.provider || '').toLowerCase();
-                  if (p.includes('nettsistemas') && /sendgrid\.net/i.test(String(rec.value || ''))) return false;
-                  return true;
-                }).map((rec: any, i: number) => {
+                {recordsForCloudflareExport(showDns.domain, showDns.dns_records, showDns.provider).map((rec: any, i: number) => {
                   const type = (rec.record_type || rec.type || '').toUpperCase();
                   const isDmarc = !!(rec._is_dmarc || (rec.name || '').startsWith('_dmarc.'));
                   const isInbound = !!rec._inbound;
@@ -701,8 +815,11 @@ export default function Dominios() {
                           <button
                             type="button"
                             onClick={() => {
-                              downloadBindZone(d.domain, d.dns_records, d.provider);
-                              notification.success('Arquivo baixado', 'Importe no Cloudflare: DNS → Importar zona');
+                              const n = downloadBindZone(d.domain, d.dns_records, d.provider);
+                              notification.success(
+                                'Arquivo completo baixado',
+                                `${n} registros (MX, SPF, DKIM, CNAME, DMARC e Google quando houver). Importe no Cloudflare: DNS → Importar zona`
+                              );
                             }}
                             className="px-4 py-2.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 rounded-xl font-bold text-sm flex items-center gap-2 transition-all"
                           >
@@ -722,8 +839,12 @@ export default function Dominios() {
                             {verifying === d.id ? <FaSpinner className="animate-spin" /> : '📡'} Rastreamento
                           </button>
                         )}
-                        <button onClick={() => handleDelete(d.id, d.domain)} className="px-4 py-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded-xl font-bold text-sm flex items-center gap-2 transition-all">
-                          <FaTrash /> Excluir
+                        <button
+                          onClick={() => handleDelete(d.id, d.domain)}
+                          disabled={deletingId === d.id}
+                          className="px-4 py-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded-xl font-bold text-sm flex items-center gap-2 disabled:opacity-50 transition-all"
+                        >
+                          {deletingId === d.id ? <FaSpinner className="animate-spin" /> : <FaTrash />} Excluir
                         </button>
                       </div>
                     </div>

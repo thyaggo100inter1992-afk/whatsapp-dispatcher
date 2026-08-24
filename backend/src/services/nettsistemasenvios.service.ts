@@ -76,16 +76,19 @@ export async function getNettEnviosCredentials(): Promise<NettEnviosCreds> {
   };
 }
 
-async function apiFetch(path: string, opts: { method?: string; body?: any } = {}) {
+async function apiFetch(path: string, opts: { method?: string; body?: any; timeoutMs?: number } = {}) {
   const creds = await getNettEnviosCredentials();
   let base = String(creds.api_base_url || DEFAULT_API_BASE).replace(/\/$/, '');
   // smtp1.* deixou de resolver (NXDOMAIN) — API ficou no domínio raiz
   if (/smtp1\.nettsistemasenvios\.com\.br/i.test(base)) {
     base = DEFAULT_API_BASE;
   }
+  const timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : 8000;
 
   const tryOnce = async (apiBase: string) => {
     const url = `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
     let res: Response;
     try {
       res = await fetch(url, {
@@ -96,12 +99,18 @@ async function apiFetch(path: string, opts: { method?: string; body?: any } = {}
           Accept: 'application/json',
         },
         body: opts.body != null ? JSON.stringify(opts.body) : undefined,
+        signal: ac.signal,
       });
     } catch (netErr: any) {
+      const aborted = netErr?.name === 'AbortError' || ac.signal.aborted;
       const cause = netErr?.cause?.code || netErr?.code || '';
       throw new Error(
-        `nettsistemasenvios.com.br: sem conexão com ${apiBase} (${netErr?.message || 'fetch failed'}${cause ? ` / ${cause}` : ''})`
+        aborted
+          ? `nettsistemasenvios.com.br: tempo esgotado (${timeoutMs}ms) em ${apiBase}`
+          : `nettsistemasenvios.com.br: sem conexão com ${apiBase} (${netErr?.message || 'fetch failed'}${cause ? ` / ${cause}` : ''})`
       );
+    } finally {
+      clearTimeout(timer);
     }
     const text = await res.text();
     let data: any = null;
@@ -328,6 +337,8 @@ export async function deleteLocalEmailDomain(opts: {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const { deactivateMailboxesForDomain } = require('./email-mailbox.service');
+    await deactivateMailboxesForDomain(client, id, tenantId);
     await client.query(
       `UPDATE email_marketing_campaigns SET domain_id=NULL WHERE domain_id=$1 AND tenant_id=$2`,
       [id, tenantId]
@@ -468,7 +479,11 @@ function isGooglePostmasterRecord(r: any): boolean {
 /** Normaliza dns[] da API para o formato da tela do disparador */
 export function mapNettEnviosDnsRecords(apiDomain: any): any[] {
   const list = Array.isArray(apiDomain?.dns) ? apiDomain.dns : [];
-  return list.map((r: any) => {
+  const domain = String(apiDomain?.domain || apiDomain?.name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, '');
+  const mapped = list.map((r: any) => {
     const type = String(r.type || r.record_type || 'TXT').toUpperCase();
     const status = String(r.status || '').toLowerCase();
     const valid =
@@ -496,6 +511,31 @@ export function mapNettEnviosDnsRecords(apiDomain: any): any[] {
       google_connected: apiDomain?.google_connected === true,
     };
   });
+
+  // DMARC não vem no dns[] do SMTP — precisa ir para a tela e para o arquivo Cloudflare
+  const hasDmarc = mapped.some(
+    (r: any) =>
+      r._is_dmarc ||
+      String(r.host || r.name || '')
+        .toLowerCase()
+        .includes('_dmarc')
+  );
+  if (!hasDmarc && domain) {
+    mapped.push({
+      record_type: 'TXT',
+      type: 'TXT',
+      name: `_dmarc.${domain}`,
+      host: `_dmarc.${domain}`,
+      value: `v=DMARC1; p=none; rua=mailto:dmarc@${domain}`,
+      label: 'DMARC',
+      hint: 'Recomendado contra spam',
+      required: false,
+      status: 'pending',
+      valid: 'unknown',
+      _is_dmarc: true,
+    });
+  }
+  return mapped;
 }
 
 export function nettEnviosCanSend(apiDomain: any): boolean {

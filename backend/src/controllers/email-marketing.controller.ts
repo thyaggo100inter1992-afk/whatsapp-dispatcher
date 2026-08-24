@@ -357,7 +357,10 @@ export const addDomain = async (req: Request, res: Response) => {
       } catch (e: any) {
         console.warn('[addDomain] upsert smtp user/limits:', e?.message || e);
       }
-      const dnsRecords = mapNettEnviosDnsRecords(apiDomain);
+      const dnsRecords = mapNettEnviosDnsRecords({
+        ...apiDomain,
+        domain: String(domain).trim().toLowerCase(),
+      });
       const externalId = String(apiDomain?.id || apiDomain?.domain_id || '');
       const token = newWebhookToken();
       const canSend = nettEnviosCanSend(apiDomain);
@@ -532,9 +535,31 @@ export const verifyDomain = async (req: Request, res: Response) => {
         console.warn('[verify-domain] nettsistemasenvios:', e?.message || e);
       }
 
-      let dnsRecords = mapNettEnviosDnsRecords(apiDomain || {});
+      let dnsRecords = mapNettEnviosDnsRecords({
+        ...(apiDomain || {}),
+        domain: domainName,
+      });
       if (!dnsRecords.length && Array.isArray(domainRow.rows[0].dns_records)) {
-        dnsRecords = domainRow.rows[0].dns_records;
+        dnsRecords = [...domainRow.rows[0].dns_records];
+      }
+      const hasDmarc = dnsRecords.some(
+        (r: any) =>
+          r._is_dmarc ||
+          String(r.host || r.name || '')
+            .toLowerCase()
+            .includes('_dmarc')
+      );
+      if (!hasDmarc) {
+        dnsRecords.push({
+          record_type: 'TXT',
+          type: 'TXT',
+          name: `_dmarc.${domainName}`,
+          host: `_dmarc.${domainName}`,
+          value: `v=DMARC1; p=none; rua=mailto:dmarc@${domainName}`,
+          label: 'DMARC',
+          valid: 'unknown',
+          _is_dmarc: true,
+        });
       }
       const canSend = nettEnviosCanSend(apiDomain) || dnsRecords.some((r: any) => r.valid === 'valid');
       // Checagem DNS local complementar
@@ -853,10 +878,17 @@ export const registerDomainWebhooks = async (req: Request, res: Response) => {
 
 export const deleteDomain = async (req: Request, res: Response) => {
   const client = await pool.connect();
+  let domainName = '';
+  let provider = '';
+  let externalId: any = null;
+  let removed = false;
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const { id } = req.params;
+
+    const { ensureMailboxDomainNullable, deactivateMailboxesForDomain } = require('../services/email-mailbox.service');
+    await ensureMailboxDomainNullable();
 
     const domainRow = await client.query(
       `SELECT id, domain, provider, external_domain_id FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`,
@@ -866,12 +898,12 @@ export const deleteDomain = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
     }
 
-    const domainName = String(domainRow.rows[0].domain || '');
-    const provider = String(domainRow.rows[0].provider || '').toLowerCase();
-    const externalId = domainRow.rows[0].external_domain_id;
+    domainName = String(domainRow.rows[0].domain || '');
+    provider = String(domainRow.rows[0].provider || '').toLowerCase();
+    externalId = domainRow.rows[0].external_domain_id;
 
     await client.query('BEGIN');
-    // Campanhas e envios únicos podem referenciar o domínio — desvincula antes de excluir
+    await deactivateMailboxesForDomain(client, Number(id), tenantId);
     await client.query(
       `UPDATE email_marketing_campaigns SET domain_id=NULL WHERE domain_id=$1 AND tenant_id=$2`,
       [id, tenantId]
@@ -889,18 +921,7 @@ export const deleteDomain = async (req: Request, res: Response) => {
     if (!deleted.rows[0]) {
       return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
     }
-
-    // SMTP próprio: apaga também no NettMail (não deixa órfão)
-    if (provider.includes('nettsistemas')) {
-      try {
-        const { deleteNettEnviosDomain } = require('../services/nettsistemasenvios.service');
-        await deleteNettEnviosDomain({ domain: domainName, externalId });
-      } catch (e: any) {
-        console.warn('[deleteDomain] sync SMTP:', e?.message || e);
-      }
-    }
-
-    res.json({ success: true, message: `Domínio ${domainName} removido.` });
+    removed = true;
   } catch (error: any) {
     try { await client.query('ROLLBACK'); } catch { /* ignore */ }
     const msg = String(error?.message || '');
@@ -910,9 +931,20 @@ export const deleteDomain = async (req: Request, res: Response) => {
         message: 'Não foi possível excluir: ainda há vínculos com este domínio. Tente novamente.',
       });
     }
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ success: false, message: error.message });
   } finally {
     client.release();
+  }
+
+  if (!removed) return;
+
+  res.json({ success: true, message: `Domínio ${domainName} removido.` });
+
+  if (provider.includes('nettsistemas') && domainName) {
+    const { deleteNettEnviosDomain } = require('../services/nettsistemasenvios.service');
+    deleteNettEnviosDomain({ domain: domainName, externalId }).catch((e: any) => {
+      console.warn('[deleteDomain] SMTP em segundo plano:', e?.message || e);
+    });
   }
 };
 
