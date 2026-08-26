@@ -622,6 +622,31 @@ class QrCampaignWorker {
       }
     }
 
+    // Limpar "Pendente" fantasma: envio não concluído / instância desativada.
+    // Esses registros apareciam na tela mas NUNCA chegavam no celular.
+    try {
+      const cleaned = await queryWithRLS(
+        campaign.tenant_id,
+        `DELETE FROM qr_campaign_messages
+         WHERE campaign_id = $1
+           AND status = 'pending'
+           AND (
+             created_at < NOW() - INTERVAL '90 seconds'
+             OR instance_id IN (
+               SELECT ct.instance_id FROM qr_campaign_templates ct
+               WHERE ct.campaign_id = $1 AND ct.is_active = false
+             )
+           )
+         RETURNING id`,
+        [campaign.id]
+      );
+      if (cleaned.rowCount && cleaned.rowCount > 0) {
+        console.log(`🧹 [QR Worker] Removidos ${cleaned.rowCount} pending fantasma(s) da campanha ${campaign.id} (voltam para a fila)`);
+      }
+    } catch (cleanErr: any) {
+      console.warn('⚠️ Limpeza de pending fantasma:', cleanErr?.message || cleanErr);
+    }
+
     // ✅ VERIFICAR E REATIVAR INSTÂNCIAS QUE RECONECTARAM
     await this.checkAndReactivateInstances(campaign.id);
     
@@ -1423,14 +1448,14 @@ class QrCampaignWorker {
         const isNoWhatsApp =
           !isAccountRestriction && noWhatsAppErrors.some((err) => errorLower.includes(err));
         
-        // ✅ VERIFICAR SE É ERRO DE INSTÂNCIA DESCONECTADA
-        const isDisconnected = errorMessage.toLowerCase().includes('not connected') ||
-                              errorMessage.toLowerCase().includes('session not found') ||
-                              errorMessage.toLowerCase().includes('connection closed') ||
-                              errorMessage.toLowerCase().includes('instance not found') ||
-                              errorMessage.toLowerCase().includes('socket') ||
-                              errorMessage.toLowerCase().includes('disconnected');
-        
+        const isDisconnected =
+          !isAccountRestriction &&
+          (errorMessage.toLowerCase().includes('not connected') ||
+            errorMessage.toLowerCase().includes('session not found') ||
+            errorMessage.toLowerCase().includes('connection closed') ||
+            errorMessage.toLowerCase().includes('instance not found') ||
+            errorMessage.toLowerCase().includes('socket hang up') ||
+            errorMessage.toLowerCase().includes('disconnected'));
         if (isNoWhatsApp) {
           // ✅ Marcar como "sem WhatsApp" (COM RLS)
           await queryWithRLS(
@@ -1472,15 +1497,15 @@ class QrCampaignWorker {
           // Desativar instância da campanha
           await this.deactivateInstanceFromCampaign(campaign.id, template.instance_id, template.instance_name);
           
-          // Marcar mensagem como pendente (não como falha) para reenvio
-          await query(
-            `UPDATE qr_campaign_messages 
-             SET status = 'pending', error_message = $1
-             WHERE id = $2`,
-            [errorMessage, messageId]
+          // Remover o "pending" fantasma — o contato volta para a fila e outra instância envia.
+          // Antes ficava Pendente eterno na tela e NÃO chegava no celular.
+          await queryWithRLS(
+            campaign.tenant_id,
+            `DELETE FROM qr_campaign_messages WHERE id = $1 AND status = 'pending'`,
+            [messageId]
           );
           
-          console.log(`🔄 [QR Worker] Mensagem retornada para fila (será enviada por outra instância)`);
+          console.log(`🔄 [QR Worker] Pending removido — contato ${contact.phone_number} volta para a fila com outra instância`);
         } else {
           // ✅ Marcar como falha normal (COM RLS) — NÃO adicionar à lista Sem WhatsApp
           await queryWithRLS(
