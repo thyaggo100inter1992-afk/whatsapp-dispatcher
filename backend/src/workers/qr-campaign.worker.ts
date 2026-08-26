@@ -330,9 +330,9 @@ interface Contact {
 
 class QrCampaignWorker {
   private isRunning = false;
-  // ✅ CORRIGIDO: Controle por TENANT, não global!
-  // Cada tenant pode ter UMA campanha sendo processada simultaneamente
-  private currentCampaignByTenant: Map<number, number> = new Map();
+  // Igual API Oficial: várias campanhas do mesmo tenant rodam em paralelo.
+  // Lock só por campanha — evita o mesmo ID ser processado duas vezes no intervalo de 5s.
+  private processingCampaignIds: Set<number> = new Set();
   private pauseState: Map<number, { startedAt: Date; durationMinutes: number }> = new Map();
   private autoPausedCampaigns: Set<number> = new Set();
   // ✅ Controle de última verificação proativa de instâncias (por campanha)
@@ -377,43 +377,35 @@ class QrCampaignWorker {
       }
     }, 5000);
 
-    console.log('✅ QR Campaign Worker iniciado com suporte multi-tenant!');
+    console.log('✅ QR Campaign Worker iniciado — campanhas simultâneas (igual API Oficial)!');
     console.log('🔄 Verificando campanhas QR a cada 5 segundos...');
   }
 
   private async processCampaigns() {
     try {
       console.log('🔍 [QR Worker] Buscando campanhas pendentes...');
-      
-      // 🔒 SEGURANÇA: Buscar tenants ativos primeiro
+
       const tenantsResult = await query(
         `SELECT DISTINCT id FROM tenants WHERE status != 'deleted' AND blocked_at IS NULL`
       );
-      
-      const tenantIds = tenantsResult.rows.map(t => t.id);
+
+      const tenantIds = tenantsResult.rows.map((t: { id: number }) => t.id);
       console.log(`📋 [QR Worker] Tenants ativos: ${tenantIds.join(', ')}`);
-      
+
       if (tenantIds.length === 0) {
         console.log('⚠️ [QR Worker] Nenhum tenant ativo encontrado');
         return;
       }
-      
-      // ✅ CORRIGIDO: Buscar campanhas de cada tenant separadamente com RLS
-      // Agrupar campanhas por tenant
-      const campaignsByTenant: Map<number, any[]> = new Map();
-      
+
+      // Busca de todos os tenants (igual API Oficial) — sem bloquear o tenant inteiro
+      const allCampaigns: QrCampaign[] = [];
+
       for (const tenantId of tenantIds) {
-        // Se este tenant já está processando, pular a busca
-        if (this.currentCampaignByTenant.has(tenantId)) {
-          console.log(`⏳ [QR Worker] Tenant ${tenantId} já está processando, pulando busca...`);
-          continue;
-        }
-        
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
           await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId.toString()]);
-          
+
           const result = await client.query(
             `SELECT * FROM qr_campaigns 
              WHERE tenant_id = $1
@@ -422,12 +414,9 @@ class QrCampaignWorker {
              ORDER BY created_at ASC`,
             [tenantId]
           );
-          
+
           await client.query('COMMIT');
-          
-          if (result.rows.length > 0) {
-            campaignsByTenant.set(tenantId, result.rows);
-          }
+          allCampaigns.push(...result.rows);
         } catch (error) {
           await client.query('ROLLBACK');
           console.error(`❌ Erro ao buscar campanhas do tenant ${tenantId}:`, error);
@@ -436,73 +425,61 @@ class QrCampaignWorker {
         }
       }
 
-      const totalCampaigns = Array.from(campaignsByTenant.values()).reduce((sum, arr) => sum + arr.length, 0);
-      console.log(`📊 [QR Worker] Encontradas ${totalCampaigns} campanhas elegíveis em ${campaignsByTenant.size} tenants`);
-      
-      if (campaignsByTenant.size === 0) {
+      // Só pula campanha que JÁ está no meio de um ciclo (não bloqueia as outras do mesmo tenant)
+      const eligible = allCampaigns.filter((c) => !this.processingCampaignIds.has(c.id));
+
+      console.log(
+        `📊 [QR Worker] Encontradas ${allCampaigns.length} elegíveis | ` +
+          `${eligible.length} livres para ciclo | ` +
+          `${this.processingCampaignIds.size} já em processamento`
+      );
+
+      if (eligible.length === 0) {
         return;
       }
 
-      // ✅ PROCESSAR CADA TENANT EM PARALELO
-      // Dentro de cada tenant, processar campanhas SEQUENCIALMENTE
-      const processingPromises: Promise<void>[] = [];
-      
-      for (const [tenantId, campaigns] of campaignsByTenant) {
-        // Se este tenant já está processando (outro ciclo), pular
-        if (this.currentCampaignByTenant.has(tenantId)) {
-          console.log(`⏳ [QR Worker] Tenant ${tenantId} ocupado, ${campaigns.length} campanhas aguardando...`);
-          continue;
-        }
-        
-        // Marcar tenant como ocupado
-        this.currentCampaignByTenant.set(tenantId, campaigns[0].id);
-        
-        // Processar todas as campanhas deste tenant em sequência (assíncrono)
-        processingPromises.push(this.processTenantCampaignsSequentially(tenantId, campaigns));
+      if (eligible.length > 1) {
+        console.log(`🔥 [QR Worker] Processando ${eligible.length} campanhas simultaneamente (igual API Oficial)!`);
       }
-      
-      // Não aguardar - deixar os tenants processarem em paralelo
-      // Os promises vão rodar em background
-      
+
+      // Dispara em paralelo e NÃO aguarda o lote inteiro — cada campanha libera o próprio lock ao terminar o ciclo
+      for (const campaign of eligible) {
+        void this.processSingleCampaignParallel(campaign);
+      }
     } catch (error) {
       console.error('❌ [QR Worker] Erro geral:', error);
     }
   }
 
   /**
-   * ✅ NOVO: Processa todas as campanhas de um tenant em SEQUÊNCIA
-   * Isso garante que campanhas do mesmo tenant não se bloqueiem
+   * Processa uma campanha QR em paralelo com as demais (mesmo padrão da API Oficial).
+   * Lock apenas no ID da campanha para não reentrar no mesmo ciclo de 5s.
    */
-  private async processTenantCampaignsSequentially(tenantId: number, campaigns: QrCampaign[]): Promise<void> {
-    console.log(`\n🚀 [QR Worker] Iniciando processamento de ${campaigns.length} campanha(s) do Tenant ${tenantId}`);
-    
-    for (const campaign of campaigns) {
-      try {
-        console.log(`\n🔎 [QR Worker] Verificando campanha ${campaign.id} (${campaign.name})...`);
-        console.log(`   📊 Status: ${campaign.status}`);
-        console.log(`   📅 Agendada para: ${campaign.scheduled_at}`);
-        console.log(`   🏢 Tenant ID: ${campaign.tenant_id}`);
-        
-        // Atualizar qual campanha está sendo processada
-        this.currentCampaignByTenant.set(tenantId, campaign.id);
-        
-        if (!this.shouldProcessCampaign(campaign)) {
-          console.log(`   ❌ shouldProcessCampaign retornou FALSE - pulando para próxima...`);
-          continue;
-        }
-
-        console.log(`   ✅ shouldProcessCampaign retornou TRUE - processando!`);
-        
-        await this.processCampaign(campaign);
-        
-      } catch (error) {
-        console.error(`❌ Erro ao processar campanha QR ${campaign.id} do Tenant ${tenantId}:`, error);
-      }
+  private async processSingleCampaignParallel(campaign: QrCampaign): Promise<void> {
+    if (this.processingCampaignIds.has(campaign.id)) {
+      return;
     }
-    
-    // ✅ LIBERAR O TENANT após processar TODAS as campanhas
-    this.currentCampaignByTenant.delete(tenantId);
-    console.log(`🔓 [QR Worker] Tenant ${tenantId} liberado (${campaigns.length} campanhas processadas)`);
+
+    this.processingCampaignIds.add(campaign.id);
+
+    try {
+      console.log(`\n🔎 [QR Worker] Verificando campanha ${campaign.id} (${campaign.name})...`);
+      console.log(`   📊 Status: ${campaign.status}`);
+      console.log(`   📅 Agendada para: ${campaign.scheduled_at}`);
+      console.log(`   🏢 Tenant ID: ${campaign.tenant_id}`);
+
+      if (!this.shouldProcessCampaign(campaign)) {
+        console.log(`   ❌ shouldProcessCampaign retornou FALSE - pulando...`);
+        return;
+      }
+
+      console.log(`   ✅ shouldProcessCampaign retornou TRUE - processando em paralelo!`);
+      await this.processCampaign(campaign);
+    } catch (error) {
+      console.error(`❌ Erro ao processar campanha QR ${campaign.id} (tenant ${campaign.tenant_id}):`, error);
+    } finally {
+      this.processingCampaignIds.delete(campaign.id);
+    }
   }
 
   private shouldProcessCampaign(campaign: QrCampaign): boolean {
