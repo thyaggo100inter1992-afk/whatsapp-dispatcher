@@ -1448,14 +1448,28 @@ class QrCampaignWorker {
         const isNoWhatsApp =
           !isAccountRestriction && noWhatsAppErrors.some((err) => errorLower.includes(err));
         
+        // Desconexão REAL da sessão WhatsApp — NÃO confundir com falha de rede/proxy (socket hang up)
         const isDisconnected =
           !isAccountRestriction &&
           (errorMessage.toLowerCase().includes('not connected') ||
             errorMessage.toLowerCase().includes('session not found') ||
             errorMessage.toLowerCase().includes('connection closed') ||
             errorMessage.toLowerCase().includes('instance not found') ||
-            errorMessage.toLowerCase().includes('socket hang up') ||
-            errorMessage.toLowerCase().includes('disconnected'));
+            errorMessage.toLowerCase().includes('logged out') ||
+            (errorMessage.toLowerCase().includes('disconnected') &&
+              !errorMessage.toLowerCase().includes('socket')));
+
+        // Falha de rede/proxy: conexão QR pode continuar ATIVA no painel
+        const isNetworkGlitch =
+          !isAccountRestriction &&
+          !isDisconnected &&
+          (errorMessage.toLowerCase().includes('socket hang up') ||
+            errorMessage.toLowerCase().includes('econnreset') ||
+            errorMessage.toLowerCase().includes('etimedout') ||
+            errorMessage.toLowerCase().includes('econnrefused') ||
+            errorMessage.toLowerCase().includes('proxy') ||
+            errorMessage.toLowerCase().includes('network'));
+
         if (isNoWhatsApp) {
           // ✅ Marcar como "sem WhatsApp" (COM RLS)
           await queryWithRLS(
@@ -1483,6 +1497,26 @@ class QrCampaignWorker {
           );
 
           console.log(`📵 [QR Worker] Número sem WhatsApp: ${contact.phone_number}`);
+        } else if (isNetworkGlitch) {
+          // Proxy/rede caiu na hora do POST — a sessão QR no celular pode continuar ATIVA.
+          // NÃO desativa a instância. Remove o pending fantasma para o contato ir de novo na fila.
+          console.log('');
+          console.log('🌐 ═══════════════════════════════════════════');
+          console.log('🌐  FALHA DE REDE/PROXY NO ENVIO (sessão pode continuar ativa)');
+          console.log(`🌐  Instância: ${template.instance_name} (ID: ${template.instance_id})`);
+          console.log(`🌐  Erro: ${errorMessage}`);
+          console.log('🌐 ═══════════════════════════════════════════');
+          console.log('');
+
+          await queryWithRLS(
+            campaign.tenant_id,
+            `DELETE FROM qr_campaign_messages WHERE id = $1 AND status = 'pending'`,
+            [messageId]
+          );
+
+          console.log(
+            `🔄 [QR Worker] Pending removido por falha de rede — contato ${contact.phone_number} volta para a fila (instância permanece ativa)`
+          );
         } else if (isDisconnected) {
           // ✅ INSTÂNCIA DESCONECTADA - DESATIVAR DA CAMPANHA
           console.log('');
