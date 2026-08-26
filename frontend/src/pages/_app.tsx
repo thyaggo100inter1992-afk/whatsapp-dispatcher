@@ -12,6 +12,7 @@ import frontendLogger from '@/services/frontend-logger';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
 import api from '@/services/api';
 import { buildFileUrl, getApiBaseUrl } from '@/utils/urlHelpers';
+import { isEmbedPath } from '@/utils/embed';
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
@@ -87,7 +88,8 @@ export default function App({ Component, pageProps }: AppProps) {
   const isPublicRoute =
     publicRoutes.includes(router.pathname) ||
     router.pathname.toLowerCase() === '/site' ||
-    router.pathname.startsWith('/institucional');
+    router.pathname.startsWith('/institucional') ||
+    isEmbedPath(router.pathname);
   
   // Se é rota pública, renderiza sem proteção
   if (isPublicRoute) {
@@ -116,7 +118,7 @@ export default function App({ Component, pageProps }: AppProps) {
   }
   
   // Rotas sem layout mas COM autenticação (têm seu próprio design)
-  const noLayoutRoutes = ['/', '/configuracoes/webhook', '/perfil', '/gestao', '/tutoriais', '/planos', '/checkout', '/mudar-plano', '/escolher-plano', '/chat', '/email-marketing/caixa-entrada'];
+  const noLayoutRoutes = ['/', '/configuracoes/webhook', '/perfil', '/gestao', '/integracao', '/tutoriais', '/planos', '/checkout', '/mudar-plano', '/escolher-plano', '/chat', '/email-marketing/caixa-entrada'];
   const isNoLayoutRoute = noLayoutRoutes.includes(router.pathname);
   
   if (isNoLayoutRoute) {

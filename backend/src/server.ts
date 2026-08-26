@@ -55,12 +55,20 @@ const io = new Server(httpServer, {
 export { io };
 
 // Middlewares
-app.use(cors({
-  origin: corsOrigins,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+app.use((req, res, next) => {
+  const isIntegration = String(req.originalUrl || req.url || '').includes('/api/integration');
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || isIntegration || corsOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key'],
+  })(req, res, next);
+});
 
 // Servir arquivos estáticos (mídias do chat)
 app.use('/media', express.static(path.join(__dirname, '../public/media')));

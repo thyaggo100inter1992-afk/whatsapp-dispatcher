@@ -31,6 +31,18 @@ export function generateToken(userId: number, tenantId: number) {
   );
 }
 
+export function generateIntegrationToken(userId: number, tenantId: number, keyId: number) {
+  const options: SignOptions = {
+    expiresIn: '12h',
+  };
+
+  return jwt.sign(
+    { userId, tenantId, integration: true, keyId },
+    JWT_SECRET,
+    options,
+  );
+}
+
 export function generateRefreshToken(userId: number, tenantId: number) {
   const options: SignOptions = {
     expiresIn: REFRESH_TOKEN_EXPIRATION as any,
@@ -148,19 +160,22 @@ export const authenticate = async (
       return;
     }
 
-    const isSessionValid = await sessionService.isSessionValid(token, user.id);
-    if (!isSessionValid) {
-      res.status(401).json({
-        success: false,
-        message: 'Sua sessão foi encerrada porque você fez login em outro dispositivo.',
-        code: 'SESSION_INVALID',
-        forceLogout: true,
-      });
-      return;
-    }
+    const isIntegrationToken = !!(decoded as any).integration;
 
-    // Fire-and-forget com throttle — não bloqueia a requisição HTTP
-    sessionService.updateLastActivity(token);
+    if (!isIntegrationToken) {
+      const isSessionValid = await sessionService.isSessionValid(token, user.id);
+      if (!isSessionValid) {
+        res.status(401).json({
+          success: false,
+          message: 'Sua sessão foi encerrada porque você fez login em outro dispositivo.',
+          code: 'SESSION_INVALID',
+          forceLogout: true,
+        });
+        return;
+      }
+
+      sessionService.updateLastActivity(token);
+    }
 
     const isAllowedRoute = allowedRoutesForBlocked.some((route) => req.originalUrl.includes(route));
     const isBlocked = user.tenant_status === 'blocked';
@@ -267,5 +282,6 @@ module.exports = {
   optionalAuth,
   generateToken,
   generateRefreshToken,
+  generateIntegrationToken,
 };
 

@@ -1,13 +1,12 @@
 /**
  * API Pública - Verificação de WhatsApp (1 número)
- * Autenticação: email + senha no body
+ * Autenticação: token do tenant (nsk_...) OU email + senha (compatibilidade)
  * Controle: rodízio entre instâncias + cooldown de 10s POR INSTÂNCIA
  *
  * POST /api/public/whatsapp/verificar
  */
 
 const express = require('express');
-const bcrypt = require('bcrypt');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -16,6 +15,7 @@ const router = express.Router();
 const { pool } = require('../../database/connection');
 const UazService = require('../../services/uazService');
 const { getTenantUazapCredentials } = require('../../helpers/uaz-credentials.helper');
+const { autenticarApiPublica } = require('../../helpers/public-api-auth.helper');
 
 const COOLDOWN_MS = 10_000; // 10 segundos por instância
 const MAX_ESPERA_MS = 15 * 60 * 1000; // máximo 15 min na fila
@@ -42,45 +42,6 @@ function getBaseUrl(req) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function autenticarUsuario(email, senha) {
-  const userResult = await pool.query(
-    `SELECT
-       u.id,
-       u.tenant_id,
-       u.nome,
-       u.email,
-       u.senha_hash,
-       u.ativo,
-       t.status as tenant_status,
-       t.ativo as tenant_ativo
-     FROM tenant_users u
-     INNER JOIN tenants t ON t.id = u.tenant_id
-     WHERE LOWER(u.email) = LOWER($1)`,
-    [email]
-  );
-
-  if (userResult.rows.length === 0) {
-    return { erro: { status: 401, mensagem: 'Email ou senha inválidos' } };
-  }
-
-  const usuario = userResult.rows[0];
-
-  if (!usuario.ativo) {
-    return { erro: { status: 403, mensagem: 'Usuário inativo. Entre em contato com o administrador.' } };
-  }
-
-  if (!usuario.tenant_ativo) {
-    return { erro: { status: 403, mensagem: 'Conta suspensa. Entre em contato com o suporte.' } };
-  }
-
-  const senhaValida = await bcrypt.compare(senha, usuario.senha_hash);
-  if (!senhaValida) {
-    return { erro: { status: 401, mensagem: 'Email ou senha inválidos' } };
-  }
-
-  return { usuario };
 }
 
 async function buscarInstanciasConectadas(tenantId) {
@@ -265,8 +226,9 @@ async function baixarFotoLocal(profilePicUrl, phoneNumber) {
  * POST /api/public/whatsapp/verificar
  *
  * Body:
- *   email        (obrigatório)
- *   senha        (obrigatório)
+ *   token        (recomendado) - Token do tenant
+ *   email        (alternativo)
+ *   senha        (alternativo)
  *   telefone     (obrigatório)
  *   buscar_foto  (opcional) - default true
  *
@@ -279,12 +241,13 @@ router.post('/verificar', async (req, res) => {
   let slot = null;
 
   try {
-    const { email, senha, telefone, buscar_foto = true } = req.body;
+    const { telefone, buscar_foto = true } = req.body;
 
-    if (!email || !senha) {
-      return res.status(400).json({
+    const auth = await autenticarApiPublica(req);
+    if (auth.erro) {
+      return res.status(auth.erro.status).json({
         sucesso: false,
-        mensagem: 'Email e senha são obrigatórios',
+        mensagem: auth.erro.mensagem,
       });
     }
 
@@ -295,15 +258,7 @@ router.post('/verificar', async (req, res) => {
       });
     }
 
-    const auth = await autenticarUsuario(email, senha);
-    if (auth.erro) {
-      return res.status(auth.erro.status).json({
-        sucesso: false,
-        mensagem: auth.erro.mensagem,
-      });
-    }
-
-    const tenantId = auth.usuario.tenant_id;
+    const tenantId = auth.tenantId;
     const telefoneNormalizado = normalizarTelefone(telefone);
 
     if (telefoneNormalizado.length < 12) {

@@ -1,13 +1,12 @@
 /**
- * API Pública - Cadastro na Lista de Restrição
- * Permite que sistemas externos adicionem telefones na lista de restrição
- * autenticando com email e senha do usuário.
+ * API Pública - Lista de Restrição
+ * Autenticação: token do tenant (nsk_...) OU email + senha (compatibilidade).
  */
 
 const express = require('express');
-const bcrypt = require('bcrypt');
 const router = express.Router();
 const { pool } = require('../../database/connection');
+const { autenticarApiPublica } = require('../../helpers/public-api-auth.helper');
 
 // Mapeamento de nomes em português para os IDs internos das listas
 const LISTAS_VALIDAS = {
@@ -70,8 +69,9 @@ function gerarNumeroAlternativo(telefone) {
  * Adiciona um telefone na lista de restrição
  *
  * Body:
- *   email    (obrigatório) - Email de login
- *   senha    (obrigatório) - Senha de login
+ *   token    (recomendado) - Token do tenant (nsk_...). Também aceita header X-Api-Key
+ *   email    (alternativo) - Email de login, se não enviar token
+ *   senha    (alternativo) - Senha de login, se não enviar token
  *   telefone (obrigatório) - Número do telefone (ex: 5511999999999)
  *   lista    (obrigatório) - nao_me_perturbe | bloqueado | sem_interesse | sem_whatsapp
  *   nome     (opcional)    - Nome do contato
@@ -79,13 +79,13 @@ function gerarNumeroAlternativo(telefone) {
  */
 router.post('/add', async (req, res) => {
   try {
-    const { email, senha, telefone, lista, nome, cpf } = req.body;
+    const { telefone, lista, nome, cpf } = req.body;
 
-    // ── Validação dos campos obrigatórios ──────────────────────────────────
-    if (!email || !senha) {
-      return res.status(400).json({
+    const auth = await autenticarApiPublica(req);
+    if (auth.erro) {
+      return res.status(auth.erro.status).json({
         sucesso: false,
-        mensagem: 'Email e senha são obrigatórios',
+        mensagem: auth.erro.mensagem,
       });
     }
 
@@ -110,58 +110,7 @@ router.post('/add', async (req, res) => {
       });
     }
 
-    // ── Autenticação do usuário ────────────────────────────────────────────
-    const userResult = await pool.query(
-      `SELECT
-         u.id,
-         u.tenant_id,
-         u.nome,
-         u.email,
-         u.senha_hash,
-         u.ativo,
-         t.status as tenant_status,
-         t.ativo as tenant_ativo
-       FROM tenant_users u
-       INNER JOIN tenants t ON t.id = u.tenant_id
-       WHERE LOWER(u.email) = LOWER($1)`,
-      [email]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(401).json({
-        sucesso: false,
-        mensagem: 'Email ou senha inválidos',
-      });
-    }
-
-    const usuario = userResult.rows[0];
-
-    // Verificar usuário ativo
-    if (!usuario.ativo) {
-      return res.status(403).json({
-        sucesso: false,
-        mensagem: 'Usuário inativo. Entre em contato com o administrador.',
-      });
-    }
-
-    // Verificar tenant ativo
-    if (!usuario.tenant_ativo) {
-      return res.status(403).json({
-        sucesso: false,
-        mensagem: 'Conta suspensa. Entre em contato com o suporte.',
-      });
-    }
-
-    // Verificar senha
-    const senhaValida = await bcrypt.compare(senha, usuario.senha_hash);
-    if (!senhaValida) {
-      return res.status(401).json({
-        sucesso: false,
-        mensagem: 'Email ou senha inválidos',
-      });
-    }
-
-    const tenantId = usuario.tenant_id;
+    const tenantId = auth.tenantId;
     const listType = LISTAS_VALIDAS[lista];
     const nomeListaExibicao = NOMES_LISTAS[lista];
 
@@ -260,19 +209,21 @@ router.post('/add', async (req, res) => {
  * Remove um telefone de uma lista de restrição específica (ou de todas as listas)
  *
  * Body:
- *   email    (obrigatório) - Email de login
- *   senha    (obrigatório) - Senha de login
+ *   token    (recomendado) - Token do tenant
+ *   email    (alternativo)
+ *   senha    (alternativo)
  *   telefone (obrigatório) - Número do telefone
  *   lista    (opcional)    - Lista específica para remover. Se omitido, remove de TODAS as listas
  */
 router.post('/remover', async (req, res) => {
   try {
-    const { email, senha, telefone, lista } = req.body;
+    const { telefone, lista } = req.body;
 
-    // ── Validação ──────────────────────────────────────────────────────────
-    if (!email || !senha) {
-      return res.status(400).json({ sucesso: false, mensagem: 'Email e senha são obrigatórios' });
+    const auth = await autenticarApiPublica(req);
+    if (auth.erro) {
+      return res.status(auth.erro.status).json({ sucesso: false, mensagem: auth.erro.mensagem });
     }
+
     if (!telefone) {
       return res.status(400).json({ sucesso: false, mensagem: 'O campo telefone é obrigatório' });
     }
@@ -283,30 +234,7 @@ router.post('/remover', async (req, res) => {
       });
     }
 
-    // ── Autenticação ───────────────────────────────────────────────────────
-    const userResult = await pool.query(
-      `SELECT u.id, u.tenant_id, u.senha_hash, u.ativo, t.ativo as tenant_ativo
-       FROM tenant_users u
-       INNER JOIN tenants t ON t.id = u.tenant_id
-       WHERE LOWER(u.email) = LOWER($1)`,
-      [email]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(401).json({ sucesso: false, mensagem: 'Email ou senha inválidos' });
-    }
-
-    const usuario = userResult.rows[0];
-    if (!usuario.ativo || !usuario.tenant_ativo) {
-      return res.status(403).json({ sucesso: false, mensagem: 'Conta inativa ou suspensa' });
-    }
-
-    const senhaValida = await bcrypt.compare(senha, usuario.senha_hash);
-    if (!senhaValida) {
-      return res.status(401).json({ sucesso: false, mensagem: 'Email ou senha inválidos' });
-    }
-
-    const tenantId = usuario.tenant_id;
+    const tenantId = auth.tenantId;
 
     // ── Normalizar telefone e gerar variações ──────────────────────────────
     const telefoneNormalizado = normalizarTelefone(telefone);
@@ -380,20 +308,21 @@ router.post('/remover', async (req, res) => {
  * Consulta se um ou mais telefones estão em alguma lista de restrição
  *
  * Body:
- *   email     (obrigatório) - Email de login
- *   senha     (obrigatório) - Senha de login
+ *   token     (recomendado) - Token do tenant
+ *   email     (alternativo)
+ *   senha     (alternativo)
  *   telefone  (obrigatório) - Número único OU array de números
  *             Ex: "5511999999999" ou ["5511999999999", "5521888888888"]
  */
 router.post('/consultar', async (req, res) => {
   try {
-    const { email, senha, telefone } = req.body;
+    const { telefone } = req.body;
 
-    // ── Validação ──────────────────────────────────────────────────────────
-    if (!email || !senha) {
-      return res.status(400).json({
+    const auth = await autenticarApiPublica(req);
+    if (auth.erro) {
+      return res.status(auth.erro.status).json({
         sucesso: false,
-        mensagem: 'Email e senha são obrigatórios',
+        mensagem: auth.erro.mensagem,
       });
     }
 
@@ -404,31 +333,7 @@ router.post('/consultar', async (req, res) => {
       });
     }
 
-    // ── Autenticação ───────────────────────────────────────────────────────
-    const userResult = await pool.query(
-      `SELECT u.id, u.tenant_id, u.senha_hash, u.ativo, t.ativo as tenant_ativo
-       FROM tenant_users u
-       INNER JOIN tenants t ON t.id = u.tenant_id
-       WHERE LOWER(u.email) = LOWER($1)`,
-      [email]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(401).json({ sucesso: false, mensagem: 'Email ou senha inválidos' });
-    }
-
-    const usuario = userResult.rows[0];
-
-    if (!usuario.ativo || !usuario.tenant_ativo) {
-      return res.status(403).json({ sucesso: false, mensagem: 'Conta inativa ou suspensa' });
-    }
-
-    const senhaValida = await bcrypt.compare(senha, usuario.senha_hash);
-    if (!senhaValida) {
-      return res.status(401).json({ sucesso: false, mensagem: 'Email ou senha inválidos' });
-    }
-
-    const tenantId = usuario.tenant_id;
+    const tenantId = auth.tenantId;
 
     // ── Normalizar lista de telefones ──────────────────────────────────────
     const telefonesInput = Array.isArray(telefone) ? telefone : [telefone];

@@ -21,8 +21,9 @@ export function useInactivityLogout() {
   const checkIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Não ativar em páginas públicas
+    // Não ativar em páginas públicas ou embed
     if (!user) return;
+    if (router.pathname.startsWith('/embed')) return;
 
     console.log('🕐 Sistema de logout por inatividade ATIVADO');
     console.log(`⏱️  Timeout configurado: ${INACTIVITY_TIMEOUT / 1000 / 60} minutos`);

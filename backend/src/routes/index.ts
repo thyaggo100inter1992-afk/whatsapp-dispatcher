@@ -88,15 +88,24 @@ router.use('/public/institucional', institucionalPublicRoutes);
 console.log('✅ Rota /public/institucional registrada (opt-in institucional)');
 console.log('✅ Rotas de landing page pública registradas (sem autenticação)');
 
+// API de integração (sistema de vendas) — chave nsk_ + gestão de chaves no painel
+const integrationRoutes = require('./integration.routes').default;
+router.use('/integration', integrationRoutes);
+console.log('✅ Rota /integration registrada (API + iframe do sistema de vendas)');
+
 // API Pública - Lista de Restrição (autenticação por email+senha no body)
 const restrictionListPublicRoutes = require('./public/restriction-list-public.routes');
 router.use('/public/restriction-list', restrictionListPublicRoutes);
-console.log('✅ Rota /public/restriction-list registrada (API pública com email+senha)');
+console.log('✅ Rota /public/restriction-list registrada (token do tenant ou email+senha)');
 
 // API Pública - Verificação de WhatsApp (1 número + foto)
 const whatsappVerifyPublicRoutes = require('./public/whatsapp-verify-public.routes');
 router.use('/public/whatsapp', whatsappVerifyPublicRoutes);
-console.log('✅ Rota /public/whatsapp registrada (API pública verificação + foto)');
+console.log('✅ Rota /public/whatsapp registrada (token do tenant ou email+senha)');
+
+const novavidaPublicRoutes = require('./public/novavida-public.routes');
+router.use('/public/novavida', novavidaPublicRoutes);
+console.log('✅ Rota /public/novavida registrada (consulta CPF/CNPJ com token do tenant)');
 
 // Screenshots públicos
 const { getPublicScreenshots } = require('../controllers/admin/screenshots.controller');

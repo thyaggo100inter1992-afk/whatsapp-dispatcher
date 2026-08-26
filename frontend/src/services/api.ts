@@ -1,6 +1,7 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import logger from './logger';
 import { getApiBaseUrl } from '@/utils/urlHelpers';
+import { EMBED_TOKEN_KEY, isEmbedPath } from '@/utils/embed';
 
 // Estender o tipo AxiosRequestConfig para incluir metadata
 declare module 'axios' {
@@ -29,8 +30,8 @@ const api = axios.create({
 // ✅ INTERCEPTOR: Adicionar token JWT em todas as requisições
 api.interceptors.request.use(
   (config) => {
-    // Buscar token do localStorage (mesmo nome usado pelo AuthContext)
-    const token = localStorage.getItem('@WhatsAppDispatcher:token');
+    const embedToken = isEmbedPath() ? localStorage.getItem(EMBED_TOKEN_KEY) : null;
+    const token = embedToken || localStorage.getItem('@WhatsAppDispatcher:token');
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -93,6 +94,9 @@ api.interceptors.response.use(
     }
     
     if (error.response?.status === 401) {
+      if (isEmbedPath()) {
+        return Promise.reject(error);
+      }
       // Extrair informações do erro
       const errorCode = error.response?.data?.code;
       const forceLogout = error.response?.data?.forceLogout;

@@ -342,7 +342,7 @@ async function salvarNaBaseDados(tipo_origem, tipo_documento, documento, dados, 
 // CONSULTA ÚNICA
 // ============================================
 
-router.post('/consultar', checkNovaVidaLimit, async (req, res) => {
+async function consultarDocumentoHandler(req, res) {
   try {
     const { documento, verificarWhatsapp = true, whatsappColumn = 'first' } = req.body;
     
@@ -499,7 +499,9 @@ router.post('/consultar', checkNovaVidaLimit, async (req, res) => {
     console.error('❌ Erro na consulta:', error);
     res.status(500).json({ error: error.message });
   }
-});
+}
+
+router.post('/consultar', checkNovaVidaLimit, consultarDocumentoHandler);
 
 // ============================================
 // OBTER LIMITE E CONTAGEM ATUAL
@@ -1475,4 +1477,5 @@ router.post('/reverificar-whatsapp', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.consultarDocumentoHandler = consultarDocumentoHandler;
 

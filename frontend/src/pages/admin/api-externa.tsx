@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import AdminLayout from '@/components/admin/AdminLayout';
-import { FaPlug, FaCopy, FaCheck, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaLock, FaBan, FaTrash } from 'react-icons/fa';
+import { FaPlug, FaCopy, FaCheck, FaCheckCircle, FaTimesCircle, FaInfoCircle, FaLock, FaBan, FaTrash, FaWhatsapp, FaIdCard } from 'react-icons/fa';
 
 // ── Componente de bloco de código copiável ─────────────────────────────────
 function CodeBlock({ code }: { code: string }) {
@@ -60,9 +60,9 @@ function TabListaRestricao() {
           <FaInfoCircle className="text-blue-400" /> Visão Geral
         </h3>
         <p className="text-gray-300 mb-4">
-          Permite cadastrar e consultar telefones nas listas de restrição. 
-          A autenticação é feita com <strong className="text-white">email e senha</strong> do usuário —
-          o tenant é identificado automaticamente, sem risco de cruzar dados com outros tenants.
+          Permite cadastrar e consultar telefones nas listas de restrição.
+          Use o <strong className="text-white">token do tenant</strong> (<code className="text-emerald-300">nsk_...</code>).
+          Email e senha ainda funcionam por compatibilidade.
         </p>
         <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
           <p className="text-gray-400 text-xs mb-1">URL Base</p>
@@ -106,8 +106,9 @@ function TabListaRestricao() {
           <div>
             <h4 className="text-white font-semibold mb-3">Campos</h4>
             <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-              <Campo nome="email"    tipo="string" obrigatorio={true}  descricao="Email de login do usuário" />
-              <Campo nome="senha"    tipo="string" obrigatorio={true}  descricao="Senha do usuário" />
+              <Campo nome="token"    tipo="string" obrigatorio={false} descricao="Token do tenant (nsk_...). Recomendado. Também aceita header X-Api-Key" />
+              <Campo nome="email"    tipo="string" obrigatorio={false} descricao="Email de login, só se não enviar token" />
+              <Campo nome="senha"    tipo="string" obrigatorio={false} descricao="Senha, só se não enviar token" />
               <Campo nome="telefone" tipo="string" obrigatorio={true}  descricao="Número com DDI e DDD. Ex: 5511999999999" />
               <Campo nome="lista"    tipo="string" obrigatorio={true}  descricao="nao_me_perturbe | bloqueado | sem_interesse | sem_whatsapp" />
               <Campo nome="nome"     tipo="string" obrigatorio={false} descricao="Nome do contato (padrão: usa o telefone)" />
@@ -122,8 +123,7 @@ function TabListaRestricao() {
 Content-Type: application/json
 
 {
-  "email": "usuario@empresa.com",
-  "senha": "sua_senha",
+  "token": "nsk_...",
   "telefone": "5511999999999",
   "lista": "nao_me_perturbe"
 }`} />
@@ -134,8 +134,7 @@ Content-Type: application/json
 Content-Type: application/json
 
 {
-  "email": "usuario@empresa.com",
-  "senha": "sua_senha",
+  "token": "nsk_...",
   "telefone": "5511999999999",
   "lista": "bloqueado",
   "nome": "João Silva",
@@ -190,8 +189,9 @@ Content-Type: application/json
           <div>
             <h4 className="text-white font-semibold mb-3">Campos</h4>
             <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-              <Campo nome="email"    tipo="string"        obrigatorio={true} descricao="Email de login do usuário" />
-              <Campo nome="senha"    tipo="string"        obrigatorio={true} descricao="Senha do usuário" />
+              <Campo nome="token"    tipo="string"        obrigatorio={false} descricao="Token do tenant (nsk_...)" />
+              <Campo nome="email"    tipo="string"        obrigatorio={false} descricao="Email de login, só se não enviar token" />
+              <Campo nome="senha"    tipo="string"        obrigatorio={false} descricao="Senha, só se não enviar token" />
               <Campo nome="telefone" tipo="string | array" obrigatorio={true} descricao='Número único ou array de números. Ex: "5511999999999" ou ["5511...", "5521..."]' />
             </div>
           </div>
@@ -203,8 +203,7 @@ Content-Type: application/json
 Content-Type: application/json
 
 {
-  "email": "usuario@empresa.com",
-  "senha": "sua_senha",
+  "token": "nsk_...",
   "telefone": "5511999999999"
 }`} />
             </div>
@@ -214,8 +213,7 @@ Content-Type: application/json
 Content-Type: application/json
 
 {
-  "email": "usuario@empresa.com",
-  "senha": "sua_senha",
+  "token": "nsk_...",
   "telefone": [
     "5511999999999",
     "5521888888888"
@@ -290,8 +288,9 @@ Content-Type: application/json
           <div>
             <h4 className="text-white font-semibold mb-3">Campos</h4>
             <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-              <Campo nome="email"    tipo="string" obrigatorio={true}  descricao="Email de login do usuário" />
-              <Campo nome="senha"    tipo="string" obrigatorio={true}  descricao="Senha do usuário" />
+              <Campo nome="token"    tipo="string" obrigatorio={false} descricao="Token do tenant (nsk_...)" />
+              <Campo nome="email"    tipo="string" obrigatorio={false} descricao="Email de login, só se não enviar token" />
+              <Campo nome="senha"    tipo="string" obrigatorio={false} descricao="Senha, só se não enviar token" />
               <Campo nome="telefone" tipo="string" obrigatorio={true}  descricao="Número do telefone a ser removido" />
               <Campo nome="lista"    tipo="string" obrigatorio={false} descricao="Lista específica: nao_me_perturbe | bloqueado | sem_interesse | sem_whatsapp. Se omitido, remove de TODAS as listas" />
             </div>
@@ -304,8 +303,7 @@ Content-Type: application/json
 Content-Type: application/json
 
 {
-  "email": "usuario@empresa.com",
-  "senha": "sua_senha",
+  "token": "nsk_...",
   "telefone": "5511999999999",
   "lista": "bloqueado"
 }`} />
@@ -316,8 +314,7 @@ Content-Type: application/json
 Content-Type: application/json
 
 {
-  "email": "usuario@empresa.com",
-  "senha": "sua_senha",
+  "token": "nsk_...",
   "telefone": "5511999999999"
 }`} />
             </div>
@@ -359,11 +356,109 @@ Content-Type: application/json
           <FaInfoCircle /> Informações Importantes
         </h4>
         <ul className="space-y-2 text-gray-300 text-sm">
+          <li>• Prefira o <strong className="text-white">token</strong> do tenant. Email e senha continuam aceitos.</li>
           <li>• O sistema cadastra automaticamente <strong className="text-white">2 versões</strong> do número (com e sem o 9º dígito).</li>
           <li>• Cada usuário só acessa as listas do <strong className="text-white">seu próprio tenant</strong>.</li>
           <li>• A porta <strong className="text-white">3001</strong> é acessível diretamente sem necessidade de nginx.</li>
           <li>• Telefones com data de expiração vencida não aparecem nas consultas.</li>
         </ul>
+      </div>
+    </div>
+  );
+}
+
+function TabWhatsAppVerificar() {
+  const baseUrl = 'https://api.sistemasnettsistemas.com.br';
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-6">
+        <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+          <FaInfoCircle className="text-blue-400" /> Visão Geral
+        </h3>
+        <p className="text-gray-300">
+          Consulta se um número de telefone tem WhatsApp. Usa o mesmo token do tenant.
+          O sistema faz rodízio entre as instâncias QR conectadas daquele cliente.
+        </p>
+      </div>
+
+      <div className="bg-gray-800/50 border border-green-700/50 rounded-xl overflow-hidden">
+        <div className="bg-green-900/40 px-6 py-4 flex items-center gap-3 border-b border-green-700/50">
+          <MethodBadge method="POST" />
+          <code className="text-white font-mono text-sm">/api/public/whatsapp/verificar</code>
+          <span className="text-gray-400 text-sm ml-auto">Consultar número no WhatsApp</span>
+        </div>
+        <div className="p-6 space-y-5">
+          <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+            <Campo nome="token" tipo="string" obrigatorio={false} descricao="Token do tenant (nsk_...). Recomendado" />
+            <Campo nome="telefone" tipo="string" obrigatorio={true} descricao="Número com DDI. Ex: 5511999999999" />
+            <Campo nome="buscar_foto" tipo="boolean" obrigatorio={false} descricao="Buscar foto do perfil. Padrão: true" />
+          </div>
+          <CodeBlock code={`POST ${baseUrl}/api/public/whatsapp/verificar
+Content-Type: application/json
+
+{
+  "token": "nsk_...",
+  "telefone": "5511999999999"
+}`} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabNovaVida() {
+  const baseUrl = 'https://api.sistemasnettsistemas.com.br';
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-6">
+        <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+          <FaInfoCircle className="text-blue-400" /> Visão Geral
+        </h3>
+        <p className="text-gray-300">
+          Consulta CPF ou CNPJ com o mesmo retorno do painel: cadastrais, telefones, e-mails, endereços, QSA e flag de WhatsApp.
+          Consome o limite mensal do tenant. Use o token do cliente.
+        </p>
+      </div>
+
+      <div className="bg-gray-800/50 border border-orange-700/50 rounded-xl overflow-hidden">
+        <div className="bg-orange-900/40 px-6 py-4 flex items-center gap-3 border-b border-orange-700/50">
+          <MethodBadge method="POST" />
+          <code className="text-white font-mono text-sm">/api/public/novavida/consultar</code>
+          <span className="text-gray-400 text-sm ml-auto">Consulta completa Nova Vida</span>
+        </div>
+        <div className="p-6 space-y-5">
+          <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+            <Campo nome="token" tipo="string" obrigatorio={false} descricao="Token do tenant (nsk_...)" />
+            <Campo nome="documento" tipo="string" obrigatorio={true} descricao="CPF ou CNPJ. Também aceita o campo cpf" />
+            <Campo nome="verificarWhatsapp" tipo="boolean" obrigatorio={false} descricao="Verificar WhatsApp nos telefones. Padrão: true" />
+            <Campo nome="whatsappColumn" tipo="string" obrigatorio={false} descricao="first | second | third | all. Padrão: first" />
+          </div>
+          <CodeBlock code={`POST ${baseUrl}/api/public/novavida/consultar
+Content-Type: application/json
+
+{
+  "token": "nsk_...",
+  "documento": "00000000000",
+  "verificarWhatsapp": true,
+  "whatsappColumn": "all"
+}`} />
+          <div>
+            <h4 className="text-white font-semibold mb-3">Resposta (mesmo JSON do painel)</h4>
+            <CodeBlock code={`{
+  "success": true,
+  "tipo": "CPF",
+  "documento": "00000000000",
+  "dados": {
+    "CADASTRAIS": { "NOME": "...", "MAE": "...", "NASC": "...", "SEXO": "...", "RG": "...", "RENDA": "...", "SCORE": "..." },
+    "TELEFONES": [{ "DDD": "11", "TELEFONE": "999999999", "HAS_WHATSAPP": true }],
+    "EMAILS": [{ "EMAIL": "..." }],
+    "ENDERECOS": [{ "LOGRADOURO": "...", "NUMERO": "...", "BAIRRO": "...", "CIDADE": "...", "UF": "...", "CEP": "..." }]
+  }
+}`} />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -378,7 +473,20 @@ const ABAS = [
     descricao: 'Cadastrar e consultar telefones nas listas de restrição',
     componente: <TabListaRestricao />,
   },
-  // Novas APIs serão adicionadas aqui como novos objetos
+  {
+    id: 'whatsapp-verificar',
+    label: 'Consulta de WhatsApp',
+    icon: <FaWhatsapp />,
+    descricao: 'Verificar se o número de telefone tem WhatsApp',
+    componente: <TabWhatsAppVerificar />,
+  },
+  {
+    id: 'novavida',
+    label: 'Nova Vida',
+    icon: <FaIdCard />,
+    descricao: 'Consulta completa de CPF/CNPJ (mesmos dados do painel)',
+    componente: <TabNovaVida />,
+  },
 ];
 
 // ── Página principal ───────────────────────────────────────────────────────

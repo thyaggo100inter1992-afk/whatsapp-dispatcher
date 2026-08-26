@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { FaBuilding, FaCrown, FaUser, FaUsers, FaEdit, FaTrash, FaPlus, FaTimes, FaDollarSign, FaChartLine, FaUsersCog, FaCamera, FaSignOutAlt, FaSquare, FaCheckSquare, FaBan, FaSpinner, FaCheck, FaFileInvoice, FaExclamationTriangle, FaWhatsapp, FaCreditCard, FaSync, FaCheckCircle } from 'react-icons/fa';
+import { FaBuilding, FaCrown, FaUser, FaUsers, FaEdit, FaTrash, FaPlus, FaTimes, FaDollarSign, FaChartLine, FaUsersCog, FaCamera, FaSignOutAlt, FaSquare, FaCheckSquare, FaBan, FaSpinner, FaCheck, FaFileInvoice, FaExclamationTriangle, FaWhatsapp, FaCreditCard, FaSync, FaCheckCircle, FaPlug } from 'react-icons/fa';
 import { useAuth } from '@/contexts/AuthContext';
 import api from '@/services/api';
 import SystemLogo from '@/components/SystemLogo';
@@ -1452,6 +1452,13 @@ export default function Gestao() {
             </div>
             
             <div className="flex items-center gap-4">
+              <button
+                onClick={() => router.push('/integracao')}
+                className="px-4 py-2 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded-lg font-bold transition-all flex items-center gap-2"
+                title="Integração com o sistema de vendas"
+              >
+                <FaPlug /> Integração
+              </button>
               {/* Avatar e Nome do Usuário */}
               <div className="flex items-center gap-3 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20">
                 {user?.avatar ? (

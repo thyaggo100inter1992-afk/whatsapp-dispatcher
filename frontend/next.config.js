@@ -23,6 +23,16 @@ const nextConfig = {
   images: {
     domains: ['localhost', DEFAULT_SOCKET_URL.replace(/^https?:\/\//, ''), 'api.sistemasnettsistemas.com.br', 'sistemasnettsistemas.com.br'],
   },
+  async headers() {
+    return [
+      {
+        source: '/embed/:path*',
+        headers: [
+          { key: 'Content-Security-Policy', value: 'frame-ancestors *' },
+        ],
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

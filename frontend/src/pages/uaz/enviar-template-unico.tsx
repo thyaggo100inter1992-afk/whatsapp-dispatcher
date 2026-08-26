@@ -148,9 +148,9 @@ export default function EnviarTemplateUnico() {
   }, [searchTerm, selectedType, templates, hideSentTemplates, sentTemplates]);
 
   // Exibir notificação
-  const showNotification = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
+  const showNotification = (message: string, type: 'success' | 'error' | 'warning' | 'info', duration = 3001) => {
     setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3001);
+    setTimeout(() => setNotification(null), duration);
   };
 
   // Marcar template como enviado
@@ -670,9 +670,14 @@ export default function EnviarTemplateUnico() {
       }
     } catch (error: any) {
       console.error('Erro ao enviar:', error);
+      const raw = String(error.response?.data?.error || error.message || 'Erro ao enviar');
+      const isWhatsAppRestriction = /463|temporary restriction|iniciar conversas novas|bloqueado pelo próprio WhatsApp/i.test(raw);
       showNotification(
-        `❌ Erro: ${error.response?.data?.error || error.message}`,
-        'error'
+        isWhatsAppRestriction
+          ? 'Este WhatsApp (número de origem) está temporariamente bloqueado pelo próprio WhatsApp para iniciar conversas novas, por volume ou qualidade. Não é erro do template. Troque o Número de Origem para outro aparelho conectado e envie de novo.'
+          : `❌ Erro: ${raw}`,
+        'error',
+        isWhatsAppRestriction ? 12000 : 5000
       );
     } finally {
       setSending(false);
@@ -814,7 +819,7 @@ export default function EnviarTemplateUnico() {
           notification.type === 'warning' ? 'bg-yellow-500/90 border-yellow-400' :
           'bg-blue-500/90 border-blue-400'
         }`}>
-          <p className="text-white font-bold">{notification.message}</p>
+          <p className="text-white font-bold whitespace-pre-wrap max-w-lg">{notification.message}</p>
         </div>
       )}
 
@@ -1723,6 +1728,7 @@ export default function EnviarTemplateUnico() {
               </button>
 
               {/* Botão Editar e Enviar */}
+              {typeof window !== 'undefined' && !window.location.pathname.startsWith('/embed') && (
               <button
                 onClick={() => {
                   // Salvar dados do template no sessionStorage
@@ -1761,6 +1767,7 @@ export default function EnviarTemplateUnico() {
                 </svg>
                 ✏️ Editar e Enviar
               </button>
+              )}
             </div>
           </div>
         </div>
