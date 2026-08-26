@@ -807,18 +807,25 @@ class QrCampaignWorker {
         `SELECT DISTINCT c.* FROM contacts c
          INNER JOIN qr_campaign_contacts cc ON c.id = cc.contact_id
          WHERE cc.campaign_id = $1
+         -- Já processado com status final? Nunca tentar de novo
+         AND NOT EXISTS (
+           SELECT 1 FROM qr_campaign_messages m
+           WHERE m.campaign_id = $1
+             AND m.contact_id = c.id
+             AND m.status IN ('sent', 'delivered', 'read', 'failed', 'no_whatsapp')
+         )
          AND (
-           -- Contatos que nunca foram enviados
-           c.id NOT IN (
-             SELECT contact_id FROM qr_campaign_messages 
-             WHERE campaign_id = $1 AND contact_id IS NOT NULL
+           -- Ainda sem nenhuma mensagem
+           NOT EXISTS (
+             SELECT 1 FROM qr_campaign_messages m2
+             WHERE m2.campaign_id = $1 AND m2.contact_id = c.id
            )
-           -- OU contatos com mensagens pendentes (que precisam ser reenviadas)
-           OR c.id IN (
-             SELECT contact_id FROM qr_campaign_messages 
-             WHERE campaign_id = $1 
-             AND contact_id IS NOT NULL
-             AND status = 'pending'
+           -- OU só pendente (ex.: instância caiu e precisa reenviar)
+           OR EXISTS (
+             SELECT 1 FROM qr_campaign_messages m3
+             WHERE m3.campaign_id = $1
+               AND m3.contact_id = c.id
+               AND m3.status = 'pending'
            )
          )
          LIMIT $2`,
@@ -1021,7 +1028,19 @@ class QrCampaignWorker {
         console.log(`   ❌ ENVIO CANCELADO - Pulando para o próximo`);
         console.log(`═══════════════════════════════════════════════════\n`);
         
-        // Marcar como pulado/failed
+        // Fechar qualquer pending antigo e registrar a falha (evita retry infinito)
+        await queryWithRLS(
+          campaign.tenant_id,
+          `UPDATE qr_campaign_messages
+           SET status = 'failed', failed_at = NOW(), error_message = $1
+           WHERE campaign_id = $2 AND contact_id = $3 AND status = 'pending'`,
+          [
+            `Bloqueado - Lista de Restrição: ${isRestricted.listNames}`,
+            campaign.id,
+            contact.id,
+          ]
+        );
+
         await queryWithRLS(
           campaign.tenant_id,
           `INSERT INTO qr_campaign_messages 
@@ -1039,14 +1058,14 @@ class QrCampaignWorker {
           ]
         );
         
-        // ✅ Atualizar contador (COM RLS)
+        // Só failed_count — sent_count é só envio real (igual aba Enviadas)
         await queryWithRLS(
           campaign.tenant_id,
-          `UPDATE qr_campaigns SET sent_count = sent_count + 1, failed_count = failed_count + 1, updated_at = NOW() WHERE id = $1`,
+          `UPDATE qr_campaigns SET failed_count = failed_count + 1, updated_at = NOW() WHERE id = $1`,
           [campaign.id]
         );
         
-        console.log(`📊 [QR Worker] Mensagem bloqueada e marcada como failed`);
+        console.log(`📊 [QR Worker] Mensagem bloqueada e marcada como failed (sem retry)`);
         
         // ⭐ NÃO aguardar intervalo após número bloqueado - continuar imediatamente
         // (O intervalo já será aplicado no próximo envio válido)
@@ -1170,10 +1189,10 @@ class QrCampaignWorker {
           ]
         );
         
-        // ✅ Atualizar contador (COM RLS)
+        // ✅ Atualizar contador — sem WhatsApp NÃO conta como enviada
         await queryWithRLS(
           campaign.tenant_id,
-          `UPDATE qr_campaigns SET sent_count = sent_count + 1, no_whatsapp_count = no_whatsapp_count + 1, updated_at = NOW() WHERE id = $1`,
+          `UPDATE qr_campaigns SET no_whatsapp_count = no_whatsapp_count + 1, updated_at = NOW() WHERE id = $1`,
           [campaign.id]
         );
         
@@ -1372,31 +1391,37 @@ class QrCampaignWorker {
         const errorMessage = sendResult.error || '';
         const errorLower = errorMessage.toLowerCase();
         
-        // ✅ Lista COMPLETA de erros que indicam número sem WhatsApp
+        // ✅ Lista de erros que indicam número SEM WhatsApp (estrita — não incluir 463/restrição de conta)
         const noWhatsAppErrors = [
           'not on whatsapp',
           'is not a whatsapp user',
           'does not have an active whatsapp account',
           'phone number not registered',
-          'invalid phone number',
-          'não tem whatsapp',
-          'número inválido',
           'recipient phone number not registered',
           'phone number is not a whatsapp user',
-          'invalid phone_number',
           'user is not registered',
-          'invalid recipient',
           'no whatsapp account',
+          'não tem whatsapp',
+          'sem whatsapp',
           'numero inexistente',
           'number does not exist',
-          'message undeliverable',
           'code: 131026',
           '131026',
           'not a valid whatsapp account',
-          'incapable of receiving this message',
         ];
+
+        const accountRestrictionHints = [
+          '463',
+          'reachout',
+          'timelock',
+          'temporary restriction',
+          'restrição temporária',
+          'rate limit',
+        ];
+        const isAccountRestriction = accountRestrictionHints.some((e) => errorLower.includes(e));
         
-        const isNoWhatsApp = noWhatsAppErrors.some(err => errorLower.includes(err));
+        const isNoWhatsApp =
+          !isAccountRestriction && noWhatsAppErrors.some((err) => errorLower.includes(err));
         
         // ✅ VERIFICAR SE É ERRO DE INSTÂNCIA DESCONECTADA
         const isDisconnected = errorMessage.toLowerCase().includes('not connected') ||
@@ -1424,20 +1449,13 @@ class QrCampaignWorker {
             [campaign.id]
           );
 
-          // 📵 ADICIONAR À LISTA DE RESTRIÇÃO "SEM WHATSAPP"
-          // ⚠️ Para campanhas QR, usamos whatsapp_account_id = NULL (restrição global)
-          try {
-            await query(
-              `INSERT INTO restriction_list_entries 
-               (list_type, whatsapp_account_id, phone_number, added_method, notes, tenant_id, added_at)
-               VALUES ($1, NULL, $2, $3, $4, $5, NOW())
-               ON CONFLICT (list_type, phone_number, tenant_id) WHERE whatsapp_account_id IS NULL DO NOTHING`,
-              ['no_whatsapp', contact.phone_number, 'auto_qr_campaign', `Erro no envio: ${errorMessage.substring(0, 200)}`, campaign.tenant_id]
-            );
-            console.log(`✅ [QR Worker] Número ${contact.phone_number} adicionado à lista "Sem WhatsApp"`);
-          } catch (listError: any) {
-            console.error(`⚠️ [QR Worker] Erro ao adicionar à lista "Sem WhatsApp":`, listError.message);
-          }
+          // Só aqui — erros 463/restrição de conta NÃO entram na lista Sem WhatsApp
+          await this.checkAndAddToNoWhatsAppList(
+            contact.phone_number,
+            template.instance_id,
+            campaign.tenant_id,
+            sendResult.error || 'SEM WHATSAPP'
+          );
 
           console.log(`📵 [QR Worker] Número sem WhatsApp: ${contact.phone_number}`);
         } else if (isDisconnected) {
@@ -1464,7 +1482,7 @@ class QrCampaignWorker {
           
           console.log(`🔄 [QR Worker] Mensagem retornada para fila (será enviada por outra instância)`);
         } else {
-          // ✅ Marcar como falha normal (COM RLS)
+          // ✅ Marcar como falha normal (COM RLS) — NÃO adicionar à lista Sem WhatsApp
           await queryWithRLS(
             campaign.tenant_id,
             `UPDATE qr_campaign_messages 
@@ -1482,18 +1500,27 @@ class QrCampaignWorker {
           );
 
           console.log(`❌ [QR Worker] Falha ao enviar para ${contact.phone_number}: ${sendResult.error}`);
-
-          // 📵 ADICIONAR AUTOMATICAMENTE À LISTA "SEM WHATSAPP" se o erro indicar número inválido
-          await this.checkAndAddToNoWhatsAppList(
-            contact.phone_number,
-            template.instance_id, // Para QR, usamos o instance_id como identificador
-            campaign.tenant_id,
-            sendResult.error || 'Erro desconhecido'
-          );
         }
       }
     } catch (error: any) {
       console.error(`❌ [QR Worker] Erro ao enviar mensagem:`, error.message);
+      // Não deixar mensagem presa em "pending" (contador/envios fantasmas)
+      try {
+        await queryWithRLS(
+          campaign.tenant_id,
+          `UPDATE qr_campaign_messages
+           SET status = 'failed', failed_at = NOW(), error_message = $1
+           WHERE campaign_id = $2 AND contact_id = $3 AND status = 'pending'`,
+          [String(error?.message || 'Erro inesperado no envio').substring(0, 500), campaign.id, contact.id]
+        );
+        await queryWithRLS(
+          campaign.tenant_id,
+          `UPDATE qr_campaigns SET failed_count = failed_count + 1, updated_at = NOW() WHERE id = $1`,
+          [campaign.id]
+        );
+      } catch (e: any) {
+        console.error('⚠️ Falha ao marcar pending como failed:', e?.message || e);
+      }
     }
   }
 
@@ -2515,7 +2542,8 @@ class QrCampaignWorker {
 
   /**
    * 📵 VERIFICAR E ADICIONAR À LISTA "SEM WHATSAPP" SE NECESSÁRIO
-   * Detecta erros de número inválido/sem WhatsApp e adiciona automaticamente à lista de restrição
+   * Só adiciona se o erro for claramente de número sem WhatsApp.
+   * NUNCA adiciona por erro 463 / restrição de conta / volume.
    */
   private async checkAndAddToNoWhatsAppList(
     phoneNumber: string,
@@ -2524,8 +2552,53 @@ class QrCampaignWorker {
     errorMessage: string
   ): Promise<void> {
     try {
-      // ✅ Já foi verificado que é erro de "sem WhatsApp" antes de chamar esta função
-      // Adicionar diretamente à lista de restrição
+      const errorLower = String(errorMessage || '').toLowerCase();
+
+      // Erros de CONTA/API — não são "sem WhatsApp"
+      const accountErrors = [
+        '463',
+        'reachout',
+        'timelock',
+        'temporary restriction',
+        'restrição temporária',
+        'rate limit',
+        'too many',
+        'banned',
+        'banida',
+        'not connected',
+        'session not found',
+        'disconnected',
+        'unauthorized',
+        'forbidden',
+        'proxy',
+      ];
+      if (accountErrors.some((e) => errorLower.includes(e))) {
+        console.log(`ℹ️ [QR] Erro de conta/API — NÃO adicionar ${phoneNumber} à lista Sem WhatsApp`);
+        return;
+      }
+
+      const noWhatsAppErrors = [
+        'not on whatsapp',
+        'is not a whatsapp user',
+        'does not have an active whatsapp account',
+        'phone number not registered',
+        'recipient phone number not registered',
+        'phone number is not a whatsapp user',
+        'user is not registered',
+        'no whatsapp account',
+        'não tem whatsapp',
+        'sem whatsapp',
+        'numero inexistente',
+        'number does not exist',
+        'code: 131026',
+        '131026',
+        'not a valid whatsapp account',
+      ];
+      const isNoWhatsApp = noWhatsAppErrors.some((err) => errorLower.includes(err));
+      if (!isNoWhatsApp) {
+        console.log(`ℹ️ [QR] Erro não indica Sem WhatsApp — não adicionar ${phoneNumber} à lista`);
+        return;
+      }
 
       console.log('');
       console.log('📵 ═══════════════════════════════════════════════════');
@@ -2537,7 +2610,6 @@ class QrCampaignWorker {
       console.log(`   ❌ Erro: ${errorMessage.substring(0, 100)}`);
       console.log(`   ➡️  Adicionando automaticamente à lista "Sem WhatsApp"...`);
 
-      // Adicionar à lista de restrição (COM TENANT_ID!)
       const result = await query(
         `INSERT INTO restriction_list_entries 
          (list_type, whatsapp_account_id, phone_number, added_method, notes, tenant_id, added_at)
@@ -2554,13 +2626,10 @@ class QrCampaignWorker {
       } else {
         console.log('   ⚠️ Número já estava na lista');
       }
-      console.log('   ℹ️  Este número não receberá mais tentativas de envio');
       console.log('═══════════════════════════════════════════════════\n');
 
     } catch (error: any) {
       console.error('❌ Erro ao adicionar número à lista "Sem WhatsApp":', error.message);
-      console.error('   Stack:', error.stack);
-      // Não interrompe o fluxo - é apenas um registro adicional
     }
   }
 }
