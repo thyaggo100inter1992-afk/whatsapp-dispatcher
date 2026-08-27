@@ -5,7 +5,7 @@ import {
   FaPaperPlane, FaSearch, FaTimes, FaRocket, FaPhone, FaCheckCircle,
   FaImage, FaVideo, FaMusic, FaFileAlt, FaBolt, FaExclamationTriangle, FaMobileAlt, FaCopy
 } from 'react-icons/fa';
-import { whatsappAccountsAPI, messagesAPI } from '@/services/api';
+import api, { whatsappAccountsAPI, messagesAPI } from '@/services/api';
 import MediaUpload from '@/components/MediaUpload';
 import { useNotifications } from '@/contexts/NotificationContext';
 import TemplatePreview from '@/components/TemplatePreview';
@@ -419,31 +419,13 @@ export default function EnviarMensagemImediataV2() {
       console.log('🔍 Verificando restrições para:', phoneNumber);
       
       try {
-        const restrictionCheck = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/restriction-lists/check-bulk`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('@WhatsAppDispatcher:token')}`,
-          },
-          body: JSON.stringify({
-            phone_numbers: [phoneNumber],
-            whatsapp_account_ids: [selectedAccountId],
-          }),
+        // Usa o cliente axios (mesmo token do iframe /embed: embed:token)
+        const restrictionCheck = await api.post('/restriction-lists/check-bulk', {
+          phone_numbers: [phoneNumber],
+          whatsapp_account_ids: [selectedAccountId],
         });
 
-        if (!restrictionCheck.ok) {
-          // ❌ ERRO NA API DE VERIFICAÇÃO - BLOQUEAR POR SEGURANÇA
-          console.error('❌ Erro ao verificar restrições:', restrictionCheck.status);
-          notify.error(
-            'Erro ao verificar restrições!',
-            'Não foi possível verificar se o número está bloqueado.\n\nPor segurança, o envio foi cancelado.',
-            8000
-          );
-          setLoading(false);
-          return; // ❌ BLOQUEAR ENVIO
-        }
-        
-        const restrictionResult = await restrictionCheck.json();
+        const restrictionResult = restrictionCheck.data;
         
         if (restrictionResult.restricted_count > 0) {
           // ❌ NÚMERO RESTRITO - NÃO ENVIAR!

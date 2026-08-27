@@ -6,3 +6,12 @@ export function isEmbedPath(pathname?: string) {
   const path = pathname || (typeof window !== 'undefined' ? window.location.pathname : '');
   return path.startsWith('/embed');
 }
+
+/** JWT da sessão atual: embed no iframe do vendas, senão o login normal do painel. */
+export function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  if (isEmbedPath()) {
+    return localStorage.getItem(EMBED_TOKEN_KEY) || localStorage.getItem('@WhatsAppDispatcher:token');
+  }
+  return localStorage.getItem('@WhatsAppDispatcher:token');
+}

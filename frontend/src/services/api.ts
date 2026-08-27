@@ -1,7 +1,7 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import logger from './logger';
 import { getApiBaseUrl } from '@/utils/urlHelpers';
-import { EMBED_TOKEN_KEY, isEmbedPath } from '@/utils/embed';
+import { getAuthToken } from '@/utils/embed';
 
 // Estender o tipo AxiosRequestConfig para incluir metadata
 declare module 'axios' {
@@ -30,8 +30,7 @@ const api = axios.create({
 // ✅ INTERCEPTOR: Adicionar token JWT em todas as requisições
 api.interceptors.request.use(
   (config) => {
-    const embedToken = isEmbedPath() ? localStorage.getItem(EMBED_TOKEN_KEY) : null;
-    const token = embedToken || localStorage.getItem('@WhatsAppDispatcher:token');
+    const token = getAuthToken();
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
