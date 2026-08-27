@@ -36,6 +36,7 @@ export default function EnviarTemplateUnico() {
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
+  const [mediaFilters, setMediaFilters] = useState<Array<'image' | 'video' | 'none'>>([]);
   
   // Estado para template selecionado e variáveis
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
@@ -121,6 +122,71 @@ export default function EnviarTemplateUnico() {
     loadTemplates();
   }, []);
 
+  const getCombinedBlocks = (template: any): any[] => {
+    let combined = template?.combined_blocks;
+    if (typeof combined === 'string') {
+      try {
+        combined = JSON.parse(combined);
+      } catch {
+        return [];
+      }
+    }
+    return combined?.blocks || [];
+  };
+
+  const templateHasKind = (template: any, kind: 'image' | 'video'): boolean => {
+    const type = String(template?.type || '').toLowerCase();
+    if (type === kind) return true;
+
+    const files = template?.media_files || [];
+    if (files.some((file: any) => {
+      const mediaType = String(file.media_type || file.mime_type || '').toLowerCase();
+      return mediaType.includes(kind);
+    })) {
+      return true;
+    }
+
+    const blocks = getCombinedBlocks(template);
+    if (blocks.some((block: any) => String(block.type || '').toLowerCase() === kind)) {
+      return true;
+    }
+
+    if (kind === 'image') {
+      if (type === 'carousel') return true;
+      if (blocks.some((block: any) => (block.cards || []).some((card: any) => card.image))) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const templateHasNoMedia = (template: any): boolean => {
+    const type = String(template?.type || '').toLowerCase();
+    if (['image', 'video', 'audio', 'audio_recorded', 'document'].includes(type)) {
+      return false;
+    }
+    if ((template?.media_files || []).length > 0) return false;
+
+    const blocks = getCombinedBlocks(template);
+    if (blocks.some((block: any) => ['image', 'video', 'audio', 'document'].includes(String(block.type || '').toLowerCase()))) {
+      return false;
+    }
+    if (blocks.some((block: any) => (block.cards || []).some((card: any) => card.image))) {
+      return false;
+    }
+
+    return true;
+  };
+
+  const toggleMediaFilter = (value: 'image' | 'video' | 'none') => {
+    setMediaFilters((current) =>
+      current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value]
+    );
+  };
+
   // Filtrar templates
   useEffect(() => {
     let filtered = Array.isArray(templates) ? templates : [];
@@ -128,6 +194,15 @@ export default function EnviarTemplateUnico() {
     // Filtro por tipo
     if (selectedType !== 'all') {
       filtered = filtered.filter(t => t.type === selectedType);
+    }
+
+    if (mediaFilters.length > 0) {
+      filtered = filtered.filter((t) => {
+        if (mediaFilters.includes('image') && templateHasKind(t, 'image')) return true;
+        if (mediaFilters.includes('video') && templateHasKind(t, 'video')) return true;
+        if (mediaFilters.includes('none') && templateHasNoMedia(t)) return true;
+        return false;
+      });
     }
 
     // Filtro por busca
@@ -145,7 +220,7 @@ export default function EnviarTemplateUnico() {
     }
 
     setFilteredTemplates(filtered);
-  }, [searchTerm, selectedType, templates, hideSentTemplates, sentTemplates]);
+  }, [searchTerm, selectedType, mediaFilters, templates, hideSentTemplates, sentTemplates]);
 
   // Exibir notificação
   const showNotification = (message: string, type: 'success' | 'error' | 'warning' | 'info', duration = 3001) => {
@@ -790,6 +865,43 @@ export default function EnviarTemplateUnico() {
     );
   }
 
+  const getGreeting = (): string => {
+    const hour = new Date().getHours();
+    if (hour >= 6 && hour < 12) return 'Bom dia';
+    if (hour >= 12 && hour < 18) return 'Boa tarde';
+    return 'Boa noite';
+  };
+
+  const generateProtocol = (): string => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  };
+
+  const addToVariable = (varName: string, value: string) => {
+    const currentValue = templateVariables[varName] || '';
+    const newValue = currentValue.trim()
+      ? `${currentValue} ${value}`
+      : value;
+
+    setTemplateVariables({
+      ...templateVariables,
+      [varName]: newValue
+    });
+  };
+
+  const handleQuickFill = (varName: string, type: 'greeting' | 'protocol' | 'protocolNumber') => {
+    switch (type) {
+      case 'greeting':
+        addToVariable(varName, getGreeting());
+        break;
+      case 'protocol':
+        addToVariable(varName, `Seu Numero de Protocolo e :${generateProtocol()}!`);
+        break;
+      case 'protocolNumber':
+        addToVariable(varName, generateProtocol());
+        break;
+    }
+  };
+
   // Função para obter o nome do tipo de template
   const getTemplateTypeName = (type: string): string => {
     const typeNames: Record<string, string> = {
@@ -959,6 +1071,36 @@ export default function EnviarTemplateUnico() {
                         className="input text-base w-full"
                         required
                       />
+
+                      <div className="mt-3">
+                        <p className="text-sm text-white/60 mb-2 font-medium">💡 Preencher com modelo:</p>
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleQuickFill(varName, 'greeting')}
+                            className="px-4 py-2 text-sm font-bold rounded-lg bg-blue-500/20 text-blue-300 border-2 border-blue-500/30 hover:bg-blue-500/30 hover:scale-105 transition-all duration-200"
+                            title="Adiciona saudação automática (Bom dia/Boa tarde/Boa noite)"
+                          >
+                            👋 Saudação
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickFill(varName, 'protocol')}
+                            className="px-4 py-2 text-sm font-bold rounded-lg bg-purple-500/20 text-purple-300 border-2 border-purple-500/30 hover:bg-purple-500/30 hover:scale-105 transition-all duration-200"
+                            title="Adiciona: Seu Numero de Protocolo e :[número]!"
+                          >
+                            📋 Protocolo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickFill(varName, 'protocolNumber')}
+                            className="px-4 py-2 text-sm font-bold rounded-lg bg-green-500/20 text-green-300 border-2 border-green-500/30 hover:bg-green-500/30 hover:scale-105 transition-all duration-200"
+                            title="Adiciona apenas o número do protocolo"
+                          >
+                            🔢 Nº Protocolo
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
               </div>
@@ -1039,31 +1181,87 @@ export default function EnviarTemplateUnico() {
           )}
 
           {/* Filtros */}
-          <div className="grid md:grid-cols-2 gap-4 mb-6">
+          <div className="space-y-4 mb-6">
             <div>
-              <label className="block text-base font-medium mb-3 text-white">
-                <FaSearch className="inline mr-2" />
-                Buscar template...
-              </label>
-              <input
-                type="text"
-                className="input text-base"
-                placeholder="Digite para buscar..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+              <label className="block text-xs font-bold text-white/70 mb-1.5">📎 Filtrar por mídia:</label>
+              <div className="flex flex-nowrap gap-1.5 overflow-x-auto">
+                <button
+                  type="button"
+                  onClick={() => toggleMediaFilter('image')}
+                  className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-md border transition-all duration-200 ${
+                    mediaFilters.includes('image')
+                      ? 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/30'
+                      : 'bg-dark-700/50 text-white/70 border-white/20 hover:border-amber-500/50 hover:text-white'
+                  }`}
+                >
+                  <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${
+                    mediaFilters.includes('image') ? 'border-white bg-white text-amber-600' : 'border-white/40'
+                  }`}>
+                    {mediaFilters.includes('image') ? '✓' : ''}
+                  </span>
+                  Imagem ({templates.filter(t => templateHasKind(t, 'image')).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleMediaFilter('video')}
+                  className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-md border transition-all duration-200 ${
+                    mediaFilters.includes('video')
+                      ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/30'
+                      : 'bg-dark-700/50 text-white/70 border-white/20 hover:border-rose-500/50 hover:text-white'
+                  }`}
+                >
+                  <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${
+                    mediaFilters.includes('video') ? 'border-white bg-white text-rose-600' : 'border-white/40'
+                  }`}>
+                    {mediaFilters.includes('video') ? '✓' : ''}
+                  </span>
+                  Vídeo ({templates.filter(t => templateHasKind(t, 'video')).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleMediaFilter('none')}
+                  className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-md border transition-all duration-200 ${
+                    mediaFilters.includes('none')
+                      ? 'bg-slate-500 text-white border-slate-500 shadow-md shadow-slate-500/30'
+                      : 'bg-dark-700/50 text-white/70 border-white/20 hover:border-slate-400/50 hover:text-white'
+                  }`}
+                >
+                  <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${
+                    mediaFilters.includes('none') ? 'border-white bg-white text-slate-600' : 'border-white/40'
+                  }`}>
+                    {mediaFilters.includes('none') ? '✓' : ''}
+                  </span>
+                  Sem mídia ({templates.filter(t => templateHasNoMedia(t)).length})
+                </button>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-base font-medium mb-3 text-white">
-                <FaTimes className="inline mr-2" />
-                Excluir que contenham...
-              </label>
-              <input
-                type="text"
-                className="input text-base"
-                placeholder="Digite para excluir..."
-              />
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-base font-medium mb-3 text-white">
+                  <FaSearch className="inline mr-2" />
+                  Buscar template...
+                </label>
+                <input
+                  type="text"
+                  className="input text-base"
+                  placeholder="Digite para buscar..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-base font-medium mb-3 text-white">
+                  <FaTimes className="inline mr-2" />
+                  Excluir que contenham...
+                </label>
+                <input
+                  type="text"
+                  className="input text-base"
+                  placeholder="Digite para excluir..."
+                />
+              </div>
             </div>
           </div>
 
