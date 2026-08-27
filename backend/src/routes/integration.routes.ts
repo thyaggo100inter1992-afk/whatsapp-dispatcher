@@ -4,7 +4,6 @@ import { authenticateIntegrationKey } from '../middleware/integration-auth.middl
 
 const { authenticate } = require('../middleware/auth.middleware');
 const { setTenantContext } = require('../middleware/tenant.middleware');
-const { requireSuperAdmin } = require('../middleware/super-admin.middleware');
 
 const router = Router();
 const controller = new IntegrationController();
@@ -13,9 +12,9 @@ router.use(controller.cors.bind(controller));
 router.options('*', controller.cors.bind(controller));
 
 // Gestão de chaves (login do painel)
-router.get('/keys', authenticate, setTenantContext, requireSuperAdmin, controller.listKeys.bind(controller));
-router.post('/keys', authenticate, setTenantContext, requireSuperAdmin, controller.createKey.bind(controller));
-router.delete('/keys/:id', authenticate, setTenantContext, requireSuperAdmin, controller.revokeKey.bind(controller));
+router.get('/keys', authenticate, setTenantContext, controller.listKeys.bind(controller));
+router.post('/keys', authenticate, setTenantContext, controller.createKey.bind(controller));
+router.delete('/keys/:id', authenticate, setTenantContext, controller.revokeKey.bind(controller));
 
 // API pública do sistema de vendas (chave nsk_)
 router.post('/v1/auth', authenticateIntegrationKey, controller.auth.bind(controller));

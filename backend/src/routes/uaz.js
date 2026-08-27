@@ -36,6 +36,26 @@ router.use((req, res, next) => {
   next();
 });
 
+const { userHasQrInstance } = require('../helpers/integration-user.helper');
+router.use(async (req, res, next) => {
+  try {
+    const match = String(req.path || '').match(/^\/instances\/(\d+)/);
+    if (!match) return next();
+    if (req.user?.role === 'admin' || req.user?.role === 'super_admin') return next();
+    const tenantId = req.tenant?.id;
+    const allowed = await userHasQrInstance(tenantId, req.user, parseInt(match[1], 10));
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'Este usuário não tem permissão para usar esta conexão QR',
+      });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 
 
 /**
@@ -145,16 +165,36 @@ function replaceVariables(text, variables) {
  * @param {boolean} compress - Se deve comprimir imagens (padrÃ£o: true)
  * @returns {object} { success: boolean, file: string, error?: string }
  */
+function isLocalUploadUrl(fileUrl) {
+  if (!fileUrl || typeof fileUrl !== 'string') return false;
+  if (fileUrl.startsWith('data:')) return false;
+  return fileUrl.includes('/uploads/')
+    || fileUrl.includes('localhost')
+    || (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://'));
+}
+
+function resolveLocalUploadPath(fileUrl) {
+  let relativePath = String(fileUrl || '');
+  if (relativePath.startsWith('http://') || relativePath.startsWith('https://')) {
+    relativePath = relativePath.replace(/^https?:\/\/[^\/]+/, '');
+  }
+  relativePath = relativePath.replace(/^\.\//, '');
+  if (!relativePath.startsWith('/')) {
+    relativePath = '/' + relativePath;
+  }
+
+  const candidates = [
+    path.join(__dirname, '../..', relativePath.replace(/^\//, '')),
+    path.join(process.cwd(), relativePath.replace(/^\//, '')),
+    '.' + relativePath
+  ];
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
 async function convertFileToBase64(fileUrl, compress = true) {
   try {
-    // Remove o domÃ­nio da URL, mantendo apenas o path relativo
-    let filePath = fileUrl;
-    if (fileUrl.startsWith('http')) {
-      // Remove qualquer domÃ­nio/porta e mantÃ©m apenas o path
-      filePath = '.' + fileUrl.replace(/^https?:\/\/[^\/]+/, '');
-    } else {
-      filePath = '.' + fileUrl;
-    }
+    const filePath = resolveLocalUploadPath(fileUrl);
     
     console.log('ðŸ“ Convertendo arquivo para Base64:', filePath);
     
@@ -249,6 +289,34 @@ async function convertFileToBase64(fileUrl, compress = true) {
       error: error.message
     };
   }
+}
+
+function respondSendError(res, error) {
+  const raw = String(error?.message || '');
+  const details = error?.response?.data;
+  const blob = `${raw} ${typeof details === 'string' ? details : JSON.stringify(details || {})}`;
+
+  if (/463|temporary restriction|starting new conversations|under a temporary restriction/i.test(blob)) {
+    return res.status(422).json({
+      success: false,
+      code: 'WHATSAPP_463',
+      error: 'Este WhatsApp (número de origem) está temporariamente bloqueado pelo próprio WhatsApp para iniciar conversas novas, por volume ou qualidade de envio. Não é erro do template. Troque o Número de Origem para outro aparelho conectado e envie de novo. O bloqueio costuma passar em algumas horas.'
+    });
+  }
+
+  if (/471|banned|blocked from messaging|account has been banned/i.test(blob)) {
+    return res.status(422).json({
+      success: false,
+      code: 'WHATSAPP_BLOCKED',
+      error: 'Este WhatsApp está limitado ou banido pelo próprio WhatsApp. Use outro número de origem.'
+    });
+  }
+
+  return res.status(500).json({
+    success: false,
+    error: raw,
+    details: details || undefined
+  });
 }
 
 /**
@@ -2887,10 +2955,7 @@ router.post('/instances/:id/send-text', checkMessageLimit, async (req, res) => {
 
     res.json(sendResult);
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    return respondSendError(res, error);
   }
 });
 
@@ -3063,10 +3128,7 @@ router.post('/instances/:id/send-image', checkMessageLimit, async (req, res) => 
 
     res.json(sendResult);
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    return respondSendError(res, error);
   }
 });
 
@@ -4208,7 +4270,7 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
       port: instance.proxy_port,
       username: instance.proxy_username,
       password: instance.proxy_password,
-      type: instance.proxy_type
+      type: instance.proxy_type || 'socks5'
     } : null;
 
     // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
@@ -4243,12 +4305,18 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
       processedText = replaceVariables(processedText, variables);
       processedFooter = replaceVariables(processedFooter, variables);
     }
+
+    // A UAZ exige `text` no /send/menu. Com imagem + botões o front pode mandar vazio.
+    if (!String(processedText || '').trim()) {
+      processedText = 'Mensagem com botões';
+    }
     
     // Preparar menuData
     const menuData = {
       number,
       type,
-      text: processedText
+      text: processedText,
+      readchat: true
     };
     
     // Para listas, formatar com [SeÃ§Ã£o] e texto|id|descriÃ§Ã£o
@@ -4272,9 +4340,9 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
       if (selectableCount) menuData.selectableCount = selectableCount;
     }
     
-    // Processar imageButton se necessÃ¡rio (converter local para Base64)
+    // Processar imageButton: a UAZ espera Base64. URLs https://api.../uploads/... não eram convertidas.
     if (imageButton) {
-      if (imageButton.includes('localhost') || imageButton.startsWith('/uploads/')) {
+      if (isLocalUploadUrl(imageButton)) {
         console.log('ðŸ”„ Convertendo imagem do botÃ£o para Base64...');
         const conversionResult = await convertFileToBase64(imageButton);
         
@@ -4293,8 +4361,13 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
       }
     }
 
-    // Log do payload completo
-    console.log('ðŸ“¤ Payload completo do menu:', JSON.stringify(menuData, null, 2));
+    // Log do payload (sem dump de Base64)
+    console.log('ðŸ“¤ Payload do menu:', JSON.stringify({
+      ...menuData,
+      imageButton: menuData.imageButton
+        ? `[${String(menuData.imageButton).startsWith('data:') ? 'base64' : 'url'} ${Math.round(String(menuData.imageButton).length / 1024)} KB]`
+        : undefined
+    }, null, 2));
     
     // Enviar via UAZ API usando sendMenu (suporta button, list, poll, carousel)
     console.log(`ðŸ“‹ Enviando ${type.toUpperCase()} via mÃ©todo sendMenu...`);
@@ -4322,11 +4395,7 @@ router.post('/instances/:id/send-menu', checkMessageLimit, async (req, res) => {
       console.error('   Data:', JSON.stringify(error.response.data, null, 2));
     }
     
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      details: error.response?.data || undefined
-    });
+    return respondSendError(res, error);
   }
 });
 
@@ -4407,7 +4476,7 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
       port: instance.proxy_port,
       username: instance.proxy_username,
       password: instance.proxy_password,
-      type: instance.proxy_type
+      type: instance.proxy_type || 'socks5'
     } : null;
 
     // ðŸ”‘ BUSCAR CREDENCIAIS DO TENANT
@@ -4526,11 +4595,7 @@ router.post('/instances/:id/send-carousel', checkMessageLimit, async (req, res) 
       console.error('Response status:', error.response.status);
     }
     
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      details: error.response?.data || undefined
-    });
+    return respondSendError(res, error);
   }
 });
 

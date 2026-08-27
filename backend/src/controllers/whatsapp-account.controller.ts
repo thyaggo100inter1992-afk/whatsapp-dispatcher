@@ -25,11 +25,26 @@ export class WhatsAppAccountController {
     try {
       // @ts-ignore - tenant é injetado pelo middleware de autenticação
       const tenantId = req.tenant?.id;
+      const userId = (req as any).user?.id;
+      const role = (req as any).user?.role;
       if (!tenantId) {
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
       }
-      const accounts = await WhatsAppAccountModel.findAll(tenantId);
-      res.json({ success: true, data: accounts });
+
+      const isTenantOwner = role === 'admin' || role === 'super_admin';
+      if (isTenantOwner) {
+        const accounts = await WhatsAppAccountModel.findAll(tenantId);
+        return res.json({ success: true, data: accounts });
+      }
+
+      const result = await tenantQuery(req, `
+        SELECT wa.*
+        FROM whatsapp_accounts wa
+        INNER JOIN user_whatsapp_accounts uwa ON wa.id = uwa.whatsapp_account_id
+        WHERE uwa.user_id = $1 AND uwa.tenant_id = $2
+        ORDER BY wa.display_order ASC NULLS LAST, wa.created_at DESC
+      `, [userId, tenantId]);
+      res.json({ success: true, data: result.rows });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
     }

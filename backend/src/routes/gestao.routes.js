@@ -1149,11 +1149,13 @@ router.post('/users/:userId/whatsapp-accounts', async (req, res) => {
     // Adicionar novas associações de contas API
     if (apiAccountIds && Array.isArray(apiAccountIds) && apiAccountIds.length > 0) {
       for (const accountId of apiAccountIds) {
+        const id = parseInt(String(accountId), 10);
+        if (!Number.isFinite(id) || id <= 0) continue;
         await query(`
           INSERT INTO user_whatsapp_accounts (tenant_id, user_id, whatsapp_account_id)
           VALUES ($1, $2, $3)
           ON CONFLICT (user_id, whatsapp_account_id) DO NOTHING
-        `, [tenantId, userId, accountId]);
+        `, [tenantId, userId, id]);
         apiCount++;
       }
     }
@@ -1161,11 +1163,13 @@ router.post('/users/:userId/whatsapp-accounts', async (req, res) => {
     // Adicionar novas associações de instâncias UAZ
     if (uazInstanceIds && Array.isArray(uazInstanceIds) && uazInstanceIds.length > 0) {
       for (const instanceId of uazInstanceIds) {
+        const id = parseInt(String(instanceId), 10);
+        if (!Number.isFinite(id) || id <= 0) continue;
         await query(`
           INSERT INTO user_uaz_instances (tenant_id, user_id, uaz_instance_id)
           VALUES ($1, $2, $3)
           ON CONFLICT (user_id, uaz_instance_id) DO NOTHING
-        `, [tenantId, userId, instanceId]);
+        `, [tenantId, userId, id]);
         uazCount++;
       }
     }

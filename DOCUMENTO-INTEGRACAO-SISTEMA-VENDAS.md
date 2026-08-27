@@ -43,9 +43,11 @@ nsk_a1b2c3d4e5f6...
 ```
 
 ### De onde vem
-No **disparador**, só o **Master (super_admin)** gera a chave. Admin comum da conta (João, Luna, etc.) **não vê** Integração e não consegue gerar nem cancelar chave.
+No **disparador**, o **admin** ou o **super_admin** da conta entra em:
 
 **Integração → Gerar chave**
+
+Usuário comum **não vê** essa tela e não gera nem cancela chave.
 
 A chave aparece **uma vez**. Depois some. Guardem no cadastro do cliente no vendas.
 

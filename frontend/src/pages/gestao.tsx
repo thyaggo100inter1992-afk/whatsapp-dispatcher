@@ -1094,8 +1094,16 @@ export default function Gestao() {
 
       // Buscar contas já associadas ao usuário
       const userAccountsResponse = await api.get(`/gestao/users/${userId}/whatsapp-accounts`);
-      const userApiIds = new Set<number>(userAccountsResponse.data.apiAccounts?.map((acc: any) => acc.id) || []);
-      const userUazIds = new Set<number>(userAccountsResponse.data.uazInstances?.map((inst: any) => inst.id) || []);
+      const userApiIds = new Set<number>(
+        (userAccountsResponse.data.apiAccounts || [])
+          .map((acc: any) => Number(acc.id))
+          .filter((id: number) => Number.isFinite(id) && id > 0)
+      );
+      const userUazIds = new Set<number>(
+        (userAccountsResponse.data.uazInstances || [])
+          .map((inst: any) => Number(inst.id))
+          .filter((id: number) => Number.isFinite(id) && id > 0)
+      );
       
       console.log(`✅ Contas API selecionadas: ${userApiIds.size}`);
       console.log(`✅ Instâncias QR selecionadas: ${userUazIds.size}`);
@@ -1127,24 +1135,42 @@ export default function Gestao() {
 
   // Toggle de seleção de conta API
   const handleToggleApiAccount = (accountId: number) => {
+    const id = Number(accountId);
     const newSelected = new Set(selectedApiAccounts);
-    if (newSelected.has(accountId)) {
-      newSelected.delete(accountId);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
     } else {
-      newSelected.add(accountId);
+      newSelected.add(id);
     }
     setSelectedApiAccounts(newSelected);
   };
 
   // Toggle de seleção de instância UAZ
   const handleToggleUazInstance = (instanceId: number) => {
+    const id = Number(instanceId);
     const newSelected = new Set(selectedUazInstances);
-    if (newSelected.has(instanceId)) {
-      newSelected.delete(instanceId);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
     } else {
-      newSelected.add(instanceId);
+      newSelected.add(id);
     }
     setSelectedUazInstances(newSelected);
+  };
+
+  const handleSelectAllApiAccounts = () => {
+    setSelectedApiAccounts(new Set(availableApiAccounts.map((acc) => Number(acc.id))));
+  };
+
+  const handleClearApiAccounts = () => {
+    setSelectedApiAccounts(new Set());
+  };
+
+  const handleSelectAllUazInstances = () => {
+    setSelectedUazInstances(new Set(availableUazInstances.map((inst) => Number(inst.id))));
+  };
+
+  const handleClearUazInstances = () => {
+    setSelectedUazInstances(new Set());
   };
 
   // Função para desativar contas de um usuário específico
@@ -1173,7 +1199,11 @@ export default function Gestao() {
       
       console.log('🔄 Atualizando usuário:', updatePayload);
       await api.put(`/gestao/users/${editingUser.id}`, updatePayload);
-      toast.success('Usuário atualizado com sucesso!');
+      await api.post(`/gestao/users/${editingUser.id}/whatsapp-accounts`, {
+        apiAccountIds: Array.from(selectedApiAccounts).map(Number),
+        uazInstanceIds: Array.from(selectedUazInstances).map(Number)
+      });
+      toast.success('Usuário e contas WhatsApp atualizados com sucesso!');
       setShowEditModal(false);
       setEditingUser(null);
       loadUsers();
@@ -1452,7 +1482,7 @@ export default function Gestao() {
             </div>
             
             <div className="flex items-center gap-4">
-              {user?.role === 'super_admin' && (
+              {(user?.role === 'admin' || user?.role === 'super_admin') && (
               <button
                 onClick={() => router.push('/integracao')}
                 className="px-4 py-2 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded-lg font-bold transition-all flex items-center gap-2"
@@ -2592,21 +2622,39 @@ export default function Gestao() {
                     {/* Contas API Oficial */}
                     {availableApiAccounts.length > 0 && (
                       <div className="space-y-2">
-                        <h4 className="font-bold text-emerald-400 text-sm">API Oficial (Meta)</h4>
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-bold text-emerald-400 text-sm">API Oficial (Meta)</h4>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={handleSelectAllApiAccounts}
+                              className="px-3 py-1 text-xs font-bold rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
+                            >
+                              Marcar todas
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleClearApiAccounts}
+                              className="px-3 py-1 text-xs font-bold rounded-lg bg-white/10 text-gray-300 hover:bg-white/20"
+                            >
+                              Desmarcar todas
+                            </button>
+                          </div>
+                        </div>
                         <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
                           {availableApiAccounts.map((account) => (
                             <label
                               key={account.id}
                               className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
-                                selectedApiAccounts.has(account.id)
+                                selectedApiAccounts.has(Number(account.id))
                                   ? 'bg-emerald-500/20 border-2 border-emerald-500/60'
                                   : 'bg-dark-700/50 border-2 border-white/10 hover:border-white/30'
                               }`}
                             >
                               <input
                                 type="checkbox"
-                                checked={selectedApiAccounts.has(account.id)}
-                                onChange={() => handleToggleApiAccount(account.id)}
+                                checked={selectedApiAccounts.has(Number(account.id))}
+                                onChange={() => handleToggleApiAccount(Number(account.id))}
                                 className="w-5 h-5 rounded cursor-pointer"
                               />
                               <div className="flex-1">
@@ -2627,21 +2675,39 @@ export default function Gestao() {
                     {/* Instâncias UAZ (QR) */}
                     {availableUazInstances.length > 0 && (
                       <div className="space-y-2">
-                        <h4 className="font-bold text-blue-400 text-sm">QR Connect (UAZ)</h4>
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-bold text-blue-400 text-sm">QR Connect (UAZ)</h4>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={handleSelectAllUazInstances}
+                              className="px-3 py-1 text-xs font-bold rounded-lg bg-blue-500/20 text-blue-300 hover:bg-blue-500/30"
+                            >
+                              Marcar todas
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleClearUazInstances}
+                              className="px-3 py-1 text-xs font-bold rounded-lg bg-white/10 text-gray-300 hover:bg-white/20"
+                            >
+                              Desmarcar todas
+                            </button>
+                          </div>
+                        </div>
                         <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
                           {availableUazInstances.map((instance) => (
                             <label
                               key={instance.id}
                               className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
-                                selectedUazInstances.has(instance.id)
+                                selectedUazInstances.has(Number(instance.id))
                                   ? 'bg-blue-500/20 border-2 border-blue-500/60'
                                   : 'bg-dark-700/50 border-2 border-white/10 hover:border-white/30'
                               }`}
                             >
                               <input
                                 type="checkbox"
-                                checked={selectedUazInstances.has(instance.id)}
-                                onChange={() => handleToggleUazInstance(instance.id)}
+                                checked={selectedUazInstances.has(Number(instance.id))}
+                                onChange={() => handleToggleUazInstance(Number(instance.id))}
                                 className="w-5 h-5 rounded cursor-pointer"
                               />
                               <div className="flex-1">
@@ -2667,10 +2733,8 @@ export default function Gestao() {
 
                     <div className="bg-blue-500/10 border-2 border-blue-500/30 rounded-lg p-3 mt-4">
                       <p className="text-blue-300 text-xs">
-                        <strong>💡 Dica:</strong> O usuário só poderá visualizar e utilizar as contas selecionadas acima. 
-                        {selectedApiAccounts.size + selectedUazInstances.size > 0 
-                          ? ` Atualmente: ${selectedApiAccounts.size + selectedUazInstances.size} conta(s) selecionada(s).`
-                          : ' Nenhuma conta selecionada significa acesso a todas (comportamento padrão para admins).'}
+                        <strong>💡 Dica:</strong> O usuário comum só vê e usa as contas marcadas. Nenhuma marcada = nenhuma conta. Admin continua vendo todas.
+                        {` Atualmente: ${selectedApiAccounts.size + selectedUazInstances.size} conta(s) selecionada(s).`}
                       </p>
                     </div>
                   </div>
