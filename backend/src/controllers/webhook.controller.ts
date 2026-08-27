@@ -574,21 +574,9 @@ export class WebhookController {
       console.log('   📦 Payload:', buttonPayload);
       console.log('   📝 Tipo:', buttonType);
 
-      // Buscar contato pelo telefone
-      const contactResult = await queryNoTenant(
-        'SELECT id, name FROM contacts WHERE phone_number = $1 LIMIT 1',
-        [from]
-      );
-
-      const contact = contactResult.rows[0];
-      const contactId = contact?.id || null;
-      const contactName = contact?.name || null;
-
-      console.log('   👤 Contato encontrado:', contactName || 'Não cadastrado', `(ID: ${contactId})`);
-
       // Criar variações do número para busca (com e sem o 9)
       const { normalizePhoneNumber } = require('../utils/phone-normalizer');
-      let phoneVariations = [from, normalizePhoneNumber(from)];
+      let phoneVariations = [from, normalizePhoneNumber(from)].filter(Boolean);
       
       if (from.startsWith('55') && from.length >= 12) {
         const ddi = from.substring(0, 2);
@@ -600,7 +588,23 @@ export class WebhookController {
           phoneVariations.push(`${ddi}${ddd}${localNumber.substring(1)}`);
         }
       }
+      phoneVariations = [...new Set(phoneVariations)];
       console.log('   📱 Variações de número para busca:', phoneVariations);
+
+      // Buscar contato pelo telefone (todas as variações — WhatsApp às vezes omite o 9)
+      const contactResult = await queryNoTenant(
+        `SELECT id, name FROM contacts
+         WHERE phone_number = ANY($1)
+         ORDER BY CASE WHEN cpf IS NOT NULL AND cpf <> '' THEN 0 ELSE 1 END
+         LIMIT 1`,
+        [phoneVariations]
+      );
+
+      let contact = contactResult.rows[0];
+      let contactId = contact?.id || null;
+      let contactName = contact?.name || null;
+
+      console.log('   👤 Contato encontrado:', contactName || 'Não cadastrado', `(ID: ${contactId})`);
 
       // Tentar buscar pela mensagem usando o context.id (WhatsApp Message ID)
       const contextMessageId = message.context?.id;
@@ -636,6 +640,12 @@ export class WebhookController {
       const campaignId = sentMessage?.campaign_id || null;
       const campaignName = sentMessage?.campaign_name || null;
       const messageId = sentMessage?.id || null;
+
+      // Fallback: se o clique veio sem o 9º dígito e o contato não bateu, usa o da mensagem
+      if (!contactId && sentMessage?.contact_id) {
+        contactId = sentMessage.contact_id;
+        console.log('   👤 Contato herdado da mensagem:', contactId);
+      }
 
       console.log('   📨 Mensagem ID:', messageId);
       console.log('   📨 Campanha:', campaignName || 'Envio Imediato', `(ID: ${campaignId || 'NULL'})`);

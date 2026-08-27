@@ -332,6 +332,7 @@ export class ReportService {
           buttonClicks = buttonClicksResult.rows;
         } else {
           // Button clicks para API Oficial
+          // CPF: contact_id do clique OU da mensagem OU telefone (com/sem 9º dígito)
           const buttonClicksResult = await queryWithTenantId(
             tenantId,
             `SELECT 
@@ -341,21 +342,32 @@ export class ReportService {
               bc.button_text,
               bc.button_payload,
               bc.clicked_at,
-              c.name as contact_name_full,
-              COALESCE(c.cpf, c_by_phone.cpf) as contact_cpf,
+              COALESCE(c.name, c_from_msg.name, c_by_phone.name) as contact_name_full,
+              COALESCE(c.cpf, c_from_msg.cpf, c_by_phone.cpf) as contact_cpf,
               m.template_name,
               m.sent_at as message_sent_at,
               w.name as account_name
              FROM button_clicks bc
-             LEFT JOIN contacts c ON bc.contact_id = c.id
-             LEFT JOIN contacts c_by_phone
-               ON c_by_phone.phone_number = bc.phone_number
-              AND (c_by_phone.tenant_id = bc.tenant_id OR bc.tenant_id IS NULL)
              LEFT JOIN messages m ON bc.message_id = m.id
+             LEFT JOIN contacts c ON bc.contact_id = c.id
+             LEFT JOIN contacts c_from_msg ON m.contact_id = c_from_msg.id
+             LEFT JOIN LATERAL (
+               SELECT c2.name, c2.cpf
+               FROM contacts c2
+               WHERE c2.tenant_id = $2
+                 AND (
+                   c2.phone_number = bc.phone_number
+                   OR c2.phone_number = m.phone_number
+                   OR right(regexp_replace(COALESCE(c2.phone_number, ''), '\\D', '', 'g'), 8)
+                      = right(regexp_replace(COALESCE(bc.phone_number, m.phone_number, ''), '\\D', '', 'g'), 8)
+                 )
+               ORDER BY CASE WHEN c2.cpf IS NOT NULL AND c2.cpf <> '' THEN 0 ELSE 1 END
+               LIMIT 1
+             ) c_by_phone ON true
              LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id
              WHERE bc.campaign_id = $1
              ORDER BY bc.clicked_at DESC`,
-            [campaignId]
+            [campaignId, tenantId]
           );
           buttonClicks = buttonClicksResult.rows;
         }
