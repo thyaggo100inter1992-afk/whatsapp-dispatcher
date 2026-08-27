@@ -100,17 +100,28 @@ export class MessageModel {
     return result.rows[0];
   }
 
-  static async findByCampaign(campaign_id: number, limit = 100, offset = 0) {
-    const result = await query(
-      `SELECT m.*, c.name as contact_name, c.cpf as contact_cpf, w.name as account_name
+  static async findByCampaign(campaign_id: number, limit = 100, offset = 0, tenantId?: number) {
+    const sql = `
+       SELECT m.*,
+              c.name as contact_name,
+              COALESCE(c.cpf, c_by_phone.cpf) as contact_cpf,
+              w.name as account_name
        FROM messages m
        LEFT JOIN contacts c ON m.contact_id = c.id
+       LEFT JOIN contacts c_by_phone
+         ON c_by_phone.phone_number = m.phone_number
+        AND c_by_phone.tenant_id = m.tenant_id
        LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id
        WHERE m.campaign_id = $1
        ORDER BY m.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [campaign_id, limit, offset]
-    );
+       LIMIT $2 OFFSET $3`;
+
+    if (tenantId) {
+      const result = await queryWithTenantId(tenantId, sql, [campaign_id, limit, offset]);
+      return result.rows;
+    }
+
+    const result = await query(sql, [campaign_id, limit, offset]);
     return result.rows;
   }
 

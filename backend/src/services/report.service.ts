@@ -103,13 +103,21 @@ export class ReportService {
           messages = messagesResult.rows;
           console.log(`✅ ${messages.length} mensagens QR Connect encontradas`);
         } else {
-          // Mensagens API Oficial
+          // Mensagens API Oficial (COM RLS para trazer CPF do contato)
           console.log('🔍 Buscando mensagens API Oficial...');
-          const messagesResult = await query(
-            `SELECT m.*, c.name as contact_name, c.phone_number as contact_phone, c.cpf as contact_cpf,
-                    w.name as account_name, w.phone_number as account_phone
+          const messagesResult = await queryWithTenantId(
+            tenantId,
+            `SELECT m.*,
+                    c.name as contact_name,
+                    c.phone_number as contact_phone,
+                    COALESCE(c.cpf, c_by_phone.cpf) as contact_cpf,
+                    w.name as account_name,
+                    w.phone_number as account_phone
              FROM messages m
              LEFT JOIN contacts c ON m.contact_id = c.id
+             LEFT JOIN contacts c_by_phone
+               ON c_by_phone.phone_number = m.phone_number
+              AND c_by_phone.tenant_id = m.tenant_id
              LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id
              WHERE m.campaign_id = $1
              ORDER BY m.created_at`,
@@ -324,7 +332,8 @@ export class ReportService {
           buttonClicks = buttonClicksResult.rows;
         } else {
           // Button clicks para API Oficial
-          const buttonClicksResult = await query(
+          const buttonClicksResult = await queryWithTenantId(
+            tenantId,
             `SELECT 
               bc.id,
               bc.phone_number,
@@ -333,11 +342,15 @@ export class ReportService {
               bc.button_payload,
               bc.clicked_at,
               c.name as contact_name_full,
+              COALESCE(c.cpf, c_by_phone.cpf) as contact_cpf,
               m.template_name,
               m.sent_at as message_sent_at,
               w.name as account_name
              FROM button_clicks bc
              LEFT JOIN contacts c ON bc.contact_id = c.id
+             LEFT JOIN contacts c_by_phone
+               ON c_by_phone.phone_number = bc.phone_number
+              AND (c_by_phone.tenant_id = bc.tenant_id OR bc.tenant_id IS NULL)
              LEFT JOIN messages m ON bc.message_id = m.id
              LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id
              WHERE bc.campaign_id = $1
@@ -572,6 +585,7 @@ export class ReportService {
       { header: 'Quem Clicou', key: 'contato', width: 30 },
       { header: 'Telefone', key: 'telefone', width: 18 },
       { header: 'Telefone com 9', key: 'telefone_com_9', width: 18 },
+      { header: 'CPF', key: 'cpf', width: 16 },
       { header: 'Nome do Botão', key: 'botao', width: 35 },
       { header: 'Template Usado', key: 'template', width: 30 },
       { header: 'Mensagem Enviada Em', key: 'envio', width: 18 },
@@ -589,6 +603,7 @@ export class ReportService {
         contato: 'Nenhum clique registrado',
         telefone: '-',
         telefone_com_9: '-',
+        cpf: '-',
         botao: '-',
         template: '-',
         envio: '-',
@@ -607,6 +622,7 @@ export class ReportService {
           contato: click.contact_name_full || click.contact_name || 'N/A',
           telefone: click.phone_number,
           telefone_com_9: this.addNinthDigit(click.phone_number),
+          cpf: click.contact_cpf || '-',
           botao: click.button_text || 'N/A',
           template: click.template_name || 'N/A',
           envio: mensagemEnvio,

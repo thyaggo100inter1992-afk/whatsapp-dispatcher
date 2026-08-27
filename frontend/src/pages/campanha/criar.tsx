@@ -551,7 +551,10 @@ export default function CriarCampanha() {
         });
         if (phoneIdx < 0) phoneIdx = 0;
 
-        cpfIdx = parts.findIndex(p => p.toUpperCase() === 'CPF');
+        cpfIdx = parts.findIndex(p => {
+          const u = p.toUpperCase().replace(/[^A-Z0-9]/g, '');
+          return u === 'CPF' || u.includes('CPF');
+        });
 
         variableIndexes = parts
           .map((p, idx) => ({ p: p.toUpperCase(), idx }))

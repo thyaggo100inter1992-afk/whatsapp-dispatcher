@@ -542,12 +542,12 @@ export default function Campanhas() {
                       </button>
                     )}
 
-                    {(campaign.status === 'completed' || campaign.status === 'cancelled') && (
+                    {(campaign.status === 'completed' || campaign.status === 'cancelled' || campaign.status === 'running' || campaign.status === 'paused' || campaign.status === 'scheduled' || campaign.status === 'pending') && (
                       <button
                         onClick={() => handleDownloadReport(campaign.id, campaign.name)}
                         disabled={downloadingReport === campaign.id}
                         className="px-4 py-3 bg-green-500/20 hover:bg-green-500/30 text-green-300 border-2 border-green-500/40 rounded-xl font-bold transition-all duration-200 disabled:opacity-50"
-                        title="Baixar relatório"
+                        title="Baixar relatório (mesmo em andamento)"
                       >
                     {downloadingReport === campaign.id ? (
                       <FaHourglassHalf className="text-xl animate-pulse" />

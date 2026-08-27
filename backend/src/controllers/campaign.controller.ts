@@ -394,8 +394,9 @@ export class CampaignController {
       const campaignId = parseInt(req.params.id);
       const limit = parseInt(req.query.limit as string) || 100;
       const offset = parseInt(req.query.offset as string) || 0;
+      const tenantId = (req as any).tenant?.id;
 
-      const messages = await MessageModel.findByCampaign(campaignId, limit, offset);
+      const messages = await MessageModel.findByCampaign(campaignId, limit, offset, tenantId);
 
       res.json({ success: true, data: messages });
     } catch (error: any) {

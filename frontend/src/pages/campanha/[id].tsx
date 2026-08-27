@@ -3,7 +3,8 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { 
   FaArrowLeft, FaCheckCircle, FaTimesCircle, FaClock, FaPause, 
-  FaPlay, FaBan, FaUsers, FaRocket, FaBolt, FaChartBar, FaListUl, FaTimes, FaPhone, FaGlobe 
+  FaPlay, FaBan, FaUsers, FaRocket, FaBolt, FaChartBar, FaListUl, FaTimes, FaPhone, FaGlobe,
+  FaFileExcel, FaHourglassHalf
 } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { CampaignAccountsManager } from '@/components/CampaignAccountsManager';
@@ -134,6 +135,7 @@ export default function CampanhaDetalhes() {
   const [showAllContacts, setShowAllContacts] = useState(false);
   const [allContacts, setAllContacts] = useState<Array<{ phone: string; name?: string; cpf?: string }>>([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
+  const [downloadingReport, setDownloadingReport] = useState(false);
   const [nextMessageTime, setNextMessageTime] = useState<number | null>(null);
   const [pauseEndTime, setPauseEndTime] = useState<number | null>(null);
 
@@ -338,6 +340,31 @@ export default function CampanhaDetalhes() {
       toast.error('Erro ao carregar contatos da campanha');
     } finally {
       setLoadingContacts(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    if (!campaign || downloadingReport) return;
+    try {
+      setDownloadingReport(true);
+      toast.info('Gerando relatório Excel...');
+      const response = await campaignsAPI.downloadReport(Number(id));
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Relatorio_${campaign.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('Relatório baixado com sucesso!');
+    } catch (error: any) {
+      toast.error('Erro ao gerar relatório: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setDownloadingReport(false);
     }
   };
 
@@ -625,6 +652,25 @@ export default function CampanhaDetalhes() {
                       <>
                         <FaListUl className="text-xl" />
                         Ver Todos os Contatos
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={handleDownloadReport}
+                    disabled={downloadingReport}
+                    className="px-6 py-4 bg-green-500/20 hover:bg-green-500/30 text-green-300 border-2 border-green-500/40 rounded-xl font-bold transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Baixar relatório Excel (disponível também com a campanha em andamento)"
+                  >
+                    {downloadingReport ? (
+                      <>
+                        <FaHourglassHalf className="text-xl animate-pulse" />
+                        Gerando...
+                      </>
+                    ) : (
+                      <>
+                        <FaFileExcel className="text-xl" />
+                        Baixar Relatório
                       </>
                     )}
                   </button>
