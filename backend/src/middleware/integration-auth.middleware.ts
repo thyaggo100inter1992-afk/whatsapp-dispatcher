@@ -86,30 +86,16 @@ export async function authenticateIntegrationKey(
       return;
     }
 
-    const admin = await pool.query(
-      `SELECT id, nome, email, role, permissoes, email_verificado
-       FROM tenant_users
-       WHERE tenant_id = $1 AND ativo = true
-       ORDER BY CASE WHEN role = 'admin' THEN 0 WHEN role = 'super_admin' THEN 1 ELSE 2 END, id
-       LIMIT 1`,
-      [row.tenant_id]
-    );
-
-    if (admin.rows.length === 0) {
-      res.status(401).json({ success: false, error: 'Nenhum usuário ativo no tenant' });
+    const { resolveActingUser, toReqUser } = require('../helpers/integration-user.helper');
+    const acting = await resolveActingUser(req, row.tenant_id);
+    if (acting.erro) {
+      res.status(acting.erro.status).json({ success: false, error: acting.erro.mensagem });
       return;
     }
 
-    const user = admin.rows[0];
+    const user = acting.usuario;
     const reqAny = req as any;
-    reqAny.user = {
-      id: user.id,
-      nome: user.nome,
-      email: user.email,
-      role: user.role,
-      emailVerificado: user.email_verificado,
-      permissoes: Array.isArray(user.permissoes) ? user.permissoes : [],
-    };
+    reqAny.user = toReqUser(user);
     reqAny.tenant = {
       id: row.tenant_id,
       nome: row.tenant_nome,

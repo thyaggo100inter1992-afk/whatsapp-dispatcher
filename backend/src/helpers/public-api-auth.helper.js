@@ -1,11 +1,13 @@
 /**
  * Autenticação das APIs públicas usadas pelo sistema de vendas.
  * Aceita o mesmo token do tenant (nsk_...) OU email+senha (compatibilidade).
+ * Se vier user_id, opera como aquele usuário do disparador (permissões + contagem).
  */
 
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { pool } = require('../database/connection');
+const { resolveActingUser } = require('./integration-user.helper');
 
 function hashToken(token) {
   return crypto.createHash('sha256').update(String(token).trim()).digest('hex');
@@ -34,7 +36,7 @@ function extrairToken(req) {
 
 let tableReady = false;
 
-async function autenticarPorToken(token) {
+async function autenticarPorToken(token, req) {
   if (!tableReady) {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS tenant_integration_keys (
@@ -73,17 +75,9 @@ async function autenticarPorToken(token) {
     return { erro: { status: 403, mensagem: 'Conta suspensa. Entre em contato com o suporte.' } };
   }
 
-  const admin = await pool.query(
-    `SELECT id, tenant_id, nome, email, role, ativo
-     FROM tenant_users
-     WHERE tenant_id = $1 AND ativo = true
-     ORDER BY CASE WHEN role = 'admin' THEN 0 WHEN role = 'super_admin' THEN 1 ELSE 2 END, id
-     LIMIT 1`,
-    [row.tenant_id]
-  );
-
-  if (admin.rows.length === 0) {
-    return { erro: { status: 401, mensagem: 'Nenhum usuário ativo no tenant' } };
+  const acting = await resolveActingUser(req, row.tenant_id);
+  if (acting.erro) {
+    return { erro: acting.erro };
   }
 
   pool
@@ -92,8 +86,9 @@ async function autenticarPorToken(token) {
 
   return {
     tenantId: row.tenant_id,
-    usuario: admin.rows[0],
+    usuario: acting.usuario,
     via: 'token',
+    keyId: row.id,
   };
 }
 
@@ -140,7 +135,7 @@ async function autenticarPorSenha(email, senha) {
 async function autenticarApiPublica(req) {
   const token = extrairToken(req);
   if (token) {
-    return autenticarPorToken(token);
+    return autenticarPorToken(token, req);
   }
 
   const email = req.body && req.body.email;

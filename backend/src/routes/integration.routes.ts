@@ -18,6 +18,7 @@ router.delete('/keys/:id', authenticate, setTenantContext, controller.revokeKey.
 
 // API pública do sistema de vendas (chave nsk_)
 router.post('/v1/auth', authenticateIntegrationKey, controller.auth.bind(controller));
+router.get('/v1/users', authenticateIntegrationKey, controller.users.bind(controller));
 router.get('/v1/connections', authenticateIntegrationKey, controller.connections.bind(controller));
 router.get('/v1/oficial/:id/templates', authenticateIntegrationKey, controller.oficialTemplates.bind(controller));
 router.post('/v1/oficial/send', authenticateIntegrationKey, controller.oficialSend.bind(controller));

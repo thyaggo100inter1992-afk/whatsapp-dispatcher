@@ -9,7 +9,9 @@ Leia até o final antes de alterar código. Tudo abaixo já está (ou será) no 
 
 Antes: o vendas autenticava nas APIs do disparador com **e-mail + senha** do usuário.
 Agora: o vendas autentica com **1 token por cliente** (`nsk_...`).
-Esse token identifica o **tenant** daquele cliente. Só aparecem conexões, listas, templates e consultas **dele**. Não usa login do super admin. Não mistura clientes.
+Esse token identifica o **tenant** daquele cliente.
+
+O token **não** escolhe o operador. Para isso o vendas lista os usuários do tenant, vincula na mão (Maria do vendas → Maria do disparador) e manda o `user_id` em toda chamada. Envios, restrição e conexões valem como aquele usuário. Relatório no disparador soma o que ela fez no login e o que o vendas fez no nome dela.
 
 E-mail e senha **ainda funcionam** nas APIs antigas. Não quebra o que já está no ar. A troca é gradual.
 
@@ -83,6 +85,65 @@ Se mandar token **e** e-mail/senha, o **token ganha**.
 
 ---
 
+## 3.1 Vincular usuário do vendas ao usuário do disparador (obrigatório)
+
+A chave `nsk_...` identifica o **cliente/tenant**. Ela **não** identifica a Maria, o João, etc.
+
+Os dois sistemas têm usuários com o mesmo nome, mas **não adivinham** que são a mesma pessoa. O vendas faz o vínculo **na mão**.
+
+### Fluxo
+
+1. O vendas cola a chave do cliente.
+2. O vendas chama `GET /api/integration/v1/users` com essa chave.
+3. O disparador devolve os usuários **ativos daquele tenant** (`id`, `nome`, `email`, `role`).
+4. No cadastro do operador do vendas, o admin escolhe: “este usuário do vendas = este `id` do disparador”.
+5. Em **toda** chamada seguinte (restrição, WhatsApp, envio, iframe), o vendas manda a chave **e** o `user_id` do disparador vinculado àquele operador.
+
+### Como mandar o usuário (qualquer uma)
+
+**Recomendado — header:**
+```
+X-Dispatcher-User-Id: 15
+```
+
+**Alternativa — body ou query:**
+```json
+{ "token": "nsk_...", "user_id": 15 }
+```
+
+O `15` é o `id` que veio em `GET /users`. **Não** é o id do usuário do vendas.
+
+### O que isso muda
+
+- Envio, consulta de restrição e verificação de WhatsApp passam a valer **como aquele usuário logado no disparador**.
+- Conexões: se a Maria no disparador **não** tem a API `2569`, o vendas **também não** vê e **não consegue** enviar por ela.
+- Relatório no disparador: “quantos envios a Maria fez?” = o que ela fez com login **e** o que o vendas fez no nome dela. Uma conta só.
+
+### Listar usuários
+
+`GET /api/integration/v1/users`
+
+Header: `X-Api-Key: nsk_...`
+
+Resposta:
+```json
+{
+  "success": true,
+  "data": [
+    { "id": 15, "nome": "Maria", "email": "maria@empresa.com", "role": "user" },
+    { "id": 8, "nome": "João Admin", "email": "admin@empresa.com", "role": "admin" }
+  ]
+}
+```
+
+Guardem `id` no mapeamento. `role` `admin` ou `super_admin` vê todas as conexões do tenant. `user` vê só as que o admin do disparador liberou para ele em Gestão.
+
+Se o `user_id` não existir naquele tenant ou estiver inativo: **403**.
+
+Sem `user_id` as APIs ainda funcionam (comportamento antigo, como o admin do tenant). **Não usem isso em produção.** Sempre mandem o usuário vinculado.
+
+---
+
 ## 4. O que vocês PRECISAM atualizar (APIs que já usam hoje)
 
 Troquem e-mail/senha pelo token. URLs **não mudam**. Campos de negócio **não mudam**.
@@ -104,6 +165,7 @@ Troquem e-mail/senha pelo token. URLs **não mudam**. Campos de negócio **não 
 ```json
 {
   "token": "nsk_...",
+  "user_id": 15,
   "telefone": "5511999999999"
 }
 ```
@@ -127,6 +189,7 @@ Resposta continua igual (`sucesso`, `restrito`, `listas`, etc.).
 ```json
 {
   "token": "nsk_...",
+  "user_id": 15,
   "telefone": "5511999999999",
   "lista": "nao_me_perturbe",
   "nome": "João Silva",
@@ -147,6 +210,7 @@ Resposta continua igual (`sucesso`, `restrito`, `listas`, etc.).
 ```json
 {
   "token": "nsk_...",
+  "user_id": 15,
   "telefone": "5511999999999",
   "lista": "bloqueado"
 }
@@ -163,6 +227,7 @@ Se omitir `lista`, remove de **todas** as listas daquele tenant.
 ```json
 {
   "token": "nsk_...",
+  "user_id": 15,
   "telefone": "5511999999999",
   "buscar_foto": true
 }
@@ -196,6 +261,7 @@ Vocês ainda **não tinham** isso por API pública. Agora têm.
 ```json
 {
   "token": "nsk_...",
+  "user_id": 15,
   "documento": "00000000000",
   "verificarWhatsapp": true,
   "whatsappColumn": "all"
@@ -205,6 +271,7 @@ Vocês ainda **não tinham** isso por API pública. Agora têm.
 | Campo | Obrigatório | Padrão | O que é |
 |---|---|---|---|
 | `token` | sim (ou header) | — | Token do cliente |
+| `user_id` | sim | — | `id` do usuário do disparador vinculado no vendas |
 | `documento` | sim | — | CPF ou CNPJ (só números). Também aceita `cpf` ou `cnpj` |
 | `verificarWhatsapp` | não | `true` | Marca se os telefones têm WhatsApp |
 | `whatsappColumn` | não | `first` | `first` \| `second` \| `third` \| `all` |
@@ -278,7 +345,7 @@ Cole no vendas, um iframe por tipo, **com o token daquele cliente na URL**:
 **API Oficial (Envio Rápido — template Meta):**
 ```html
 <iframe
-  src="https://sistemasnettsistemas.com.br/embed/oficial?key=nsk_TOKEN_DO_CLIENTE"
+  src="https://sistemasnettsistemas.com.br/embed/oficial?key=nsk_TOKEN_DO_CLIENTE&user_id=15"
   style="width:100%;height:900px;border:0;"
   allow="clipboard-write"
 ></iframe>
@@ -287,27 +354,34 @@ Cole no vendas, um iframe por tipo, **com o token daquele cliente na URL**:
 **QR Connect (Envio Único com template):**
 ```html
 <iframe
-  src="https://sistemasnettsistemas.com.br/embed/qr?key=nsk_TOKEN_DO_CLIENTE"
+  src="https://sistemasnettsistemas.com.br/embed/qr?key=nsk_TOKEN_DO_CLIENTE&user_id=15"
   style="width:100%;height:900px;border:0;"
   allow="clipboard-write"
 ></iframe>
 ```
 
 O iframe já:
-- autentica com o token
-- lista só as conexões daquele cliente
+- autentica com o token **e** o `user_id` daquele operador
+- lista só as conexões que aquele usuário pode usar no disparador
 - lista só os templates daquele cliente
-- dispara o envio único
+- dispara o envio único **contado para aquele usuário**
 
 Vocês **não** montam o formulário. Só embutem a tela.
 
-Substituam `nsk_TOKEN_DO_CLIENTE` pelo token salvo naquele cliente. Sem token na URL o iframe não abre.
+Substituam `nsk_TOKEN_DO_CLIENTE` pelo token salvo naquele cliente e `15` pelo `id` do usuário do disparador vinculado ao operador logado no vendas. Sem token na URL o iframe não abre. Sem `user_id` o envio não entra na conta da Maria/João.
 
 ---
 
 ### Forma B — REST (se quiserem disparar no backend, sem iframe)
 
-Todas abaixo exigem `X-Api-Key: nsk_...` (ou `token` no body).
+Todas abaixo exigem `X-Api-Key: nsk_...` **e** `X-Dispatcher-User-Id: 15` (ou `user_id` no body/query).
+
+#### 6.0 Listar usuários do disparador (para o mapeamento)
+`GET /api/integration/v1/users`
+
+Header: `X-Api-Key: nsk_...`
+
+Devolve `id`, `nome`, `email`, `role`. Usem `id` no vínculo com o usuário do vendas. Chamem **uma vez** quando colarem a chave (e de novo se o admin incluir usuário novo no disparador).
 
 #### 6.1 Listar conexões
 `GET /api/integration/v1/connections?channel=oficial`  
@@ -382,12 +456,13 @@ Devolve JWT. Só precisa se forem chamar as rotas internas do painel. **Para as 
 ## 7. Regras que evitam bug
 
 1. **Sempre** o token **daquele** cliente. Nunca o do vizinho.
-2. Telefone: só dígitos, com DDI `55`.
-3. CPF/CNPJ: só dígitos.
-4. CORS já está liberado nessas rotas. Chamem direto do backend do vendas (preferível) ou do front.
-5. 401 = token errado, desativado ou ausente. 403 = tenant inativo, limite de consulta, ou número/CPF restrito.
-6. Iframe e REST usam o **mesmo** token.
-7. Não loguem o token em texto puro em produção.
+2. **Sempre** o `user_id` do disparador vinculado ao operador do vendas.
+3. Telefone: só dígitos, com DDI `55`.
+4. CPF/CNPJ: só dígitos.
+5. CORS já está liberado nessas rotas. Chamem direto do backend do vendas (preferível) ou do front.
+6. 401 = token errado, desativado ou ausente. 403 = tenant inativo, limite de consulta, número/CPF restrito, **usuário inválido** ou **sem permissão naquela conexão**.
+7. Iframe e REST usam o **mesmo** token e o **mesmo** `user_id`.
+8. Não loguem o token em texto puro em produção.
 
 ---
 
@@ -396,14 +471,16 @@ Devolve JWT. Só precisa se forem chamar as rotas internas do painel. **Para as 
 **Cadastro do cliente**
 - [ ] Campo `token_disparador` (string, secreto).
 - [ ] Tela/admin para colar o token gerado no disparador (Integração → Gerar chave).
+- [ ] Ao salvar a chave, chamar `GET /api/integration/v1/users` e guardar a lista.
+- [ ] Em cada usuário/operador do vendas, campo para escolher o `user_id` do disparador (mapeamento manual).
 
 **APIs que vocês já chamam**
-- [ ] Restrição consultar / add / remover → parar de mandar `email` e `senha`; mandar `token`.
-- [ ] WhatsApp verificar → idem.
+- [ ] Restrição consultar / add / remover → parar de mandar `email` e `senha`; mandar `token` + `user_id`.
+- [ ] WhatsApp verificar → idem (`token` + `user_id`).
 
 **Novo**
-- [ ] Tela ou backend de consulta Nova Vida → `POST /api/public/novavida/consultar`.
-- [ ] Disparo WhatsApp: iframe Oficial + iframe QR **ou** REST da seção 6.
+- [ ] Tela ou backend de consulta Nova Vida → `POST /api/public/novavida/consultar` com `user_id`.
+- [ ] Disparo WhatsApp: iframe Oficial + iframe QR **com** `user_id` **ou** REST da seção 6 com `X-Dispatcher-User-Id`.
 
 **Não precisa**
 - [ ] Não criar login no disparador.
@@ -416,14 +493,15 @@ Devolve JWT. Só precisa se forem chamar as rotas internas do painel. **Para as 
 
 | O que o vendas precisa | Endpoint | Auth |
 |---|---|---|
-| Consultar restrição | `POST /api/public/restriction-list/consultar` | token (atualizar) |
-| Cadastrar restrição | `POST /api/public/restriction-list/add` | token (atualizar) |
-| Remover restrição | `POST /api/public/restriction-list/remover` | token (atualizar) |
-| Número tem WhatsApp? | `POST /api/public/whatsapp/verificar` | token (atualizar) |
-| Consulta CPF/CNPJ completa | `POST /api/public/novavida/consultar` | token (**novo**) |
-| Tela envio Oficial | `/embed/oficial?key=nsk_...` | token na URL (**novo**) |
-| Tela envio QR | `/embed/qr?key=nsk_...` | token na URL (**novo**) |
-| Envio Oficial via API | `POST /api/integration/v1/oficial/send` | token (**novo**) |
-| Envio QR via API | `POST /api/integration/v1/qr/send` | token (**novo**) |
+| Listar usuários do tenant | `GET /api/integration/v1/users` | token |
+| Consultar restrição | `POST /api/public/restriction-list/consultar` | token + user_id |
+| Cadastrar restrição | `POST /api/public/restriction-list/add` | token + user_id |
+| Remover restrição | `POST /api/public/restriction-list/remover` | token + user_id |
+| Número tem WhatsApp? | `POST /api/public/whatsapp/verificar` | token + user_id |
+| Consulta CPF/CNPJ completa | `POST /api/public/novavida/consultar` | token + user_id |
+| Tela envio Oficial | `/embed/oficial?key=nsk_...&user_id=15` | token + user_id na URL |
+| Tela envio QR | `/embed/qr?key=nsk_...&user_id=15` | token + user_id na URL |
+| Envio Oficial via API | `POST /api/integration/v1/oficial/send` | token + user_id |
+| Envio QR via API | `POST /api/integration/v1/qr/send` | token + user_id |
 
 Dúvida de payload: copiem os JSON desta página. Não inventem campos. Se algo falhar, mandem status HTTP + body da resposta.

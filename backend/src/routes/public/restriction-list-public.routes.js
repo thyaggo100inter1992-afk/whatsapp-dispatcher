@@ -128,8 +128,8 @@ router.post('/add', async (req, res) => {
     // ── Preencher campos opcionais ─────────────────────────────────────────
     const nomeContato = nome && nome.trim() ? nome.trim() : telefoneNormalizado;
     const observacao = cpf && cpf.trim()
-      ? `CPF: ${cpf.trim()}`
-      : `Adicionado via API externa`;
+      ? `CPF: ${cpf.trim()}${auth.usuario?.nome ? ` | Usuário: ${auth.usuario.nome}` : ''}`
+      : `Adicionado via API externa${auth.usuario?.nome ? ` (usuário: ${auth.usuario.nome})` : ''}`;
 
     // ── Buscar configuração de retenção da lista ───────────────────────────
     const listTypeResult = await pool.query(

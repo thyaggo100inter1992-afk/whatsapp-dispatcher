@@ -9,6 +9,12 @@ import { RestrictionListController } from './restriction-list.controller';
 
 const { generateIntegrationToken } = require('../middleware/auth.middleware');
 const { getInstanceWithCredentials } = require('../helpers/instance-credentials.helper');
+const {
+  listOficialAccounts,
+  listQrInstances,
+  userHasOficialAccount,
+  userHasQrInstance,
+} = require('../helpers/integration-user.helper');
 
 function publicApiBase() {
   return (process.env.WEBHOOK_BASE_URL || process.env.FRONTEND_URL || 'https://api.sistemasnettsistemas.com.br')
@@ -77,7 +83,7 @@ function formatButtons(buttons: any[] = []) {
 export class IntegrationController {
   async cors(req: Request, res: Response, next: any) {
     res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Key');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Key, X-Dispatcher-User-Id, X-User-Id');
     res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     res.header('Access-Control-Allow-Credentials', 'true');
     if (req.method === 'OPTIONS') {
@@ -146,8 +152,8 @@ export class IntegrationController {
           key_prefix: prefix,
           warning: 'Guarde esta chave agora. Ela não será mostrada de novo.',
           embed: {
-            oficial: `${frontend}/embed/oficial?key=${encodeURIComponent(raw)}`,
-            qr: `${frontend}/embed/qr?key=${encodeURIComponent(raw)}`,
+            oficial: `${frontend}/embed/oficial?key=${encodeURIComponent(raw)}&user_id=ID_DO_USUARIO`,
+            qr: `${frontend}/embed/qr?key=${encodeURIComponent(raw)}&user_id=ID_DO_USUARIO`,
           },
         },
       });
@@ -172,14 +178,39 @@ export class IntegrationController {
     res.json({ success: true, message: 'Chave desativada' });
   }
 
+  async users(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      const result = await pool.query(
+        `SELECT id, nome, email, role
+         FROM tenant_users
+         WHERE tenant_id = $1 AND ativo = true
+         ORDER BY nome ASC NULLS LAST, id ASC`,
+        [tenantId]
+      );
+      res.json({
+        success: true,
+        data: result.rows.map((u: any) => ({
+          id: u.id,
+          nome: u.nome,
+          email: u.email,
+          role: u.role,
+        })),
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message || 'Erro ao listar usuários' });
+    }
+  }
+
   async connections(req: Request, res: Response) {
     try {
       const tenantId = (req as any).tenant?.id;
+      const user = (req as any).user;
       const channel = String(req.query.channel || 'all');
       const data: any = { oficial: [], qr: [] };
 
       if (channel === 'oficial' || channel === 'all') {
-        const accounts = await WhatsAppAccountModel.findActive(tenantId);
+        const accounts = await listOficialAccounts(tenantId, user);
         data.oficial = (accounts || []).map((a: any) => ({
           id: a.id,
           channel: 'oficial',
@@ -190,14 +221,8 @@ export class IntegrationController {
       }
 
       if (channel === 'qr' || channel === 'all') {
-        const qr = await pool.query(
-          `SELECT id, name, session_name, phone_number, profile_name, status, is_active, is_connected
-           FROM uaz_instances
-           WHERE tenant_id = $1 AND is_active = true
-           ORDER BY display_order ASC NULLS LAST, created_at DESC`,
-          [tenantId]
-        );
-        data.qr = qr.rows.map((a: any) => ({
+        const qr = await listQrInstances(tenantId, user);
+        data.qr = (qr || []).map((a: any) => ({
           id: a.id,
           channel: 'qr',
           name: a.name || a.profile_name || a.session_name,
@@ -207,7 +232,11 @@ export class IntegrationController {
         }));
       }
 
-      res.json({ success: true, data });
+      res.json({
+        success: true,
+        acting_user: user ? { id: user.id, nome: user.nome, email: user.email, role: user.role } : null,
+        data,
+      });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message || 'Erro ao listar conexões' });
     }
@@ -216,7 +245,15 @@ export class IntegrationController {
   async oficialTemplates(req: Request, res: Response) {
     try {
       const tenantId = (req as any).tenant?.id;
+      const user = (req as any).user;
       const accountId = parseInt(req.params.id, 10);
+      const allowed = await userHasOficialAccount(tenantId, user, accountId);
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          error: 'Este usuário não tem permissão para usar esta conta da API Oficial',
+        });
+      }
       const account = await WhatsAppAccountModel.findById(accountId, tenantId);
       if (!account) {
         return res.status(404).json({ success: false, error: 'Conta oficial não encontrada' });
@@ -242,6 +279,16 @@ export class IntegrationController {
   }
 
   async oficialSend(req: Request, res: Response) {
+    const tenantId = (req as any).tenant?.id;
+    const user = (req as any).user;
+    const accountId = parseInt(req.body.connection_id || req.body.whatsapp_account_id, 10);
+    const allowed = await userHasOficialAccount(tenantId, user, accountId);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'Este usuário não tem permissão para usar esta conta da API Oficial',
+      });
+    }
     const controller = new MessageController();
     req.body = {
       whatsapp_account_id: req.body.connection_id || req.body.whatsapp_account_id,
@@ -329,6 +376,15 @@ export class IntegrationController {
         });
       }
 
+      const user = (req as any).user;
+      const allowed = await userHasQrInstance(tenantId, user, instanceId);
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          error: 'Este usuário não tem permissão para usar esta conexão QR',
+        });
+      }
+
       const restriction = await checkRestriction(tenantId, number, [instanceId]);
       if (restriction?.restricted_count > 0) {
         const detail = restriction.restricted_details?.[0];
@@ -382,6 +438,12 @@ export class IntegrationController {
         const r = await this.sendQrTemplate(creds.uazService, creds.proxyConfig, token, number, template, filledText, variables);
         results.push(r);
       }
+
+      await pool.query(
+        `INSERT INTO uaz_messages (instance_id, phone_number, message_type, message_content, status, user_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [instanceId, number, 'template', filledText || JSON.stringify(results), 'sent', user?.id || null]
+      );
 
       res.json({ success: true, data: results });
     } catch (error: any) {

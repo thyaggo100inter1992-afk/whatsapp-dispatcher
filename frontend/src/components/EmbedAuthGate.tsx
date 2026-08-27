@@ -13,6 +13,7 @@ export default function EmbedAuthGate({ children }: { children: React.ReactNode 
     if (!router.isReady) return;
 
     const key = String(router.query.key || '').trim();
+    const userId = String(router.query.user_id || '').trim();
     if (!key) {
       setError('Informe a chave de API na URL: ?key=nsk_...');
       return;
@@ -22,10 +23,18 @@ export default function EmbedAuthGate({ children }: { children: React.ReactNode 
 
     (async () => {
       try {
+        const headers: Record<string, string> = {
+          'X-Api-Key': key,
+          'Content-Type': 'application/json',
+        };
+        if (userId) {
+          headers['X-Dispatcher-User-Id'] = userId;
+        }
+
         const response = await axios.post(
           `${apiBase}/integration/v1/auth`,
-          { api_key: key },
-          { headers: { 'X-Api-Key': key, 'Content-Type': 'application/json' } }
+          { api_key: key, user_id: userId ? Number(userId) : undefined },
+          { headers }
         );
 
         const payload = response.data?.data;
@@ -46,7 +55,7 @@ export default function EmbedAuthGate({ children }: { children: React.ReactNode 
         setError(message);
       }
     })();
-  }, [router.isReady, router.query.key]);
+  }, [router.isReady, router.query.key, router.query.user_id]);
 
   if (error) {
     return (

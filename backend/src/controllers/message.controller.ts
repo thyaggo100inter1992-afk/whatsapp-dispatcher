@@ -31,6 +31,18 @@ export class MessageController {
         });
       }
 
+      const actingUser = (req as any).user;
+      if (actingUser?.id) {
+        const { userHasOficialAccount } = require('../helpers/integration-user.helper');
+        const allowed = await userHasOficialAccount(tenantId, actingUser, whatsapp_account_id);
+        if (!allowed) {
+          return res.status(403).json({
+            success: false,
+            error: 'Este usuário não tem permissão para usar esta conta da API Oficial',
+          });
+        }
+      }
+
       // 🚨 VERIFICAR LISTA DE RESTRIÇÃO (BACKEND - OBRIGATÓRIO)
       console.log('═══════════════════════════════════════════════════════');
       console.log('🔍 VERIFICANDO LISTA DE RESTRIÇÃO (ENVIO IMEDIATO)');

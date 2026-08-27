@@ -44,15 +44,27 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function buscarInstanciasConectadas(tenantId) {
+async function buscarInstanciasConectadas(tenantId, usuario) {
+  const isOwner =
+    !usuario || usuario.role === 'admin' || usuario.role === 'super_admin';
+  const filtroUsuario = isOwner
+    ? ''
+    : ` AND EXISTS (
+          SELECT 1 FROM user_uaz_instances uui
+          WHERE uui.uaz_instance_id = ui.id
+            AND uui.user_id = $2
+            AND uui.tenant_id = $1
+        )`;
+  const params = isOwner ? [tenantId] : [tenantId, usuario.id];
+
   let result = await pool.query(
     `SELECT ui.id, ui.instance_token, ui.name, p.host, p.port, p.username, p.password
      FROM uaz_instances ui
      LEFT JOIN proxies p ON ui.proxy_id = p.id
      WHERE ui.tenant_id = $1 AND ui.is_active = true AND ui.status = 'connected'
-       AND ui.instance_token IS NOT NULL
+       AND ui.instance_token IS NOT NULL${filtroUsuario}
      ORDER BY ui.id`,
-    [tenantId]
+    params
   );
 
   if (result.rows.length === 0) {
@@ -61,9 +73,9 @@ async function buscarInstanciasConectadas(tenantId) {
        FROM uaz_instances ui
        LEFT JOIN proxies p ON ui.proxy_id = p.id
        WHERE ui.tenant_id = $1 AND ui.is_connected = true
-         AND ui.instance_token IS NOT NULL
+         AND ui.instance_token IS NOT NULL${filtroUsuario}
        ORDER BY ui.id`,
-      [tenantId]
+      params
     );
   }
 
@@ -108,7 +120,7 @@ function runExclusive(tenantId, fn) {
  * Com N instâncias, até N consultas podem rodar em paralelo (1 por instância).
  * Se todas estiverem em cooldown/ocupadas, espera até liberar.
  */
-async function adquirirInstancia(tenantId) {
+async function adquirirInstancia(tenantId, usuario) {
   const inicio = Date.now();
 
   while (true) {
@@ -121,7 +133,7 @@ async function adquirirInstancia(tenantId) {
     }
 
     const result = await runExclusive(tenantId, async () => {
-      const instancias = await buscarInstanciasConectadas(tenantId);
+      const instancias = await buscarInstanciasConectadas(tenantId, usuario);
       if (!instancias.length) {
         return { semInstancia: true };
       }
@@ -167,7 +179,7 @@ async function adquirirInstancia(tenantId) {
 
     if (result.semInstancia) {
       const err = new Error(
-        'Nenhuma instância WhatsApp conectada neste tenant. Conecte um QR Code no disparador.'
+        'Nenhuma instância WhatsApp conectada para este usuário. Libere um QR Code para ele no disparador.'
       );
       err.status = 400;
       throw err;
@@ -269,7 +281,7 @@ router.post('/verificar', async (req, res) => {
     }
 
     // Entra na fila: espera slot livre respeitando 10s por instância
-    slot = await adquirirInstancia(tenantId);
+    slot = await adquirirInstancia(tenantId, auth.usuario);
     const { instancia, instanciasCount, esperaMs } = slot;
 
     const credentials = await getTenantUazapCredentials(tenantId);
