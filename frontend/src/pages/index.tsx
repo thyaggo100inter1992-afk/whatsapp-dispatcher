@@ -63,7 +63,7 @@ export default function ChooseIntegration() {
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex items-center justify-center py-12 px-4">
         {/* Botão de Perfil e Logout no Canto Superior Direito */}
         <div className="fixed top-6 right-6 z-50 flex items-center gap-4">
-        {(user?.role === 'admin' || user?.role === 'super_admin') && (
+        {user?.role === 'super_admin' && (
           <button
             onClick={() => router.push('/integracao')}
             className="px-4 py-2 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded-lg font-bold transition-all flex items-center gap-2 border border-emerald-400/40"

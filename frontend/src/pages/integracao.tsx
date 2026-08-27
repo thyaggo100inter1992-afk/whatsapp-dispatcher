@@ -37,7 +37,7 @@ export default function IntegracaoPage() {
   };
 
   useEffect(() => {
-    if (!loading && user && (user.role === 'admin' || user.role === 'super_admin')) {
+    if (!loading && user && user.role === 'super_admin') {
       loadKeys();
     }
   }, [loading, user]);
@@ -79,10 +79,10 @@ export default function IntegracaoPage() {
     );
   }
 
-  if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
+  if (!user || user.role !== 'super_admin') {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">
-        Apenas administradores podem gerenciar a integração.
+        Apenas o administrador master pode gerenciar a integração.
       </div>
     );
   }

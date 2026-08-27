@@ -1452,6 +1452,7 @@ export default function Gestao() {
             </div>
             
             <div className="flex items-center gap-4">
+              {user?.role === 'super_admin' && (
               <button
                 onClick={() => router.push('/integracao')}
                 className="px-4 py-2 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded-lg font-bold transition-all flex items-center gap-2"
@@ -1459,6 +1460,7 @@ export default function Gestao() {
               >
                 <FaPlug /> Integração
               </button>
+              )}
               {/* Avatar e Nome do Usuário */}
               <div className="flex items-center gap-3 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20">
                 {user?.avatar ? (

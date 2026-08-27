@@ -43,7 +43,7 @@ nsk_a1b2c3d4e5f6...
 ```
 
 ### De onde vem
-No **disparador**, o **admin da conta daquele cliente** (não o super admin do sistema) entra em:
+No **disparador**, só o **Master (super_admin)** gera a chave. Admin comum da conta (João, Luna, etc.) **não vê** Integração e não consegue gerar nem cancelar chave.
 
 **Integração → Gerar chave**
 
