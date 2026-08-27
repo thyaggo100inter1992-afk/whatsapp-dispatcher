@@ -142,6 +142,7 @@ export default function MensagensPage() {
     // Filtro de busca
     const matchesSearch = 
       message.phone_number.includes(searchTerm) ||
+      (message.contact_cpf && message.contact_cpf.includes(searchTerm.replace(/\D/g, ''))) ||
       message.template_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (message.account_name && message.account_name.toLowerCase().includes(searchTerm.toLowerCase()));
 
