@@ -120,7 +120,12 @@ export default function Templates() {
   };
 
   const handleDelete = async (id: number, name: string) => {
-    const ok = await confirm({ title: 'Excluir Template', message: `Excluir "${name}"?`, confirmText: 'Sim, Excluir', type: 'danger' });
+    const ok = await confirm({
+      title: 'Excluir Template',
+      message: `Excluir "${name}"?\n\nSe alguma campanha estiver usando este modelo, ela será apenas desvinculada (o conteúdo da campanha permanece).`,
+      confirmText: 'Sim, Excluir',
+      type: 'danger',
+    });
     if (!ok) return;
     try {
       await api.delete(`/email-marketing/templates/${id}`);

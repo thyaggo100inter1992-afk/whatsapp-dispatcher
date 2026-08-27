@@ -171,10 +171,11 @@ function requireTenant(req: Request, res: Response): number | null {
   return tenantId;
 }
 
-/** HTML de corpo “vazio” (editor rico às vezes deixa &lt;p&gt;&lt;br&gt;&lt;/p&gt;) */
+/** HTML de corpo “vazio” — modelos com imagem/tabela também contam. */
 function isUsableEmailBody(html: any): boolean {
   const raw = String(html || '').trim();
   if (!raw) return false;
+  if (/<img\b/i.test(raw) || /<table\b/i.test(raw) || /<a\b/i.test(raw) || /src\s*=/i.test(raw)) return true;
   const plain = raw
     .replace(/<style[\s\S]*?<\/style>/gi, '')
     .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -199,7 +200,20 @@ let bodyHtmlsColReady = false;
 async function ensureCampaignBodyHtmlsColumn() {
   if (bodyHtmlsColReady) return;
   await pool.query(`ALTER TABLE email_marketing_campaigns ADD COLUMN IF NOT EXISTS body_htmls JSONB`);
+  await pool.query(`ALTER TABLE email_marketing_campaigns ADD COLUMN IF NOT EXISTS template_ids JSONB`);
+  await pool.query(`ALTER TABLE email_marketing_recipients ADD COLUMN IF NOT EXISTS sent_model_name TEXT`);
+  await pool.query(`ALTER TABLE email_marketing_recipients ADD COLUMN IF NOT EXISTS sent_model_index INTEGER`);
   bodyHtmlsColReady = true;
+}
+
+function parseIdArray(raw: any): number[] {
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0);
+  } catch {
+    return [];
+  }
 }
 
 
@@ -337,6 +351,7 @@ export const addDomain = async (req: Request, res: Response) => {
       const {
         createNettEnviosDomain,
         mapNettEnviosDnsRecords,
+        waitForNettEnviosGoogleDns,
         nettEnviosCanSend,
         newWebhookToken,
         registerNettEnviosDomainWebhooks,
@@ -351,11 +366,16 @@ export const addDomain = async (req: Request, res: Response) => {
         console.warn('[addDomain] ensure smtp cred:', e?.message || e);
       }
 
-      const apiDomain = await createNettEnviosDomain(domain, tenantId);
+      let apiDomain = await createNettEnviosDomain(domain, tenantId);
       try {
         await upsertNettEnviosUser({ tenantId: Number(tenantId), domain: String(domain) });
       } catch (e: any) {
         console.warn('[addDomain] upsert smtp user/limits:', e?.message || e);
+      }
+      try {
+        apiDomain = await waitForNettEnviosGoogleDns(apiDomain);
+      } catch (e: any) {
+        console.warn('[addDomain] google postmaster ainda não chegou:', e?.message || e);
       }
       const dnsRecords = mapNettEnviosDnsRecords({
         ...apiDomain,
@@ -513,6 +533,7 @@ export const verifyDomain = async (req: Request, res: Response) => {
         getNettEnviosDomain,
         getNettEnviosDomainByName,
         mapNettEnviosDnsRecords,
+        mergeNettDnsWithStored,
         nettEnviosCanSend,
         registerNettEnviosDomainWebhooks,
         newWebhookToken,
@@ -542,6 +563,7 @@ export const verifyDomain = async (req: Request, res: Response) => {
       if (!dnsRecords.length && Array.isArray(domainRow.rows[0].dns_records)) {
         dnsRecords = [...domainRow.rows[0].dns_records];
       }
+      dnsRecords = mergeNettDnsWithStored(dnsRecords, domainRow.rows[0].dns_records);
       const hasDmarc = dnsRecords.some(
         (r: any) =>
           r._is_dmarc ||
@@ -564,10 +586,15 @@ export const verifyDomain = async (req: Request, res: Response) => {
       const canSend = nettEnviosCanSend(apiDomain) || dnsRecords.some((r: any) => r.valid === 'valid');
       // Checagem DNS local complementar
       const checkedDns = await Promise.all(
-        dnsRecords.map(async (rec: any) => ({
-          ...rec,
-          valid: rec.valid === 'valid' ? 'valid' : await checkDnsRecord(rec, domainName),
-        }))
+        dnsRecords.map(async (rec: any) => {
+          if (rec?._pending_google && !String(rec.value || '').trim()) {
+            return { ...rec, valid: rec.valid || 'unknown' };
+          }
+          return {
+            ...rec,
+            valid: rec.valid === 'valid' ? 'valid' : await checkDnsRecord(rec, domainName),
+          };
+        })
       );
       const allVerified = checkedDns.every((r: any) => r.valid === 'valid');
       const spfOk = checkedDns.some(
@@ -876,6 +903,34 @@ export const registerDomainWebhooks = async (req: Request, res: Response) => {
   }
 };
 
+let mailboxDomainFkReady = false;
+async function ensureMailboxDomainFk(db: { query: (sql: string, params?: any[]) => Promise<any> }) {
+  if (mailboxDomainFkReady) return;
+  await db.query(`ALTER TABLE email_mailboxes ALTER COLUMN domain_id DROP NOT NULL`).catch(() => {});
+  await db.query(`
+    DO $$
+    DECLARE r RECORD;
+    BEGIN
+      FOR r IN
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = 'email_mailboxes'::regclass
+          AND c.contype = 'f'
+          AND a.attname = 'domain_id'
+      LOOP
+        EXECUTE format('ALTER TABLE email_mailboxes DROP CONSTRAINT IF EXISTS %I', r.conname);
+      END LOOP;
+    END $$;
+  `).catch(() => {});
+  await db.query(`
+    ALTER TABLE email_mailboxes
+      ADD CONSTRAINT email_mailboxes_domain_id_fkey
+      FOREIGN KEY (domain_id) REFERENCES email_marketing_domains(id) ON DELETE SET NULL
+  `).catch(() => {});
+  mailboxDomainFkReady = true;
+}
+
 export const deleteDomain = async (req: Request, res: Response) => {
   const client = await pool.connect();
   let domainName = '';
@@ -887,8 +942,7 @@ export const deleteDomain = async (req: Request, res: Response) => {
     if (!tenantId) return;
     const { id } = req.params;
 
-    const { ensureMailboxDomainNullable, deactivateMailboxesForDomain } = require('../services/email-mailbox.service');
-    await ensureMailboxDomainNullable();
+    await ensureMailboxDomainFk(client);
 
     const domainRow = await client.query(
       `SELECT id, domain, provider, external_domain_id FROM email_marketing_domains WHERE id=$1 AND tenant_id=$2`,
@@ -903,7 +957,12 @@ export const deleteDomain = async (req: Request, res: Response) => {
     externalId = domainRow.rows[0].external_domain_id;
 
     await client.query('BEGIN');
-    await deactivateMailboxesForDomain(client, Number(id), tenantId);
+    await client.query(
+      `UPDATE email_mailboxes
+       SET is_active=FALSE, domain_id=NULL, updated_at=NOW()
+       WHERE domain_id=$1 AND tenant_id=$2`,
+      [id, tenantId]
+    );
     await client.query(
       `UPDATE email_marketing_campaigns SET domain_id=NULL WHERE domain_id=$1 AND tenant_id=$2`,
       [id, tenantId]
@@ -957,7 +1016,11 @@ export const getLists = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const result = await pool.query(
-      `SELECT * FROM email_marketing_lists WHERE tenant_id=$1 ORDER BY created_at DESC`,
+      `SELECT l.*,
+              COALESCE((SELECT COUNT(*)::int FROM email_marketing_contacts c WHERE c.list_id = l.id), 0) AS total_contacts
+       FROM email_marketing_lists l
+       WHERE l.tenant_id=$1
+       ORDER BY l.created_at DESC`,
       [tenantId]
     );
     res.json({ success: true, data: result.rows });
@@ -994,6 +1057,66 @@ export const deleteList = async (req: Request, res: Response) => {
   }
 };
 
+type ImportContactRow = {
+  email: string;
+  name?: string;
+  cpf?: string;
+  phone?: string;
+  var1?: string;
+  var2?: string;
+  var3?: string;
+  var4?: string;
+  var5?: string;
+};
+
+function pickCsvField(row: any, keys: string[]): string {
+  const map: Record<string, string> = {};
+  for (const [key, val] of Object.entries(row || {})) {
+    map[String(key).toLowerCase().trim()] = String(val ?? '').trim();
+  }
+  for (const k of keys) {
+    const v = map[k.toLowerCase()];
+    if (v) return v;
+  }
+  return '';
+}
+
+function rowToImportContact(row: any): ImportContactRow | null {
+  const email = pickCsvField(row, ['email', 'e-mail', 'e_mail', 'mail', 'endereco', 'endereço']).toLowerCase();
+  if (!email || !email.includes('@')) return null;
+  return {
+    email,
+    name: pickCsvField(row, ['name', 'nome', 'nome_completo', 'cliente']) || undefined,
+    cpf: pickCsvField(row, ['cpf', 'documento', 'doc']) || undefined,
+    phone: pickCsvField(row, ['phone', 'telefone', 'celular', 'whatsapp', 'tel']) || undefined,
+    var1: pickCsvField(row, ['var1', 'variavel1', 'variável1', 'variavel_1', 'campo1']) || undefined,
+    var2: pickCsvField(row, ['var2', 'variavel2', 'variável2', 'variavel_2', 'campo2']) || undefined,
+    var3: pickCsvField(row, ['var3', 'variavel3', 'variável3', 'variavel_3', 'campo3']) || undefined,
+    var4: pickCsvField(row, ['var4', 'variavel4', 'variável4', 'variavel_4', 'campo4']) || undefined,
+    var5: pickCsvField(row, ['var5', 'variavel5', 'variável5', 'variavel_5', 'campo5']) || undefined,
+  };
+}
+
+async function parseImportCsv(buffer: Buffer): Promise<ImportContactRow[]> {
+  const rawText = buffer.toString('utf8').replace(/^\uFEFF/, '');
+  const firstLine = (rawText.split(/\r?\n/).find((l: string) => l.trim()) || '');
+  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const separator = semicolonCount > commaCount ? ';' : ',';
+  const contacts: ImportContactRow[] = [];
+  await new Promise<void>((resolve, reject) => {
+    Readable.from(Buffer.from(rawText, 'utf8'))
+      .pipe(csv({ separator, mapHeaders: ({ header }) => String(header || '').trim() }))
+      .on('data', (row) => {
+        const c = rowToImportContact(row);
+        if (c) contacts.push(c);
+      })
+      .on('end', resolve)
+      .on('error', reject);
+  });
+  return contacts;
+}
+
 export const importContacts = async (req: Request, res: Response) => {
   try {
     const tenantId = requireTenant(req, res);
@@ -1004,56 +1127,11 @@ export const importContacts = async (req: Request, res: Response) => {
     if (!listCheck.rows[0]) return res.status(404).json({ success: false, message: 'Lista não encontrada' });
 
     const file = (req as any).file;
-    if (!file) return res.status(400).json({ success: false, message: 'Arquivo CSV obrigatório' });
+    if (!file) return res.status(400).json({ success: false, message: 'Arquivo CSV/Excel obrigatório' });
 
-    const contacts: { email: string; name?: string; cpf?: string; phone?: string; var1?: string; var2?: string; var3?: string; var4?: string; var5?: string }[] = [];
-    const rawText = file.buffer.toString('utf8').replace(/^\uFEFF/, '');
-    const firstLine = (rawText.split(/\r?\n/).find((l: string) => l.trim()) || '');
-    const semicolonCount = (firstLine.match(/;/g) || []).length;
-    const commaCount = (firstLine.match(/,/g) || []).length;
-    const separator = semicolonCount > commaCount ? ';' : ',';
-    const stream = Readable.from(Buffer.from(rawText, 'utf8'));
+    const contacts = await parseImportCsv(file.buffer);
 
-    const pick = (row: any, keys: string[]) => {
-      for (const k of keys) {
-        const v = row[k] ?? row[k.toLowerCase()] ?? row[k.toUpperCase()];
-        if (v != null && String(v).trim() !== '') return String(v).trim();
-      }
-      const map: Record<string, string> = {};
-      for (const [key, val] of Object.entries(row || {})) {
-        map[String(key).toLowerCase().trim()] = String(val ?? '').trim();
-      }
-      for (const k of keys) {
-        const v = map[k.toLowerCase()];
-        if (v) return v;
-      }
-      return '';
-    };
-
-    await new Promise<void>((resolve, reject) => {
-      stream.pipe(csv({ separator }))
-        .on('data', (row) => {
-          const email = pick(row, ['email', 'e-mail', 'mail']);
-          if (email && email.includes('@')) {
-            contacts.push({
-              email: email.toLowerCase(),
-              name: pick(row, ['name', 'nome', 'nome_completo', 'cliente']) || undefined,
-              cpf: pick(row, ['cpf', 'documento', 'doc']) || undefined,
-              phone: pick(row, ['phone', 'telefone', 'celular', 'whatsapp', 'tel']) || undefined,
-              var1: pick(row, ['var1', 'variavel1', 'variável1', 'variavel_1', 'campo1']) || undefined,
-              var2: pick(row, ['var2', 'variavel2', 'variável2', 'variavel_2', 'campo2']) || undefined,
-              var3: pick(row, ['var3', 'variavel3', 'variável3', 'variavel_3', 'campo3']) || undefined,
-              var4: pick(row, ['var4', 'variavel4', 'variável4', 'variavel_4', 'campo4']) || undefined,
-              var5: pick(row, ['var5', 'variavel5', 'variável5', 'variavel_5', 'campo5']) || undefined,
-            });
-          }
-        })
-        .on('end', resolve)
-        .on('error', reject);
-    });
-
-    // Remove e-mails clonados no próprio arquivo (mantém 1ª ocorrência)
-    const uniqueContacts: typeof contacts = [];
+    const uniqueContacts: ImportContactRow[] = [];
     const seenEmail = new Set<string>();
     let duplicatesRemoved = 0;
     for (const c of contacts) {
@@ -1067,38 +1145,53 @@ export const importContacts = async (req: Request, res: Response) => {
       uniqueContacts.push({ ...c, email });
     }
 
+    const CHUNK = 500;
     let inserted = 0;
-    for (const c of uniqueContacts) {
-      try {
-        const r = await pool.query(
-          `INSERT INTO email_marketing_contacts (tenant_id, list_id, email, name, cpf, phone, var1, var2, var3, var4, var5)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-           ON CONFLICT (list_id, email) DO UPDATE SET
-             name = COALESCE(NULLIF(EXCLUDED.name, ''), email_marketing_contacts.name),
-             cpf = COALESCE(NULLIF(EXCLUDED.cpf, ''), email_marketing_contacts.cpf),
-             phone = COALESCE(NULLIF(EXCLUDED.phone, ''), email_marketing_contacts.phone),
-             var1 = COALESCE(NULLIF(EXCLUDED.var1, ''), email_marketing_contacts.var1),
-             var2 = COALESCE(NULLIF(EXCLUDED.var2, ''), email_marketing_contacts.var2),
-             var3 = COALESCE(NULLIF(EXCLUDED.var3, ''), email_marketing_contacts.var3),
-             var4 = COALESCE(NULLIF(EXCLUDED.var4, ''), email_marketing_contacts.var4),
-             var5 = COALESCE(NULLIF(EXCLUDED.var5, ''), email_marketing_contacts.var5),
-             updated_at = NOW()
-           RETURNING id`,
-          [
-            tenantId, list_id, c.email, c.name || null, c.cpf || null, c.phone || null,
-            c.var1 || null, c.var2 || null, c.var3 || null, c.var4 || null, c.var5 || null,
-          ]
+    for (let i = 0; i < uniqueContacts.length; i += CHUNK) {
+      const chunk = uniqueContacts.slice(i, i + CHUNK);
+      const placeholders: string[] = [];
+      const vals: any[] = [];
+      let p = 1;
+      for (const c of chunk) {
+        placeholders.push(
+          `($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`
         );
-        if (r.rowCount) inserted++;
-      } catch (_) {}
+        vals.push(
+          tenantId, list_id, c.email, c.name || null, c.cpf || null, c.phone || null,
+          c.var1 || null, c.var2 || null, c.var3 || null, c.var4 || null, c.var5 || null
+        );
+      }
+      const r = await pool.query(
+        `INSERT INTO email_marketing_contacts (tenant_id, list_id, email, name, cpf, phone, var1, var2, var3, var4, var5)
+         VALUES ${placeholders.join(',')}
+         ON CONFLICT (list_id, email) DO UPDATE SET
+           name = COALESCE(NULLIF(EXCLUDED.name, ''), email_marketing_contacts.name),
+           cpf = COALESCE(NULLIF(EXCLUDED.cpf, ''), email_marketing_contacts.cpf),
+           phone = COALESCE(NULLIF(EXCLUDED.phone, ''), email_marketing_contacts.phone),
+           var1 = COALESCE(NULLIF(EXCLUDED.var1, ''), email_marketing_contacts.var1),
+           var2 = COALESCE(NULLIF(EXCLUDED.var2, ''), email_marketing_contacts.var2),
+           var3 = COALESCE(NULLIF(EXCLUDED.var3, ''), email_marketing_contacts.var3),
+           var4 = COALESCE(NULLIF(EXCLUDED.var4, ''), email_marketing_contacts.var4),
+           var5 = COALESCE(NULLIF(EXCLUDED.var5, ''), email_marketing_contacts.var5),
+           updated_at = NOW()`,
+        vals
+      );
+      inserted += Number(r.rowCount || 0);
     }
 
-    await pool.query(`UPDATE email_marketing_lists SET total_contacts=(SELECT COUNT(*) FROM email_marketing_contacts WHERE list_id=$1), updated_at=NOW() WHERE id=$1`, [list_id]);
+    const counted = await pool.query(
+      `UPDATE email_marketing_lists
+       SET total_contacts=(SELECT COUNT(*) FROM email_marketing_contacts WHERE list_id=$1), updated_at=NOW()
+       WHERE id=$1
+       RETURNING total_contacts`,
+      [list_id]
+    );
 
     res.json({
       success: true,
       imported: inserted,
       total: uniqueContacts.length,
+      stored: Number(counted.rows[0]?.total_contacts || inserted),
       duplicates_removed: duplicatesRemoved,
       raw_total: contacts.length,
     });
@@ -1273,9 +1366,72 @@ export const deleteTemplate = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const { id } = req.params;
-    await pool.query(`DELETE FROM email_marketing_templates WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
-    res.json({ success: true });
+    const templateId = parseInt(String(id), 10);
+    if (!Number.isFinite(templateId)) {
+      return res.status(400).json({ success: false, message: 'ID de template inválido' });
+    }
+
+    const existing = await pool.query(
+      `SELECT id, name FROM email_marketing_templates WHERE id=$1 AND tenant_id=$2`,
+      [templateId, tenantId]
+    );
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Template não encontrado' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Desvincula campanhas que usam este template (conteúdo já fica salvo na campanha)
+      await client.query(
+        `UPDATE email_marketing_campaigns
+         SET template_id = NULL, updated_at = NOW()
+         WHERE tenant_id = $1 AND template_id = $2`,
+        [tenantId, templateId]
+      );
+
+      // Remove o id de template_ids JSONB (quando a campanha usa vários modelos)
+      await client.query(
+        `UPDATE email_marketing_campaigns
+         SET template_ids = COALESCE((
+               SELECT jsonb_agg(elem)
+               FROM jsonb_array_elements(COALESCE(template_ids, '[]'::jsonb)) elem
+               WHERE NULLIF(elem #>> '{}', '')::int IS DISTINCT FROM $2
+             ), '[]'::jsonb),
+             updated_at = NOW()
+         WHERE tenant_id = $1
+           AND template_ids IS NOT NULL
+           AND EXISTS (
+             SELECT 1
+             FROM jsonb_array_elements(COALESCE(template_ids, '[]'::jsonb)) e
+             WHERE NULLIF(e #>> '{}', '')::int = $2
+           )`,
+        [tenantId, templateId]
+      );
+
+      await client.query(
+        `DELETE FROM email_marketing_templates WHERE id=$1 AND tenant_id=$2`,
+        [templateId, tenantId]
+      );
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    res.json({ success: true, message: 'Template excluído. Campanhas vinculadas foram desvinculadas.' });
   } catch (error: any) {
+    const msg = String(error?.message || '');
+    if (msg.includes('foreign key') || msg.includes('violates foreign key')) {
+      return res.status(409).json({
+        success: false,
+        message: 'Não foi possível excluir: este template ainda está em uso. Conclua ou edite as campanhas vinculadas e tente de novo.',
+      });
+    }
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -1308,6 +1464,7 @@ export const getCampaignById = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const { id } = req.params;
+    await ensureCampaignBodyHtmlsColumn();
     const result = await pool.query(
       `SELECT c.*, d.domain as domain_name, l.name as list_name, t.name as template_name
        FROM email_marketing_campaigns c
@@ -1318,7 +1475,26 @@ export const getCampaignById = async (req: Request, res: Response) => {
       [id, tenantId]
     );
     if (!result.rows[0]) return res.status(404).json({ success: false, message: 'Campanha não encontrada' });
-    res.json({ success: true, data: result.rows[0] });
+    const row = result.rows[0];
+    const ids = parseIdArray(row.template_ids);
+    if (ids.length) {
+      try {
+        const tpls = await pool.query(
+          `SELECT id, name FROM email_marketing_templates WHERE tenant_id=$1 AND id = ANY($2::int[])`,
+          [tenantId, ids]
+        );
+        const byId = new Map(tpls.rows.map((t: any) => [Number(t.id), t]));
+        row.template_models = ids.map((tid, i) => ({
+          id: tid,
+          name: byId.get(tid)?.name || `Modelo ${i + 1}`,
+        }));
+      } catch {
+        row.template_models = ids.map((tid, i) => ({ id: tid, name: `Modelo ${i + 1}` }));
+      }
+    } else {
+      row.template_models = row.template_name ? [{ id: row.template_id, name: row.template_name }] : [];
+    }
+    res.json({ success: true, data: row });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -1329,7 +1505,7 @@ export const createCampaign = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const {
-      name, reply_to, domain_id, domain_ids, list_id, template_id, body_html, body_text, body_htmls,
+      name, reply_to, domain_id, domain_ids, list_id, template_id, template_ids, body_html, body_text, body_htmls,
       // Legado (compat)
       subject, from_name, from_email,
       // Novos campos avançados
@@ -1346,6 +1522,9 @@ export const createCampaign = async (req: Request, res: Response) => {
     await ensureCampaignBodyHtmlsColumn();
     const bodiesArr = normalizeCampaignBodyHtmls(body_htmls, body_html);
     const primaryBodyHtml = bodiesArr[0] || body_html || null;
+    const templateIdsArr = parseIdArray(template_ids).length
+      ? parseIdArray(template_ids)
+      : (template_id ? [Number(template_id)].filter((n) => Number.isFinite(n) && n > 0) : []);
 
     const requestedDomainIds: number[] = Array.isArray(domain_ids) && domain_ids.length > 0
       ? domain_ids.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
@@ -1589,19 +1768,26 @@ export const createCampaign = async (req: Request, res: Response) => {
 
     const campaignId = result.rows[0].id;
 
-    // Persiste rotação de corpos (vários modelos / textos)
-    if (bodiesArr.length > 0) {
+    // Persiste rotação de corpos (vários modelos / textos) + IDs dos templates
+    if (bodiesArr.length > 0 || templateIdsArr.length > 0) {
       try {
         const upd = await pool.query(
           `UPDATE email_marketing_campaigns
-           SET body_htmls=$1::jsonb, body_html=$2, updated_at=NOW()
-           WHERE id=$3
+           SET body_htmls=$1::jsonb, body_html=$2, template_ids=$3::jsonb,
+               template_id=COALESCE($4, template_id), updated_at=NOW()
+           WHERE id=$5
            RETURNING *`,
-          [JSON.stringify(bodiesArr), bodiesArr[0], campaignId]
+          [
+            JSON.stringify(bodiesArr),
+            bodiesArr[0] || primaryBodyHtml,
+            JSON.stringify(templateIdsArr),
+            templateIdsArr[0] || template_id || null,
+            campaignId,
+          ]
         );
         if (upd.rows[0]) result.rows[0] = upd.rows[0];
       } catch (e: any) {
-        console.warn('[createCampaign] body_htmls:', e?.message || e);
+        console.warn('[createCampaign] body_htmls/template_ids:', e?.message || e);
       }
     }
 
@@ -1796,6 +1982,11 @@ export const updateCampaign = async (req: Request, res: Response) => {
       /* only text below */
     }
     if (body_text !== undefined) push('body_text', body_text || null);
+    const incomingTemplateIds = parseIdArray((req.body as any).template_ids);
+    if (incomingTemplateIds.length) {
+      push('template_ids', JSON.stringify(incomingTemplateIds));
+      push('template_id', incomingTemplateIds[0]);
+    }
 
     // Domínio(s) + remetentes (sempre expande usuario × todos os domínios)
     let domainNames: string[] = [];
@@ -1980,6 +2171,7 @@ export const getCampaignRecipients = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     const { id } = req.params;
+    await ensureCampaignBodyHtmlsColumn();
     const { status, limit = '500' } = req.query as { status?: string; limit?: string };
 
     const params: any[] = [id, tenantId];
@@ -1993,7 +2185,8 @@ export const getCampaignRecipients = async (req: Request, res: Response) => {
     try {
       const result = await pool.query(
         `SELECT id, email, name, cpf, phone, var1, var2, var3, var4, var5, protocol, status, error_message,
-                sent_from_email, sent_domain, sent_at, opened_at, clicked_at, replied_at, updated_at
+                sent_from_email, sent_domain, sent_at, opened_at, clicked_at, replied_at, updated_at,
+                sent_model_name, sent_model_index
          FROM email_marketing_recipients r
          WHERE campaign_id=$1 AND tenant_id=$2${whereExtra}
          ORDER BY COALESCE(sent_at, updated_at, created_at) DESC NULLS LAST, id DESC
@@ -2003,7 +2196,7 @@ export const getCampaignRecipients = async (req: Request, res: Response) => {
       return res.json({ success: true, data: result.rows, total: result.rowCount });
     } catch (colErr: any) {
       const msg = String(colErr?.message || '');
-      if (!/sent_domain|sent_from_email|replied_at/i.test(msg)) throw colErr;
+      if (!/sent_domain|sent_from_email|replied_at|sent_model/i.test(msg)) throw colErr;
       const result = await pool.query(
         `SELECT id, email, name, cpf, phone, var1, var2, var3, var4, var5, protocol, status, error_message,
                 sent_from_email, sent_domain, sent_at, opened_at, clicked_at, updated_at
