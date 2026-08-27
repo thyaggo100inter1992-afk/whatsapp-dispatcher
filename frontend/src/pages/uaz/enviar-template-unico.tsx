@@ -11,6 +11,7 @@ import TemplateVariablesModal from '@/components/TemplateVariablesModal';
 import EmojiPickerButton from '@/components/EmojiPickerButton';
 import { detectVariables } from '@/utils/templateVariables';
 import { InstanceSelect } from '@/components/InstanceSelect';
+import { isEmbedPath } from '@/utils/embed';
 
 interface UazInstance {
   id: number;
@@ -935,7 +936,8 @@ export default function EnviarTemplateUnico() {
         </div>
       )}
 
-      {/* CABEÇALHO */}
+      {/* CABEÇALHO - visível só no disparador, oculto no iframe do vendas */}
+      {!isEmbedPath(router.pathname) && (
       <div className="card mb-6 bg-gradient-to-r from-blue-600/20 to-blue-700/20 border-blue-500/30">
         <div className="flex items-center gap-6 mb-4">
           <div className="bg-blue-500 p-5 rounded-2xl">
@@ -951,6 +953,7 @@ export default function EnviarTemplateUnico() {
           Envie mensagens individuais instantaneamente usando seus templates
         </p>
       </div>
+      )}
 
       {/* LAYOUT EM 2 COLUNAS */}
       <div className="grid grid-cols-1 lg:grid-cols-[500px_1fr] gap-8">

@@ -15,6 +15,7 @@ import EmojiPickerButton from '@/components/EmojiPickerButton';
 import { InstanceSelect } from '@/components/InstanceSelect';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { usePermissions } from '@/hooks/usePermissions';
+import { isEmbedPath } from '@/utils/embed';
 import styles from '@/styles/AudioRecorder.module.css';
 
 // Configuração da URL base da API
@@ -1998,6 +1999,11 @@ export default function EnviarMensagemUnificado() {
             return;
           }
 
+          if (!formData.text?.trim() && !uploadedMedia) {
+            notify.error('Texto Necessário', 'Informe o texto da mensagem ou anexe uma imagem');
+            return;
+          }
+
           const buttonChoices = validButtons.map(btn => {
             let choice = btn.text;
             switch (btn.type) {
@@ -2024,12 +2030,12 @@ export default function EnviarMensagemUnificado() {
           const buttonPayload: any = {
             number: formData.number,
             type: 'button',
-            text: formData.text,
+            text: formData.text?.trim() || 'Mensagem com botões',
             choices: buttonChoices,
             variables: templateVariables
           };
 
-          if (formData.footerText) buttonPayload.footerText = formData.footerText;
+          if (formData.footerText?.trim()) buttonPayload.footerText = formData.footerText;
           if (uploadedMedia) {
             const imageUrl = uploadedMedia.url.startsWith('http') 
               ? uploadedMedia.url 
@@ -2331,10 +2337,13 @@ export default function EnviarMensagemUnificado() {
                   const buttonPayload: any = {
                     number: formData.number,
                     type: 'button',
-                    text: block.text || '',
+                    text: block.text?.trim() || 'Mensagem com botões',
                     choices: formattedButtons,
-                    footerText: block.footerText || '',
                   };
+
+                  if (block.footerText?.trim()) {
+                    buttonPayload.footerText = block.footerText;
+                  }
 
                   // Adicionar imagem do botão se houver
                   if (block.media?.url) {
@@ -2719,7 +2728,8 @@ export default function EnviarMensagemUnificado() {
           }}></div>
         </div>
         
-        {/* 🎨 CABEÇALHO PRINCIPAL - PADRÃO API OFICIAL */}
+        {/* 🎨 CABEÇALHO PRINCIPAL - visível só no disparador, oculto no iframe do vendas */}
+        {!isEmbedPath(router.pathname) && (
         <div className="relative overflow-hidden bg-gradient-to-r from-primary-600/30 via-primary-500/20 to-primary-600/30 backdrop-blur-xl border-2 border-primary-500/40 rounded-3xl p-10 shadow-2xl shadow-primary-500/20">
           <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
           <div className="relative">
@@ -2765,6 +2775,7 @@ export default function EnviarMensagemUnificado() {
             </div>
           </div>
         </div>
+        )}
 
         {instances.length === 0 ? (
           <div className="bg-red-500/10 border-2 border-red-500/40 rounded-2xl p-8 text-center">
@@ -2774,7 +2785,7 @@ export default function EnviarMensagemUnificado() {
             <p className="text-white/70 mb-6">
               Você precisa conectar uma instância antes de enviar mensagens.
             </p>
-            {canAccessConfiguracoes && (
+            {canAccessConfiguracoes && !isEmbedPath(router.pathname) && (
             <button
               onClick={() => router.push('/configuracoes-uaz')}
               className="px-8 py-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl transition-all"
@@ -2786,7 +2797,8 @@ export default function EnviarMensagemUnificado() {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-8">
             
-            {/* BANNER DE DELAYS SEGUROS ATIVOS */}
+            {/* BANNER DE DELAYS SEGUROS ATIVOS - só no disparador */}
+            {!isEmbedPath(router.pathname) && (
             <div className="bg-gradient-to-r from-green-500/20 via-emerald-500/20 to-green-500/20 backdrop-blur-sm border-2 border-green-500/40 rounded-2xl p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -2814,6 +2826,7 @@ export default function EnviarMensagemUnificado() {
                 </button>
               </div>
             </div>
+            )}
             
             {/* 🔹 SEÇÃO 1: CONFIGURAÇÕES BÁSICAS */}
             <div className="bg-dark-800/60 backdrop-blur-xl border-2 border-primary-500/30 rounded-2xl p-8 shadow-xl hover:border-primary-500/50 transition-all duration-300">
@@ -2995,12 +3008,14 @@ export default function EnviarMensagemUnificado() {
               {/* MENSAGEM COMBINADA - INTERFACE ESPECIAL */}
               {messageType === 'combined' && (
                 <div className="space-y-6">
-                  {/* Info sobre delay */}
+                  {/* Info sobre delay - só no disparador */}
+                  {!isEmbedPath(router.pathname) && (
                   <div className="bg-blue-500/10 border-2 border-blue-500/40 rounded-xl p-4">
                     <p className="text-blue-300 text-sm flex items-center gap-2">
                       ℹ️ <span>OBRIGATÓRIO: Aguarda {delayBeforeSending}s antes de iniciar + {delayBetweenMessages}s entre cada bloco (configurado em <strong>"Configurar Delays"</strong>)</span>
                     </p>
                   </div>
+                  )}
 
                   {/* Lista de Blocos */}
                   <div className="space-y-4">
@@ -3079,8 +3094,8 @@ export default function EnviarMensagemUnificado() {
                                       />
                                     </div>
                                     <textarea
-                                      rows={3}
-                                      className="w-full px-4 py-3 bg-dark-800/80 border-2 border-white/10 rounded-lg text-white focus:border-blue-500 transition-all resize-none"
+                                      rows={10}
+                                      className="w-full min-h-[240px] px-4 py-3 bg-dark-800/80 border-2 border-white/10 rounded-lg text-white focus:border-blue-500 transition-all resize-y overflow-y-auto"
                                       placeholder="Digite o texto..."
                                       value={block.text || ''}
                                       onChange={(e) => updateMessageBlock(block.id, { text: e.target.value, originalText: (block as any).originalText || block.text })}
@@ -4046,7 +4061,7 @@ export default function EnviarMensagemUnificado() {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <label className="block text-lg font-bold text-white">
-                      💬 {messageType === 'image' || messageType === 'video' || messageType === 'document' ? 'Legenda (Opcional)' : 'Texto Principal'}
+                      💬 {messageType === 'image' || messageType === 'video' || messageType === 'document' || (messageType === 'button' && !!uploadedMedia) ? 'Legenda (Opcional)' : 'Texto Principal'}
                     </label>
                     <EmojiPickerButton 
                       onEmojiSelect={(emoji) => setFormData({ ...formData, text: formData.text + emoji })}
@@ -4054,9 +4069,9 @@ export default function EnviarMensagemUnificado() {
                     />
                   </div>
                   <textarea
-                    required={messageType === 'text' || messageType === 'button' || messageType === 'list' || messageType === 'poll' || messageType === 'carousel'}
-                    rows={4}
-                    className="w-full px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-blue-500 transition-all resize-none"
+                    required={messageType === 'text' || ((messageType === 'button' || messageType === 'list' || messageType === 'poll' || messageType === 'carousel') && !uploadedMedia)}
+                    rows={12}
+                    className="w-full min-h-[280px] px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-blue-500 transition-all resize-y overflow-y-auto"
                     placeholder="Digite o texto da mensagem..."
                     value={formData.text}
                     onChange={(e) => setFormData({ ...formData, text: e.target.value })}

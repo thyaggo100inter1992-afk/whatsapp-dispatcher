@@ -362,6 +362,15 @@ Cole no vendas, um iframe por tipo, **com o token daquele cliente na URL**:
 ></iframe>
 ```
 
+**QR Connect (escrever a mensagem — texto, imagem, vídeo, áudio, botões etc.):**
+```html
+<iframe
+  src="https://sistemasnettsistemas.com.br/embed/qr-livre?key=nsk_TOKEN_DO_CLIENTE&user_id=15"
+  style="width:100%;height:900px;border:0;"
+  allow="clipboard-write"
+></iframe>
+```
+
 **Verificar Números (mesma tela do disparador: consulta única e em massa):**
 ```html
 <iframe
@@ -491,7 +500,7 @@ Devolve JWT. Só precisa se forem chamar as rotas internas do painel. **Para as 
 
 **Novo**
 - [ ] Tela ou backend de consulta Nova Vida → `POST /api/public/novavida/consultar` com `user_id`.
-- [ ] Disparo WhatsApp: iframe Oficial + iframe QR **com** `user_id` **ou** REST da seção 6 com `X-Dispatcher-User-Id`.
+- [ ] Disparo WhatsApp: iframe Oficial + iframe QR (template e/ou escrever mensagem) **com** `user_id` **ou** REST da seção 6 com `X-Dispatcher-User-Id`.
 - [ ] Verificar Números (tela completa): iframe `/embed/verificar?key=nsk_...&user_id=15`.
 
 **Não precisa**
@@ -512,7 +521,8 @@ Devolve JWT. Só precisa se forem chamar as rotas internas do painel. **Para as 
 | Número tem WhatsApp? | `POST /api/public/whatsapp/verificar` | token + user_id |
 | Consulta CPF/CNPJ completa | `POST /api/public/novavida/consultar` | token + user_id |
 | Tela envio Oficial | `/embed/oficial?key=nsk_...&user_id=15` | token + user_id na URL |
-| Tela envio QR | `/embed/qr?key=nsk_...&user_id=15` | token + user_id na URL |
+| Tela envio QR (template) | `/embed/qr?key=nsk_...&user_id=15` | token + user_id na URL |
+| Tela envio QR (escrever mensagem) | `/embed/qr-livre?key=nsk_...&user_id=15` | token + user_id na URL |
 | Tela Verificar Números | `/embed/verificar?key=nsk_...&user_id=15` | token + user_id na URL |
 | Envio Oficial via API | `POST /api/integration/v1/oficial/send` | token + user_id |
 | Envio QR via API | `POST /api/integration/v1/qr/send` | token + user_id |

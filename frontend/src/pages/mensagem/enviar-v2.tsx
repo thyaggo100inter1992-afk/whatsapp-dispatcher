@@ -9,6 +9,7 @@ import api, { whatsappAccountsAPI, messagesAPI } from '@/services/api';
 import MediaUpload from '@/components/MediaUpload';
 import { useNotifications } from '@/contexts/NotificationContext';
 import TemplatePreview from '@/components/TemplatePreview';
+import { isEmbedPath } from '@/utils/embed';
 
 interface WhatsAppAccount {
   id: number;
@@ -609,7 +610,8 @@ export default function EnviarMensagemImediataV2() {
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
         <div className="max-w-7xl mx-auto space-y-8">
           
-          {/* 🎨 CABEÇALHO PRINCIPAL - MUITO MAIS VISUAL */}
+          {/* 🎨 CABEÇALHO PRINCIPAL - visível só no disparador, oculto no iframe do vendas */}
+          {!isEmbedPath(router.pathname) && (
           <div className="relative overflow-hidden bg-gradient-to-r from-blue-600/30 via-blue-500/20 to-blue-600/30 backdrop-blur-xl border-2 border-blue-500/40 rounded-3xl p-10 shadow-2xl shadow-blue-500/20">
             <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
             <div className="relative">
@@ -628,6 +630,7 @@ export default function EnviarMensagemImediataV2() {
               </div>
             </div>
           </div>
+          )}
 
           {/* Layout 2 Colunas */}
           <div className="grid grid-cols-12 gap-8">
