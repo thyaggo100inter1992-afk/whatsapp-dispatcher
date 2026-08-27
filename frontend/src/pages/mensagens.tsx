@@ -10,6 +10,7 @@ import api from '@/services/api';
 interface Message {
   id: number;
   phone_number: string;
+  contact_cpf?: string | null;
   template_name: string;
   status: string;
   sent_at?: string;
@@ -373,6 +374,7 @@ export default function MensagensPage() {
                   <thead>
                     <tr className="bg-gradient-to-r from-green-600/30 to-emerald-600/30 border-b-2 border-white/20">
                       <th className="text-left p-5 text-base font-black text-white">📱 Número</th>
+                      <th className="text-left p-5 text-base font-black text-white">CPF</th>
                       <th className="text-left p-5 text-base font-black text-white">📄 Template</th>
                       <th className="text-left p-5 text-base font-black text-white">💼 Conta</th>
                       <th className="text-left p-5 text-base font-black text-white">📊 Campanha</th>
@@ -385,7 +387,7 @@ export default function MensagensPage() {
                   <tbody>
                     {filteredMessages.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="text-center p-20">
+                        <td colSpan={9} className="text-center p-20">
                           <div className="bg-white/5 border-2 border-dashed border-white/20 rounded-xl p-16">
                             <div className="bg-white/10 p-8 rounded-full inline-block mb-6">
                               <span className="text-8xl">📭</span>
@@ -399,6 +401,7 @@ export default function MensagensPage() {
                       filteredMessages.map((message) => (
                         <tr key={message.id} className="border-b border-white/10 hover:bg-white/5 transition-all">
                           <td className="p-5 font-mono font-bold text-white">{message.phone_number}</td>
+                          <td className="p-5 font-mono text-emerald-300 font-medium">{message.contact_cpf || '-'}</td>
                           <td className="p-5 text-white/90 font-medium">{message.template_name}</td>
                           <td className="p-5">
                             <span className="text-cyan-300 font-bold bg-cyan-500/10 px-3 py-1 rounded-lg">

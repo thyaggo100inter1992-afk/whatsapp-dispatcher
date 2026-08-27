@@ -9,6 +9,8 @@ interface ButtonClick {
   id: number;
   phone_number: string;
   contact_name: string;
+  contact_cpf?: string | null;
+  contact_name_resolved?: string | null;
   button_text: string;
   button_payload: string;
   clicked_at: string;
@@ -571,6 +573,9 @@ export default function RelatorioCliques() {
                           Telefone
                         </th>
                         <th className="px-6 py-5 text-left text-base font-black text-white uppercase tracking-wider">
+                          CPF
+                        </th>
+                        <th className="px-6 py-5 text-left text-base font-black text-white uppercase tracking-wider">
                           Nome
                         </th>
                         <th className="px-6 py-5 text-left text-base font-black text-white uppercase tracking-wider">
@@ -607,8 +612,11 @@ export default function RelatorioCliques() {
                           <td className="px-6 py-5 whitespace-nowrap text-base text-white font-mono font-bold">
                             {click.phone_number}
                           </td>
+                          <td className="px-6 py-5 whitespace-nowrap text-base text-emerald-300 font-mono font-medium">
+                            {click.contact_cpf || '-'}
+                          </td>
                           <td className="px-6 py-5 whitespace-nowrap text-base text-white font-medium">
-                            {click.contact_name}
+                            {click.contact_name_resolved || click.contact_name || '-'}
                           </td>
                           <td className="px-6 py-5 text-base">
                             <span className="bg-primary-500/20 text-primary-300 px-4 py-2 rounded-xl font-bold border-2 border-primary-500/30 inline-block">

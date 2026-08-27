@@ -412,11 +412,25 @@ export class MessageController {
             w.name as account_name,
             c.name as campaign_name,
             m.user_id,
-            COALESCE(tu.nome, 'Sistema') as user_name
+            COALESCE(tu.nome, 'Sistema') as user_name,
+            COALESCE(ct.cpf, ct_phone.cpf) as contact_cpf
           FROM messages m
           LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id
           LEFT JOIN campaigns c ON m.campaign_id = c.id
           LEFT JOIN tenant_users tu ON m.user_id = tu.id
+          LEFT JOIN contacts ct ON m.contact_id = ct.id
+          LEFT JOIN LATERAL (
+            SELECT c2.cpf
+            FROM contacts c2
+            WHERE c2.tenant_id = $1
+              AND (
+                c2.phone_number = m.phone_number
+                OR right(regexp_replace(COALESCE(c2.phone_number, ''), '\\D', '', 'g'), 8)
+                   = right(regexp_replace(COALESCE(m.phone_number, ''), '\\D', '', 'g'), 8)
+              )
+            ORDER BY CASE WHEN c2.cpf IS NOT NULL AND c2.cpf <> '' THEN 0 ELSE 1 END
+            LIMIT 1
+          ) ct_phone ON true
           WHERE m.tenant_id = $1
         `;
         
@@ -470,15 +484,12 @@ export class MessageController {
           countIndex++;
         }
 
-        const countResult = await import('../database/connection').then(({ query }) =>
-          query(countQuery, countParams)
-        );
+        const { queryWithTenantId } = await import('../database/tenant-query');
+        const countResult = await queryWithTenantId(tenantId, countQuery, countParams);
         const total = parseInt(countResult.rows[0]?.total || '0');
 
-        // Buscar mensagens
-        const result = await import('../database/connection').then(({ query }) =>
-          query(query_text, query_params)
-        );
+        // Buscar mensagens (com RLS para trazer CPF do contato)
+        const result = await queryWithTenantId(tenantId, query_text, query_params);
 
         console.log(`   ✅ Encontradas ${result.rows.length} mensagens (total: ${total})`);
 

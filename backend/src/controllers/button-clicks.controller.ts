@@ -50,7 +50,7 @@ export class ButtonClicksController {
       const countResult = await queryNoTenant(countQuery, params);
       const total = parseInt(countResult.rows[0].total) || 0;
       
-      // Buscar dados
+      // Buscar dados (CPF via contato da mensagem ou telefone com/sem 9º dígito)
       const dataQuery = `
         SELECT 
           bc.id,
@@ -64,11 +64,28 @@ export class ButtonClicksController {
           c.name as campaign_name,
           m.template_name,
           wa.name as account_name,
-          wa.phone_number as account_phone
+          wa.phone_number as account_phone,
+          COALESCE(ct.cpf, ct_msg.cpf, ct_phone.cpf) as contact_cpf,
+          COALESCE(bc.contact_name, ct.name, ct_msg.name, ct_phone.name) as contact_name_resolved
         FROM button_clicks bc
         INNER JOIN messages m ON bc.message_id = m.id
         LEFT JOIN campaigns c ON bc.campaign_id = c.id
         LEFT JOIN whatsapp_accounts wa ON m.whatsapp_account_id = wa.id
+        LEFT JOIN contacts ct ON bc.contact_id = ct.id
+        LEFT JOIN contacts ct_msg ON m.contact_id = ct_msg.id
+        LEFT JOIN LATERAL (
+          SELECT c2.name, c2.cpf
+          FROM contacts c2
+          WHERE c2.tenant_id = $1
+            AND (
+              c2.phone_number = bc.phone_number
+              OR c2.phone_number = m.phone_number
+              OR right(regexp_replace(COALESCE(c2.phone_number, ''), '\\D', '', 'g'), 8)
+                 = right(regexp_replace(COALESCE(bc.phone_number, m.phone_number, ''), '\\D', '', 'g'), 8)
+            )
+          ORDER BY CASE WHEN c2.cpf IS NOT NULL AND c2.cpf <> '' THEN 0 ELSE 1 END
+          LIMIT 1
+        ) ct_phone ON true
         ${whereClause}
         ORDER BY bc.clicked_at DESC
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -76,7 +93,8 @@ export class ButtonClicksController {
       
       params.push(Number(limit), offset);
       
-      const dataResult = await queryNoTenant(dataQuery, params);
+      const { queryWithTenantId } = await import('../database/tenant-query');
+      const dataResult = await queryWithTenantId(tenantId, dataQuery, params);
       
       return res.json({
         success: true,
@@ -272,7 +290,7 @@ export class ButtonClicksController {
       
       const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
       
-      // Buscar TODOS os dados (sem paginação)
+      // Buscar TODOS os dados (sem paginação) — com CPF
       const dataQuery = `
         SELECT 
           bc.id,
@@ -286,16 +304,34 @@ export class ButtonClicksController {
           c.name as campaign_name,
           m.template_name,
           wa.name as account_name,
-          wa.phone_number as account_phone
+          wa.phone_number as account_phone,
+          COALESCE(ct.cpf, ct_msg.cpf, ct_phone.cpf) as contact_cpf,
+          COALESCE(bc.contact_name, ct.name, ct_msg.name, ct_phone.name) as contact_name_resolved
         FROM button_clicks bc
         INNER JOIN messages m ON bc.message_id = m.id
         LEFT JOIN campaigns c ON bc.campaign_id = c.id
         LEFT JOIN whatsapp_accounts wa ON m.whatsapp_account_id = wa.id
+        LEFT JOIN contacts ct ON bc.contact_id = ct.id
+        LEFT JOIN contacts ct_msg ON m.contact_id = ct_msg.id
+        LEFT JOIN LATERAL (
+          SELECT c2.name, c2.cpf
+          FROM contacts c2
+          WHERE c2.tenant_id = $1
+            AND (
+              c2.phone_number = bc.phone_number
+              OR c2.phone_number = m.phone_number
+              OR right(regexp_replace(COALESCE(c2.phone_number, ''), '\\D', '', 'g'), 8)
+                 = right(regexp_replace(COALESCE(bc.phone_number, m.phone_number, ''), '\\D', '', 'g'), 8)
+            )
+          ORDER BY CASE WHEN c2.cpf IS NOT NULL AND c2.cpf <> '' THEN 0 ELSE 1 END
+          LIMIT 1
+        ) ct_phone ON true
         ${whereClause}
         ORDER BY bc.clicked_at DESC
       `;
       
-      const dataResult = await queryNoTenant(dataQuery, params);
+      const { queryWithTenantId } = await import('../database/tenant-query');
+      const dataResult = await queryWithTenantId(tenantId, dataQuery, params);
       
       console.log(`✅ Encontrados ${dataResult.rows.length} cliques para exportar`);
       
@@ -307,6 +343,7 @@ export class ButtonClicksController {
       worksheet.columns = [
         { header: 'Data/Hora', key: 'clicked_at', width: 20 },
         { header: 'Telefone', key: 'phone_number', width: 18 },
+        { header: 'CPF', key: 'contact_cpf', width: 16 },
         { header: 'Nome', key: 'contact_name', width: 30 },
         { header: 'Botão Clicado', key: 'button_text', width: 25 },
         { header: 'Campanha', key: 'campaign_name', width: 30 },
@@ -326,7 +363,8 @@ export class ButtonClicksController {
         worksheet.addRow({
           clicked_at: new Date(row.clicked_at).toLocaleString('pt-BR'),
           phone_number: row.phone_number,
-          contact_name: row.contact_name || 'N/A',
+          contact_cpf: row.contact_cpf || '-',
+          contact_name: row.contact_name_resolved || row.contact_name || 'N/A',
           button_text: row.button_text,
           campaign_name: row.campaign_name || 'N/A',
           account_name: row.account_name || 'N/A',
