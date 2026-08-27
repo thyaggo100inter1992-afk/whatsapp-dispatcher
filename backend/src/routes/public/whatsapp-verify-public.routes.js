@@ -1,9 +1,10 @@
 /**
- * API Pública - Verificação de WhatsApp (1 número)
+ * API Pública - Verificação de WhatsApp
  * Autenticação: token do tenant (nsk_...) OU email + senha (compatibilidade)
- * Controle: rodízio entre instâncias + cooldown de 10s POR INSTÂNCIA
+ * Controle: rodízio entre instâncias + cooldown de 3s POR INSTÂNCIA
  *
- * POST /api/public/whatsapp/verificar
+ * POST /api/public/whatsapp/verificar       — 1 número
+ * POST /api/public/whatsapp/verificar-lote  — vários números (sem limite)
  */
 
 const express = require('express');
@@ -17,8 +18,8 @@ const UazService = require('../../services/uazService');
 const { getTenantUazapCredentials } = require('../../helpers/uaz-credentials.helper');
 const { autenticarApiPublica } = require('../../helpers/public-api-auth.helper');
 
-const COOLDOWN_MS = 10_000; // 10 segundos por instância
-const MAX_ESPERA_MS = 15 * 60 * 1000; // máximo 15 min na fila
+const COOLDOWN_MS = 3_000; // 3 segundos por instância
+const MAX_ESPERA_MS = 30 * 60 * 1000; // máximo 30 min na fila (lotes grandes)
 
 function normalizarTelefone(telefone) {
   const apenasDigitos = String(telefone).replace(/\D/g, '');
@@ -116,9 +117,9 @@ function runExclusive(tenantId, fn) {
 }
 
 /**
- * Reserva uma instância disponível respeitando cooldown de 10s POR instância.
+ * Reserva uma instância disponível respeitando cooldown de 3s POR instância.
  * Com N instâncias, até N consultas podem rodar em paralelo (1 por instância).
- * Se todas estiverem em cooldown/ocupadas, espera até liberar.
+ * Com 1 instância: uma consulta a cada 3s.
  */
 async function adquirirInstancia(tenantId, usuario) {
   const inicio = Date.now();
@@ -148,7 +149,7 @@ async function adquirirInstancia(tenantId, usuario) {
         const { key, state } = getEstadoInstancia(tenantId, inst.id);
 
         if (state.busy) {
-          minWait = Math.min(minWait, 300);
+          minWait = Math.min(minWait, 200);
           continue;
         }
 
@@ -172,7 +173,7 @@ async function adquirirInstancia(tenantId, usuario) {
       }
 
       return {
-        waitMs: minWait === Infinity ? 500 : minWait,
+        waitMs: minWait === Infinity ? 300 : minWait,
         instanciasCount: instancias.length,
       };
     });
@@ -189,7 +190,7 @@ async function adquirirInstancia(tenantId, usuario) {
       return result;
     }
 
-    await sleep(Math.max(50, Math.min(result.waitMs, 1000)));
+    await sleep(Math.max(40, Math.min(result.waitMs, 500)));
   }
 }
 
@@ -234,58 +235,19 @@ async function baixarFotoLocal(profilePicUrl, phoneNumber) {
   }
 }
 
-/**
- * POST /api/public/whatsapp/verificar
- *
- * Body:
- *   token        (recomendado) - Token do tenant
- *   email        (alternativo)
- *   senha        (alternativo)
- *   telefone     (obrigatório)
- *   buscar_foto  (opcional) - default true
- *
- * Controle automático:
- *   - Rodízio entre todas as instâncias QR conectadas
- *   - Cooldown de 10s POR instância (não global)
- *   - Com 3 instâncias: até 3 consultas em paralelo; cada uma só reutiliza após 10s
- */
-router.post('/verificar', async (req, res) => {
+async function verificarUmNumero({
+  tenantId,
+  usuario,
+  telefoneNormalizado,
+  buscarFoto,
+  baseUrl,
+  uazService,
+}) {
   let slot = null;
 
   try {
-    const { telefone, buscar_foto = true } = req.body;
-
-    const auth = await autenticarApiPublica(req);
-    if (auth.erro) {
-      return res.status(auth.erro.status).json({
-        sucesso: false,
-        mensagem: auth.erro.mensagem,
-      });
-    }
-
-    if (!telefone) {
-      return res.status(400).json({
-        sucesso: false,
-        mensagem: 'O campo telefone é obrigatório',
-      });
-    }
-
-    const tenantId = auth.tenantId;
-    const telefoneNormalizado = normalizarTelefone(telefone);
-
-    if (telefoneNormalizado.length < 12) {
-      return res.status(400).json({
-        sucesso: false,
-        mensagem: 'Número de telefone inválido. Use o formato: 5511999999999',
-      });
-    }
-
-    // Entra na fila: espera slot livre respeitando 10s por instância
-    slot = await adquirirInstancia(tenantId, auth.usuario);
+    slot = await adquirirInstancia(tenantId, usuario);
     const { instancia, instanciasCount, esperaMs } = slot;
-
-    const credentials = await getTenantUazapCredentials(tenantId);
-    const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
 
     const proxyConfig = instancia.host
       ? {
@@ -309,17 +271,23 @@ router.post('/verificar', async (req, res) => {
     );
 
     if (!checkResult.success) {
-      return res.status(500).json({
+      return {
         sucesso: false,
-        mensagem: checkResult.error || 'Erro ao verificar número no WhatsApp',
-      });
+        telefone: telefoneNormalizado,
+        tem_whatsapp: false,
+        nome: null,
+        foto_perfil: null,
+        instancia_usada: instancia.name,
+        erro: checkResult.error || 'Erro ao verificar número no WhatsApp',
+        espera_fila_ms: esperaMs,
+      };
     }
 
     const temWhatsapp = !!(checkResult.exists || checkResult.data?.isInWhatsapp);
     let fotoPerfil = null;
     let nomeWhatsapp = checkResult.data?.verifiedName || null;
 
-    if (temWhatsapp && buscar_foto !== false && buscar_foto !== 'false') {
+    if (temWhatsapp && buscarFoto) {
       try {
         const details = await uazService.getContactDetails(
           instancia.instance_token,
@@ -338,7 +306,7 @@ router.post('/verificar', async (req, res) => {
             if (localOrProxy) {
               fotoPerfil = localOrProxy.startsWith('http')
                 ? localOrProxy
-                : `${getBaseUrl(req)}${localOrProxy}`;
+                : `${baseUrl}${localOrProxy}`;
             }
           }
         }
@@ -347,7 +315,7 @@ router.post('/verificar', async (req, res) => {
       }
     }
 
-    return res.json({
+    return {
       sucesso: true,
       telefone: telefoneNormalizado,
       tem_whatsapp: temWhatsapp,
@@ -355,9 +323,96 @@ router.post('/verificar', async (req, res) => {
       foto_perfil: fotoPerfil,
       instancia_usada: instancia.name,
       instancias_disponiveis: instanciasCount,
-      cooldown_segundos: COOLDOWN_MS / 1000,
       espera_fila_ms: esperaMs,
       verificado_em: new Date().toISOString(),
+    };
+  } finally {
+    liberarInstancia(slot);
+  }
+}
+
+/**
+ * Processa itens com até `concurrency` workers em paralelo.
+ * Cada worker pega o próximo índice — com N instâncias, N checks ao mesmo tempo.
+ */
+async function mapPool(items, concurrency, workerFn) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const i = nextIndex++;
+      if (i >= items.length) return;
+      results[i] = await workerFn(items[i], i);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.max(1, Math.min(concurrency, items.length)) },
+    () => worker()
+  );
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * POST /api/public/whatsapp/verificar
+ *
+ * Body:
+ *   token / email+senha
+ *   telefone     (obrigatório)
+ *   buscar_foto  (opcional) - default true
+ */
+router.post('/verificar', async (req, res) => {
+  try {
+    const { telefone, buscar_foto = true } = req.body;
+
+    const auth = await autenticarApiPublica(req);
+    if (auth.erro) {
+      return res.status(auth.erro.status).json({
+        sucesso: false,
+        mensagem: auth.erro.mensagem,
+      });
+    }
+
+    if (!telefone) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'O campo telefone é obrigatório',
+      });
+    }
+
+    const telefoneNormalizado = normalizarTelefone(telefone);
+    if (telefoneNormalizado.length < 12) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Número de telefone inválido. Use o formato: 5511999999999',
+      });
+    }
+
+    const credentials = await getTenantUazapCredentials(auth.tenantId);
+    const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
+    const buscarFoto = buscar_foto !== false && buscar_foto !== 'false';
+
+    const resultado = await verificarUmNumero({
+      tenantId: auth.tenantId,
+      usuario: auth.usuario,
+      telefoneNormalizado,
+      buscarFoto,
+      baseUrl: getBaseUrl(req),
+      uazService,
+    });
+
+    if (!resultado.sucesso && resultado.erro) {
+      return res.status(500).json({
+        sucesso: false,
+        mensagem: resultado.erro,
+      });
+    }
+
+    return res.json({
+      ...resultado,
+      cooldown_segundos: COOLDOWN_MS / 1000,
     });
   } catch (error) {
     console.error('❌ [API Pública] Erro na verificação WhatsApp:', error);
@@ -366,8 +421,130 @@ router.post('/verificar', async (req, res) => {
       sucesso: false,
       mensagem: error.message || 'Erro interno ao verificar WhatsApp',
     });
-  } finally {
-    liberarInstancia(slot);
+  }
+});
+
+/**
+ * POST /api/public/whatsapp/verificar-lote
+ *
+ * Body:
+ *   token / email+senha
+ *   telefones    (obrigatório) - array de números (sem limite de quantidade)
+ *   buscar_foto  (opcional) - default false (mais rápido em lote)
+ *
+ * Comportamento:
+ *   - 1 instância: verifica um a um com intervalo de 3s
+ *   - N instâncias: até N verificações em paralelo; cada instância espera 3s entre usos
+ */
+router.post('/verificar-lote', async (req, res) => {
+  const inicio = Date.now();
+
+  try {
+    const { telefones, telefone, buscar_foto = false } = req.body;
+
+    const auth = await autenticarApiPublica(req);
+    if (auth.erro) {
+      return res.status(auth.erro.status).json({
+        sucesso: false,
+        mensagem: auth.erro.mensagem,
+      });
+    }
+
+    const listaRaw = telefones ?? telefone;
+    const lista = Array.isArray(listaRaw)
+      ? listaRaw
+      : listaRaw
+        ? [listaRaw]
+        : [];
+
+    if (lista.length === 0) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Informe o campo telefones com um ou mais números',
+      });
+    }
+
+    const instancias = await buscarInstanciasConectadas(auth.tenantId, auth.usuario);
+    if (!instancias.length) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem:
+          'Nenhuma instância WhatsApp conectada para este usuário. Libere um QR Code para ele no disparador.',
+      });
+    }
+
+    const credentials = await getTenantUazapCredentials(auth.tenantId);
+    const uazService = new UazService(credentials.serverUrl, credentials.adminToken);
+    const buscarFoto = buscar_foto === true || buscar_foto === 'true';
+    const baseUrl = getBaseUrl(req);
+    const concurrency = instancias.length; // paralelo = qtd de QRs; 1 QR = sequencial 3s
+
+    console.log(
+      `📦 [API Pública] Lote: ${lista.length} telefone(s), ` +
+        `${concurrency} instância(s), cooldown ${COOLDOWN_MS / 1000}s, ` +
+        `foto=${buscarFoto} (tenant ${auth.tenantId})`
+    );
+
+    const resultados = await mapPool(lista, concurrency, async (tel) => {
+      const telefoneNormalizado = normalizarTelefone(tel);
+
+      if (!telefoneNormalizado || telefoneNormalizado.length < 12) {
+        return {
+          sucesso: false,
+          telefone: String(tel || ''),
+          tem_whatsapp: false,
+          nome: null,
+          foto_perfil: null,
+          instancia_usada: null,
+          erro: 'Número de telefone inválido. Use o formato: 5511999999999',
+        };
+      }
+
+      try {
+        return await verificarUmNumero({
+          tenantId: auth.tenantId,
+          usuario: auth.usuario,
+          telefoneNormalizado,
+          buscarFoto,
+          baseUrl,
+          uazService,
+        });
+      } catch (err) {
+        return {
+          sucesso: false,
+          telefone: telefoneNormalizado,
+          tem_whatsapp: false,
+          nome: null,
+          foto_perfil: null,
+          instancia_usada: null,
+          erro: err.message || 'Erro ao verificar',
+        };
+      }
+    });
+
+    const comWhatsapp = resultados.filter((r) => r.tem_whatsapp).length;
+    const semWhatsapp = resultados.filter((r) => r.sucesso && !r.tem_whatsapp).length;
+    const comErro = resultados.filter((r) => !r.sucesso).length;
+
+    return res.json({
+      sucesso: true,
+      total: resultados.length,
+      com_whatsapp: comWhatsapp,
+      sem_whatsapp: semWhatsapp,
+      com_erro: comErro,
+      instancias_disponiveis: concurrency,
+      cooldown_segundos: COOLDOWN_MS / 1000,
+      buscar_foto: buscarFoto,
+      tempo_total_ms: Date.now() - inicio,
+      resultados,
+    });
+  } catch (error) {
+    console.error('❌ [API Pública] Erro no lote WhatsApp:', error);
+    const status = error.status || 500;
+    return res.status(status).json({
+      sucesso: false,
+      mensagem: error.message || 'Erro interno ao verificar WhatsApp em lote',
+    });
   }
 });
 

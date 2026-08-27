@@ -230,6 +230,8 @@ POST /api/public/restriction-list/remover
 
 Verificação de WhatsApp
 POST /api/public/whatsapp/verificar
+POST /api/public/whatsapp/verificar-lote
+     { "token": "nsk_...", "user_id": 15, "telefones": ["5511...","5511..."], "buscar_foto": false }
 
 Nova Vida (CPF/CNPJ — mesma resposta do painel)
 POST /api/public/novavida/consultar

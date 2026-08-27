@@ -224,6 +224,8 @@ Se omitir `lista`, remove de **todas** as listas daquele tenant.
 
 ### 4.4 Verificar se o número tem WhatsApp (consulta de telefone)
 
+#### Um número
+
 `POST /api/public/whatsapp/verificar`
 
 ```json
@@ -246,11 +248,76 @@ Resposta:
   "nome": "Nome no WhatsApp",
   "foto_perfil": "https://...",
   "instancia_usada": "CELULAR 01",
+  "cooldown_segundos": 3,
   "verificado_em": "2026-08-26T23:00:00.000Z"
 }
 ```
 
 Telefone sempre com DDI: `55` + DDD + número. Ex: `5511999999999`.
+
+#### Vários números (lote — recomendado quando o cliente tem muitos telefones)
+
+`POST /api/public/whatsapp/verificar-lote`
+
+```json
+{
+  "token": "nsk_...",
+  "user_id": 15,
+  "telefones": [
+    "5511988887777",
+    "5511977776666",
+    "5511966665555"
+  ],
+  "buscar_foto": false
+}
+```
+
+| Campo | Obrigatório | Padrão | O que é |
+|---|---|---|---|
+| `token` | sim (ou header) | — | Token do cliente |
+| `user_id` | sim | — | Usuário do disparador |
+| `telefones` | sim | — | Array de números. **Sem limite de quantidade** |
+| `buscar_foto` | não | `false` | Se `true`, busca nome/foto (mais lento) |
+
+Como o disparador processa:
+- **1 instância QR:** verifica um por um, com intervalo de **3 segundos**
+- **N instâncias QR:** até **N verificações em paralelo**; cada instância só reutiliza após 3s
+- Usa só as conexões liberadas para aquele `user_id`
+
+Resposta:
+```json
+{
+  "sucesso": true,
+  "total": 3,
+  "com_whatsapp": 2,
+  "sem_whatsapp": 1,
+  "com_erro": 0,
+  "instancias_disponiveis": 2,
+  "cooldown_segundos": 3,
+  "buscar_foto": false,
+  "tempo_total_ms": 6500,
+  "resultados": [
+    {
+      "sucesso": true,
+      "telefone": "5511988887777",
+      "tem_whatsapp": true,
+      "nome": "João",
+      "foto_perfil": null,
+      "instancia_usada": "CELULAR 01"
+    },
+    {
+      "sucesso": true,
+      "telefone": "5511977776666",
+      "tem_whatsapp": false,
+      "nome": null,
+      "foto_perfil": null,
+      "instancia_usada": "CELULAR 02"
+    }
+  ]
+}
+```
+
+**Importante para o Net Vendas:** quando o cliente tiver vários telefones, usem **esta rota de lote** (1 chamada) em vez de bater `/verificar` um por um. Continua a API antiga de 1 número se precisarem.
 
 ---
 
@@ -496,7 +563,7 @@ Devolve JWT. Só precisa se forem chamar as rotas internas do painel. **Para as 
 
 **APIs que vocês já chamam**
 - [ ] Restrição consultar / add / remover → parar de mandar `email` e `senha`; mandar `token` + `user_id`.
-- [ ] WhatsApp verificar → idem (`token` + `user_id`).
+- [ ] WhatsApp verificar → idem (`token` + `user_id`). Com vários telefones do cliente, usar `POST /api/public/whatsapp/verificar-lote`.
 
 **Novo**
 - [ ] Tela ou backend de consulta Nova Vida → `POST /api/public/novavida/consultar` com `user_id`.
@@ -518,7 +585,8 @@ Devolve JWT. Só precisa se forem chamar as rotas internas do painel. **Para as 
 | Consultar restrição | `POST /api/public/restriction-list/consultar` | token + user_id |
 | Cadastrar restrição | `POST /api/public/restriction-list/add` | token + user_id |
 | Remover restrição | `POST /api/public/restriction-list/remover` | token + user_id |
-| Número tem WhatsApp? | `POST /api/public/whatsapp/verificar` | token + user_id |
+| Número tem WhatsApp? (1) | `POST /api/public/whatsapp/verificar` | token + user_id |
+| Números tem WhatsApp? (lote) | `POST /api/public/whatsapp/verificar-lote` | token + user_id |
 | Consulta CPF/CNPJ completa | `POST /api/public/novavida/consultar` | token + user_id |
 | Tela envio Oficial | `/embed/oficial?key=nsk_...&user_id=15` | token + user_id na URL |
 | Tela envio QR (template) | `/embed/qr?key=nsk_...&user_id=15` | token + user_id na URL |
