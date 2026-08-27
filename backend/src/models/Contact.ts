@@ -4,10 +4,17 @@ export interface Contact {
   id?: number;
   phone_number: string;
   name?: string;
+  cpf?: string | null;
   variables?: Record<string, any>;
   tenant_id?: number;
   created_at?: Date;
   updated_at?: Date;
+}
+
+function normalizeCpf(cpf?: string | null): string | null {
+  if (!cpf) return null;
+  const digits = String(cpf).replace(/\D/g, '');
+  return digits || null;
 }
 
 export class ContactModel {
@@ -17,10 +24,16 @@ export class ContactModel {
     }
     const result = await queryWithTenantId(
       contact.tenant_id,
-      `INSERT INTO contacts (phone_number, name, variables, tenant_id)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO contacts (phone_number, name, cpf, variables, tenant_id)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [contact.phone_number, contact.name, JSON.stringify(contact.variables || {}), contact.tenant_id]
+      [
+        contact.phone_number,
+        contact.name,
+        normalizeCpf(contact.cpf),
+        JSON.stringify(contact.variables || {}),
+        contact.tenant_id,
+      ]
     );
     return result.rows[0];
   }
@@ -62,8 +75,8 @@ export class ContactModel {
       const placeholders: string[] = [];
       
       batch.forEach((contact, index) => {
-        const offset = index * 4; // 4 campos
-        placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
+        const offset = index * 5; // phone, name, cpf, variables, tenant_id
+        placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5})`);
         
         // Converter variáveis de array para objeto se necessário
         let varsToStore = contact.variables || {};
@@ -82,6 +95,7 @@ export class ContactModel {
         values.push(
           contact.phone_number,
           contact.name || null,
+          normalizeCpf(contact.cpf),
           JSON.stringify(varsToStore),
           tenantId
         );
@@ -89,10 +103,11 @@ export class ContactModel {
       
       const result = await queryWithTenantId(
         tenantId,
-        `INSERT INTO contacts (phone_number, name, variables, tenant_id)
+        `INSERT INTO contacts (phone_number, name, cpf, variables, tenant_id)
          VALUES ${placeholders.join(', ')}
          ON CONFLICT (phone_number, tenant_id) DO UPDATE
          SET name = COALESCE(EXCLUDED.name, contacts.name),
+             cpf = COALESCE(EXCLUDED.cpf, contacts.cpf),
              variables = EXCLUDED.variables,
              updated_at = NOW()
          RETURNING *`,
@@ -105,7 +120,7 @@ export class ContactModel {
         if (batchNum === 1) {
           console.log(`✅ [ContactModel] Sample from first batch:`);
           result.rows.slice(0, 3).forEach((c, i) => {
-            console.log(`   [${i+1}] ID: ${c.id}, Phone: ${c.phone_number}, Tenant: ${c.tenant_id}`);
+            console.log(`   [${i+1}] ID: ${c.id}, Phone: ${c.phone_number}, CPF: ${c.cpf || '-'}, Tenant: ${c.tenant_id}`);
           });
         }
       }
@@ -167,4 +182,3 @@ export class ContactModel {
     return parseInt(result.rows[0].total);
   }
 }
-

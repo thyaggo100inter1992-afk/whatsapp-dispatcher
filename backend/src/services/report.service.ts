@@ -106,7 +106,7 @@ export class ReportService {
           // Mensagens API Oficial
           console.log('🔍 Buscando mensagens API Oficial...');
           const messagesResult = await query(
-            `SELECT m.*, c.name as contact_name, c.phone_number as contact_phone,
+            `SELECT m.*, c.name as contact_name, c.phone_number as contact_phone, c.cpf as contact_cpf,
                     w.name as account_name, w.phone_number as account_phone
              FROM messages m
              LEFT JOIN contacts c ON m.contact_id = c.id
@@ -250,6 +250,7 @@ export class ReportService {
               c.id,
               c.name,
               c.phone_number,
+              c.cpf,
               m_latest.status,
               m_latest.template_name
              FROM contacts c
@@ -459,6 +460,7 @@ export class ReportService {
       { header: 'Contato', key: 'contato', width: 25 },
       { header: 'Telefone', key: 'telefone', width: 18 },
       { header: 'Telefone com 9', key: 'telefone_com_9', width: 18 },
+      { header: 'CPF', key: 'cpf', width: 16 },
       { header: 'Template', key: 'template', width: 30 },
       { header: 'Conta', key: 'conta', width: 25 },
       { header: 'Status', key: 'status', width: 12 },
@@ -476,6 +478,7 @@ export class ReportService {
         contato: msg.contact_name || 'N/A',
         telefone: msg.contact_phone || msg.phone_number,
         telefone_com_9: this.addNinthDigit(msg.contact_phone || msg.phone_number),
+        cpf: msg.contact_cpf || '-',
         template: msg.template_name,
         conta: msg.account_name,
         status: this.translateStatus(msg.status),
@@ -494,6 +497,7 @@ export class ReportService {
       { header: 'Nome', key: 'nome', width: 30 },
       { header: 'Telefone', key: 'telefone', width: 20 },
       { header: 'Telefone com 9', key: 'telefone_com_9', width: 18 },
+      { header: 'CPF', key: 'cpf', width: 16 },
       { header: 'Status Envio', key: 'status', width: 15 },
       { header: 'Template Recebido', key: 'template', width: 35 }
     ];
@@ -507,6 +511,7 @@ export class ReportService {
         nome: contact.name || 'N/A',
         telefone: contact.phone_number,
         telefone_com_9: this.addNinthDigit(contact.phone_number),
+        cpf: contact.cpf || '-',
         status: this.translateStatus(contact.status),
         template: contact.template_name || 'N/A'
       });
@@ -521,6 +526,7 @@ export class ReportService {
       { header: 'Contato', key: 'contato', width: 25 },
       { header: 'Telefone', key: 'telefone', width: 18 },
       { header: 'Telefone com 9', key: 'telefone_com_9', width: 18 },
+      { header: 'CPF', key: 'cpf', width: 16 },
       { header: 'Template', key: 'template', width: 30 },
       { header: 'Conta', key: 'conta', width: 25 },
       { header: 'Data da Falha', key: 'data', width: 18 },
@@ -536,6 +542,7 @@ export class ReportService {
         contato: 'Nenhuma falha registrada',
         telefone: '-',
         telefone_com_9: '-',
+        cpf: '-',
         template: '-',
         conta: '-',
         data: '-',
@@ -547,6 +554,7 @@ export class ReportService {
           contato: msg.contact_name || 'N/A',
           telefone: msg.contact_phone || msg.phone_number,
           telefone_com_9: this.addNinthDigit(msg.contact_phone || msg.phone_number),
+          cpf: msg.contact_cpf || '-',
           template: msg.template_name,
           conta: msg.account_name,
           data: this.formatDate(msg.failed_at),

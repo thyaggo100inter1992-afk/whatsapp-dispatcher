@@ -42,6 +42,7 @@ interface UploadedMedia {
 
 interface Contact {
   phone: string;
+  cpf?: string;
   variables: string[];
 }
 
@@ -518,6 +519,11 @@ export default function CriarCampanha() {
     const seenPhones = new Set<string>(); // ✅ Para rastrear números já vistos
     
     console.log(`📊 Parseando ${lines.length} linhas de contatos...`);
+
+    let phoneIdx = 0;
+    let cpfIdx = -1;
+    let variableIndexes: number[] = [];
+    let headerParsed = false;
     
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -525,22 +531,52 @@ export default function CriarCampanha() {
       // Detectar separador (vírgula ou ponto-e-vírgula)
       const separator = line.includes(';') ? ';' : ',';
       const parts = line.split(separator).map(p => p.trim());
-      
-      // Ignorar linha de cabeçalho (primeira linha se contiver "NUMERO" ou "VARIAVEL")
-      if (i === 0 && (
-        parts[0]?.toUpperCase().includes('NUMERO') || 
-        parts[0]?.toUpperCase().includes('NUMBER') ||
-        parts.some(p => p?.toUpperCase().includes('VARIAVEL')) ||
-        parts.some(p => p?.toUpperCase().includes('VARIABLE'))
-      )) {
-        console.log('📋 Pulando linha de cabeçalho:', line);
+
+      const isHeader =
+        i === 0 &&
+        (
+          parts[0]?.toUpperCase().includes('NUMERO') ||
+          parts[0]?.toUpperCase().includes('NUMBER') ||
+          parts.some(p => p?.toUpperCase().includes('VARIAVEL')) ||
+          parts.some(p => p?.toUpperCase().includes('VARIABLE')) ||
+          parts.some(p => p?.toUpperCase() === 'CPF')
+        );
+
+      // Linha de cabeçalho: mapear colunas (NUMERO, CPF, VARIAVEL_*)
+      if (isHeader) {
+        headerParsed = true;
+        phoneIdx = parts.findIndex(p => {
+          const u = p.toUpperCase();
+          return u.includes('NUMERO') || u.includes('NUMBER') || u === 'PHONE' || u === 'TELEFONE';
+        });
+        if (phoneIdx < 0) phoneIdx = 0;
+
+        cpfIdx = parts.findIndex(p => p.toUpperCase() === 'CPF');
+
+        variableIndexes = parts
+          .map((p, idx) => ({ p: p.toUpperCase(), idx }))
+          .filter(({ p, idx }) => {
+            if (idx === phoneIdx || idx === cpfIdx) return false;
+            return p.includes('VARIAVEL') || p.includes('VARIABLE') || p.startsWith('VAR');
+          })
+          .map(({ idx }) => idx);
+
+        // Se não houver colunas VARIAVEL_* nomeadas, tudo que sobrar (exceto NUMERO/CPF) vira variável
+        if (variableIndexes.length === 0) {
+          variableIndexes = parts
+            .map((_, idx) => idx)
+            .filter(idx => idx !== phoneIdx && idx !== cpfIdx);
+        }
+
+        console.log('📋 Cabeçalho:', { phoneIdx, cpfIdx, variableIndexes, parts });
         continue;
       }
       
       // Adicionar contato se tiver número de telefone válido
-      if (parts.length > 0 && parts[0] && /\d/.test(parts[0])) {
+      const phoneRaw = parts[phoneIdx] || parts[0];
+      if (phoneRaw && /\d/.test(phoneRaw)) {
         // ✅ CORRIGIR: Converter notação científica do telefone (é número de telefone!)
-        const phone = fixScientificNotation(parts[0], true);
+        const phone = fixScientificNotation(phoneRaw, true);
         
         // ✅ REMOVER DUPLICATAS: Pular se o número já foi visto
         if (seenPhones.has(phone)) {
@@ -549,18 +585,35 @@ export default function CriarCampanha() {
         }
         
         seenPhones.add(phone);
+
+        let cpf = '';
+        if (headerParsed && cpfIdx >= 0 && parts[cpfIdx]) {
+          cpf = fixScientificNotation(parts[cpfIdx], true).replace(/\D/g, '');
+        }
+
+        let variables: string[];
+        if (headerParsed && variableIndexes.length > 0) {
+          variables = variableIndexes.map(idx =>
+            fixScientificNotation(parts[idx] || '', false)
+          );
+        } else {
+          // Sem cabeçalho: formato antigo NUMERO, VAR1, VAR2...
+          variables = parts.slice(1).map(v => fixScientificNotation(v, false));
+        }
         
-        // ✅ VARIÁVEIS: NÃO remover caracteres, apenas converter notação científica se necessário
-        const variables = parts.slice(1).map(v => fixScientificNotation(v, false));
-        
-        console.log(`📞 Linha ${i + 1}: ${parts[0]} -> ${phone}`, variables.length > 0 ? `(${variables.length} vars)` : '');
+        console.log(
+          `📞 Linha ${i + 1}: ${phoneRaw} -> ${phone}`,
+          cpf ? `CPF=${cpf}` : '',
+          variables.length > 0 ? `(${variables.length} vars)` : ''
+        );
         
         parsedContacts.push({
           phone,
+          cpf: cpf || undefined,
           variables
         });
-      } else if (parts[0]) {
-        console.warn(`⚠️ Linha ${i + 1} ignorada (sem número válido):`, parts[0]);
+      } else if (phoneRaw) {
+        console.warn(`⚠️ Linha ${i + 1} ignorada (sem número válido):`, phoneRaw);
       }
     }
     
@@ -1179,6 +1232,7 @@ export default function CriarCampanha() {
       // Preparar contatos (usar contactsToUse que pode ser filtrado)
       const formattedContacts = contactsToUse.map(contact => ({
         phone_number: contact.phone,
+        cpf: contact.cpf || null,
         variables: contact.variables,
       }));
       
@@ -2136,10 +2190,13 @@ export default function CriarCampanha() {
                   📋 Formato necessário para {maxVars} variável(is):
                 </p>
                 <code className="block text-base text-white/90 font-mono bg-dark-700/60 p-4 rounded-lg">
-                  NÚMERO{maxVars >= 1 && ',VARIÁVEL_1'}{maxVars >= 2 && ',VARIÁVEL_2'}{maxVars >= 3 && ',VARIÁVEL_3'}
+                  NUMERO,CPF{maxVars >= 1 && ',VARIAVEL_1'}{maxVars >= 2 && ',VARIAVEL_2'}{maxVars >= 3 && ',VARIAVEL_3'}
                 </code>
                 <p className="text-sm text-white/60 mt-3">
-                  Exemplo: <code className="bg-dark-700/60 px-2 py-1 rounded">5511999887766,João,São Paulo,1500</code>
+                  Exemplo: <code className="bg-dark-700/60 px-2 py-1 rounded">5511999887766,12345678901,João,São Paulo,1500</code>
+                </p>
+                <p className="text-sm text-white/50 mt-2">
+                  CPF é opcional e aparece no log/relatório. Não entra como variável do template.
                 </p>
               </div>
             )}
@@ -2288,7 +2345,8 @@ export default function CriarCampanha() {
                       {contacts.length} contato(s) carregado(s)
                     </p>
                     <p className="text-base text-white/80">
-                      • Primeira linha: {contacts[0]?.phone || 'N/A'} 
+                      • Primeira linha: {contacts[0]?.phone || 'N/A'}
+                      {contacts[0]?.cpf ? ` | CPF: ${contacts[0].cpf}` : ''}
                       {contacts[0]?.variables.length > 0 && ` (${contacts[0].variables.length} variável(is))`}
                     </p>
                     <p className="text-sm text-white/60 mt-2">

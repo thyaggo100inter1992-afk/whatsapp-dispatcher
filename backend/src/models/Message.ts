@@ -102,7 +102,7 @@ export class MessageModel {
 
   static async findByCampaign(campaign_id: number, limit = 100, offset = 0) {
     const result = await query(
-      `SELECT m.*, c.name as contact_name, w.name as account_name
+      `SELECT m.*, c.name as contact_name, c.cpf as contact_cpf, w.name as account_name
        FROM messages m
        LEFT JOIN contacts c ON m.contact_id = c.id
        LEFT JOIN whatsapp_accounts w ON m.whatsapp_account_id = w.id

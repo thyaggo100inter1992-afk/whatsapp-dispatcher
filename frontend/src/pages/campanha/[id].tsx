@@ -35,6 +35,7 @@ interface Campaign {
 interface Message {
   id: number;
   phone_number: string;
+  contact_cpf?: string | null;
   template_name: string;
   status: string;
   sent_at?: string;
@@ -131,7 +132,7 @@ export default function CampanhaDetalhes() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [buttonsStats, setButtonsStats] = useState<any>(null);
   const [showAllContacts, setShowAllContacts] = useState(false);
-  const [allContacts, setAllContacts] = useState<Array<{ phone: string; name?: string }>>([]);
+  const [allContacts, setAllContacts] = useState<Array<{ phone: string; name?: string; cpf?: string }>>([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
   const [nextMessageTime, setNextMessageTime] = useState<number | null>(null);
   const [pauseEndTime, setPauseEndTime] = useState<number | null>(null);
@@ -1139,6 +1140,7 @@ export default function CampanhaDetalhes() {
               <thead className="bg-gradient-to-r from-primary-600/20 to-primary-700/20 sticky top-0 z-10">
                 <tr>
                   <th className="text-left p-4 text-base font-black">Número</th>
+                  <th className="text-left p-4 text-base font-black">CPF</th>
                   <th className="text-left p-4 text-base font-black">Template</th>
                   <th className="text-left p-4 text-base font-black">Conta</th>
                   <th className="text-center p-4 text-base font-black">Proxy</th>
@@ -1150,7 +1152,7 @@ export default function CampanhaDetalhes() {
               <tbody>
                 {filteredMessages.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center p-12">
+                    <td colSpan={8} className="text-center p-12">
                       <div className="text-6xl mb-4">📭</div>
                       <p className="text-xl text-white/60 font-medium">Nenhuma mensagem encontrada</p>
                     </td>
@@ -1159,6 +1161,7 @@ export default function CampanhaDetalhes() {
                   filteredMessages.map((message) => (
                     <tr key={message.id} className="border-b border-white/5 hover:bg-white/5 transition-all">
                       <td className="p-4 font-medium">{message.phone_number}</td>
+                      <td className="p-4 text-white/80">{message.contact_cpf || '-'}</td>
                       <td className="p-4">{message.template_name}</td>
                       <td className="p-4">
                         <span className="text-blue-400 font-bold">{message.account_name || '-'}</span>
@@ -1260,6 +1263,9 @@ export default function CampanhaDetalhes() {
                       </div>
                       <div className="flex-1">
                         <p className="text-lg font-bold text-white">{contact.phone}</p>
+                        {contact.cpf && (
+                          <p className="text-sm text-emerald-300 font-medium">CPF: {contact.cpf}</p>
+                        )}
                         {contact.name && (
                           <p className="text-sm text-white/60">{contact.name}</p>
                         )}

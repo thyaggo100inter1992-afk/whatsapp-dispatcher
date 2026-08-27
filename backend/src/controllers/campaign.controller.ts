@@ -409,7 +409,7 @@ export class CampaignController {
 
       // Buscar todos os contatos da campanha
       const result = await tenantQuery(req, 
-        `SELECT c.id, c.phone_number as phone, c.name
+        `SELECT c.id, c.phone_number as phone, c.name, c.cpf
          FROM contacts c
          INNER JOIN campaign_contacts cc ON c.id = cc.contact_id
          WHERE cc.campaign_id = $1
@@ -1523,6 +1523,7 @@ export class CampaignController {
       // Definir colunas
       sheet.columns = [
         { header: 'NUMERO', key: 'numero', width: 20 },
+        { header: 'CPF', key: 'cpf', width: 18 },
         { header: 'VARIAVEL_1', key: 'variavel_1', width: 20 },
         { header: 'VARIAVEL_2', key: 'variavel_2', width: 20 },
         { header: 'VARIAVEL_3', key: 'variavel_3', width: 20 }
@@ -1536,6 +1537,7 @@ export class CampaignController {
       // Adicionar exemplos
       sheet.addRow({
         numero: '5511999887766',
+        cpf: '12345678901',
         variavel_1: 'João',
         variavel_2: 'São Paulo',
         variavel_3: '15/08'
@@ -1543,6 +1545,7 @@ export class CampaignController {
 
       sheet.addRow({
         numero: '5521988776655',
+        cpf: '98765432100',
         variavel_1: 'Maria',
         variavel_2: 'Rio de Janeiro',
         variavel_3: '20/09'
@@ -1550,6 +1553,7 @@ export class CampaignController {
 
       sheet.addRow({
         numero: '5531977665544',
+        cpf: '11122233344',
         variavel_1: 'Pedro',
         variavel_2: 'Belo Horizonte',
         variavel_3: '10/10'
@@ -1581,11 +1585,15 @@ export class CampaignController {
       instructionsSheet.addRow({ instructions: '📋 FORMATO DO ARQUIVO:' });
       instructionsSheet.addRow({ instructions: '• A coluna NUMERO é obrigatória' });
       instructionsSheet.addRow({ instructions: '• O número deve estar completo com DDI + DDD (Exemplo: 5511999887766)' });
-      instructionsSheet.addRow({ instructions: '• As colunas VARIAVEL_1, VARIAVEL_2, VARIAVEL_3... são opcionais' });
+      instructionsSheet.addRow({ instructions: '• A coluna CPF é opcional (aparece no log e no relatório da campanha)' });
+      instructionsSheet.addRow({ instructions: '• CPF: somente números, 11 dígitos (Exemplo: 12345678901)' });
+      instructionsSheet.addRow({ instructions: '• As colunas VARIAVEL_1, VARIAVEL_2, VARIAVEL_3... são opcionais (variáveis do template)' });
       instructionsSheet.addRow({ instructions: '• Use quantas variáveis precisar (VARIAVEL_1, VARIAVEL_2, VARIAVEL_3, etc.)' });
       instructionsSheet.addRow({ instructions: '' });
       instructionsSheet.addRow({ instructions: '⚠️ IMPORTANTE:' });
-      instructionsSheet.addRow({ instructions: '• Não altere o nome das colunas (NUMERO, VARIAVEL_1, VARIAVEL_2, etc.)' });
+      instructionsSheet.addRow({ instructions: '• Ordem das colunas: NUMERO, CPF, VARIAVEL_1, VARIAVEL_2...' });
+      instructionsSheet.addRow({ instructions: '• Não altere o nome das colunas (NUMERO, CPF, VARIAVEL_1, VARIAVEL_2, etc.)' });
+      instructionsSheet.addRow({ instructions: '• O CPF NÃO entra como variável do template WhatsApp — só no relatório/log' });
       instructionsSheet.addRow({ instructions: '• Delete os exemplos antes de adicionar seus contatos reais' });
       instructionsSheet.addRow({ instructions: '• Certifique-se de que todos os números estão corretos' });
       instructionsSheet.addRow({ instructions: '• Use a aba "Contatos" para adicionar seus dados' });
