@@ -1,7 +1,7 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import logger from './logger';
 import { getApiBaseUrl } from '@/utils/urlHelpers';
-import { getAuthToken } from '@/utils/embed';
+import { getAuthToken, isEmbedPath } from '@/utils/embed';
 
 // Estender o tipo AxiosRequestConfig para incluir metadata
 declare module 'axios' {
