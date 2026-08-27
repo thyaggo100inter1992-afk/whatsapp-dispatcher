@@ -31,6 +31,7 @@ export default function EnviarMensagemImediataV2() {
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<number>(0);
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+  const accountDropdownRef = React.useRef<HTMLDivElement>(null);
   const [phoneNumber, setPhoneNumber] = useState('55');
   const [showPrefix, setShowPrefix] = useState(true);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -55,6 +56,17 @@ export default function EnviarMensagemImediataV2() {
   useEffect(() => {
     loadAccounts();
   }, []);
+
+  useEffect(() => {
+    if (!accountDropdownOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (accountDropdownRef.current && !accountDropdownRef.current.contains(event.target as Node)) {
+        setAccountDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [accountDropdownOpen]);
 
   useEffect(() => {
     filterTemplates();
@@ -605,7 +617,7 @@ export default function EnviarMensagemImediataV2() {
                       <label className="block text-lg font-bold mb-3 text-white/90">
                         Número de Origem *
                       </label>
-                      <div className="relative">
+                      <div className="relative" ref={accountDropdownRef}>
                         <button
                           type="button"
                           onClick={() => setAccountDropdownOpen(!accountDropdownOpen)}
@@ -623,16 +635,7 @@ export default function EnviarMensagemImediataV2() {
                         </button>
                         {accountDropdownOpen && (
                           <div className="absolute z-[9999] w-full mt-2 bg-dark-700 border-2 border-white/20 rounded-xl shadow-2xl overflow-hidden">
-                            <div className="max-h-44 overflow-y-auto">
-                              <div
-                                onClick={() => {
-                                  handleAccountChange(0);
-                                  setAccountDropdownOpen(false);
-                                }}
-                                className={`px-6 py-3 cursor-pointer transition-colors ${selectedAccountId === 0 ? 'bg-primary-500/30 text-white' : 'text-white/70 hover:bg-white/10'}`}
-                              >
-                                Selecione uma conta
-                              </div>
+                            <div className="max-h-[21rem] overflow-y-auto origin-dropdown-scroll">
                               {accounts.map(account => (
                                 <div
                                   key={account.id}
@@ -640,7 +643,7 @@ export default function EnviarMensagemImediataV2() {
                                     handleAccountChange(account.id);
                                     setAccountDropdownOpen(false);
                                   }}
-                                  className={`px-6 py-3 cursor-pointer transition-colors ${selectedAccountId === account.id ? 'bg-primary-500/30 text-white' : 'text-white hover:bg-white/10'}`}
+                                  className={`h-14 px-6 flex items-center cursor-pointer transition-colors ${selectedAccountId === account.id ? 'bg-primary-500/30 text-white' : 'text-white hover:bg-white/10'}`}
                                 >
                                   {account.name} - {account.phone_number}
                                 </div>
