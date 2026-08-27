@@ -40,6 +40,7 @@ export default function EnviarMensagemImediataV2() {
   const [searchQuery, setSearchQuery] = useState('');
   const [excludeQuery, setExcludeQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL'); // ALL, MARKETING, UTILITY, AUTHENTICATION
+  const [mediaFilters, setMediaFilters] = useState<Array<'image' | 'video' | 'none'>>([]);
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState('');
   const [loading, setLoading] = useState(false);
@@ -70,7 +71,7 @@ export default function EnviarMensagemImediataV2() {
 
   useEffect(() => {
     filterTemplates();
-  }, [templates, searchQuery, excludeQuery, categoryFilter]);
+  }, [templates, searchQuery, excludeQuery, categoryFilter, mediaFilters]);
 
   const loadAccounts = async () => {
     try {
@@ -104,12 +105,45 @@ export default function EnviarMensagemImediataV2() {
     }
   };
 
+  const getTemplateMediaType = (template: Template): 'image' | 'video' | 'document' | 'audio' | null => {
+    const headerComponent = template.components?.find((c: any) => c.type === 'HEADER');
+    if (!headerComponent || headerComponent.format === 'TEXT') {
+      return null;
+    }
+
+    const format = headerComponent.format?.toLowerCase();
+    if (format === 'image') return 'image';
+    if (format === 'video') return 'video';
+    if (format === 'document') return 'document';
+    if (format === 'audio') return 'audio';
+
+    return null;
+  };
+
+  const toggleMediaFilter = (value: 'image' | 'video' | 'none') => {
+    setMediaFilters((current) =>
+      current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value]
+    );
+  };
+
   const filterTemplates = () => {
     let filtered = [...templates];
 
     // Filtro por categoria
     if (categoryFilter !== 'ALL') {
       filtered = filtered.filter(t => t.category === categoryFilter);
+    }
+
+    if (mediaFilters.length > 0) {
+      filtered = filtered.filter((t) => {
+        const mediaTypeOfTemplate = getTemplateMediaType(t);
+        if (mediaFilters.includes('image') && mediaTypeOfTemplate === 'image') return true;
+        if (mediaFilters.includes('video') && mediaTypeOfTemplate === 'video') return true;
+        if (mediaFilters.includes('none') && mediaTypeOfTemplate === null) return true;
+        return false;
+      });
     }
 
     if (searchQuery.trim()) {
@@ -874,51 +908,106 @@ export default function EnviarMensagemImediataV2() {
                 <div className="space-y-4 mb-6">
                   {/* Filtro por Categoria */}
                   <div>
-                    <label className="block text-sm font-bold text-white/70 mb-2">📂 Filtrar por Categoria:</label>
-                    <div className="flex flex-wrap gap-2">
+                    <label className="block text-xs font-bold text-white/70 mb-1.5">📂 Filtrar por Categoria:</label>
+                    <div className="flex flex-nowrap gap-1.5 overflow-x-auto">
                       <button
                         type="button"
                         onClick={() => setCategoryFilter('ALL')}
-                        className={`px-4 py-2 text-sm font-bold rounded-lg border-2 transition-all duration-200 ${
+                        className={`shrink-0 px-2.5 py-1 text-xs font-bold rounded-md border transition-all duration-200 ${
                           categoryFilter === 'ALL'
-                            ? 'bg-primary-500 text-white border-primary-500 shadow-lg shadow-primary-500/30'
+                            ? 'bg-primary-500 text-white border-primary-500 shadow-md shadow-primary-500/30'
                             : 'bg-dark-700/50 text-white/70 border-white/20 hover:border-primary-500/50 hover:text-white'
                         }`}
                       >
-                        📋 Todas ({templates.length})
+                        Todas ({templates.length})
                       </button>
                       <button
                         type="button"
                         onClick={() => setCategoryFilter('MARKETING')}
-                        className={`px-4 py-2 text-sm font-bold rounded-lg border-2 transition-all duration-200 ${
+                        className={`shrink-0 px-2.5 py-1 text-xs font-bold rounded-md border transition-all duration-200 ${
                           categoryFilter === 'MARKETING'
-                            ? 'bg-purple-500 text-white border-purple-500 shadow-lg shadow-purple-500/30'
+                            ? 'bg-purple-500 text-white border-purple-500 shadow-md shadow-purple-500/30'
                             : 'bg-purple-500/10 text-purple-300 border-purple-500/30 hover:border-purple-500 hover:bg-purple-500/20'
                         }`}
                       >
-                        📢 Marketing ({templates.filter(t => t.category === 'MARKETING').length})
+                        Marketing ({templates.filter(t => t.category === 'MARKETING').length})
                       </button>
                       <button
                         type="button"
                         onClick={() => setCategoryFilter('UTILITY')}
-                        className={`px-4 py-2 text-sm font-bold rounded-lg border-2 transition-all duration-200 ${
+                        className={`shrink-0 px-2.5 py-1 text-xs font-bold rounded-md border transition-all duration-200 ${
                           categoryFilter === 'UTILITY'
-                            ? 'bg-blue-500 text-white border-blue-500 shadow-lg shadow-blue-500/30'
+                            ? 'bg-blue-500 text-white border-blue-500 shadow-md shadow-blue-500/30'
                             : 'bg-blue-500/10 text-blue-300 border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/20'
                         }`}
                       >
-                        🔧 Utilitário ({templates.filter(t => t.category === 'UTILITY').length})
+                        Utilitário ({templates.filter(t => t.category === 'UTILITY').length})
                       </button>
                       <button
                         type="button"
                         onClick={() => setCategoryFilter('AUTHENTICATION')}
-                        className={`px-4 py-2 text-sm font-bold rounded-lg border-2 transition-all duration-200 ${
+                        className={`shrink-0 px-2.5 py-1 text-xs font-bold rounded-md border transition-all duration-200 ${
                           categoryFilter === 'AUTHENTICATION'
-                            ? 'bg-green-500 text-white border-green-500 shadow-lg shadow-green-500/30'
+                            ? 'bg-green-500 text-white border-green-500 shadow-md shadow-green-500/30'
                             : 'bg-green-500/10 text-green-300 border-green-500/30 hover:border-green-500 hover:bg-green-500/20'
                         }`}
                       >
-                        🔐 Autenticação ({templates.filter(t => t.category === 'AUTHENTICATION').length})
+                        Autenticação ({templates.filter(t => t.category === 'AUTHENTICATION').length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filtro por tipo de mídia */}
+                  <div>
+                    <label className="block text-xs font-bold text-white/70 mb-1.5">📎 Filtrar por mídia:</label>
+                    <div className="flex flex-nowrap gap-1.5 overflow-x-auto">
+                      <button
+                        type="button"
+                        onClick={() => toggleMediaFilter('image')}
+                        className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-md border transition-all duration-200 ${
+                          mediaFilters.includes('image')
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/30'
+                            : 'bg-dark-700/50 text-white/70 border-white/20 hover:border-amber-500/50 hover:text-white'
+                        }`}
+                      >
+                        <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${
+                          mediaFilters.includes('image') ? 'border-white bg-white text-amber-600' : 'border-white/40'
+                        }`}>
+                          {mediaFilters.includes('image') ? '✓' : ''}
+                        </span>
+                        Imagem ({templates.filter(t => getTemplateMediaType(t) === 'image').length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleMediaFilter('video')}
+                        className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-md border transition-all duration-200 ${
+                          mediaFilters.includes('video')
+                            ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/30'
+                            : 'bg-dark-700/50 text-white/70 border-white/20 hover:border-rose-500/50 hover:text-white'
+                        }`}
+                      >
+                        <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${
+                          mediaFilters.includes('video') ? 'border-white bg-white text-rose-600' : 'border-white/40'
+                        }`}>
+                          {mediaFilters.includes('video') ? '✓' : ''}
+                        </span>
+                        Vídeo ({templates.filter(t => getTemplateMediaType(t) === 'video').length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleMediaFilter('none')}
+                        className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-md border transition-all duration-200 ${
+                          mediaFilters.includes('none')
+                            ? 'bg-slate-500 text-white border-slate-500 shadow-md shadow-slate-500/30'
+                            : 'bg-dark-700/50 text-white/70 border-white/20 hover:border-slate-400/50 hover:text-white'
+                        }`}
+                      >
+                        <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${
+                          mediaFilters.includes('none') ? 'border-white bg-white text-slate-600' : 'border-white/40'
+                        }`}>
+                          {mediaFilters.includes('none') ? '✓' : ''}
+                        </span>
+                        Sem mídia ({templates.filter(t => getTemplateMediaType(t) === null).length})
                       </button>
                     </div>
                   </div>
