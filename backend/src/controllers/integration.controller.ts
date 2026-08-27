@@ -185,6 +185,7 @@ export class IntegrationController {
         `SELECT id, nome, email, role
          FROM tenant_users
          WHERE tenant_id = $1 AND ativo = true
+           AND role IS DISTINCT FROM 'super_admin'
          ORDER BY nome ASC NULLS LAST, id ASC`,
         [tenantId]
       );

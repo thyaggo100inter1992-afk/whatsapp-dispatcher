@@ -136,7 +136,7 @@ Resposta:
 }
 ```
 
-Guardem `id` no mapeamento. `role` `admin` ou `super_admin` vê todas as conexões do tenant. `user` vê só as que o admin do disparador liberou para ele em Gestão.
+Guardem `id` no mapeamento. `role` `admin` vê todas as conexões do tenant. `user` vê só as que o admin do disparador liberou para ele em Gestão. Usuário `super_admin` (Master Access) **não entra nesta lista** — é interno do disparador.
 
 Se o `user_id` não existir naquele tenant ou estiver inativo: **403**.
 

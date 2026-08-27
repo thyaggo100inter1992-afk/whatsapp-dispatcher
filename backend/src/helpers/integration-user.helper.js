@@ -39,8 +39,8 @@ async function loadDefaultTenantUser(tenantId) {
   const result = await pool.query(
     `SELECT id, tenant_id, nome, email, role, permissoes, ativo, email_verificado
      FROM tenant_users
-     WHERE tenant_id = $1 AND ativo = true
-     ORDER BY CASE WHEN role = 'admin' THEN 0 WHEN role = 'super_admin' THEN 1 ELSE 2 END, id
+     WHERE tenant_id = $1 AND ativo = true AND role IS DISTINCT FROM 'super_admin'
+     ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, id
      LIMIT 1`,
     [tenantId]
   );
@@ -56,6 +56,14 @@ async function resolveActingUser(req, tenantId) {
         erro: {
           status: 403,
           mensagem: 'Usuário do disparador não encontrado neste tenant ou está inativo',
+        },
+      };
+    }
+    if (user.role === 'super_admin') {
+      return {
+        erro: {
+          status: 403,
+          mensagem: 'Este usuário é interno do disparador e não pode ser usado no sistema de vendas',
         },
       };
     }
