@@ -4,6 +4,7 @@ import Head from 'next/head';
 import { FaArrowLeft, FaCheckCircle, FaTimesCircle, FaSpinner, FaDownload, FaInfoCircle, FaSearchPlus, FaCopy, FaTimes } from 'react-icons/fa';
 import api from '@/services/api';
 import SystemLogo from '@/components/SystemLogo';
+import { isEmbedPath } from '@/utils/embed';
 
 interface UazInstance {
   id: number;
@@ -654,12 +655,14 @@ export default function VerificarNumerosUaz() {
         <div className="bg-gradient-to-r from-green-600/30 via-emerald-500/20 to-green-600/30 backdrop-blur-xl border-2 border-green-500/40 rounded-3xl p-10 shadow-2xl">
           <div className="flex items-center justify-between gap-6">
             <div className="flex items-center gap-6">
+              {!isEmbedPath() && (
               <button
                 onClick={() => router.push('/dashboard-uaz')}
                 className="bg-white/10 hover:bg-white/20 p-4 rounded-xl transition-all duration-200 border-2 border-white/20 hover:border-white/40"
               >
                 <FaArrowLeft className="text-3xl text-white" />
               </button>
+              )}
               
               <div>
                 <h1 className="text-5xl font-black text-white tracking-tight mb-2">

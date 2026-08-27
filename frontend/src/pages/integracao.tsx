@@ -22,7 +22,7 @@ export default function IntegracaoPage() {
   const [creating, setCreating] = useState(false);
   const [newKey, setNewKey] = useState<{
     api_key: string;
-    embed: { oficial: string; qr: string };
+    embed: { oficial: string; qr: string; verificar: string };
   } | null>(null);
   const [copied, setCopied] = useState('');
   const [error, setError] = useState('');
@@ -154,6 +154,12 @@ export default function IntegracaoPage() {
               <CopyBlock
                 label="Iframe QR Connect (Envio Único)"
                 value={iframeSnippet(newKey.embed.qr)}
+                copied={copied}
+                onCopy={copy}
+              />
+              <CopyBlock
+                label="Iframe Verificar Números"
+                value={iframeSnippet(newKey.embed.verificar)}
                 copied={copied}
                 onCopy={copy}
               />

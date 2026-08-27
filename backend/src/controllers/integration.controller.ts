@@ -154,6 +154,7 @@ export class IntegrationController {
           embed: {
             oficial: `${frontend}/embed/oficial?key=${encodeURIComponent(raw)}&user_id=ID_DO_USUARIO`,
             qr: `${frontend}/embed/qr?key=${encodeURIComponent(raw)}&user_id=ID_DO_USUARIO`,
+            verificar: `${frontend}/embed/verificar?key=${encodeURIComponent(raw)}&user_id=ID_DO_USUARIO`,
           },
         },
       });
