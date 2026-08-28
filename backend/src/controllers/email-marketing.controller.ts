@@ -2147,19 +2147,24 @@ export const getCampaignStats = async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
       const result = await pool.query(
-        `SELECT total_contacts, sent_count, failed_count, opened_count, clicked_count, bounced_count, complained_count, replied_count, status, started_at, completed_at
+        `SELECT total_contacts, sent_count, failed_count, opened_count, clicked_count, bounced_count, complained_count, replied_count,
+                status, started_at, completed_at, pause_started_at, sent_in_session, scheduled_at
          FROM email_marketing_campaigns WHERE id=$1 AND tenant_id=$2`,
         [id, tenantId]
       );
       return res.json({ success: true, data: result.rows[0] });
     } catch (colErr: any) {
-      if (!/replied_count/i.test(String(colErr?.message || ''))) throw colErr;
+      const msg = String(colErr?.message || '');
+      if (!/replied_count|pause_started_at|sent_in_session/i.test(msg)) throw colErr;
       const result = await pool.query(
         `SELECT total_contacts, sent_count, failed_count, opened_count, clicked_count, bounced_count, complained_count, status, started_at, completed_at
          FROM email_marketing_campaigns WHERE id=$1 AND tenant_id=$2`,
         [id, tenantId]
       );
-      return res.json({ success: true, data: { ...result.rows[0], replied_count: 0 } });
+      return res.json({
+        success: true,
+        data: { ...result.rows[0], replied_count: 0, pause_started_at: null, sent_in_session: 0, scheduled_at: null },
+      });
     }
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

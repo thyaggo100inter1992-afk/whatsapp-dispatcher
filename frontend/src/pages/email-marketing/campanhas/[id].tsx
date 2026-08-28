@@ -24,6 +24,8 @@ interface Campaign {
   domain_id?: number | null;
   domain_ids?: number[] | null;
   domain_name: string; list_name: string; template_name: string;
+  template_ids?: number[] | null;
+  template_models?: Array<{ id: number; name: string }> | null;
   body_html?: string | null; body_text?: string | null; body_htmls?: string[] | null; reply_to?: string | null;
   created_at: string; started_at: string | null; completed_at: string | null; scheduled_at: string | null;
   work_start_time: string | null; work_end_time: string | null;
@@ -68,6 +70,8 @@ interface Recipient {
   protocol?: string | null;
   sent_from_email?: string | null;
   sent_domain?: string | null;
+  sent_model_name?: string | null;
+  sent_model_index?: number | null;
   error_message: string | null; sent_at: string | null;
   opened_at: string | null; clicked_at: string | null; replied_at?: string | null; updated_at: string;
 }
@@ -98,7 +102,9 @@ const RECIPIENT_STATUS: Record<string, { label: string; color: string }> = {
   complained:{ label: 'Spam',       color: 'bg-red-500/20 text-red-300 border-red-500/30' },
 };
 
-const POLL_INTERVAL = 3;
+const POLL_INTERVAL = 4;
+const LOG_RECIPIENTS_LIMIT = 100;
+const MODAL_RECIPIENTS_LIMIT = 5000;
 const PROCESSED_STATUSES = new Set(['sent', 'failed', 'opened', 'clicked', 'replied', 'bounced', 'complained']);
 
 /** Flags de todas as etapas (não só o status final) */
@@ -287,20 +293,31 @@ export default function CampaignDetail() {
     if (!id) return;
     if (!silent) setLoading(true);
     try {
-      const r = await api.get(`/email-marketing/campaigns/${id}`);
-      setCampaign(r.data.data);
+      if (silent && campaignRef.current) {
+        // Poll leve (igual WhatsApp API): só contadores + últimos envios do log
+        const [statsRes] = await Promise.all([
+          api.get(`/email-marketing/campaigns/${id}/stats`),
+          loadRecipients(true, LOG_RECIPIENTS_LIMIT),
+        ]);
+        const stats = statsRes.data?.data;
+        if (stats) {
+          setCampaign(prev => (prev ? { ...prev, ...stats } : prev));
+        }
+      } else {
+        const r = await api.get(`/email-marketing/campaigns/${id}`);
+        setCampaign(r.data.data);
+        await loadRecipients(false, LOG_RECIPIENTS_LIMIT);
+      }
       setLastUpdated(new Date());
-      // Atualiza log de envio junto com os contadores
-      await loadRecipients(true);
     } catch { }
     finally { if (!silent) setLoading(false); }
   };
 
-  const loadRecipients = async (silent = false) => {
+  const loadRecipients = async (silent = false, limit = LOG_RECIPIENTS_LIMIT) => {
     if (!id) return;
     if (!silent) setLoadingRecipients(true);
     try {
-      const r = await api.get(`/email-marketing/campaigns/${id}/recipients?limit=5000`);
+      const r = await api.get(`/email-marketing/campaigns/${id}/recipients?limit=${limit}`);
       const list: Recipient[] = r.data.data || [];
       const prev = prevRecipientsRef.current;
       const changed = new Set<number>();
@@ -433,6 +450,8 @@ export default function CampaignDetail() {
         subjects: subjectsClean,
         body_html: editForm.body_htmls.map(h => h.trim()).filter(Boolean)[0] || null,
         body_htmls: editForm.body_htmls.map(h => h.trim()).filter(h => {
+          const s = String(h || '');
+          if (/<img\b/i.test(s) || /<table\b/i.test(s) || /src\s*=/i.test(s)) return true;
           const plain = h.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim();
           return !!plain;
         }),
@@ -488,6 +507,27 @@ export default function CampaignDetail() {
         ? campaign.from_senders
         : [{ from_name: campaign.from_name, from_email: campaign.from_email }];
       const subjectsList = campaign.subjects?.length ? campaign.subjects : [campaign.subject];
+      const bodiesList: string[] = Array.isArray(campaign.body_htmls) && campaign.body_htmls.length
+        ? campaign.body_htmls
+        : (campaign.body_html ? [campaign.body_html] : []);
+      const rotationModels: string[] = (campaign.template_models && campaign.template_models.length)
+        ? campaign.template_models.map((m, i) => m.name || `Modelo ${i + 1}`)
+        : bodiesList.map((_, i) => `Modelo ${i + 1}`);
+      if (!rotationModels.length && campaign.template_name) rotationModels.push(campaign.template_name);
+      if (!rotationModels.length) rotationModels.push('Modelo 1');
+
+      const sortedById = [...rows].sort((a, b) => a.id - b.id);
+      const modelForRecipient = (r2: Recipient) => {
+        if (r2.sent_model_name) {
+          const n = r2.sent_model_index ? `${r2.sent_model_index}. ${r2.sent_model_name}` : r2.sent_model_name;
+          return n;
+        }
+        const pos = sortedById.findIndex((x) => x.id === r2.id);
+        if (pos < 0 || !rotationModels.length) return '';
+        const i = pos % rotationModels.length;
+        return `${i + 1}. ${rotationModels[i]}`;
+      };
+
       const msgTexto = campaign.body_text?.trim() || htmlToReadableText(campaign.body_html || '') || '(sem conteúdo)';
       const msgHtml = campaign.body_html || '(sem HTML)';
 
@@ -507,7 +547,7 @@ export default function CampaignDetail() {
         ['Concluída', formatDt(campaign.completed_at)],
         ['Domínio', campaign.domain_name || ''],
         ['Lista de contatos', campaign.list_name || ''],
-        ['Template', campaign.template_name || ''],
+        ['Template', campaign.template_name || (rotationModels.length > 1 ? `${rotationModels.length} modelos em rotação` : '')],
         ['Reply-To', campaign.reply_to || ''],
       ];
       const wsResumo = XLSX.utils.aoa_to_sheet(resumo);
@@ -564,6 +604,31 @@ export default function CampaignDetail() {
       wsMsg['!rows'] = [{ hpt: 20 }, { hpt: 220 }, { hpt: 220 }];
       XLSX.utils.book_append_sheet(wb, wsMsg, 'Mensagem');
 
+      // Aba — Modelos enviados
+      const countByModel: Record<string, number> = {};
+      for (const r2 of rows) {
+        const label = modelForRecipient(r2) || '(não identificado)';
+        countByModel[label] = (countByModel[label] || 0) + 1;
+      }
+      const modelosEnviados: (string | number)[][] = [
+        ['MODELOS NA ROTAÇÃO'],
+        ['#', 'Nome do modelo'],
+        ...rotationModels.map((name, i) => [i + 1, name]),
+        [],
+        ['QUANTIDADE POR MODELO ENVIADO'],
+        ['Modelo da mensagem enviado', 'Destinatários'],
+        ...Object.entries(countByModel)
+          .sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'pt-BR'))
+          .map(([name, qty]) => [name, qty]),
+        [],
+        ['POR DESTINATÁRIO'],
+        ['E-mail', 'Nome', 'Modelo da mensagem enviado'],
+        ...rows.map((r2) => [r2.email || '', r2.name || '', modelForRecipient(r2)]),
+      ];
+      const wsModelos = XLSX.utils.aoa_to_sheet(modelosEnviados);
+      wsModelos['!cols'] = [{ wch: 40 }, { wch: 40 }, { wch: 50 }];
+      XLSX.utils.book_append_sheet(wb, wsModelos, 'Modelos enviados');
+
       // Aba 6 — Estatísticas
       const stats = [
         ['Métrica', 'Quantidade'],
@@ -598,7 +663,7 @@ export default function CampaignDetail() {
       destHeader.push(
         'Status atual',
         'Enviado?', 'Aberto?', 'Clicou?', 'Respondido?', 'Rejeitado?', 'Spam?', 'Falhou?',
-        'Domínio', 'Remetente',
+        'Domínio', 'Remetente', 'Modelo da mensagem enviado',
         'Enviado em', 'Aberto em', 'Clicado em', 'Respondido em',
         'Motivo do erro',
       );
@@ -630,6 +695,7 @@ export default function CampaignDetail() {
             yn(flags.failed),
             r2.sent_domain ? `@${r2.sent_domain}` : '',
             r2.sent_from_email || '',
+            modelForRecipient(r2),
             r2.sent_at ? new Date(r2.sent_at).toLocaleString('pt-BR') : '',
             r2.opened_at ? new Date(r2.opened_at).toLocaleString('pt-BR') : '',
             r2.clicked_at ? new Date(r2.clicked_at).toLocaleString('pt-BR') : '',
@@ -772,21 +838,25 @@ export default function CampaignDetail() {
     .slice()
     .sort((a, b) => activityTime(b) - activityTime(a));
 
-  const processedCount = recipients.filter(r => PROCESSED_STATUSES.has(r.status)).length;
-  const recipientCounts: Record<string, number> = { all: processedCount };
-  for (const r of recipients) {
-    const flags = getRecipientFlags(r);
-    if (flags.sent) recipientCounts.sent = (recipientCounts.sent || 0) + 1;
-    if (flags.opened) recipientCounts.opened = (recipientCounts.opened || 0) + 1;
-    if (flags.clicked) recipientCounts.clicked = (recipientCounts.clicked || 0) + 1;
-    if (flags.replied) recipientCounts.replied = (recipientCounts.replied || 0) + 1;
-    if (flags.bounced) recipientCounts.bounced = (recipientCounts.bounced || 0) + 1;
-    if (flags.complained) recipientCounts.complained = (recipientCounts.complained || 0) + 1;
-    if (flags.failed) recipientCounts.failed = (recipientCounts.failed || 0) + 1;
-    if (r.status === 'pending' || r.status === 'sending') {
-      recipientCounts.pending = (recipientCounts.pending || 0) + 1;
+  const processedCount = campaign
+    ? campaign.sent_count + campaign.failed_count
+    : recipients.filter(r => PROCESSED_STATUSES.has(r.status)).length;
+
+  const getCampaignFilterCount = (key: string): number => {
+    if (!campaign) return 0;
+    if (key === 'pending') {
+      return Math.max(0, campaign.total_contacts - campaign.sent_count - campaign.failed_count);
     }
-  }
+    if (key === 'sent') return campaign.sent_count;
+    if (key === 'opened') return campaign.opened_count;
+    if (key === 'clicked') return campaign.clicked_count;
+    if (key === 'replied') return campaign.replied_count || 0;
+    if (key === 'bounced') return campaign.bounced_count;
+    if (key === 'complained') return campaign.complained_count;
+    if (key === 'failed') return campaign.failed_count;
+    if (key === 'all') return processedCount;
+    return 0;
+  };
 
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex items-center justify-center">
@@ -1092,7 +1162,7 @@ export default function CampaignDetail() {
                 {(['all', 'pending', 'sent', 'opened', 'clicked', 'replied', 'bounced', 'failed'] as const).map(s => (
                   <button key={s} onClick={() => setFilterStatus(s)}
                     className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${filterStatus === s ? 'bg-orange-500 text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
-                    {s === 'all' ? `Todos (${recipients.length})` : `${RECIPIENT_STATUS[s]?.label} (${recipientCounts[s] || 0})`}
+                    {s === 'all' ? `Todos (${recipients.length || getCampaignFilterCount('all')})` : `${RECIPIENT_STATUS[s]?.label} (${getCampaignFilterCount(s)})`}
                   </button>
                 ))}
               </div>
@@ -1203,7 +1273,7 @@ export default function CampaignDetail() {
                   </div>
                 </div>
                 <div className="flex gap-3 flex-wrap">
-                  <button onClick={() => { loadRecipients(); setShowAllContacts(true); }}
+                  <button onClick={() => { loadRecipients(false, MODAL_RECIPIENTS_LIMIT); setShowAllContacts(true); }}
                     className="px-5 py-3 bg-white/10 hover:bg-white/20 text-white border-2 border-white/20 rounded-xl font-bold flex items-center gap-2 transition-all">
                     <FaListUl /> Ver Destinatários
                   </button>
@@ -1470,7 +1540,7 @@ export default function CampaignDetail() {
                 <span className="text-4xl">📨</span> Destinatários
               </h3>
               <button
-                onClick={() => { loadRecipients(); setShowAllContacts(true); }}
+                onClick={() => { loadRecipients(false, MODAL_RECIPIENTS_LIMIT); setShowAllContacts(true); }}
                 disabled={loadingRecipients}
                 className="px-6 py-3 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border-2 border-orange-500/40 rounded-xl font-bold flex items-center gap-2 transition-all disabled:opacity-50">
                 {loadingRecipients ? <FaSpinner className="animate-spin" /> : <FaUsers />}
@@ -1543,7 +1613,7 @@ export default function CampaignDetail() {
                           ? 'bg-orange-500 text-white'
                           : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
                       }`}>
-                      {s === 'all' ? `Processados (${processedCount})` : `${RECIPIENT_STATUS[s]?.label || s} (${recipientCounts[s] || 0})`}
+                      {s === 'all' ? `Processados (${getCampaignFilterCount('all')})` : `${RECIPIENT_STATUS[s]?.label || s} (${getCampaignFilterCount(s)})`}
                     </button>
                   ))}
                 </div>
