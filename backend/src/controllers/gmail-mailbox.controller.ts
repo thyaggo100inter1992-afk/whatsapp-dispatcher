@@ -133,6 +133,32 @@ async function accountProfile(tenantId: number, id: number) {
   return account;
 }
 
+export const saveGmailLink = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const email = normalizeEmail(req.body?.email);
+    const displayName = String(req.body?.display_name || '').trim() || null;
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ success: false, message: 'Informe o e-mail da conta Gmail.' });
+    }
+    await ensureGmailAccountsTable();
+    const saved = await pool.query(
+      `INSERT INTO email_gmail_accounts (tenant_id, email, display_name, password_encrypted)
+       VALUES ($1, $2, $3, NULL)
+       ON CONFLICT (tenant_id, email)
+       DO UPDATE SET
+         display_name = COALESCE(EXCLUDED.display_name, email_gmail_accounts.display_name),
+         updated_at = NOW()
+       RETURNING id, email, display_name, created_at`,
+      [tenantId, email, displayName]
+    );
+    res.json({ success: true, data: saved.rows[0], message: 'Conta salva. A aba do Chrome vai abrir agora.' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const createGmailBrowser = async (req: Request, res: Response) => {
   try {
     const tenantId = requireTenant(req, res);

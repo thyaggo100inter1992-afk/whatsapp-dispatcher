@@ -87,6 +87,7 @@ router.patch('/mailbox-quick-replies/:id', mailboxCtrl.updateQuickReply);
 router.delete('/mailbox-quick-replies/:id', mailboxCtrl.deleteQuickReply);
 
 router.get('/gmail-accounts', gmailCtrl.listGmailAccounts);
+router.post('/gmail-accounts/link', gmailCtrl.saveGmailLink);
 router.post('/gmail-accounts/browser', gmailCtrl.createGmailBrowser);
 router.post('/gmail-accounts/:id/browser/open', gmailCtrl.openGmailBrowserAccount);
 router.post('/gmail-accounts/:id/browser/close', gmailCtrl.closeGmailBrowserAccount);
