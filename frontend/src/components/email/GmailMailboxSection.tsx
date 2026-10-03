@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { FaChevronDown, FaChevronUp, FaCopy, FaGoogle, FaGripVertical, FaPlus, FaSpinner, FaSync, FaTimes } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
@@ -29,7 +29,21 @@ function accountEmail(account: GmailAccount, detected?: string | null) {
   return 'Entre com o e-mail e a senha do Gmail';
 }
 
-export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (open: boolean) => void }) {
+type MailChannel = 'gmail' | 'smtp';
+
+export default function GmailMailboxSection({
+  channel,
+  onChannelChange,
+  smtpList,
+  onCreateSmtp,
+  children,
+}: {
+  channel: MailChannel;
+  onChannelChange: (channel: MailChannel) => void;
+  smtpList?: ReactNode;
+  onCreateSmtp?: () => void;
+  children?: ReactNode;
+}) {
   const notification = useNotification();
   const { confirm, ConfirmDialog } = useConfirm();
   const [accounts, setAccounts] = useState<GmailAccount[]>([]);
@@ -44,13 +58,18 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
   const [pageUrl, setPageUrl] = useState('https://mail.google.com');
   const [detectedEmail, setDetectedEmail] = useState<string | null>(null);
   const screenRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef({ width: 1280, height: 720 });
   const imgRef = useRef<HTMLImageElement>(null);
+  const [panelHeight, setPanelHeight] = useState(0);
   const versionRef = useRef(0);
   const urlRef = useRef('');
   const emailRef = useRef('');
   const moveTimer = useRef<number | null>(null);
 
-  const active = accounts.find((account) => account.id === activeId) || null;
+  const active = channel === 'gmail' ? accounts.find((account) => account.id === activeId) || null : null;
+  viewportRef.current = viewport;
+  const frameMax = Math.min(1500, Math.round(viewport.width * 1.15));
 
   const loadAccounts = async () => {
     try {
@@ -64,11 +83,39 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
   useEffect(() => { loadAccounts(); }, []);
 
   useEffect(() => {
-    onOpenChange?.(activeId != null);
-  }, [activeId, onOpenChange]);
+    const el = rightRef.current;
+    if (!el) return undefined;
+    const apply = () => setPanelHeight(Math.round(el.getBoundingClientRect().height));
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [channel, activeId, frameReady]);
 
   useEffect(() => {
-    if (!activeId) return undefined;
+    const el = screenRef.current;
+    if (!el) return undefined;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const size = viewportRef.current;
+      const x = Math.max(0, Math.round(((event.clientX - rect.left) / rect.width) * size.width));
+      const y = Math.max(0, Math.round(((event.clientY - rect.top) / rect.height) * size.height));
+      api.post(`/email-marketing/gmail-accounts/${activeId}/browser/input`, {
+        type: 'mouse',
+        action: 'wheel',
+        x,
+        y,
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+      }).catch(() => undefined);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [activeId]);
+
+  useEffect(() => {
+    if (!activeId || channel !== 'gmail') return undefined;
     let stopped = false;
     versionRef.current = 0;
     urlRef.current = '';
@@ -126,7 +173,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
 
     tick();
     return () => { stopped = true; };
-  }, [activeId]);
+  }, [activeId, channel]);
 
   const sendInput = (body: Record<string, unknown>) => {
     if (!activeId) return;
@@ -275,13 +322,32 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
     <div className="flex items-start gap-4">
       <notification.NotificationContainer />
       <ConfirmDialog />
-      <aside className="w-[340px] shrink-0 sticky top-4 flex flex-col gap-3 max-h-[calc(100vh-2rem)] overflow-y-auto">
-        <div>
-          <p className="text-white font-black text-lg flex items-center gap-2"><FaGoogle className="text-red-400" /> Contas Gmail</p>
-          <p className="text-white/50 text-sm">Uma conta por linha. Clique para abrir o Gmail ao lado.</p>
+      <aside
+        className="w-[340px] shrink-0 sticky top-4 flex flex-col gap-3 overflow-hidden"
+        style={{ height: panelHeight > 180 ? panelHeight : 'calc(100vh - 7.5rem)' }}
+      >
+        <div className="shrink-0">
+          <p className="text-white font-black text-lg flex items-center gap-2"><FaGoogle className="text-red-400" /> Contas</p>
+          <p className="text-white/50 text-sm">Escolha Gmail ou SMTP. A lista rola nesta coluna.</p>
         </div>
-        <div className="flex flex-col gap-2">
-          {accounts.length > 1 && (
+        <div className="shrink-0 grid grid-cols-2 gap-1 p-1 rounded-xl bg-black/30">
+          <button
+            type="button"
+            onClick={() => onChannelChange('gmail')}
+            className={`py-2 rounded-lg text-sm font-bold ${channel === 'gmail' ? 'bg-red-600 text-white' : 'text-white/60 hover:text-white'}`}
+          >
+            Gmail
+          </button>
+          <button
+            type="button"
+            onClick={() => onChannelChange('smtp')}
+            className={`py-2 rounded-lg text-sm font-bold ${channel === 'smtp' ? 'bg-indigo-600 text-white' : 'text-white/60 hover:text-white'}`}
+          >
+            SMTP
+          </button>
+        </div>
+        <div className="shrink-0 flex flex-col gap-2">
+          {channel === 'gmail' && accounts.length > 1 && (
             <button
               type="button"
               onClick={() => setOrganizing((value) => !value)}
@@ -294,22 +360,32 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
               <FaGripVertical /> {organizing ? 'Concluir' : 'Organizar'}
             </button>
           )}
-          <button
-            type="button"
-            disabled={starting}
-            onClick={createAccount}
-            className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2"
-          >
-            {starting ? <FaSpinner className="animate-spin" /> : <FaPlus />} Nova conta Gmail
-          </button>
+          {channel === 'gmail' ? (
+            <button
+              type="button"
+              disabled={starting}
+              onClick={createAccount}
+              className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2"
+            >
+              {starting ? <FaSpinner className="animate-spin" /> : <FaPlus />} Nova conta Gmail
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onCreateSmtp}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2"
+            >
+              <FaPlus /> Nova conta SMTP
+            </button>
+          )}
         </div>
 
-        {organizing && accounts.length > 1 && (
-          <p className="text-white/70 text-sm">Arraste para cima ou para baixo. A ordem fica salva.</p>
+        {channel === 'gmail' && organizing && accounts.length > 1 && (
+          <p className="shrink-0 text-white/70 text-sm">Arraste para cima ou para baixo. A ordem fica salva.</p>
         )}
 
-        <div className="flex flex-col gap-2 overflow-y-auto pr-1">
-          {accounts.map((account, index) => {
+        <div className="flex-1 min-h-0 overflow-y-scroll overscroll-contain pr-1 flex flex-col gap-2">
+          {channel === 'smtp' ? smtpList : accounts.map((account, index) => {
             const selectedCard = activeId === account.id;
             return (
               <div
@@ -425,8 +501,13 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
         </div>
       </aside>
 
+      <div
+        ref={rightRef}
+        className="sticky top-4 w-full min-w-0 self-start"
+        style={{ maxWidth: channel === 'gmail' ? frameMax : undefined }}
+      >
       {active ? (
-        <div className="w-full min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-[#202124] shadow-2xl" style={{ maxWidth: viewport.width }}>
+        <div className="overflow-hidden rounded-2xl border border-white/15 bg-[#202124] shadow-2xl">
           <div className="flex items-center gap-2 px-3 py-2 bg-[#35363a] border-b border-black/30">
             <span className="w-3 h-3 rounded-full bg-[#ff5f57]" />
             <span className="w-3 h-3 rounded-full bg-[#febc2e]" />
@@ -465,8 +546,9 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
           <div
             ref={screenRef}
             tabIndex={0}
-            className="relative bg-white outline-none cursor-default"
+            className="relative bg-white outline-none cursor-default overscroll-none select-none"
             onMouseDown={(event) => {
+              event.preventDefault();
               screenRef.current?.focus();
               const point = pointFromEvent(event);
               sendInput({ type: 'mouse', action: 'down', ...point, button: buttonFromEvent(event), clickCount: event.detail || 1 });
@@ -480,11 +562,6 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
               const point = pointFromEvent(event);
               moveTimer.current = window.setTimeout(() => { moveTimer.current = null; }, 70);
               sendInput({ type: 'mouse', action: 'move', ...point });
-            }}
-            onWheel={(event) => {
-              event.preventDefault();
-              const point = pointFromEvent(event);
-              sendInput({ type: 'mouse', action: 'wheel', ...point, deltaX: event.deltaX, deltaY: event.deltaY });
             }}
             onContextMenu={(event) => event.preventDefault()}
             onPaste={(event) => {
@@ -516,11 +593,16 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
             )}
           </div>
         </div>
+      ) : channel === 'smtp' ? (
+        <div className="max-h-[calc(100vh-1.5rem)] overflow-auto overscroll-contain">
+          {children}
+        </div>
       ) : (
-        <div className="w-full max-w-[1280px] min-h-[420px] rounded-2xl border border-dashed border-white/15 bg-white/[0.03] flex items-center justify-center text-white/45 text-sm px-6 text-center">
-          Escolha uma conta à esquerda para abrir o Gmail aqui.
+        <div className="min-h-[420px] rounded-2xl border border-dashed border-white/15 bg-white/[0.03] flex items-center justify-center text-white/45 text-sm px-6 text-center">
+          Escolha uma conta Gmail à esquerda para abrir aqui.
         </div>
       )}
+      </div>
     </div>
   );
 }

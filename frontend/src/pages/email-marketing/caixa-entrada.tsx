@@ -604,6 +604,90 @@ function playPing() {
 
 /* ───────────────── Component ───────────────── */
 
+function SmtpAccountList({
+  mailboxes,
+  mailboxId,
+  mailboxFilter,
+  onFilter,
+  alertMailboxIds,
+  onOpen,
+}: {
+  mailboxes: Mailbox[];
+  mailboxId: number | null;
+  mailboxFilter: string;
+  onFilter: (value: string) => void;
+  alertMailboxIds: number[];
+  onOpen: (id: number) => void;
+}) {
+  const filtered = mailboxes.filter((m) => {
+    const qf = mailboxFilter.trim().toLowerCase();
+    if (!qf) return true;
+    return `${m.display_name || ''} ${m.email}`.toLowerCase().includes(qf);
+  });
+  const palettes = [
+    { box: 'from-cyan-500/20 to-cyan-600/10 border-cyan-500/40', icon: 'bg-cyan-500/20 text-cyan-300', badge: 'bg-cyan-500' },
+    { box: 'from-indigo-500/20 to-indigo-600/10 border-indigo-500/40', icon: 'bg-indigo-500/20 text-indigo-300', badge: 'bg-indigo-500' },
+    { box: 'from-emerald-500/20 to-emerald-600/10 border-emerald-500/40', icon: 'bg-emerald-500/20 text-emerald-300', badge: 'bg-emerald-500' },
+    { box: 'from-orange-500/20 to-orange-600/10 border-orange-500/40', icon: 'bg-orange-500/20 text-orange-300', badge: 'bg-orange-500' },
+    { box: 'from-purple-500/20 to-pink-600/10 border-purple-500/40', icon: 'bg-purple-500/20 text-purple-300', badge: 'bg-purple-500' },
+  ];
+  if (mailboxes.length === 0) {
+    return <p className="text-white/50 text-sm px-1">Nenhuma conta SMTP ainda. Use o botão acima para criar.</p>;
+  }
+  return (
+    <>
+      {mailboxes.length > 6 && (
+        <div className="relative">
+          <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35 text-xs" />
+          <input
+            value={mailboxFilter}
+            onChange={(e) => onFilter(e.target.value)}
+            placeholder="Filtrar caixas…"
+            className="w-full pl-8 pr-3 py-1.5 bg-[#0b1220] border border-white/10 rounded-lg text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400/40"
+          />
+        </div>
+      )}
+      {filtered.map((m, i) => {
+        const p = palettes[i % palettes.length];
+        const active = mailboxId === m.id;
+        const alerting = alertMailboxIds.includes(m.id);
+        const disabledBox = m.is_active === false;
+        return (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => onOpen(m.id)}
+            className={`relative text-left border rounded-xl px-2.5 py-2 transition-all hover:brightness-110 ${
+              disabledBox
+                ? 'bg-zinc-800/90 border-zinc-500/50'
+                : active
+                  ? 'bg-gradient-to-br from-indigo-600 to-violet-700 border-indigo-300 shadow-lg'
+                  : `bg-gradient-to-br ${p.box}`
+            } ${alerting && !active && !disabledBox ? 'animate-pulse ring-2 ring-emerald-400' : ''}`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <div className={`${disabledBox ? 'bg-zinc-600/40 text-zinc-400' : active ? 'bg-white/20 text-white' : p.icon} p-1.5 rounded-lg shrink-0`}>
+                <FaInbox className="text-sm" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className={`text-[13px] font-bold truncate ${disabledBox ? 'text-zinc-300' : 'text-white'}`}>
+                  {m.display_name || m.email.split('@')[0]}
+                </p>
+                <p className="text-[10px] text-white/60 truncate">{m.email}</p>
+              </div>
+              {!disabledBox && m.unread_count > 0 && (
+                <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black flex items-center justify-center ${active ? 'bg-white text-indigo-700' : `${p.badge} text-white`}`}>
+                  {m.unread_count > 99 ? '99+' : m.unread_count}
+                </span>
+              )}
+            </div>
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
 export default function CaixaEntrada() {
   const router = useRouter();
   const notification = useNotification();
@@ -663,7 +747,7 @@ export default function CaixaEntrada() {
   const [focusIdx, setFocusIdx] = useState(-1);
   const [alertMailboxIds, setAlertMailboxIds] = useState<number[]>([]);
   const [mailboxFilter, setMailboxFilter] = useState('');
-  const [gmailOpen, setGmailOpen] = useState(false);
+  const [mailChannel, setMailChannel] = useState<'gmail' | 'smtp'>('gmail');
 
   const editorRef = useRef<HTMLDivElement>(null);
   const unreadRef = useRef(0);
@@ -1573,7 +1657,7 @@ export default function CaixaEntrada() {
       <ProtectedRoute requiredPermission="email_marketing" fallbackPath="/">
         <notification.NotificationContainer />
         <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
-          <div className="w-full max-w-[1680px] mx-auto space-y-6">
+          <div className="w-full max-w-[1900px] mx-auto space-y-6">
             <div className="relative overflow-hidden bg-gradient-to-r from-indigo-600/30 via-cyan-500/20 to-indigo-600/30 backdrop-blur-xl border-2 border-indigo-500/40 rounded-3xl p-8 md:p-10 shadow-2xl shadow-indigo-500/20">
               <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
               <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl"></div>
@@ -1621,112 +1705,22 @@ export default function CaixaEntrada() {
               </div>
             </div>
 
-            <GmailMailboxSection onOpenChange={setGmailOpen} />
-
-            {!gmailOpen && (mailboxes.length === 0 ? (
-              <div className="bg-dark-800/60 border border-white/10 rounded-2xl p-12 text-center backdrop-blur-xl">
-                <FaEnvelope className="text-5xl text-white/20 mx-auto mb-4" />
-                <p className="text-white/60 mb-4">Crie um e-mail primeiro para usar a caixa de e-mail.</p>
-                <button
-                  type="button"
-                  onClick={() => router.push('/email-marketing/criar-email')}
-                  className={btnAccent + ' mx-auto'}
-                >
-                  Criar e-mail
-                </button>
-              </div>
-            ) : (
-              <>
-              <div>
-                {mailboxes.length > 8 && (
-                  <div className="relative mb-2 max-w-sm">
-                    <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35 text-xs" />
-                    <input
-                      value={mailboxFilter}
-                      onChange={(e) => setMailboxFilter(e.target.value)}
-                      placeholder="Filtrar caixas…"
-                      className="w-full pl-8 pr-3 py-1.5 bg-[#0b1220] border border-white/10 rounded-lg text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400/40"
-                    />
-                  </div>
-                )}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-2">
-                {mailboxes
-                  .filter((m) => {
-                    const qf = mailboxFilter.trim().toLowerCase();
-                    if (!qf) return true;
-                    return `${m.display_name || ''} ${m.email}`.toLowerCase().includes(qf);
-                  })
-                  .map((m, i) => {
-                  const palettes = [
-                    { box: 'from-cyan-500/20 to-cyan-600/10 border-cyan-500/40', icon: 'bg-cyan-500/20 text-cyan-300', badge: 'bg-cyan-500' },
-                    { box: 'from-indigo-500/20 to-indigo-600/10 border-indigo-500/40', icon: 'bg-indigo-500/20 text-indigo-300', badge: 'bg-indigo-500' },
-                    { box: 'from-emerald-500/20 to-emerald-600/10 border-emerald-500/40', icon: 'bg-emerald-500/20 text-emerald-300', badge: 'bg-emerald-500' },
-                    { box: 'from-orange-500/20 to-orange-600/10 border-orange-500/40', icon: 'bg-orange-500/20 text-orange-300', badge: 'bg-orange-500' },
-                    { box: 'from-purple-500/20 to-pink-600/10 border-purple-500/40', icon: 'bg-purple-500/20 text-purple-300', badge: 'bg-purple-500' },
-                  ];
-                  const p = palettes[i % palettes.length];
-                  const active = mailboxId === m.id;
-                  const alerting = alertMailboxIds.includes(m.id);
-                  const disabledBox = m.is_active === false;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => openMailboxCard(m.id)}
-                      className={`relative text-left border rounded-xl px-2.5 py-2 transition-all hover:brightness-110 ${
-                        disabledBox
-                          ? 'bg-zinc-800/90 border-zinc-500/50 opacity-90'
-                          : active
-                            ? 'bg-gradient-to-br from-indigo-600 to-violet-700 border-indigo-300 shadow-[0_0_0_3px_rgba(129,140,248,0.55),0_8px_24px_rgba(79,70,229,0.45)] scale-[1.03] z-10'
-                            : `bg-gradient-to-br ${p.box}`
-                      } ${alerting && !active && !disabledBox ? 'animate-pulse ring-2 ring-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.55)]' : ''} ${
-                        alerting && active ? 'animate-pulse' : ''
-                      }`}
-                    >
-                      {disabledBox ? (
-                        <span className="absolute -top-2 right-2 px-2 py-0.5 rounded-full bg-zinc-400 text-zinc-900 text-[9px] font-black uppercase tracking-wide shadow-md">
-                          Desativada
-                        </span>
-                      ) : active ? (
-                        <span className="absolute -top-2 right-2 px-2 py-0.5 rounded-full bg-white text-indigo-700 text-[9px] font-black uppercase tracking-wide shadow-md">
-                          Em uso
-                        </span>
-                      ) : null}
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className={`${disabledBox ? 'bg-zinc-600/40 text-zinc-400' : active ? 'bg-white/20 text-white' : p.icon} p-1.5 rounded-lg flex-shrink-0`}>
-                          <FaInbox className="text-sm" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1">
-                            <p className={`text-[13px] font-bold truncate leading-tight ${disabledBox ? 'text-zinc-300' : 'text-white'}`}>
-                              {m.display_name || m.email.split('@')[0]}
-                            </p>
-                            {!disabledBox && m.unread_count > 0 && (
-                              <span className={`ml-auto flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full ${active ? 'bg-white text-indigo-700' : p.badge} text-[10px] font-black flex items-center justify-center ${active ? '' : 'text-white'}`}>
-                                {m.unread_count > 99 ? '99+' : m.unread_count}
-                              </span>
-                            )}
-                          </div>
-                          <p className={`text-[10px] break-all leading-tight ${disabledBox ? 'text-zinc-200 font-semibold' : active ? 'text-white/80' : 'text-white/55'}`}>{m.email}</p>
-                          {disabledBox ? (
-                            <p className="text-[9px] text-amber-300/90 font-semibold mt-0.5 leading-snug">
-                              Para ativar, crie o mesmo e-mail: {m.email}
-                            </p>
-                          ) : (
-                            <p className={`text-[10px] font-bold mt-0.5 ${
-                              alerting ? 'text-emerald-300' : active ? 'text-white' : 'text-white/40'
-                            }`}>
-                              {alerting ? 'Novo e-mail' : active ? '● Caixa aberta' : m.unread_count > 0 ? 'Não lidos' : 'Abrir'}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-                </div>
-              </div>
-              {mailboxId ? (
+            <GmailMailboxSection
+              channel={mailChannel}
+              onChannelChange={setMailChannel}
+              onCreateSmtp={() => router.push('/email-marketing/criar-email')}
+              smtpList={(
+                <SmtpAccountList
+                  mailboxes={mailboxes}
+                  mailboxId={mailboxId}
+                  mailboxFilter={mailboxFilter}
+                  onFilter={setMailboxFilter}
+                  alertMailboxIds={alertMailboxIds}
+                  onOpen={openMailboxCard}
+                />
+              )}
+            >
+            {mailChannel === 'smtp' && mailboxId ? (
               <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(300px,1fr)_minmax(380px,1.4fr)] min-h-[74vh] bg-[#10161f]/90 border border-white/10 rounded-3xl overflow-hidden shadow-2xl divide-y lg:divide-y-0 lg:divide-x divide-white/10">
                 {/* ── Sidebar ── */}
                 <aside className="bg-[#0c1219] p-4 flex flex-col gap-0.5">
@@ -2425,9 +2419,12 @@ export default function CaixaEntrada() {
                   )}
                 </section>
               </div>
+              ) : mailChannel === 'smtp' ? (
+                <div className="min-h-[420px] rounded-2xl border border-dashed border-white/15 flex items-center justify-center text-white/45 text-sm px-6 text-center">
+                  Escolha uma conta SMTP à esquerda.
+                </div>
               ) : null}
-              </>
-            ))}
+            </GmailMailboxSection>
           </div>
         </div>
 
