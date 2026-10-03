@@ -70,6 +70,8 @@ export default function GmailMailboxSection({
   const active = channel === 'gmail' ? accounts.find((account) => account.id === activeId) || null : null;
   viewportRef.current = viewport;
   const frameMax = Math.min(1500, Math.round(viewport.width * 1.15));
+  const imageHeight = Math.round((viewport.height * frameMax) / viewport.width);
+  const viewerHeight = imageHeight + 88;
 
   const loadAccounts = async () => {
     try {
@@ -324,7 +326,7 @@ export default function GmailMailboxSection({
       <ConfirmDialog />
       <aside
         className="w-[340px] shrink-0 sticky top-4 flex flex-col gap-3 overflow-hidden"
-        style={{ height: panelHeight > 180 ? panelHeight : 'calc(100vh - 7.5rem)' }}
+        style={{ height: Math.max(panelHeight, viewerHeight) }}
       >
         <div className="shrink-0">
           <p className="text-white font-black text-lg flex items-center gap-2"><FaGoogle className="text-red-400" /> Contas</p>
@@ -586,7 +588,7 @@ export default function GmailMailboxSection({
               className={`block w-full h-auto max-w-full select-none pointer-events-none ${frameReady ? '' : 'hidden'}`}
             />
             {!frameReady && (
-              <div className="h-[520px] flex flex-col items-center justify-center gap-3 text-slate-500">
+              <div className="flex flex-col items-center justify-center gap-3 text-slate-500" style={{ minHeight: imageHeight }}>
                 <FaSpinner className="animate-spin text-3xl" />
                 <p>Abrindo o navegador do Gmail...</p>
               </div>
@@ -598,7 +600,10 @@ export default function GmailMailboxSection({
           {children}
         </div>
       ) : (
-        <div className="min-h-[420px] rounded-2xl border border-dashed border-white/15 bg-white/[0.03] flex items-center justify-center text-white/45 text-sm px-6 text-center">
+        <div
+          className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] flex items-center justify-center text-white/45 text-sm px-6 text-center"
+          style={{ height: viewerHeight }}
+        >
           Escolha uma conta Gmail à esquerda para abrir aqui.
         </div>
       )}
