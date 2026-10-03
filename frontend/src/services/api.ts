@@ -64,7 +64,9 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => {
     // Logar requisição bem-sucedida (exceto logs para evitar loop infinito)
-    if (!response.config.url?.includes('/logs/activity')) {
+    const loggedUrl = response.config.url || '';
+    const skipActivityLog = loggedUrl.includes('/logs/activity') || loggedUrl.includes('/gmail-accounts/') && loggedUrl.includes('/browser/');
+    if (!skipActivityLog) {
       const duration = response.config.metadata?.startTime 
         ? new Date().getTime() - response.config.metadata.startTime 
         : 0;

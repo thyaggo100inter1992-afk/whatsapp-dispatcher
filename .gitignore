@@ -99,3 +99,6 @@ dump.rdb
 # PM2
 .pm2/
 
+# Sessões do navegador Gmail (cookies e login)
+backend/data/gmail-profiles/
+

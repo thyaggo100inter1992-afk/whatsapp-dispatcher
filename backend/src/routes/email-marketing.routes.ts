@@ -2,9 +2,10 @@ import { Router } from 'express';
 import multer from 'multer';
 import * as ctrl from '../controllers/email-marketing.controller';
 import * as mailboxCtrl from '../controllers/email-mailbox.controller';
+import * as gmailCtrl from '../controllers/gmail-mailbox.controller';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
 
 // =============================================
 // DOMÍNIOS
@@ -84,6 +85,18 @@ router.get('/mailbox-quick-replies', mailboxCtrl.listQuickReplies);
 router.post('/mailbox-quick-replies', mailboxCtrl.createQuickReply);
 router.patch('/mailbox-quick-replies/:id', mailboxCtrl.updateQuickReply);
 router.delete('/mailbox-quick-replies/:id', mailboxCtrl.deleteQuickReply);
+
+router.get('/gmail-accounts', gmailCtrl.listGmailAccounts);
+router.post('/gmail-accounts/browser', gmailCtrl.createGmailBrowser);
+router.post('/gmail-accounts/:id/browser/open', gmailCtrl.openGmailBrowserAccount);
+router.post('/gmail-accounts/:id/browser/close', gmailCtrl.closeGmailBrowserAccount);
+router.get('/gmail-accounts/:id/browser/frame', gmailCtrl.gmailBrowserFrame);
+router.post('/gmail-accounts/:id/browser/input', gmailCtrl.gmailBrowserInput);
+router.post('/gmail-accounts', gmailCtrl.createGmailAccount);
+router.delete('/gmail-accounts/:id', gmailCtrl.deleteGmailAccount);
+router.get('/gmail-accounts/:id/folders', gmailCtrl.getGmailFolders);
+router.get('/gmail-accounts/:id/messages', gmailCtrl.getGmailFolderMessages);
+router.get('/gmail-accounts/:id/messages/:uid', gmailCtrl.getGmailFolderMessage);
 
 router.get('/mailboxes', mailboxCtrl.listMailboxes);
 router.post('/mailboxes', mailboxCtrl.createMailbox);

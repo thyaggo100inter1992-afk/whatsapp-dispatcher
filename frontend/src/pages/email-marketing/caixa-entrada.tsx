@@ -10,11 +10,12 @@ import {
   FaEllipsisH, FaPrint, FaDownload, FaUserPlus, FaExclamationTriangle, FaCog,
   FaCheck, FaTimes, FaBold, FaItalic, FaUnderline, FaLink, FaListUl, FaClock,
   FaReplyAll, FaShare, FaVolumeUp, FaVolumeMute, FaEye, FaEnvelope, FaFilter,
-  FaChevronDown, FaChevronUp, FaComments, FaEdit, FaSync,
+  FaChevronDown, FaChevronUp, FaComments, FaEdit, FaSync, FaCopy,
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import GmailMailboxSection from '@/components/email/GmailMailboxSection';
 import { getSystemVariables, replaceVariables } from '@/utils/templateVariables';
 
 const EmailBodyEditor = dynamic(() => import('@/components/EmailBodyEditor'), { ssr: false });
@@ -26,6 +27,7 @@ interface Mailbox {
   email: string;
   display_name: string | null;
   unread_count: number;
+  is_active?: boolean;
   signature_html?: string | null;
   signature_enabled?: boolean;
 }
@@ -644,6 +646,7 @@ export default function CaixaEntrada() {
   const [displayName, setDisplayName] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
 
+  const [emailCopied, setEmailCopied] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [newFolderColor, setNewFolderColor] = useState('#22d3ee');
   const [creatingFolder, setCreatingFolder] = useState(false);
@@ -660,6 +663,7 @@ export default function CaixaEntrada() {
   const [focusIdx, setFocusIdx] = useState(-1);
   const [alertMailboxIds, setAlertMailboxIds] = useState<number[]>([]);
   const [mailboxFilter, setMailboxFilter] = useState('');
+  const [gmailOpen, setGmailOpen] = useState(false);
 
   const editorRef = useRef<HTMLDivElement>(null);
   const unreadRef = useRef(0);
@@ -671,6 +675,24 @@ export default function CaixaEntrada() {
   const effectiveMailboxId = allMode ? null : mailboxId;
   const activeMailbox = mailboxes.find((m) => m.id === mailboxId) || null;
   const composeMailboxId = mailboxId || mailboxes[0]?.id || null;
+  const activeEmail = String(activeMailbox?.email || '').trim();
+  const mailboxIsActive = activeMailbox?.is_active !== false;
+
+  useEffect(() => {
+    setEmailCopied(false);
+  }, [mailboxId]);
+
+  const copyActiveEmail = async () => {
+    if (!activeEmail) return;
+    try {
+      await navigator.clipboard.writeText(activeEmail);
+      setEmailCopied(true);
+      notification.success('E-mail copiado', activeEmail);
+      window.setTimeout(() => setEmailCopied(false), 1800);
+    } catch {
+      notification.error('Erro', 'Não foi possível copiar o e-mail');
+    }
+  };
 
   /* ── Som: ligado por padrão; só desliga se o usuário desligar ── */
   useEffect(() => {
@@ -1477,6 +1499,7 @@ export default function CaixaEntrada() {
 
       const key = e.key.toLowerCase();
       if (key === 'c' && !e.ctrlKey && !e.metaKey) {
+        if (activeMailbox?.is_active === false) return;
         e.preventDefault();
         startCompose('new');
         return;
@@ -1516,7 +1539,7 @@ export default function CaixaEntrada() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, focusIdx, selected, composing, showPreview, confirmSend]);
+  }, [messages, focusIdx, selected, composing, showPreview, confirmSend, activeMailbox]);
 
   /* ── Sidebar items ── */
   const sidebarItems: { key: FolderKey; label: string; icon: any; count?: number }[] = [
@@ -1589,7 +1612,7 @@ export default function CaixaEntrada() {
                       <FaCog />
                     </button>
                   )}
-                  {mailboxId && (
+                  {mailboxId && mailboxIsActive && (
                     <button type="button" disabled={!composeMailboxId} onClick={() => startCompose('new')} className={btnAccent}>
                       <FaPlus /> Novo
                     </button>
@@ -1598,7 +1621,9 @@ export default function CaixaEntrada() {
               </div>
             </div>
 
-            {mailboxes.length === 0 ? (
+            <GmailMailboxSection onOpenChange={setGmailOpen} />
+
+            {!gmailOpen && (mailboxes.length === 0 ? (
               <div className="bg-dark-800/60 border border-white/10 rounded-2xl p-12 text-center backdrop-blur-xl">
                 <FaEnvelope className="text-5xl text-white/20 mx-auto mb-4" />
                 <p className="text-white/60 mb-4">Crie um e-mail primeiro para usar a caixa de e-mail.</p>
@@ -1642,45 +1667,58 @@ export default function CaixaEntrada() {
                   const p = palettes[i % palettes.length];
                   const active = mailboxId === m.id;
                   const alerting = alertMailboxIds.includes(m.id);
+                  const disabledBox = m.is_active === false;
                   return (
                     <button
                       key={m.id}
                       type="button"
                       onClick={() => openMailboxCard(m.id)}
                       className={`relative text-left border rounded-xl px-2.5 py-2 transition-all hover:brightness-110 ${
-                        active
-                          ? 'bg-gradient-to-br from-indigo-600 to-violet-700 border-indigo-300 shadow-[0_0_0_3px_rgba(129,140,248,0.55),0_8px_24px_rgba(79,70,229,0.45)] scale-[1.03] z-10'
-                          : `bg-gradient-to-br ${p.box}`
-                      } ${alerting && !active ? 'animate-pulse ring-2 ring-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.55)]' : ''} ${
+                        disabledBox
+                          ? 'bg-zinc-800/90 border-zinc-500/50 opacity-90'
+                          : active
+                            ? 'bg-gradient-to-br from-indigo-600 to-violet-700 border-indigo-300 shadow-[0_0_0_3px_rgba(129,140,248,0.55),0_8px_24px_rgba(79,70,229,0.45)] scale-[1.03] z-10'
+                            : `bg-gradient-to-br ${p.box}`
+                      } ${alerting && !active && !disabledBox ? 'animate-pulse ring-2 ring-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.55)]' : ''} ${
                         alerting && active ? 'animate-pulse' : ''
                       }`}
                     >
-                      {active && (
+                      {disabledBox ? (
+                        <span className="absolute -top-2 right-2 px-2 py-0.5 rounded-full bg-zinc-400 text-zinc-900 text-[9px] font-black uppercase tracking-wide shadow-md">
+                          Desativada
+                        </span>
+                      ) : active ? (
                         <span className="absolute -top-2 right-2 px-2 py-0.5 rounded-full bg-white text-indigo-700 text-[9px] font-black uppercase tracking-wide shadow-md">
                           Em uso
                         </span>
-                      )}
+                      ) : null}
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className={`${active ? 'bg-white/20 text-white' : p.icon} p-1.5 rounded-lg flex-shrink-0`}>
+                        <div className={`${disabledBox ? 'bg-zinc-600/40 text-zinc-400' : active ? 'bg-white/20 text-white' : p.icon} p-1.5 rounded-lg flex-shrink-0`}>
                           <FaInbox className="text-sm" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1">
-                            <p className={`text-[13px] font-bold truncate leading-tight ${active ? 'text-white' : 'text-white'}`}>
+                            <p className={`text-[13px] font-bold truncate leading-tight ${disabledBox ? 'text-zinc-300' : 'text-white'}`}>
                               {m.display_name || m.email.split('@')[0]}
                             </p>
-                            {m.unread_count > 0 && (
+                            {!disabledBox && m.unread_count > 0 && (
                               <span className={`ml-auto flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full ${active ? 'bg-white text-indigo-700' : p.badge} text-[10px] font-black flex items-center justify-center ${active ? '' : 'text-white'}`}>
                                 {m.unread_count > 99 ? '99+' : m.unread_count}
                               </span>
                             )}
                           </div>
-                          <p className={`text-[10px] truncate leading-tight ${active ? 'text-white/80' : 'text-white/55'}`}>{m.email}</p>
-                          <p className={`text-[10px] font-bold mt-0.5 ${
-                            alerting ? 'text-emerald-300' : active ? 'text-white' : 'text-white/40'
-                          }`}>
-                            {alerting ? 'Novo e-mail' : active ? '● Caixa aberta' : m.unread_count > 0 ? 'Não lidos' : 'Abrir'}
-                          </p>
+                          <p className={`text-[10px] break-all leading-tight ${disabledBox ? 'text-zinc-200 font-semibold' : active ? 'text-white/80' : 'text-white/55'}`}>{m.email}</p>
+                          {disabledBox ? (
+                            <p className="text-[9px] text-amber-300/90 font-semibold mt-0.5 leading-snug">
+                              Para ativar, crie o mesmo e-mail: {m.email}
+                            </p>
+                          ) : (
+                            <p className={`text-[10px] font-bold mt-0.5 ${
+                              alerting ? 'text-emerald-300' : active ? 'text-white' : 'text-white/40'
+                            }`}>
+                              {alerting ? 'Novo e-mail' : active ? '● Caixa aberta' : m.unread_count > 0 ? 'Não lidos' : 'Abrir'}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </button>
@@ -1692,6 +1730,39 @@ export default function CaixaEntrada() {
               <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(300px,1fr)_minmax(380px,1.4fr)] min-h-[74vh] bg-[#10161f]/90 border border-white/10 rounded-3xl overflow-hidden shadow-2xl divide-y lg:divide-y-0 lg:divide-x divide-white/10">
                 {/* ── Sidebar ── */}
                 <aside className="bg-[#0c1219] p-4 flex flex-col gap-0.5">
+                  {activeEmail && (
+                    <div className={`mb-3 p-3 rounded-xl border ${
+                      mailboxIsActive
+                        ? 'bg-indigo-600/20 border-indigo-400/35'
+                        : 'bg-zinc-700/40 border-zinc-500/40'
+                    }`}>
+                      <p className={`text-[10px] uppercase tracking-wide font-bold mb-1 ${mailboxIsActive ? 'text-indigo-200/80' : 'text-amber-300/90'}`}>
+                        {mailboxIsActive ? 'E-mail em uso' : 'Caixa desativada'}
+                      </p>
+                      <div className="flex items-start gap-2">
+                        <p className="flex-1 min-w-0 text-[12px] text-white font-semibold break-all leading-snug">
+                          {activeEmail}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={copyActiveEmail}
+                          className={`flex-shrink-0 p-2 rounded-lg border transition-all ${
+                            emailCopied
+                              ? 'bg-emerald-500/25 border-emerald-400/50 text-emerald-200'
+                              : 'bg-white/10 border-white/15 text-white/80 hover:bg-white/20 hover:text-white'
+                          }`}
+                          title="Copiar e-mail completo"
+                        >
+                          {emailCopied ? <FaCheck className="text-xs" /> : <FaCopy className="text-xs" />}
+                        </button>
+                      </div>
+                      {!mailboxIsActive && (
+                        <p className="text-[10px] text-amber-200/90 mt-2 leading-snug">
+                          Para ativar, crie o mesmo e-mail: <strong className="break-all">{activeEmail}</strong>
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {sidebarItems.map(({ key, label, icon: Icon, count }) => (
                     <button
                       key={key}
@@ -2356,7 +2427,7 @@ export default function CaixaEntrada() {
               </div>
               ) : null}
               </>
-            )}
+            ))}
           </div>
         </div>
 
