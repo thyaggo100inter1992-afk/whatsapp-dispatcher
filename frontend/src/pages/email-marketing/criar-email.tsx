@@ -26,6 +26,7 @@ interface Mailbox {
   domain_status: string;
   inbound_status: string;
   unread_count: number;
+  is_active?: boolean;
   created_at: string;
 }
 
@@ -78,6 +79,22 @@ export default function CriarEmail() {
       notification.warning('Atenção', 'Selecione ao menos um domínio');
       return;
     }
+    const alreadyLocal = selectedDomainIds
+      .map((id) => {
+        const domain = domains.find((item) => item.id === id);
+        return domain ? `${local}@${domain.domain}`.toLowerCase() : '';
+      })
+      .filter((email) => email && mailboxes.some((mailbox) => mailbox.email.toLowerCase() === email && mailbox.is_active !== false));
+    if (alreadyLocal.length === selectedDomainIds.length) {
+      notification.warning(
+        'Conta já existe',
+        alreadyLocal.length === 1
+          ? `A conta ${alreadyLocal[0]} já está no sistema.`
+          : `Estas contas já estão no sistema: ${alreadyLocal.join(', ')}.`,
+        8000
+      );
+      return;
+    }
     setCreating(true);
     try {
       const r = await api.post('/email-marketing/mailboxes', {
@@ -85,14 +102,32 @@ export default function CriarEmail() {
         display_name: displayName.trim() || null,
         domain_ids: selectedDomainIds,
       });
-      notification.success('Caixa criada', r.data.message || 'E-mail criado com sucesso');
+      const reactivated = Array.isArray(r.data.reactivated) && r.data.reactivated.length > 0;
+      notification.success(
+        reactivated ? 'Caixa reativada' : 'Caixa criada',
+        r.data.message || (reactivated ? 'Conversas preservadas' : 'E-mail criado com sucesso')
+      );
       if (r.data.warnings?.length) {
         notification.warning('Aviso', r.data.warnings.join(' · '));
+      }
+      if (Array.isArray(r.data.already_exists) && r.data.already_exists.length) {
+        notification.warning(
+          'Conta já existe',
+          r.data.already_exists.length === 1
+            ? `A conta ${r.data.already_exists[0]} já está no sistema.`
+            : `Estas contas já estão no sistema: ${r.data.already_exists.join(', ')}.`,
+          8000
+        );
       }
       setLocalPart('');
       setDisplayName('');
       load();
     } catch (e: any) {
+      const already = e.response?.data?.already_exists;
+      if (Array.isArray(already) && already.length) {
+        notification.warning('Conta já existe', e.response?.data?.message || `A conta ${already[0]} já está no sistema.`, 8000);
+        return;
+      }
       notification.error('Erro', e.response?.data?.message || e.message);
     } finally {
       setCreating(false);
@@ -227,14 +262,32 @@ export default function CriarEmail() {
               ) : (
                 <div className="space-y-3">
                   {mailboxes.map((mb) => (
-                    <div key={mb.id} className="flex items-center gap-4 p-4 bg-dark-700/60 border border-white/10 rounded-xl flex-wrap">
+                    <div
+                      key={mb.id}
+                      className={`flex items-center gap-4 p-4 rounded-xl flex-wrap ${
+                        mb.is_active === false
+                          ? 'bg-zinc-800/70 border border-zinc-500/40'
+                          : 'bg-dark-700/60 border border-white/10'
+                      }`}
+                    >
                       <div className="flex-1 min-w-0">
-                        <p className="text-white font-bold truncate">{mb.email}</p>
-                        <p className="text-xs text-white/50">
-                          {mb.display_name || mb.local_part}
-                          {mb.unread_count > 0 ? ` · ${mb.unread_count} não lido(s)` : ''}
-                        </p>
+                        <p className="text-white font-bold break-all">{mb.email}</p>
+                        {mb.is_active === false ? (
+                          <p className="text-xs text-amber-300 mt-1">
+                            Desativada. Para ativar, crie o mesmo e-mail: {mb.email}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-white/50">
+                            {mb.display_name || mb.local_part}
+                            {mb.unread_count > 0 ? ` · ${mb.unread_count} não lido(s)` : ''}
+                          </p>
+                        )}
                       </div>
+                      {mb.is_active === false && (
+                        <span className="px-2 py-1 rounded-full bg-zinc-400 text-zinc-900 text-[10px] font-black uppercase">
+                          Desativada
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => router.push(`/email-marketing/caixa-entrada?mailbox=${mb.id}`)}

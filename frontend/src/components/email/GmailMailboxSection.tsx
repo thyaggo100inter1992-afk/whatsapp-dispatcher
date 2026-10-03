@@ -65,6 +65,7 @@ export default function GmailMailboxSection({
   const versionRef = useRef(0);
   const urlRef = useRef('');
   const emailRef = useRef('');
+  const duplicateRef = useRef('');
   const moveTimer = useRef<number | null>(null);
 
   const active = channel === 'gmail' ? accounts.find((account) => account.id === activeId) || null : null;
@@ -122,6 +123,7 @@ export default function GmailMailboxSection({
     versionRef.current = 0;
     urlRef.current = '';
     emailRef.current = '';
+    duplicateRef.current = '';
     setFrameReady(false);
 
     const tick = async () => {
@@ -145,6 +147,22 @@ export default function GmailMailboxSection({
         if (nextUrl && nextUrl !== urlRef.current) {
           urlRef.current = nextUrl;
           setPageUrl(nextUrl);
+        }
+        const duplicateEmail = decodeURIComponent(headers['x-duplicate-email'] || '');
+        if (duplicateEmail && !duplicateEmail.endsWith('@sessao.local') && duplicateRef.current !== duplicateEmail) {
+          duplicateRef.current = duplicateEmail;
+          stopped = true;
+          const createdId = activeId;
+          setActiveId(null);
+          setFrameReady(false);
+          setAccounts((prev) => prev.filter((account) => account.id !== createdId));
+          notification.warning(
+            'Conta já existe',
+            `A conta ${duplicateEmail} já está no sistema. A nova conta não foi adicionada.`,
+            8000
+          );
+          api.delete(`/email-marketing/gmail-accounts/${createdId}`).catch(() => undefined);
+          return;
         }
         const nextEmail = decodeURIComponent(headers['x-account-email'] || '');
         if (nextEmail && nextEmail !== emailRef.current && !nextEmail.endsWith('@sessao.local')) {

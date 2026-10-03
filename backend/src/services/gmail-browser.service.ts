@@ -24,6 +24,7 @@ type GmailSession = {
   height: number;
   url: string;
   email: string;
+  duplicateEmail: string;
   lastInputAt: number;
   lastIdentityCheck: number;
 };
@@ -117,7 +118,20 @@ async function launchContext(profileDir: string) {
 }
 
 async function rememberEmail(session: GmailSession, email: string) {
-  session.email = email;
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized || normalized.endsWith('@sessao.local')) return;
+  const existing = await pool.query(
+    `SELECT email FROM email_gmail_accounts
+     WHERE tenant_id = $1 AND lower(email) = $2 AND id <> $3
+     LIMIT 1`,
+    [session.tenantId, normalized, session.accountId]
+  );
+  if (existing.rows[0]) {
+    session.duplicateEmail = existing.rows[0].email;
+    return;
+  }
+  session.email = normalized;
+  session.duplicateEmail = '';
   try {
     await pool.query(
       `UPDATE email_gmail_accounts
@@ -126,26 +140,38 @@ async function rememberEmail(session: GmailSession, email: string) {
            updated_at = NOW()
        WHERE id = $2 AND tenant_id = $3
          AND (email LIKE '%@sessao.local' OR lower(email) = lower($1))`,
-      [email, session.accountId, session.tenantId]
+      [normalized, session.accountId, session.tenantId]
     );
-  } catch {
-    session.email = email;
+  } catch (error: any) {
+    if (String(error?.code) === '23505') {
+      session.duplicateEmail = normalized;
+      session.email = '';
+      return;
+    }
   }
 }
 
 async function checkIdentity(session: GmailSession) {
+  if (session.duplicateEmail) return;
   const now = Date.now();
   if (now - session.lastIdentityCheck < 8000) return;
   session.lastIdentityCheck = now;
   try {
     const found = await session.page.evaluate(`(() => {
-      const nodes = Array.from(document.querySelectorAll('[aria-label], [data-email]'));
-      const blob = nodes.map((node) => (node.getAttribute('aria-label') || '') + ' ' + (node.getAttribute('data-email') || '')).join('\\n');
-      const match = blob.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/i);
-      return match ? match[0] : '';
+      const direct = document.querySelector('[data-email]');
+      const dataEmail = direct && direct.getAttribute('data-email');
+      if (dataEmail && dataEmail.includes('@')) return dataEmail;
+      const labels = Array.from(document.querySelectorAll('[aria-label]'));
+      for (const node of labels) {
+        const label = node.getAttribute('aria-label') || '';
+        if (!/conta do google|google account|conta google/i.test(label)) continue;
+        const match = label.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/i);
+        if (match) return match[0];
+      }
+      return '';
     })()`);
-    if (found && found !== session.email && !found.endsWith('@sessao.local')) {
-      await rememberEmail(session, found);
+    if (found && found !== session.email && !String(found).endsWith('@sessao.local')) {
+      await rememberEmail(session, String(found));
     }
   } catch { /* página ainda carregando */ }
 }
@@ -196,6 +222,7 @@ export async function openGmailBrowser(tenantId: number, accountId: number, prof
     height: VIEWPORT.height,
     url: 'https://mail.google.com/mail/u/0/#inbox',
     email: '',
+    duplicateEmail: '',
     lastInputAt: Date.now(),
     lastIdentityCheck: 0,
   };
@@ -267,6 +294,7 @@ export function getGmailBrowserFrame(tenantId: number, accountId: number, since 
     height: session.height,
     url: session.url,
     email: session.email || null,
+    duplicateEmail: session.duplicateEmail || null,
   };
 }
 

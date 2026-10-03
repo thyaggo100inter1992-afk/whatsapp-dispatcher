@@ -14,6 +14,7 @@ import {
   buildThreadKey,
   normalizeSubject,
   ensureMailboxSignatureColumns,
+  ensureMailboxDomainNullable,
   normalizeSignatureHtml,
   listMailboxMessageRecipients,
 } from '../services/email-mailbox.service';
@@ -63,15 +64,19 @@ export const enableDomainInbound = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
     }
     const domain = String(domainRow.rows[0].domain);
+    const provider = String(domainRow.rows[0].provider || '');
+    const isNett = /nettsistemasenvios/i.test(provider);
 
-    try {
-      await ensureSendGridInboundParse(domain);
-    } catch (e: any) {
-      console.warn('[inbound] ensure parse:', e.message);
+    if (!isNett) {
+      try {
+        await ensureSendGridInboundParse(domain);
+      } catch (e: any) {
+        console.warn('[inbound] ensure parse:', e.message);
+      }
     }
 
-    const inboundDns: any[] = buildInboundDnsRecords(domain);
-    const mxCheck = await checkInboundMxOnly(domain);
+    const inboundDns: any[] = buildInboundDnsRecords(domain, provider);
+    const mxCheck = await checkInboundMxOnly(domain, inboundDns[0]?.value);
     inboundDns[0].valid = mxCheck.ok ? 'valid' : 'unknown';
     inboundDns[0].mx_conflicts = mxCheck.conflicts;
     inboundDns[0].hint = mxCheck.hint;
@@ -114,9 +119,15 @@ export const verifyDomainInbound = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Domínio não encontrado' });
     }
     const domain = String(domainRow.rows[0].domain);
+    const provider = String(domainRow.rows[0].provider || '');
+    const isNett = /nettsistemasenvios/i.test(provider);
     let inboundDns = Array.isArray(domainRow.rows[0].inbound_dns_records)
       ? [...domainRow.rows[0].inbound_dns_records]
-      : buildInboundDnsRecords(domain);
+      : buildInboundDnsRecords(domain, provider);
+    if (isNett) {
+      inboundDns = inboundDns.filter((r: any) => !/sendgrid\.net/i.test(String(r.value || '')));
+      if (!inboundDns.length) inboundDns = buildInboundDnsRecords(domain, provider);
+    }
 
     if (!domainRow.rows[0].inbound_enabled) {
       return res.status(400).json({
@@ -125,13 +136,16 @@ export const verifyDomainInbound = async (req: Request, res: Response) => {
       });
     }
 
-    try {
-      await ensureSendGridInboundParse(domain);
-    } catch (e: any) {
-      console.warn('[inbound] ensure parse verify:', e.message);
+    if (!isNett) {
+      try {
+        await ensureSendGridInboundParse(domain);
+      } catch (e: any) {
+        console.warn('[inbound] ensure parse verify:', e.message);
+      }
     }
 
-    const mxCheck = await checkInboundMxOnly(domain);
+    const expectedMx = inboundDns[0]?.value || (isNett ? 'smtp1.nettsistemasenvios.com.br' : 'mx.sendgrid.net');
+    const mxCheck = await checkInboundMxOnly(domain, expectedMx);
     const ok = mxCheck.ok;
 
     inboundDns = inboundDns.map((r: any) =>
@@ -157,7 +171,7 @@ export const verifyDomainInbound = async (req: Request, res: Response) => {
       verified: ok,
       message: ok
         ? 'Recebimento verificado — MX ok.'
-        : (mxCheck.hint || 'MX ainda não aponta exclusivamente para mx.sendgrid.net.'),
+        : (mxCheck.hint || `MX ainda não aponta exclusivamente para ${expectedMx}.`),
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -169,14 +183,16 @@ export const listMailboxes = async (req: Request, res: Response) => {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
     await ensureMailboxSignatureColumns();
+    await ensureMailboxDomainNullable();
     const result = await pool.query(
-      `SELECT m.*, d.domain, d.status AS domain_status, d.inbound_status,
+      `SELECT m.*, COALESCE(d.domain, split_part(m.email, '@', 2)) AS domain,
+              d.status AS domain_status, d.inbound_status,
               (SELECT COUNT(*)::int FROM email_mailbox_messages msg
                WHERE msg.mailbox_id=m.id AND msg.folder='inbox' AND msg.is_read=FALSE) AS unread_count
        FROM email_mailboxes m
-       JOIN email_marketing_domains d ON d.id = m.domain_id
+       LEFT JOIN email_marketing_domains d ON d.id = m.domain_id
        WHERE m.tenant_id=$1
-       ORDER BY m.created_at DESC`,
+       ORDER BY m.is_active DESC NULLS LAST, m.created_at DESC`,
       [tenantId]
     );
     res.json({ success: true, data: result.rows });
@@ -220,8 +236,11 @@ export const createMailbox = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Nenhum domínio válido' });
     }
 
+    await ensureMailboxDomainNullable();
     const created: any[] = [];
     const errors: string[] = [];
+    const reactivated: string[] = [];
+    const alreadyExists: string[] = [];
 
     for (const d of domains.rows) {
       if (d.status !== 'active' && d.status !== 'active_partial') {
@@ -230,17 +249,34 @@ export const createMailbox = async (req: Request, res: Response) => {
       }
       const email = `${local}@${d.domain}`.toLowerCase();
       try {
+        const prev = await pool.query(
+          `SELECT id, is_active FROM email_mailboxes WHERE tenant_id=$1 AND lower(email)=lower($2) LIMIT 1`,
+          [tenantId, email]
+        );
+        if (prev.rows[0] && prev.rows[0].is_active !== false) {
+          alreadyExists.push(email);
+          continue;
+        }
+        const wasInactive = prev.rows[0] && prev.rows[0].is_active === false;
         const ins = await pool.query(
-          `INSERT INTO email_mailboxes (tenant_id, domain_id, local_part, email, display_name)
-           VALUES ($1,$2,$3,$4,$5)
+          `INSERT INTO email_mailboxes (tenant_id, domain_id, local_part, email, display_name, is_active)
+           VALUES ($1,$2,$3,$4,$5,TRUE)
            ON CONFLICT (tenant_id, email) DO UPDATE SET
+             domain_id = EXCLUDED.domain_id,
+             local_part = EXCLUDED.local_part,
              display_name = COALESCE(EXCLUDED.display_name, email_mailboxes.display_name),
              is_active = TRUE,
              updated_at = NOW()
            RETURNING *`,
           [tenantId, d.id, local, email, display_name || null]
         );
-        created.push({ ...ins.rows[0], domain: d.domain, inbound_status: d.inbound_status });
+        created.push({
+          ...ins.rows[0],
+          domain: d.domain,
+          inbound_status: d.inbound_status,
+          reactivated: !!wasInactive,
+        });
+        if (wasInactive) reactivated.push(email);
         if (!d.inbound_enabled || d.inbound_status !== 'active') {
           errors.push(`${email}: criado, mas o recebimento do domínio ainda não está ativo (configure MX em Domínios)`);
         }
@@ -249,17 +285,30 @@ export const createMailbox = async (req: Request, res: Response) => {
       }
     }
 
+    if (created.length === 0 && alreadyExists.length > 0) {
+      const message = alreadyExists.length === 1
+        ? `A conta ${alreadyExists[0]} já está no sistema.`
+        : `Estas contas já estão no sistema: ${alreadyExists.join(', ')}.`;
+      return res.status(409).json({ success: false, already_exists: alreadyExists, message });
+    }
+
     if (created.length === 0) {
       return res.status(400).json({ success: false, message: errors.join('; ') || 'Não foi possível criar' });
     }
 
+    const msgReactivated = reactivated.length
+      ? `Caixa reativada (conversas preservadas): ${reactivated.join(', ')}`
+      : '';
     res.json({
       success: true,
       data: created,
+      reactivated,
+      already_exists: alreadyExists.length ? alreadyExists : undefined,
       warnings: errors.length ? errors : undefined,
-      message: created.length === 1
-        ? `Caixa ${created[0].email} criada`
-        : `${created.length} caixas criadas`,
+      message: msgReactivated
+        || (created.length === 1
+          ? `Caixa ${created[0].email} criada`
+          : `${created.length} caixas criadas`),
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

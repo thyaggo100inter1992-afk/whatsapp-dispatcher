@@ -266,6 +266,7 @@ export const gmailBrowserFrame = async (req: Request, res: Response) => {
     res.setHeader('X-Frame-Version', String(frame.version));
     res.setHeader('X-Page-Url', encodeURIComponent(frame.url || ''));
     res.setHeader('X-Account-Email', encodeURIComponent(frame.email || ''));
+    res.setHeader('X-Duplicate-Email', encodeURIComponent(frame.duplicateEmail || ''));
     res.setHeader('X-Frame-Width', String(frame.width || 0));
     res.setHeader('X-Frame-Height', String(frame.height || 0));
     if (frame.unchanged || !frame.jpeg) return res.status(204).end();
