@@ -18,6 +18,7 @@ import {
   getGmailBrowserFrame,
   gmailProfileDir,
   openGmailBrowser,
+  reloadGmailBrowser,
   sendGmailBrowserInput,
 } from '../services/gmail-browser.service';
 
@@ -226,6 +227,21 @@ export const openGmailBrowserAccount = async (req: Request, res: Response) => {
     res.json({ success: true, message: 'Navegador aberto.' });
   } catch (error: any) {
     res.status(500).json({ success: false, message: friendlyBrowserError(error) });
+  }
+};
+
+export const reloadGmailBrowserAccount = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    await reloadGmailBrowser(tenantId, Number(req.params.id));
+    res.json({ success: true, message: 'E-mail atualizado.' });
+  } catch (error: any) {
+    const closed = /Navegador fechado/i.test(String(error?.message || ''));
+    res.status(closed ? 404 : 500).json({
+      success: false,
+      message: closed ? error.message : 'Não consegui atualizar este e-mail. Tente de novo.',
+    });
   }
 };
 

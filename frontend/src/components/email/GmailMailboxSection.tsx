@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { FaChevronLeft, FaChevronRight, FaGoogle, FaGripVertical, FaPlus, FaSpinner, FaTimes } from 'react-icons/fa';
+import { FaChevronLeft, FaChevronRight, FaCopy, FaGoogle, FaGripVertical, FaPlus, FaSpinner, FaSync, FaTimes } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -14,6 +14,13 @@ function accountLabel(account: GmailAccount) {
   if (account.display_name && !account.display_name.endsWith('@sessao.local')) return account.display_name;
   if (account.email && !account.email.endsWith('@sessao.local')) return account.email;
   return 'Login pendente';
+}
+
+function copyableEmail(account: GmailAccount, detected?: string | null, active?: boolean) {
+  if (active && detected && !detected.endsWith('@sessao.local')) return detected;
+  if (account.email && !account.email.endsWith('@sessao.local')) return account.email;
+  if (account.display_name && account.display_name.includes('@') && !account.display_name.endsWith('@sessao.local')) return account.display_name;
+  return '';
 }
 
 function accountEmail(account: GmailAccount, detected?: string | null) {
@@ -31,6 +38,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
   const [dragOverId, setDragOverId] = useState<number | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
+  const [reloadingId, setReloadingId] = useState<number | null>(null);
   const [frameReady, setFrameReady] = useState(false);
   const [viewport, setViewport] = useState({ width: 1280, height: 720 });
   const [pageUrl, setPageUrl] = useState('https://mail.google.com');
@@ -208,6 +216,36 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
     saveOrder(next);
   };
 
+  const copyEmail = async (account: GmailAccount) => {
+    const email = copyableEmail(account, detectedEmail, activeId === account.id);
+    if (!email) {
+      notification.warning('Gmail', 'Esta conta ainda não tem um e-mail para copiar. Entre nela primeiro.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(email);
+      notification.success('Copiado', email);
+    } catch {
+      notification.error('Gmail', 'Não foi possível copiar o e-mail.');
+    }
+  };
+
+  const reloadAccount = async (account: GmailAccount) => {
+    if (starting || reloadingId) return;
+    if (activeId !== account.id) {
+      await openExisting(account.id);
+      return;
+    }
+    setReloadingId(account.id);
+    try {
+      await api.post(`/email-marketing/gmail-accounts/${account.id}/browser/reload`, {}, { timeout: 60000 });
+    } catch (error: any) {
+      notification.error('Gmail', error.response?.data?.message || 'Não foi possível atualizar este e-mail.');
+    } finally {
+      setReloadingId(null);
+    }
+  };
+
   const removeAccount = async (account: GmailAccount) => {
     const ok = await confirm({
       title: 'Remover navegador',
@@ -316,7 +354,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
                       : 'bg-gradient-to-br from-red-500/15 to-rose-600/10 border-red-500/35 hover:brightness-110'
                   }`}
                 >
-                  <div className={`flex items-center gap-2 min-w-0 ${organizing ? 'pr-1' : 'pr-6'}`}>
+                  <div className={`flex items-center gap-2 min-w-0 ${organizing ? 'pr-1' : 'pr-[4.5rem]'}`}>
                     {organizing ? (
                       <FaGripVertical className="text-white/70 flex-shrink-0" />
                     ) : (
@@ -352,14 +390,33 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
                     </button>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    title="Remover este navegador"
-                    onClick={() => removeAccount(account)}
-                    className="absolute top-1.5 right-1.5 p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-black/20"
-                  >
-                    <FaTimes className="text-xs" />
-                  </button>
+                  <div className="absolute top-1 right-1 flex items-center">
+                    <button
+                      type="button"
+                      title="Copiar e-mail"
+                      onClick={() => copyEmail(account)}
+                      className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-black/20"
+                    >
+                      <FaCopy className="text-xs" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Atualizar e-mail"
+                      disabled={reloadingId === account.id}
+                      onClick={() => reloadAccount(account)}
+                      className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-black/20 disabled:opacity-60"
+                    >
+                      <FaSync className={`text-xs ${reloadingId === account.id ? 'animate-spin' : ''}`} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Remover este navegador"
+                      onClick={() => removeAccount(account)}
+                      className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-black/20"
+                    >
+                      <FaTimes className="text-xs" />
+                    </button>
+                  </div>
                 )}
               </div>
             );
@@ -376,6 +433,23 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
             <div className="flex-1 min-w-0 mx-2 px-3 py-1.5 rounded-full bg-[#202124] text-[12px] text-white/70 truncate">
               {pageUrl}
             </div>
+            <button
+              type="button"
+              title="Copiar e-mail"
+              onClick={() => copyEmail(active)}
+              className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
+            >
+              <FaCopy className="text-xs" />
+            </button>
+            <button
+              type="button"
+              title="Atualizar e-mail"
+              disabled={reloadingId === active.id}
+              onClick={() => reloadAccount(active)}
+              className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-60"
+            >
+              <FaSync className={`text-xs ${reloadingId === active.id ? 'animate-spin' : ''}`} />
+            </button>
             <button
               type="button"
               onClick={() => openExisting(active.id)}

@@ -324,6 +324,20 @@ export async function sendGmailBrowserInput(tenantId: number, accountId: number,
   }
 }
 
+export async function reloadGmailBrowser(tenantId: number, accountId: number) {
+  const session = sessions.get(sessionKey(tenantId, accountId));
+  if (!session) throw new Error('Navegador fechado. Abra a conta de novo.');
+  session.lastInputAt = Date.now();
+  try {
+    await session.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
+  } catch (error: any) {
+    const message = String(error?.message || '');
+    if (/closed|disposed|Target closed/i.test(message)) {
+      throw new Error('Navegador fechado. Abra a conta de novo.');
+    }
+  }
+}
+
 export async function closeGmailBrowser(tenantId: number, accountId: number) {
   await closeSession(sessionKey(tenantId, accountId));
 }

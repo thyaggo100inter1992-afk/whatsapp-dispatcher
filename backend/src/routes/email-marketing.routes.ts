@@ -92,6 +92,7 @@ router.post('/gmail-accounts/link', gmailCtrl.saveGmailLink);
 router.post('/gmail-accounts/browser', gmailCtrl.createGmailBrowser);
 router.post('/gmail-accounts/:id/browser/open', gmailCtrl.openGmailBrowserAccount);
 router.post('/gmail-accounts/:id/browser/close', gmailCtrl.closeGmailBrowserAccount);
+router.post('/gmail-accounts/:id/browser/reload', gmailCtrl.reloadGmailBrowserAccount);
 router.get('/gmail-accounts/:id/browser/frame', gmailCtrl.gmailBrowserFrame);
 router.post('/gmail-accounts/:id/browser/input', gmailCtrl.gmailBrowserInput);
 router.post('/gmail-accounts', gmailCtrl.createGmailAccount);
