@@ -13,7 +13,9 @@ type GmailSession = {
   profileDir: string;
   context: any;
   page: any;
+  cdp: any;
   shotTimer: NodeJS.Timeout | null;
+  metaTimer: NodeJS.Timeout | null;
   jpeg: Buffer | null;
   pendingMove: { x: number; y: number } | null;
   moveQueued: boolean;
@@ -150,6 +152,8 @@ async function closeSession(key: string) {
   if (!session) return;
   sessions.delete(key);
   if (session.shotTimer) clearInterval(session.shotTimer);
+  if (session.metaTimer) clearInterval(session.metaTimer);
+  try { await session.cdp?.send('Page.stopScreencast'); } catch { /* ignore */ }
   try { await session.context.close(); } catch { /* já fechou */ }
 }
 
@@ -178,7 +182,9 @@ export async function openGmailBrowser(tenantId: number, accountId: number, prof
     profileDir,
     context,
     page,
+    cdp: null,
     shotTimer: null,
+    metaTimer: null,
     jpeg: null,
     pendingMove: null,
     moveQueued: false,
@@ -193,23 +199,50 @@ export async function openGmailBrowser(tenantId: number, accountId: number, prof
   sessions.set(key, session);
 
   try {
-  let shooting = false;
-  session.shotTimer = setInterval(async () => {
-    const live = sessions.get(key);
-    if (!live || shooting) return;
-    shooting = true;
-    try {
-      const shot = await live.page.screenshot({ type: 'jpeg', quality: 32, timeout: 1200 });
-      const jpeg = Buffer.from(shot);
-      if (!live.jpeg || jpeg.length !== live.jpeg.length || !jpeg.equals(live.jpeg)) {
-        live.jpeg = jpeg;
+  let streaming = false;
+  try {
+    const cdp = await context.newCDPSession(page);
+    session.cdp = cdp;
+    cdp.on('Page.screencastFrame', async (frame: any) => {
+      const live = sessions.get(key);
+      if (!live) return;
+      live.jpeg = Buffer.from(frame.data, 'base64');
+      live.version += 1;
+      if (frame.metadata?.deviceWidth) live.width = frame.metadata.deviceWidth;
+      if (frame.metadata?.deviceHeight) live.height = frame.metadata.deviceHeight;
+      try { await cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }); } catch { /* ignore */ }
+    });
+    await cdp.send('Page.startScreencast', {
+      format: 'jpeg',
+      quality: 62,
+      maxWidth: VIEWPORT.width,
+      maxHeight: VIEWPORT.height,
+      everyNthFrame: 1,
+    });
+    streaming = true;
+  } catch { /* segue com foto da tela */ }
+
+  if (!streaming) {
+    let shooting = false;
+    session.shotTimer = setInterval(async () => {
+      const live = sessions.get(key);
+      if (!live || shooting) return;
+      shooting = true;
+      try {
+        const shot = await live.page.screenshot({ type: 'jpeg', quality: 45, timeout: 1000, caret: 'initial' });
+        live.jpeg = Buffer.from(shot);
         live.version += 1;
-      }
-      live.url = live.page.url();
-      checkIdentity(live).catch(() => undefined);
-    } catch { /* página fechando */ }
-    shooting = false;
-  }, 160);
+      } catch { /* página fechando */ }
+      shooting = false;
+    }, 120);
+  }
+
+  session.metaTimer = setInterval(() => {
+    const live = sessions.get(key);
+    if (!live) return;
+    try { live.url = live.page.url(); } catch { /* ignore */ }
+    checkIdentity(live).catch(() => undefined);
+  }, 4000);
 
   page.goto('https://mail.google.com/mail/u/0/#inbox', { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => undefined);
   return session;

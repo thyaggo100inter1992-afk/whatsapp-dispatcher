@@ -77,6 +77,11 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
         const version = Number(headers['x-frame-version'] || 0);
         if (version) versionRef.current = version;
         const nextUrl = decodeURIComponent(headers['x-page-url'] || '');
+        const frameWidth = Number(headers['x-frame-width'] || 0);
+        const frameHeight = Number(headers['x-frame-height'] || 0);
+        if (frameWidth > 0 && frameHeight > 0) {
+          setViewport((prev) => (prev.width === frameWidth && prev.height === frameHeight ? prev : { width: frameWidth, height: frameHeight }));
+        }
         if (nextUrl && nextUrl !== urlRef.current) {
           urlRef.current = nextUrl;
           setPageUrl(nextUrl);
@@ -95,7 +100,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
           imgRef.current.src = blobUrl;
           if (previous.startsWith('blob:')) URL.revokeObjectURL(previous);
           setFrameReady(true);
-          wait = 40;
+          wait = 20;
         }
       } catch (error: any) {
         if (error.response?.status === 404) {
@@ -200,7 +205,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <p className="text-white font-black text-lg flex items-center gap-2"><FaGoogle className="text-red-400" /> Contas Gmail</p>
-          <p className="text-white/50 text-sm">Cada conta abre um navegador próprio. O login é o e-mail e a senha normal do Gmail, e a sessão fica salva aqui.</p>
+          <p className="text-white/50 text-sm">Cada conta abre um navegador próprio. Pode cadastrar várias. O servidor mantém uma aberta por vez para não travar, e o login das outras fica salvo.</p>
         </div>
         <button
           type="button"
