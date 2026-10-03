@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { FaChevronLeft, FaChevronRight, FaCopy, FaGoogle, FaGripVertical, FaPlus, FaSpinner, FaSync, FaTimes } from 'react-icons/fa';
+import { FaChevronDown, FaChevronUp, FaCopy, FaGoogle, FaGripVertical, FaPlus, FaSpinner, FaSync, FaTimes } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -272,20 +272,20 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
   );
 
   return (
-    <div className="space-y-4">
+    <div className="flex items-start gap-4">
       <notification.NotificationContainer />
       <ConfirmDialog />
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <aside className="w-[340px] shrink-0 sticky top-4 flex flex-col gap-3 max-h-[calc(100vh-2rem)] overflow-y-auto">
         <div>
           <p className="text-white font-black text-lg flex items-center gap-2"><FaGoogle className="text-red-400" /> Contas Gmail</p>
-          <p className="text-white/50 text-sm">O Gmail abre aqui dentro desta tela. Não abre janela nem aba fora do sistema. Pode cadastrar várias contas; uma fica aberta por vez e o login das outras continua salvo.</p>
+          <p className="text-white/50 text-sm">Uma conta por linha. Clique para abrir o Gmail ao lado.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2">
           {accounts.length > 1 && (
             <button
               type="button"
               onClick={() => setOrganizing((value) => !value)}
-              className={`px-4 py-2.5 border font-semibold rounded-lg text-sm flex items-center gap-2 ${
+              className={`px-4 py-2.5 border font-semibold rounded-lg text-sm flex items-center justify-center gap-2 ${
                 organizing
                   ? 'bg-white text-red-700 border-white'
                   : 'bg-white/10 hover:bg-white/20 text-white border-white/15'
@@ -298,19 +298,17 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
             type="button"
             disabled={starting}
             onClick={createAccount}
-            className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold rounded-lg text-sm flex items-center gap-2"
+            className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2"
           >
             {starting ? <FaSpinner className="animate-spin" /> : <FaPlus />} Nova conta Gmail
           </button>
         </div>
-      </div>
 
-      {organizing && accounts.length > 1 && (
-        <p className="text-white/70 text-sm">Arraste o card para a posição que quiser, ou use as setas. A ordem fica salva.</p>
-      )}
+        {organizing && accounts.length > 1 && (
+          <p className="text-white/70 text-sm">Arraste para cima ou para baixo. A ordem fica salva.</p>
+        )}
 
-      {accounts.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+        <div className="flex flex-col gap-2 overflow-y-auto pr-1">
           {accounts.map((account, index) => {
             const selectedCard = activeId === account.id;
             return (
@@ -337,95 +335,98 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
                   setDragId(null);
                   setDragOverId(null);
                 }}
-                className={`relative ${organizing ? 'cursor-grab active:cursor-grabbing' : ''} ${
+                className={`${organizing ? 'cursor-grab active:cursor-grabbing' : ''} ${
                   dragId === account.id ? 'opacity-50' : ''
                 } ${dragOverId === account.id && dragId !== account.id ? 'ring-2 ring-white rounded-xl' : ''}`}
               >
-                <button
-                  type="button"
-                  draggable={false}
-                  onClick={() => {
-                    if (organizing) return;
-                    openExisting(account.id);
-                  }}
-                  className={`w-full text-left border rounded-xl px-2.5 py-2 transition-all ${organizing ? 'pointer-events-none' : ''} ${
-                    selectedCard
-                      ? 'bg-gradient-to-br from-red-600 to-rose-700 border-red-300 shadow-lg'
-                      : 'bg-gradient-to-br from-red-500/15 to-rose-600/10 border-red-500/35 hover:brightness-110'
-                  }`}
-                >
-                  <div className={`flex items-center gap-2 min-w-0 ${organizing ? 'pr-1' : 'pr-[4.5rem]'}`}>
-                    {organizing ? (
-                      <FaGripVertical className="text-white/70 flex-shrink-0" />
-                    ) : (
-                      <div className="bg-white/15 text-white p-1.5 rounded-lg"><FaGoogle className="text-sm" /></div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-bold text-white truncate">{accountLabel(account)}</p>
-                      <p className="text-[10px] text-white/70 leading-tight">
-                        {organizing ? 'Arraste para mover' : selectedCard ? 'Navegador aberto' : 'Abrir navegador'}
-                      </p>
+                <div className="flex items-stretch gap-1">
+                  <button
+                    type="button"
+                    draggable={false}
+                    title={accountLabel(account)}
+                    onClick={() => {
+                      if (organizing) return;
+                      openExisting(account.id);
+                    }}
+                    className={`flex-1 min-w-0 text-left border rounded-xl px-2.5 py-2 transition-all ${organizing ? 'pointer-events-none' : ''} ${
+                      selectedCard
+                        ? 'bg-gradient-to-br from-red-600 to-rose-700 border-red-300 shadow-lg'
+                        : 'bg-gradient-to-br from-red-500/15 to-rose-600/10 border-red-500/35 hover:brightness-110'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {organizing ? (
+                        <FaGripVertical className="text-white/70 flex-shrink-0" />
+                      ) : (
+                        <div className="bg-white/15 text-white p-1.5 rounded-lg"><FaGoogle className="text-sm" /></div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-bold text-white truncate">{accountLabel(account)}</p>
+                        <p className="text-[10px] text-white/70 leading-tight">
+                          {organizing ? 'Arraste para mover' : selectedCard ? 'Navegador aberto' : 'Abrir'}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </button>
-                {organizing ? (
-                  <div className="mt-1 flex justify-end gap-1">
-                    <button
-                      type="button"
-                      title="Mover para a esquerda"
-                      disabled={index === 0}
-                      onClick={() => moveAccount(account.id, -1)}
-                      className="p-1.5 rounded-lg bg-white/10 text-white disabled:opacity-30 hover:bg-white/20"
-                    >
-                      <FaChevronLeft className="text-xs" />
-                    </button>
-                    <button
-                      type="button"
-                      title="Mover para a direita"
-                      disabled={index === accounts.length - 1}
-                      onClick={() => moveAccount(account.id, 1)}
-                      className="p-1.5 rounded-lg bg-white/10 text-white disabled:opacity-30 hover:bg-white/20"
-                    >
-                      <FaChevronRight className="text-xs" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="absolute top-1 right-1 flex items-center">
-                    <button
-                      type="button"
-                      title="Copiar e-mail"
-                      onClick={() => copyEmail(account)}
-                      className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-black/20"
-                    >
-                      <FaCopy className="text-xs" />
-                    </button>
-                    <button
-                      type="button"
-                      title="Atualizar e-mail"
-                      disabled={reloadingId === account.id}
-                      onClick={() => reloadAccount(account)}
-                      className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-black/20 disabled:opacity-60"
-                    >
-                      <FaSync className={`text-xs ${reloadingId === account.id ? 'animate-spin' : ''}`} />
-                    </button>
-                    <button
-                      type="button"
-                      title="Remover este navegador"
-                      onClick={() => removeAccount(account)}
-                      className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-black/20"
-                    >
-                      <FaTimes className="text-xs" />
-                    </button>
-                  </div>
-                )}
+                  </button>
+                  {organizing ? (
+                    <div className="flex flex-col justify-center gap-1">
+                      <button
+                        type="button"
+                        title="Mover para cima"
+                        disabled={index === 0}
+                        onClick={() => moveAccount(account.id, -1)}
+                        className="p-1.5 rounded-lg bg-white/10 text-white disabled:opacity-30 hover:bg-white/20"
+                      >
+                        <FaChevronUp className="text-xs" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Mover para baixo"
+                        disabled={index === accounts.length - 1}
+                        onClick={() => moveAccount(account.id, 1)}
+                        className="p-1.5 rounded-lg bg-white/10 text-white disabled:opacity-30 hover:bg-white/20"
+                      >
+                        <FaChevronDown className="text-xs" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col justify-center">
+                      <button
+                        type="button"
+                        title="Copiar e-mail"
+                        onClick={() => copyEmail(account)}
+                        className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10"
+                      >
+                        <FaCopy className="text-xs" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Atualizar e-mail"
+                        disabled={reloadingId === account.id}
+                        onClick={() => reloadAccount(account)}
+                        className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 disabled:opacity-60"
+                      >
+                        <FaSync className={`text-xs ${reloadingId === account.id ? 'animate-spin' : ''}`} />
+                      </button>
+                      <button
+                        type="button"
+                        title="Remover este navegador"
+                        onClick={() => removeAccount(account)}
+                        className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
+                      >
+                        <FaTimes className="text-xs" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
-      )}
+      </aside>
 
-      {active && (
-        <div className="overflow-hidden rounded-2xl border border-white/15 bg-[#202124] shadow-2xl">
+      {active ? (
+        <div className="flex-1 min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-[#202124] shadow-2xl">
           <div className="flex items-center gap-2 px-3 py-2 bg-[#35363a] border-b border-black/30">
             <span className="w-3 h-3 rounded-full bg-[#ff5f57]" />
             <span className="w-3 h-3 rounded-full bg-[#febc2e]" />
@@ -514,6 +515,10 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
               </div>
             )}
           </div>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-[420px] rounded-2xl border border-dashed border-white/15 bg-white/[0.03] flex items-center justify-center text-white/45 text-sm px-6 text-center">
+          Escolha uma conta à esquerda para abrir o Gmail aqui.
         </div>
       )}
     </div>
