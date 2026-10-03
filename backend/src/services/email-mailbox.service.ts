@@ -320,6 +320,47 @@ export async function ensureMailboxSignatureColumns() {
   signatureColsReady = true;
 }
 
+let mailboxDomainFkReady = false;
+/** Caixa sobrevive à exclusão do domínio: domain_id fica NULL, conversas permanecem. */
+export async function ensureMailboxDomainNullable() {
+  if (mailboxDomainFkReady) return;
+  await pool.query(`ALTER TABLE email_mailboxes ALTER COLUMN domain_id DROP NOT NULL`).catch(() => {});
+  await pool.query(`
+    DO $$
+    DECLARE r RECORD;
+    BEGIN
+      FOR r IN
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = 'email_mailboxes'::regclass
+          AND c.contype = 'f'
+          AND a.attname = 'domain_id'
+      LOOP
+        EXECUTE format('ALTER TABLE email_mailboxes DROP CONSTRAINT IF EXISTS %I', r.conname);
+      END LOOP;
+    END $$;
+  `);
+  await pool.query(`
+    ALTER TABLE email_mailboxes
+      ADD CONSTRAINT email_mailboxes_domain_id_fkey
+      FOREIGN KEY (domain_id) REFERENCES email_marketing_domains(id) ON DELETE SET NULL
+  `).catch(() => {});
+  mailboxDomainFkReady = true;
+}
+
+export async function deactivateMailboxesForDomain(db: any, domainId: number, tenantId: number) {
+  await ensureMailboxDomainNullable();
+  const r = await db.query(
+    `UPDATE email_mailboxes
+     SET is_active=FALSE, domain_id=NULL, updated_at=NOW()
+     WHERE domain_id=$1 AND tenant_id=$2
+     RETURNING id, email`,
+    [domainId, tenantId]
+  );
+  return r.rows as { id: number; email: string }[];
+}
+
 /** HTML de assinatura “vazio” (editor rico às vezes deixa &lt;p&gt;&lt;br&gt;&lt;/p&gt;) */
 export function normalizeSignatureHtml(html: string | null | undefined): string {
   const raw = String(html || '').trim();
