@@ -426,7 +426,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
       </aside>
 
       {active ? (
-        <div className="flex-1 min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-[#202124] shadow-2xl">
+        <div className="w-full min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-[#202124] shadow-2xl" style={{ maxWidth: viewport.width }}>
           <div className="flex items-center gap-2 px-3 py-2 bg-[#35363a] border-b border-black/30">
             <span className="w-3 h-3 rounded-full bg-[#ff5f57]" />
             <span className="w-3 h-3 rounded-full bg-[#febc2e]" />
@@ -506,7 +506,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
               ref={imgRef}
               alt="Gmail"
               draggable={false}
-              className={`w-full h-auto select-none pointer-events-none ${frameReady ? '' : 'hidden'}`}
+              className={`block w-full h-auto max-w-full select-none pointer-events-none ${frameReady ? '' : 'hidden'}`}
             />
             {!frameReady && (
               <div className="h-[520px] flex flex-col items-center justify-center gap-3 text-slate-500">
@@ -517,7 +517,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-[420px] rounded-2xl border border-dashed border-white/15 bg-white/[0.03] flex items-center justify-center text-white/45 text-sm px-6 text-center">
+        <div className="w-full max-w-[1280px] min-h-[420px] rounded-2xl border border-dashed border-white/15 bg-white/[0.03] flex items-center justify-center text-white/45 text-sm px-6 text-center">
           Escolha uma conta à esquerda para abrir o Gmail aqui.
         </div>
       )}

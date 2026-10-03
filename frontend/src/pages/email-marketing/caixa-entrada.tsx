@@ -1573,7 +1573,7 @@ export default function CaixaEntrada() {
       <ProtectedRoute requiredPermission="email_marketing" fallbackPath="/">
         <notification.NotificationContainer />
         <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 py-8 px-4">
-          <div className="w-full space-y-6">
+          <div className="w-full max-w-[1680px] mx-auto space-y-6">
             <div className="relative overflow-hidden bg-gradient-to-r from-indigo-600/30 via-cyan-500/20 to-indigo-600/30 backdrop-blur-xl border-2 border-indigo-500/40 rounded-3xl p-8 md:p-10 shadow-2xl shadow-indigo-500/20">
               <div className="absolute inset-0 bg-grid-white/[0.02]"></div>
               <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl"></div>
