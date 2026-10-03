@@ -67,6 +67,7 @@ app.use((req, res, next) => {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key', 'X-Dispatcher-User-Id', 'X-User-Id'],
+    exposedHeaders: ['X-Frame-Version', 'X-Page-Url', 'X-Account-Email'],
   })(req, res, next);
 });
 

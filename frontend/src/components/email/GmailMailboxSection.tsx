@@ -28,12 +28,15 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
   const [accounts, setAccounts] = useState<GmailAccount[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
-  const [image, setImage] = useState<string | null>(null);
+  const [frameReady, setFrameReady] = useState(false);
   const [viewport, setViewport] = useState({ width: 1280, height: 720 });
   const [pageUrl, setPageUrl] = useState('https://mail.google.com');
   const [detectedEmail, setDetectedEmail] = useState<string | null>(null);
   const screenRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const versionRef = useRef(0);
+  const urlRef = useRef('');
+  const emailRef = useRef('');
   const moveTimer = useRef<number | null>(null);
 
   const active = accounts.find((account) => account.id === activeId) || null;
@@ -57,24 +60,42 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
     if (!activeId) return undefined;
     let stopped = false;
     versionRef.current = 0;
-    setImage(null);
+    urlRef.current = '';
+    emailRef.current = '';
+    setFrameReady(false);
 
     const tick = async () => {
       if (stopped) return;
+      let wait = 80;
       try {
         const response = await api.get(`/email-marketing/gmail-accounts/${activeId}/browser/frame`, {
           params: { since: versionRef.current },
+          responseType: 'blob',
+          validateStatus: (status) => status === 200 || status === 204,
         });
-        const data = response.data.data || {};
-        if (!data.unchanged && data.image) setImage(data.image);
-        if (data.version) versionRef.current = data.version;
-        if (data.width && data.height) setViewport({ width: data.width, height: data.height });
-        if (data.url) setPageUrl(data.url);
-        if (data.email) {
-          setDetectedEmail(data.email);
+        const headers = response.headers || {};
+        const version = Number(headers['x-frame-version'] || 0);
+        if (version) versionRef.current = version;
+        const nextUrl = decodeURIComponent(headers['x-page-url'] || '');
+        if (nextUrl && nextUrl !== urlRef.current) {
+          urlRef.current = nextUrl;
+          setPageUrl(nextUrl);
+        }
+        const nextEmail = decodeURIComponent(headers['x-account-email'] || '');
+        if (nextEmail && nextEmail !== emailRef.current && !nextEmail.endsWith('@sessao.local')) {
+          emailRef.current = nextEmail;
+          setDetectedEmail(nextEmail);
           setAccounts((prev) => prev.map((account) => (
-            account.id === activeId ? { ...account, email: data.email, display_name: account.display_name || data.email } : account
+            account.id === activeId ? { ...account, email: nextEmail, display_name: account.display_name || nextEmail } : account
           )));
+        }
+        if (response.status === 200 && response.data instanceof Blob && response.data.size > 0 && imgRef.current) {
+          const blobUrl = URL.createObjectURL(response.data);
+          const previous = imgRef.current.src;
+          imgRef.current.src = blobUrl;
+          if (previous.startsWith('blob:')) URL.revokeObjectURL(previous);
+          setFrameReady(true);
+          wait = 40;
         }
       } catch (error: any) {
         if (error.response?.status === 404) {
@@ -84,7 +105,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
           return;
         }
       }
-      if (!stopped) window.setTimeout(tick, 180);
+      if (!stopped) window.setTimeout(tick, wait);
     };
 
     tick();
@@ -111,7 +132,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
     if (activeId === id) {
       await api.post(`/email-marketing/gmail-accounts/${id}/browser/close`).catch(() => undefined);
       setActiveId(null);
-      setImage(null);
+      setFrameReady(false);
       return;
     }
     setStarting(true);
@@ -159,7 +180,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
       await api.delete(`/email-marketing/gmail-accounts/${account.id}`);
       if (activeId === account.id) {
         setActiveId(null);
-        setImage(null);
+        setFrameReady(false);
       }
       setAccounts((prev) => prev.filter((item) => item.id !== account.id));
       notification.success('Removida', 'O navegador desta conta foi apagado do sistema.');
@@ -264,7 +285,7 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
             onMouseMove={(event) => {
               if (moveTimer.current) return;
               const point = pointFromEvent(event);
-              moveTimer.current = window.setTimeout(() => { moveTimer.current = null; }, 40);
+              moveTimer.current = window.setTimeout(() => { moveTimer.current = null; }, 70);
               sendInput({ type: 'mouse', action: 'move', ...point });
             }}
             onWheel={(event) => {
@@ -288,14 +309,13 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
               sendInput({ type: 'key', key: event.key, code: event.code, modifiers });
             }}
           >
-            {image ? (
-              <img
-                alt="Gmail"
-                draggable={false}
-                src={`data:image/jpeg;base64,${image}`}
-                className="w-full h-auto select-none pointer-events-none"
-              />
-            ) : (
+            <img
+              ref={imgRef}
+              alt="Gmail"
+              draggable={false}
+              className={`w-full h-auto select-none pointer-events-none ${frameReady ? '' : 'hidden'}`}
+            />
+            {!frameReady && (
               <div className="h-[520px] flex flex-col items-center justify-center gap-3 text-slate-500">
                 <FaSpinner className="animate-spin text-3xl" />
                 <p>Abrindo o navegador do Gmail...</p>

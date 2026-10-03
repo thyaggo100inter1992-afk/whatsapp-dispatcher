@@ -196,7 +196,14 @@ export const gmailBrowserFrame = async (req: Request, res: Response) => {
     if (!tenantId) return;
     const frame = getGmailBrowserFrame(tenantId, Number(req.params.id), Number(req.query.since || 0));
     if (!frame) return res.status(404).json({ success: false, message: 'Navegador fechado' });
-    res.json({ success: true, data: frame });
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Frame-Version', String(frame.version));
+    res.setHeader('X-Page-Url', encodeURIComponent(frame.url || ''));
+    res.setHeader('X-Account-Email', encodeURIComponent(frame.email || ''));
+    if (frame.unchanged || !frame.jpeg) return res.status(204).end();
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Length', String(frame.jpeg.length));
+    return res.end(frame.jpeg);
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

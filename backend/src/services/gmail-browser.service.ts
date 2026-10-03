@@ -14,7 +14,9 @@ type GmailSession = {
   context: any;
   page: any;
   shotTimer: NodeJS.Timeout | null;
-  image: string | null;
+  jpeg: Buffer | null;
+  pendingMove: { x: number; y: number } | null;
+  moveQueued: boolean;
   version: number;
   width: number;
   height: number;
@@ -177,7 +179,9 @@ export async function openGmailBrowser(tenantId: number, accountId: number, prof
     context,
     page,
     shotTimer: null,
-    image: null,
+    jpeg: null,
+    pendingMove: null,
+    moveQueued: false,
     version: 0,
     width: VIEWPORT.width,
     height: VIEWPORT.height,
@@ -195,14 +199,17 @@ export async function openGmailBrowser(tenantId: number, accountId: number, prof
     if (!live || shooting) return;
     shooting = true;
     try {
-      const shot = await live.page.screenshot({ type: 'jpeg', quality: 50 });
-      live.image = Buffer.from(shot).toString('base64');
-      live.version += 1;
+      const shot = await live.page.screenshot({ type: 'jpeg', quality: 32, timeout: 1200 });
+      const jpeg = Buffer.from(shot);
+      if (!live.jpeg || jpeg.length !== live.jpeg.length || !jpeg.equals(live.jpeg)) {
+        live.jpeg = jpeg;
+        live.version += 1;
+      }
       live.url = live.page.url();
       checkIdentity(live).catch(() => undefined);
     } catch { /* página fechando */ }
     shooting = false;
-  }, 350);
+  }, 160);
 
   page.goto('https://mail.google.com/mail/u/0/#inbox', { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => undefined);
   return session;
@@ -218,8 +225,8 @@ export function getGmailBrowserFrame(tenantId: number, accountId: number, since 
   const same = since > 0 && since === session.version;
   return {
     version: session.version,
-    unchanged: same,
-    image: same ? null : session.image,
+    unchanged: same || !session.jpeg,
+    jpeg: same ? null : session.jpeg,
     width: session.width,
     height: session.height,
     url: session.url,
@@ -259,7 +266,16 @@ export async function sendGmailBrowserInput(tenantId: number, accountId: number,
     const button = input.button === 'right' ? 'right' : input.button === 'middle' ? 'middle' : 'left';
     const action = String(input.action || 'move');
     if (action === 'move') {
-      await page.mouse.move(x, y);
+      session.pendingMove = { x, y };
+      if (!session.moveQueued) {
+        session.moveQueued = true;
+        setTimeout(() => {
+          session.moveQueued = false;
+          const point = session.pendingMove;
+          session.pendingMove = null;
+          if (point) page.mouse.move(point.x, point.y).catch(() => undefined);
+        }, 30);
+      }
       return;
     }
     if (action === 'wheel') {
