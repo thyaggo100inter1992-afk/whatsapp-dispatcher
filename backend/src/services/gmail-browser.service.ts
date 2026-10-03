@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { pool } from '../database/connection';
@@ -12,7 +13,7 @@ type GmailSession = {
   profileDir: string;
   context: any;
   page: any;
-  cdp: any;
+  shotTimer: NodeJS.Timeout | null;
   image: string | null;
   version: number;
   width: number;
@@ -63,21 +64,42 @@ export async function createBrowserAccount(tenantId: number, displayName?: strin
   return row;
 }
 
-async function launchContext(profileDir: string) {
-  const { chromium } = await import('playwright');
+async function ensureDisplay() {
+  if (process.platform === 'win32') return;
+  process.env.DISPLAY = process.env.DISPLAY || ':99';
+  if (process.env.DISPLAY !== ':99') return;
+  const sock = '/tmp/.X11-unix/X99';
+  if (fs.existsSync(sock)) return;
+  spawn('Xvfb', [':99', '-screen', '0', '1366x768x24', '-ac'], { stdio: 'ignore', detached: true }).unref();
+  for (let i = 0; i < 30; i++) {
+    if (fs.existsSync(sock)) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+async function prepareProfile(profileDir: string) {
+  const marker = `${profileDir}.chrome-v2`;
+  if (!fs.existsSync(marker)) {
+    await fs.promises.rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
+    await fs.promises.writeFile(marker, 'ok');
+  }
   await fs.promises.mkdir(profileDir, { recursive: true });
+}
+
+async function launchContext(profileDir: string) {
+  await ensureDisplay();
+  await prepareProfile(profileDir);
+  const { chromium } = await import('patchright');
   const options: any = {
-    headless: true,
+    headless: false,
     viewport: VIEWPORT,
     locale: 'pt-BR',
     timezoneId: 'America/Sao_Paulo',
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    ignoreDefaultArgs: ['--enable-automation'],
     args: [
-      '--disable-blink-features=AutomationControlled',
       '--no-sandbox',
       '--disable-dev-shm-usage',
       '--lang=pt-BR',
+      '--window-size=1280,720',
     ],
   };
   try {
@@ -125,6 +147,7 @@ async function closeSession(key: string) {
   const session = sessions.get(key);
   if (!session) return;
   sessions.delete(key);
+  if (session.shotTimer) clearInterval(session.shotTimer);
   try { await session.context.close(); } catch { /* já fechou */ }
 }
 
@@ -146,16 +169,14 @@ export async function openGmailBrowser(tenantId: number, accountId: number, prof
   await closeSession(key);
 
   const context = await launchContext(profileDir);
-  await context.addInitScript(`(() => { try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); } catch (e) {} })()`);
   const page = context.pages()[0] || await context.newPage();
-  const cdp = await context.newCDPSession(page);
   const session: GmailSession = {
     tenantId,
     accountId,
     profileDir,
     context,
     page,
-    cdp,
+    shotTimer: null,
     image: null,
     version: 0,
     width: VIEWPORT.width,
@@ -168,30 +189,20 @@ export async function openGmailBrowser(tenantId: number, accountId: number, prof
   sessions.set(key, session);
 
   try {
-  cdp.on('Page.screencastFrame', async (frame: any) => {
+  let shooting = false;
+  session.shotTimer = setInterval(async () => {
     const live = sessions.get(key);
-    if (!live) return;
-    live.image = frame.data;
-    live.version += 1;
-    if (frame.metadata?.deviceWidth) live.width = frame.metadata.deviceWidth;
-    if (frame.metadata?.deviceHeight) live.height = frame.metadata.deviceHeight;
+    if (!live || shooting) return;
+    shooting = true;
     try {
-      await cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId });
-    } catch { /* sessão encerrada */ }
-    checkIdentity(live).catch(() => undefined);
-  });
-
-  page.on('framenavigated', (frame: any) => {
-    if (frame === page.mainFrame()) session.url = frame.url();
-  });
-
-  await cdp.send('Page.startScreencast', {
-    format: 'jpeg',
-    quality: 55,
-    maxWidth: VIEWPORT.width,
-    maxHeight: VIEWPORT.height,
-    everyNthFrame: 1,
-  });
+      const shot = await live.page.screenshot({ type: 'jpeg', quality: 50 });
+      live.image = Buffer.from(shot).toString('base64');
+      live.version += 1;
+      live.url = live.page.url();
+      checkIdentity(live).catch(() => undefined);
+    } catch { /* página fechando */ }
+    shooting = false;
+  }, 350);
 
   page.goto('https://mail.google.com/mail/u/0/#inbox', { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => undefined);
   return session;
@@ -216,71 +227,48 @@ export function getGmailBrowserFrame(tenantId: number, accountId: number, since 
   };
 }
 
-const SPECIAL_KEYS: Record<string, { key: string; code: string; windowsVirtualKeyCode: number; text?: string }> = {
-  Enter: { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' },
-  Backspace: { key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 },
-  Tab: { key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 },
-  Escape: { key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 },
-  ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37 },
-  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 },
-  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 },
-  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 },
-  Delete: { key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 },
-  Home: { key: 'Home', code: 'Home', windowsVirtualKeyCode: 36 },
-  End: { key: 'End', code: 'End', windowsVirtualKeyCode: 35 },
-};
+function keyCombo(key: string, modifiers: number) {
+  const parts: string[] = [];
+  if (modifiers & 2) parts.push('Control');
+  if (modifiers & 4) parts.push('Meta');
+  if (modifiers & 1) parts.push('Alt');
+  if (modifiers & 8) parts.push('Shift');
+  parts.push(key);
+  return parts.join('+');
+}
 
 export async function sendGmailBrowserInput(tenantId: number, accountId: number, input: any) {
   const session = sessions.get(sessionKey(tenantId, accountId));
   if (!session) throw new Error('Navegador fechado. Abra a conta de novo.');
   session.lastInputAt = Date.now();
-  const cdp = session.cdp;
+  const page = session.page;
 
   if (input?.type === 'text' && typeof input.text === 'string' && input.text) {
-    await cdp.send('Input.insertText', { text: String(input.text).slice(0, 2000) });
+    await page.keyboard.insertText(String(input.text).slice(0, 2000));
     return;
   }
 
-  if (input?.type === 'key') {
-    const spec = SPECIAL_KEYS[String(input.key || '')] || {
-      key: String(input.key || ''),
-      code: String(input.code || input.key || ''),
-      windowsVirtualKeyCode: 0,
-    };
-    const modifiers = Number(input.modifiers || 0);
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', modifiers, ...spec });
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers, key: spec.key, code: spec.code, windowsVirtualKeyCode: spec.windowsVirtualKeyCode });
+  if (input?.type === 'key' && input.key) {
+    await page.keyboard.press(keyCombo(String(input.key), Number(input.modifiers || 0)));
     return;
   }
 
   if (input?.type === 'mouse') {
     const x = Math.max(0, Math.round(Number(input.x) || 0));
     const y = Math.max(0, Math.round(Number(input.y) || 0));
-    const buttonName = input.button === 'right' ? 'right' : input.button === 'middle' ? 'middle' : 'left';
+    const button = input.button === 'right' ? 'right' : input.button === 'middle' ? 'middle' : 'left';
     const action = String(input.action || 'move');
     if (action === 'move') {
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' });
+      await page.mouse.move(x, y);
       return;
     }
     if (action === 'wheel') {
-      await cdp.send('Input.dispatchMouseEvent', {
-        type: 'mouseWheel',
-        x,
-        y,
-        deltaX: Number(input.deltaX) || 0,
-        deltaY: Number(input.deltaY) || 0,
-      });
+      await page.mouse.move(x, y);
+      await page.mouse.wheel(Number(input.deltaX) || 0, Number(input.deltaY) || 0);
       return;
     }
-    if (action === 'down' || action === 'up') {
-      await cdp.send('Input.dispatchMouseEvent', {
-        type: action === 'down' ? 'mousePressed' : 'mouseReleased',
-        x,
-        y,
-        button: buttonName,
-        clickCount: Number(input.clickCount) || 1,
-      });
-    }
+    if (action === 'down') await page.mouse.move(x, y).then(() => page.mouse.down({ button }));
+    if (action === 'up') await page.mouse.up({ button });
   }
 }
 
@@ -294,6 +282,7 @@ export async function destroyGmailProfile(tenantId: number, accountId: number, p
   const root = path.resolve(process.cwd(), 'data', 'gmail-profiles') + path.sep;
   if (!path.resolve(dir).startsWith(root)) return;
   await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  await fs.promises.rm(`${dir}.chrome-v2`, { force: true }).catch(() => undefined);
 }
 
 setInterval(() => {
