@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
-import { FaChevronDown, FaChevronUp, FaCopy, FaGoogle, FaGripVertical, FaPlus, FaSpinner, FaSync, FaTimes } from 'react-icons/fa';
+import { FaChevronDown, FaChevronUp, FaCopy, FaGoogle, FaGripVertical, FaPlus, FaSearch, FaSpinner, FaSync, FaTimes } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -36,17 +36,20 @@ export default function GmailMailboxSection({
   onChannelChange,
   smtpList,
   onCreateSmtp,
+  onAccountQueryChange,
   children,
 }: {
   channel: MailChannel;
   onChannelChange: (channel: MailChannel) => void;
   smtpList?: ReactNode;
   onCreateSmtp?: () => void;
+  onAccountQueryChange?: (value: string) => void;
   children?: ReactNode;
 }) {
   const notification = useNotification();
   const { confirm, ConfirmDialog } = useConfirm();
   const [accounts, setAccounts] = useState<GmailAccount[]>([]);
+  const [accountQuery, setAccountQuery] = useState('');
   const [organizing, setOrganizing] = useState(false);
   const [dragId, setDragId] = useState<number | null>(null);
   const [dragOverId, setDragOverId] = useState<number | null>(null);
@@ -69,6 +72,10 @@ export default function GmailMailboxSection({
   const moveTimer = useRef<number | null>(null);
 
   const active = channel === 'gmail' ? accounts.find((account) => account.id === activeId) || null : null;
+  const accountQueryText = accountQuery.trim().toLowerCase();
+  const visibleAccounts = accountQueryText
+    ? accounts.filter((account) => `${accountLabel(account)} ${account.email || ''} ${account.display_name || ''}`.toLowerCase().includes(accountQueryText))
+    : accounts;
   viewportRef.current = viewport;
   const frameMax = Math.min(1500, Math.round(viewport.width * 1.15));
   const imageHeight = Math.round((viewport.height * frameMax) / viewport.width);
@@ -404,8 +411,40 @@ export default function GmailMailboxSection({
           <p className="shrink-0 text-white/70 text-sm">Arraste para cima ou para baixo. A ordem fica salva.</p>
         )}
 
+        <div className="shrink-0 relative">
+          <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35 text-xs" />
+          <input
+            value={accountQuery}
+            onChange={(event) => {
+              const value = event.target.value;
+              setAccountQuery(value);
+              onAccountQueryChange?.(value);
+            }}
+            placeholder="Buscar e-mail"
+            className="w-full pl-8 pr-8 py-2 bg-[#0b1220] border border-white/10 rounded-lg text-white text-sm placeholder-white/30 focus:outline-none focus:border-white/30"
+          />
+          {accountQuery && (
+            <button
+              type="button"
+              title="Limpar busca"
+              onClick={() => {
+                setAccountQuery('');
+                onAccountQueryChange?.('');
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-white/40 hover:text-white"
+            >
+              <FaTimes className="text-xs" />
+            </button>
+          )}
+        </div>
+
         <div className="flex-1 min-h-0 overflow-y-scroll overscroll-contain pr-1 flex flex-col gap-2">
-          {channel === 'smtp' ? smtpList : accounts.map((account, index) => {
+          {channel === 'smtp' ? smtpList : visibleAccounts.length === 0 ? (
+            <p className="text-white/50 text-sm px-1">
+              {accounts.length === 0 ? 'Nenhuma conta Gmail ainda.' : 'Nenhuma conta encontrada.'}
+            </p>
+          ) : visibleAccounts.map((account) => {
+            const index = accounts.findIndex((item) => item.id === account.id);
             const selectedCard = activeId === account.id;
             return (
               <div

@@ -608,14 +608,12 @@ function SmtpAccountList({
   mailboxes,
   mailboxId,
   mailboxFilter,
-  onFilter,
   alertMailboxIds,
   onOpen,
 }: {
   mailboxes: Mailbox[];
   mailboxId: number | null;
   mailboxFilter: string;
-  onFilter: (value: string) => void;
   alertMailboxIds: number[];
   onOpen: (id: number) => void;
 }) {
@@ -636,18 +634,9 @@ function SmtpAccountList({
   }
   return (
     <>
-      {mailboxes.length > 6 && (
-        <div className="relative">
-          <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35 text-xs" />
-          <input
-            value={mailboxFilter}
-            onChange={(e) => onFilter(e.target.value)}
-            placeholder="Filtrar caixas…"
-            className="w-full pl-8 pr-3 py-1.5 bg-[#0b1220] border border-white/10 rounded-lg text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400/40"
-          />
-        </div>
-      )}
-      {filtered.map((m, i) => {
+      {filtered.length === 0 ? (
+        <p className="text-white/50 text-sm px-1">Nenhuma conta encontrada.</p>
+      ) : filtered.map((m, i) => {
         const p = palettes[i % palettes.length];
         const active = mailboxId === m.id;
         const alerting = alertMailboxIds.includes(m.id);
@@ -1709,12 +1698,12 @@ export default function CaixaEntrada() {
               channel={mailChannel}
               onChannelChange={setMailChannel}
               onCreateSmtp={() => router.push('/email-marketing/criar-email')}
+              onAccountQueryChange={setMailboxFilter}
               smtpList={(
                 <SmtpAccountList
                   mailboxes={mailboxes}
                   mailboxId={mailboxId}
                   mailboxFilter={mailboxFilter}
-                  onFilter={setMailboxFilter}
                   alertMailboxIds={alertMailboxIds}
                   onOpen={openMailboxCard}
                 />
