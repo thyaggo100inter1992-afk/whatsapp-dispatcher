@@ -282,8 +282,8 @@ export const gmailBrowserInput = async (req: Request, res: Response) => {
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
-    await sendGmailBrowserInput(tenantId, Number(req.params.id), req.body || {});
-    res.json({ success: true });
+    const result = await sendGmailBrowserInput(tenantId, Number(req.params.id), req.body || {});
+    res.json({ success: true, text: result?.text || '' });
   } catch (error: any) {
     const message = /Navegador fechado/i.test(String(error?.message || ''))
       ? error.message

@@ -207,6 +207,20 @@ export default function GmailMailboxSection({
     api.post(`/email-marketing/gmail-accounts/${activeId}/browser/input`, body).catch(() => undefined);
   };
 
+  const writeLocalClipboard = (textPromise: Promise<string>) => {
+    const blobPromise = textPromise.then((text) => {
+      if (!text) return Promise.reject(new Error('empty'));
+      return new Blob([text], { type: 'text/plain' });
+    });
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      navigator.clipboard.write([new ClipboardItem({ 'text/plain': blobPromise })]).catch(() => undefined);
+      return;
+    }
+    textPromise.then((text) => {
+      if (text) navigator.clipboard.writeText(text).catch(() => undefined);
+    }).catch(() => undefined);
+  };
+
   const pointFromEvent = (event: React.MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * viewport.width;
@@ -614,7 +628,14 @@ export default function GmailMailboxSection({
             }}
             onMouseUp={(event) => {
               const point = pointFromEvent(event);
-              sendInput({ type: 'mouse', action: 'up', ...point, button: buttonFromEvent(event), clickCount: event.detail || 1 });
+              const button = buttonFromEvent(event);
+              const clickCount = event.detail || 1;
+              const copied = api.post(`/email-marketing/gmail-accounts/${activeId}/browser/input`, {
+                type: 'mouse', action: 'up', ...point, button, clickCount,
+              }).then(() => api.post(`/email-marketing/gmail-accounts/${activeId}/browser/input`, {
+                type: 'clipboard', action: 'take',
+              })).then((response) => String(response.data?.text || ''));
+              writeLocalClipboard(copied);
             }}
             onMouseMove={(event) => {
               if (moveTimer.current) return;
@@ -622,13 +643,45 @@ export default function GmailMailboxSection({
               moveTimer.current = window.setTimeout(() => { moveTimer.current = null; }, 70);
               sendInput({ type: 'mouse', action: 'move', ...point });
             }}
-            onContextMenu={(event) => event.preventDefault()}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              navigator.clipboard.readText().then((text) => {
+                if (text) sendInput({ type: 'clipboard', action: 'write', text });
+              }).catch(() => undefined);
+            }}
             onPaste={(event) => {
-              const text = event.clipboardData.getData('text');
-              if (text) sendInput({ type: 'text', text });
+              event.preventDefault();
+              const text = event.clipboardData.getData('text/plain') || event.clipboardData.getData('text');
+              if (text) sendInput({ type: 'text', text: text.slice(0, 50000) });
             }}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing || event.key === 'Process' || event.key === 'Dead') return;
+              const key = event.key.toLowerCase();
+              const command = event.ctrlKey || event.metaKey;
+              if (command && key === 'v') {
+                event.preventDefault();
+                navigator.clipboard.readText().then((text) => {
+                  if (text) sendInput({ type: 'text', text: text.slice(0, 50000) });
+                }).catch(() => undefined);
+                return;
+              }
+              if (command && (key === 'c' || key === 'x') && activeId) {
+                event.preventDefault();
+                const modifiers = (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0);
+                const copied = api.post(`/email-marketing/gmail-accounts/${activeId}/browser/input`, {
+                  type: 'clipboard', action: 'selection',
+                }).then(async (response) => {
+                  const text = String(response.data?.text || '');
+                  if (key === 'x') {
+                    await api.post(`/email-marketing/gmail-accounts/${activeId}/browser/input`, {
+                      type: 'key', key: 'x', code: 'KeyX', modifiers,
+                    });
+                  }
+                  return text;
+                });
+                writeLocalClipboard(copied);
+                return;
+              }
               event.preventDefault();
               const modifiers = (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0);
               if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {

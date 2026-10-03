@@ -110,11 +110,49 @@ async function launchContext(profileDir: string) {
       '--window-size=1280,720',
     ],
   };
+  let context;
   try {
-    return await chromium.launchPersistentContext(profileDir, { ...options, channel: 'chrome' });
+    context = await chromium.launchPersistentContext(profileDir, { ...options, channel: 'chrome' });
   } catch {
-    return await chromium.launchPersistentContext(profileDir, options);
+    context = await chromium.launchPersistentContext(profileDir, options);
   }
+  await context.addInitScript(`(() => {
+    const readSelection = () => {
+      const active = document.activeElement;
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+        const start = active.selectionStart || 0;
+        const end = active.selectionEnd || 0;
+        if (end > start) return String(active.value || '').slice(start, end);
+      }
+      const selected = window.getSelection && window.getSelection();
+      return selected ? String(selected.toString() || '') : '';
+    };
+    window.__incomingPaste = '';
+    document.addEventListener('copy', () => {
+      window.__copiedText = readSelection();
+      window.__copiedPending = true;
+    }, true);
+    document.addEventListener('cut', () => {
+      window.__copiedText = readSelection();
+      window.__copiedPending = true;
+    }, true);
+    document.addEventListener('paste', (event) => {
+      const text = window.__incomingPaste;
+      if (!text) return;
+      window.__incomingPaste = '';
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (document.execCommand('insertText', false, text)) return;
+      const active = document.activeElement;
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+        const start = active.selectionStart == null ? active.value.length : active.selectionStart;
+        const end = active.selectionEnd == null ? start : active.selectionEnd;
+        active.setRangeText(text, start, end, 'end');
+        active.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }, true);
+  })();`);
+  return context;
 }
 
 async function rememberEmail(session: GmailSession, email: string) {
@@ -298,6 +336,50 @@ export function getGmailBrowserFrame(tenantId: number, accountId: number, since 
   };
 }
 
+const READ_SELECTION = `(() => {
+  const active = document.activeElement;
+  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+    const start = active.selectionStart || 0;
+    const end = active.selectionEnd || 0;
+    if (end > start) return String(active.value || '').slice(start, end);
+  }
+  const selected = window.getSelection && window.getSelection();
+  return selected ? String(selected.toString() || '') : '';
+})()`;
+
+async function readPageSelection(page: any) {
+  let found = '';
+  for (const frame of page.frames()) {
+    try {
+      const text = String(await frame.evaluate(READ_SELECTION) || '');
+      if (text.length > found.length) found = text;
+    } catch { /* frame fechado */ }
+  }
+  return found.slice(0, 50000);
+}
+
+async function takeCopiedText(page: any) {
+  let found = '';
+  for (const frame of page.frames()) {
+    try {
+      const text = String(await frame.evaluate(`(() => {
+        if (!window.__copiedPending) return '';
+        window.__copiedPending = false;
+        return String(window.__copiedText || '');
+      })()`) || '');
+      if (text.length > found.length) found = text;
+    } catch { /* frame fechado */ }
+  }
+  return found.slice(0, 50000);
+}
+
+async function setIncomingPaste(page: any, text: string) {
+  const payload = JSON.stringify(String(text || '').slice(0, 50000));
+  for (const frame of page.frames()) {
+    await frame.evaluate(`(() => { window.__incomingPaste = ${payload}; })()`).catch(() => undefined);
+  }
+}
+
 function keyCombo(key: string, modifiers: number) {
   const parts: string[] = [];
   if (modifiers & 2) parts.push('Control');
@@ -314,9 +396,22 @@ export async function sendGmailBrowserInput(tenantId: number, accountId: number,
   session.lastInputAt = Date.now();
   const page = session.page;
 
+  if (input?.type === 'clipboard' && input.action === 'selection') {
+    return { text: await readPageSelection(page) };
+  }
+
+  if (input?.type === 'clipboard' && input.action === 'take') {
+    return { text: await takeCopiedText(page) };
+  }
+
+  if (input?.type === 'clipboard' && input.action === 'write') {
+    await setIncomingPaste(page, String(input.text || ''));
+    return { text: '' };
+  }
+
   if (input?.type === 'text' && typeof input.text === 'string' && input.text) {
-    await page.keyboard.insertText(String(input.text).slice(0, 2000));
-    return;
+    await page.keyboard.insertText(String(input.text).slice(0, 50000));
+    return { text: '' };
   }
 
   if (input?.type === 'key' && input.key) {
