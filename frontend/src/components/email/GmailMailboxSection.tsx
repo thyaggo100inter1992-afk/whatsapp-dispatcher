@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { FaGoogle, FaPlus, FaSpinner, FaTimes } from 'react-icons/fa';
+import { FaChevronLeft, FaChevronRight, FaGoogle, FaGripVertical, FaPlus, FaSpinner, FaTimes } from 'react-icons/fa';
 import api from '@/services/api';
 import { useNotification } from '@/hooks/useNotification';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -26,6 +26,9 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
   const notification = useNotification();
   const { confirm, ConfirmDialog } = useConfirm();
   const [accounts, setAccounts] = useState<GmailAccount[]>([]);
+  const [organizing, setOrganizing] = useState(false);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dragOverId, setDragOverId] = useState<number | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
   const [frameReady, setFrameReady] = useState(false);
@@ -173,6 +176,38 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
     }
   };
 
+  const saveOrder = async (next: GmailAccount[]) => {
+    const previous = accounts;
+    setAccounts(next);
+    try {
+      await api.put('/email-marketing/gmail-accounts/order', { ids: next.map((account) => account.id) });
+    } catch (error: any) {
+      setAccounts(previous);
+      notification.error('Gmail', error.response?.data?.message || 'Não foi possível salvar a ordem dos cards.');
+    }
+  };
+
+  const moveAccount = (id: number, direction: -1 | 1) => {
+    const index = accounts.findIndex((account) => account.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= accounts.length) return;
+    const next = [...accounts];
+    const [item] = next.splice(index, 1);
+    next.splice(target, 0, item);
+    saveOrder(next);
+  };
+
+  const dropAccount = (targetId: number) => {
+    if (dragId == null || dragId === targetId) return;
+    const from = accounts.findIndex((account) => account.id === dragId);
+    const to = accounts.findIndex((account) => account.id === targetId);
+    if (from < 0 || to < 0) return;
+    const next = [...accounts];
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    saveOrder(next);
+  };
+
   const removeAccount = async (account: GmailAccount) => {
     const ok = await confirm({
       title: 'Remover navegador',
@@ -207,47 +242,125 @@ export default function GmailMailboxSection({ onOpenChange }: { onOpenChange?: (
           <p className="text-white font-black text-lg flex items-center gap-2"><FaGoogle className="text-red-400" /> Contas Gmail</p>
           <p className="text-white/50 text-sm">O Gmail abre aqui dentro desta tela. Não abre janela nem aba fora do sistema. Pode cadastrar várias contas; uma fica aberta por vez e o login das outras continua salvo.</p>
         </div>
-        <button
-          type="button"
-          disabled={starting}
-          onClick={createAccount}
-          className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold rounded-lg text-sm flex items-center gap-2"
-        >
-          {starting ? <FaSpinner className="animate-spin" /> : <FaPlus />} Nova conta Gmail
-        </button>
+        <div className="flex items-center gap-2">
+          {accounts.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setOrganizing((value) => !value)}
+              className={`px-4 py-2.5 border font-semibold rounded-lg text-sm flex items-center gap-2 ${
+                organizing
+                  ? 'bg-white text-red-700 border-white'
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/15'
+              }`}
+            >
+              <FaGripVertical /> {organizing ? 'Concluir' : 'Organizar'}
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={starting}
+            onClick={createAccount}
+            className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold rounded-lg text-sm flex items-center gap-2"
+          >
+            {starting ? <FaSpinner className="animate-spin" /> : <FaPlus />} Nova conta Gmail
+          </button>
+        </div>
       </div>
+
+      {organizing && accounts.length > 1 && (
+        <p className="text-white/70 text-sm">Arraste o card para a posição que quiser, ou use as setas. A ordem fica salva.</p>
+      )}
 
       {accounts.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-          {accounts.map((account) => {
+          {accounts.map((account, index) => {
             const selectedCard = activeId === account.id;
             return (
-              <div key={account.id} className="relative">
+              <div
+                key={account.id}
+                draggable={organizing}
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = 'move';
+                  event.dataTransfer.setData('text/plain', String(account.id));
+                  setDragId(account.id);
+                }}
+                onDragOver={(event) => {
+                  if (!organizing) return;
+                  event.preventDefault();
+                  setDragOverId(account.id);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  dropAccount(account.id);
+                  setDragId(null);
+                  setDragOverId(null);
+                }}
+                onDragEnd={() => {
+                  setDragId(null);
+                  setDragOverId(null);
+                }}
+                className={`relative ${organizing ? 'cursor-grab active:cursor-grabbing' : ''} ${
+                  dragId === account.id ? 'opacity-50' : ''
+                } ${dragOverId === account.id && dragId !== account.id ? 'ring-2 ring-white rounded-xl' : ''}`}
+              >
                 <button
                   type="button"
-                  onClick={() => openExisting(account.id)}
-                  className={`w-full text-left border rounded-xl px-2.5 py-2 transition-all ${
+                  draggable={false}
+                  onClick={() => {
+                    if (organizing) return;
+                    openExisting(account.id);
+                  }}
+                  className={`w-full text-left border rounded-xl px-2.5 py-2 transition-all ${organizing ? 'pointer-events-none' : ''} ${
                     selectedCard
                       ? 'bg-gradient-to-br from-red-600 to-rose-700 border-red-300 shadow-lg'
                       : 'bg-gradient-to-br from-red-500/15 to-rose-600/10 border-red-500/35 hover:brightness-110'
                   }`}
                 >
-                  <div className="flex items-center gap-2 min-w-0 pr-6">
-                    <div className="bg-white/15 text-white p-1.5 rounded-lg"><FaGoogle className="text-sm" /></div>
+                  <div className={`flex items-center gap-2 min-w-0 ${organizing ? 'pr-1' : 'pr-6'}`}>
+                    {organizing ? (
+                      <FaGripVertical className="text-white/70 flex-shrink-0" />
+                    ) : (
+                      <div className="bg-white/15 text-white p-1.5 rounded-lg"><FaGoogle className="text-sm" /></div>
+                    )}
                     <div className="min-w-0">
                       <p className="text-[13px] font-bold text-white truncate">{accountLabel(account)}</p>
-                      <p className="text-[10px] text-white/70 leading-tight">{selectedCard ? 'Navegador aberto' : 'Abrir navegador'}</p>
+                      <p className="text-[10px] text-white/70 leading-tight">
+                        {organizing ? 'Arraste para mover' : selectedCard ? 'Navegador aberto' : 'Abrir navegador'}
+                      </p>
                     </div>
                   </div>
                 </button>
-                <button
-                  type="button"
-                  title="Remover este navegador"
-                  onClick={() => removeAccount(account)}
-                  className="absolute top-1.5 right-1.5 p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-black/20"
-                >
-                  <FaTimes className="text-xs" />
-                </button>
+                {organizing ? (
+                  <div className="mt-1 flex justify-end gap-1">
+                    <button
+                      type="button"
+                      title="Mover para a esquerda"
+                      disabled={index === 0}
+                      onClick={() => moveAccount(account.id, -1)}
+                      className="p-1.5 rounded-lg bg-white/10 text-white disabled:opacity-30 hover:bg-white/20"
+                    >
+                      <FaChevronLeft className="text-xs" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Mover para a direita"
+                      disabled={index === accounts.length - 1}
+                      onClick={() => moveAccount(account.id, 1)}
+                      className="p-1.5 rounded-lg bg-white/10 text-white disabled:opacity-30 hover:bg-white/20"
+                    >
+                      <FaChevronRight className="text-xs" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    title="Remover este navegador"
+                    onClick={() => removeAccount(account)}
+                    className="absolute top-1.5 right-1.5 p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-black/20"
+                  >
+                    <FaTimes className="text-xs" />
+                  </button>
+                )}
               </div>
             );
           })}

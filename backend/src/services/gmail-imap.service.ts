@@ -47,6 +47,7 @@ export async function ensureGmailAccountsTable() {
   `);
   await pool.query(`ALTER TABLE email_gmail_accounts ALTER COLUMN password_encrypted DROP NOT NULL`).catch(() => {});
   await pool.query(`ALTER TABLE email_gmail_accounts ADD COLUMN IF NOT EXISTS profile_dir TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE email_gmail_accounts ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`).catch(() => {});
   tableReady = true;
 }
 

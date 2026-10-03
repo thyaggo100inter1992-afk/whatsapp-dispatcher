@@ -51,10 +51,10 @@ export const listGmailAccounts = async (req: Request, res: Response) => {
     if (!tenantId) return;
     await ensureGmailAccountsTable();
     const result = await pool.query(
-      `SELECT id, email, display_name, created_at, updated_at
+      `SELECT id, email, display_name, sort_order, created_at, updated_at
        FROM email_gmail_accounts
        WHERE tenant_id = $1
-       ORDER BY created_at DESC`,
+       ORDER BY sort_order ASC, created_at DESC`,
       [tenantId]
     );
     res.json({ success: true, data: result.rows });
@@ -103,6 +103,30 @@ export const createGmailAccount = async (req: Request, res: Response) => {
       data: saved.rows[0],
       message: 'Conta Gmail conectada. A senha ficou salva só neste sistema.',
     });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const reorderGmailAccounts = async (req: Request, res: Response) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const ids = Array.isArray(req.body?.ids)
+      ? req.body.ids.map((value: unknown) => Number(value)).filter((value: number) => Number.isInteger(value) && value > 0)
+      : [];
+    if (!ids.length) {
+      return res.status(400).json({ success: false, message: 'Informe a ordem dos cards.' });
+    }
+    await ensureGmailAccountsTable();
+    await pool.query(
+      `UPDATE email_gmail_accounts AS account
+       SET sort_order = ordered.position, updated_at = NOW()
+       FROM unnest($1::int[], $2::int[]) AS ordered(id, position)
+       WHERE account.id = ordered.id AND account.tenant_id = $3`,
+      [ids, ids.map((_: number, index: number) => index), tenantId]
+    );
+    res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

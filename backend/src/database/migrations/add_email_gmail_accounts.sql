@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS email_gmail_accounts (
   display_name VARCHAR(255),
   password_encrypted TEXT,
   profile_dir TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),
   CONSTRAINT uq_email_gmail_accounts_tenant_email UNIQUE (tenant_id, email)

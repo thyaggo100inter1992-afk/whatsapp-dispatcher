@@ -52,8 +52,11 @@ function placeholderEmail() {
 
 export async function createBrowserAccount(tenantId: number, displayName?: string | null) {
   const inserted = await pool.query(
-    `INSERT INTO email_gmail_accounts (tenant_id, email, display_name, password_encrypted, profile_dir)
-     VALUES ($1, $2, $3, NULL, NULL)
+    `INSERT INTO email_gmail_accounts (tenant_id, email, display_name, password_encrypted, profile_dir, sort_order)
+     VALUES (
+       $1, $2, $3, NULL, NULL,
+       COALESCE((SELECT MIN(sort_order) - 1 FROM email_gmail_accounts WHERE tenant_id = $1), 0)
+     )
      RETURNING id, email, display_name, created_at`,
     [tenantId, placeholderEmail(), displayName || null]
   );
