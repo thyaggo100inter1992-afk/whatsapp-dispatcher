@@ -1,7 +1,7 @@
-import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { Request, Response } from 'express';
+import { pool } from '../database/connection';
 import { getPublicApiBaseUrl } from '../utils/email-unsubscribe';
 
 const multer = require('multer');
@@ -21,18 +21,10 @@ export const publicImageUpload = multer({
   limits: { fileSize: MAX_BYTES, files: 1 },
 }).single('file');
 
-function imageDir(tenantId: number) {
-  const dir = path.join(process.cwd(), 'uploads', 'email-images', String(tenantId));
+function imageDir() {
+  const dir = path.join(process.cwd(), 'uploads', 'public-files');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
-}
-
-function publicUrl(tenantId: number, filename: string) {
-  const relative = `/uploads/email-images/${tenantId}/${filename}`;
-  return {
-    relative,
-    url: `${getPublicApiBaseUrl()}${relative}`,
-  };
 }
 
 export async function savePublicImage(req: Request, res: Response) {
@@ -72,14 +64,26 @@ export async function savePublicImage(req: Request, res: Response) {
       return res.status(400).json({ success: false, error: 'Imagem muito grande. Tamanho máximo: 8MB.' });
     }
 
-    const filename = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
-    fs.writeFileSync(path.join(imageDir(tenantId), filename), buffer);
-    const stored = publicUrl(tenantId, filename);
+    const safeOriginal = String(original || 'imagem').replace(/[^a-zA-Z0-9.-]/g, '_') || 'imagem';
+    const filename = `${Date.now()}-${safeOriginal.endsWith(ext) ? safeOriginal : `${safeOriginal}${ext}`}`;
+    const absolutePath = path.join(imageDir(), filename);
+    const relative = `/uploads/public-files/${filename}`;
+    fs.writeFileSync(absolutePath, buffer);
+
+    const userId = Number((req as any).user?.id) || null;
+    const description = String(req.body?.description || '').trim() || 'Imagem hospedada para e-mail';
+    await pool.query(
+      `INSERT INTO public_files (
+         filename, original_filename, file_path, file_url, mime_type, file_size,
+         description, uploaded_by, tenant_id, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+      [filename, original, absolutePath, relative, mime, buffer.length, description, userId, tenantId]
+    );
 
     return res.json({
       success: true,
-      url: stored.url,
-      path: stored.relative,
+      url: `${getPublicApiBaseUrl()}${relative}`,
+      path: relative,
       filename,
       original_name: original,
       mimetype: mime,

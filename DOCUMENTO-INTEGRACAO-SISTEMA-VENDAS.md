@@ -559,9 +559,9 @@ Resposta:
 ```json
 {
   "success": true,
-  "url": "https://api.sistemasnettsistemas.com.br/uploads/email-images/12/1710000000000-ab12cd34.png",
-  "path": "/uploads/email-images/12/1710000000000-ab12cd34.png",
-  "filename": "1710000000000-ab12cd34.png",
+  "url": "https://api.sistemasnettsistemas.com.br/uploads/public-files/1710000000000-banner.png",
+  "path": "/uploads/public-files/1710000000000-banner.png",
+  "filename": "1710000000000-banner.png",
   "mimetype": "image/png",
   "size": 84211
 }
@@ -570,7 +570,7 @@ Resposta:
 No HTML do e-mail:
 
 ```html
-<img src="https://api.sistemasnettsistemas.com.br/uploads/email-images/12/1710000000000-ab12cd34.png" alt="">
+<img src="https://api.sistemasnettsistemas.com.br/uploads/public-files/1710000000000-banner.png" alt="">
 ```
 
 Também aceita JSON, se o outro sistema já tiver a imagem em base64:
@@ -586,6 +586,8 @@ Também aceita JSON, se o outro sistema já tiver a imagem em base64:
 `data_base64` pode ser o base64 puro ou um data URL (`data:image/png;base64,...`). Nesse formato o token também pode ir no body, mas o header continua o recomendado.
 
 O link não pede login. Quem tiver a URL vê a imagem. É assim que o e-mail consegue mostrar a figura.
+
+A imagem também entra em **Admin → Arquivos**. Dali dá para copiar o link, editar a descrição ou apagar. Apagar remove o arquivo e o link deixa de abrir.
 
 #### 6.7 (Opcional) Trocar token por JWT de 12h
 `POST /api/integration/v1/auth` com `X-Api-Key`.
