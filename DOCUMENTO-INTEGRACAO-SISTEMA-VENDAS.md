@@ -534,7 +534,60 @@ Variáveis no texto do template usam `{{nome}}`. O disparador substitui.
 Se o número estiver na lista de restrição: **403** `{ "restricted": true }`.  
 Se o WhatsApp de origem estiver bloqueado (código 463): **422**.
 
-#### 6.6 (Opcional) Trocar token por JWT de 12h
+#### 6.6 Hospedar imagem e receber o link público
+
+Use isto para montar o HTML do e-mail com imagem. O outro sistema envia o arquivo e recebe uma URL que qualquer pessoa (e o cliente de e-mail) consegue abrir. Coloque essa URL no `src` da imagem.
+
+`POST /api/integration/v1/images`
+
+Header obrigatório, porque o arquivo vai em multipart e o token do body não é lido nesse caso:
+
+```
+X-Api-Key: nsk_...
+```
+
+Campo do arquivo: `file`. Aceita JPG, PNG, GIF e WEBP, até 8MB.
+
+```bash
+curl -X POST "https://api.sistemasnettsistemas.com.br/api/integration/v1/images" \
+  -H "X-Api-Key: nsk_..." \
+  -F "file=@banner.png"
+```
+
+Resposta:
+
+```json
+{
+  "success": true,
+  "url": "https://api.sistemasnettsistemas.com.br/uploads/email-images/12/1710000000000-ab12cd34.png",
+  "path": "/uploads/email-images/12/1710000000000-ab12cd34.png",
+  "filename": "1710000000000-ab12cd34.png",
+  "mimetype": "image/png",
+  "size": 84211
+}
+```
+
+No HTML do e-mail:
+
+```html
+<img src="https://api.sistemasnettsistemas.com.br/uploads/email-images/12/1710000000000-ab12cd34.png" alt="">
+```
+
+Também aceita JSON, se o outro sistema já tiver a imagem em base64:
+
+```json
+{
+  "filename": "banner.png",
+  "content_type": "image/png",
+  "data_base64": "iVBORw0KGgoAAAANS..."
+}
+```
+
+`data_base64` pode ser o base64 puro ou um data URL (`data:image/png;base64,...`). Nesse formato o token também pode ir no body, mas o header continua o recomendado.
+
+O link não pede login. Quem tiver a URL vê a imagem. É assim que o e-mail consegue mostrar a figura.
+
+#### 6.7 (Opcional) Trocar token por JWT de 12h
 `POST /api/integration/v1/auth` com `X-Api-Key`.
 Devolve JWT. Só precisa se forem chamar as rotas internas do painel. **Para as rotas desta documentação, o `nsk_` basta.** Não usem esse JWT no lugar do token do cliente no banco de vocês.
 
@@ -594,5 +647,6 @@ Devolve JWT. Só precisa se forem chamar as rotas internas do painel. **Para as 
 | Tela Verificar Números | `/embed/verificar?key=nsk_...&user_id=15` | token + user_id na URL |
 | Envio Oficial via API | `POST /api/integration/v1/oficial/send` | token + user_id |
 | Envio QR via API | `POST /api/integration/v1/qr/send` | token + user_id |
+| Hospedar imagem do e-mail | `POST /api/integration/v1/images` | token (`X-Api-Key`) |
 
 Dúvida de payload: copiem os JSON desta página. Não inventem campos. Se algo falhar, mandem status HTTP + body da resposta.

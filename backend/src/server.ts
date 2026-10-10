@@ -170,7 +170,8 @@ app.use((req, res, next) => {
   // NÃO aplicar express-fileupload em rotas que usam Multer ou webhook externo
   if (
     path.includes('/upload-media') || 
-    path.includes('/upload/media') || 
+    path.includes('/upload/media') ||
+    path.includes('/integration/v1/images') || 
     path.includes('/system-settings/logo') || 
     path.includes('/tutorials/upload') || 
     path.includes('/screenshots') ||

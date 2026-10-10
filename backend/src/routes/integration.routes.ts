@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { IntegrationController } from '../controllers/integration.controller';
+import { publicImageUpload, savePublicImage } from '../controllers/public-image.controller';
 import { authenticateIntegrationKey } from '../middleware/integration-auth.middleware';
+
+const multer = require('multer');
 
 const { authenticate } = require('../middleware/auth.middleware');
 const { setTenantContext } = require('../middleware/tenant.middleware');
@@ -25,5 +28,16 @@ router.post('/v1/oficial/send', authenticateIntegrationKey, controller.oficialSe
 router.get('/v1/qr/templates', authenticateIntegrationKey, controller.qrTemplates.bind(controller));
 router.get('/v1/qr/templates/:id', authenticateIntegrationKey, controller.qrTemplateById.bind(controller));
 router.post('/v1/qr/send', authenticateIntegrationKey, controller.qrSend.bind(controller));
+router.post('/v1/images', authenticateIntegrationKey, (req, res, next) => {
+  const contentType = String(req.headers['content-type'] || '');
+  if (!contentType.includes('multipart/form-data')) return next();
+  publicImageUpload(req, res, (err: any) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ success: false, error: 'Imagem muito grande. Tamanho máximo: 8MB.' });
+    }
+    return res.status(400).json({ success: false, error: err.message || 'Não foi possível receber a imagem.' });
+  });
+}, savePublicImage);
 
 export default router;
