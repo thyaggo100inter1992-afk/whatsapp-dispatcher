@@ -889,7 +889,7 @@ export default function Configuracoes() {
     }
   };
 
-  const handleEdit = (account: WhatsAppAccount) => {
+  const handleEdit = async (account: WhatsAppAccount) => {
     setEditingAccount(account);
     const savedFields = String(account.webhook_fields_subscribed || '')
       .split(',')
@@ -898,25 +898,47 @@ export default function Configuracoes() {
     const fields =
       savedFields.length > 0 ? savedFields : [...ALL_WHATSAPP_WEBHOOK_FIELDS];
     const allSelected = fields.length >= ALL_WHATSAPP_WEBHOOK_FIELDS.length;
-    setFormData({
-      name: account.name,
-      phone_number: account.phone_number,
-      access_token: account.access_token,
-      phone_number_id: account.phone_number_id,
-      business_account_id: account.business_account_id || '',
-      app_id: account.app_id || '',
-      app_secret: account.app_secret || '',
-      webhook_verify_token: account.webhook_verify_token || '',
-      is_active: account.is_active,
-      proxy_id: account.proxy_id || null,
-      subscribe_all_webhooks: allSelected,
-      webhook_fields: fields,
-    });
+    const fillForm = (data: WhatsAppAccount) => {
+      const dataFields = String(data.webhook_fields_subscribed || account.webhook_fields_subscribed || '')
+        .split(',')
+        .map((f) => f.trim())
+        .filter(Boolean);
+      const nextFields = dataFields.length > 0 ? dataFields : fields;
+      setFormData({
+        name: data.name,
+        phone_number: data.phone_number,
+        access_token: data.access_token,
+        phone_number_id: data.phone_number_id,
+        business_account_id: data.business_account_id || '',
+        app_id: data.app_id || '',
+        app_secret: data.app_secret || '',
+        webhook_verify_token: data.webhook_verify_token || '',
+        is_active: data.is_active,
+        proxy_id: data.proxy_id || null,
+        subscribe_all_webhooks: nextFields.length >= ALL_WHATSAPP_WEBHOOK_FIELDS.length,
+        webhook_fields: nextFields,
+      });
+    };
+    fillForm(account);
     setShowWebhookFields(!allSelected);
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    if (account.id && (account.app_id || account.app_secret)) {
-      loadMetaApp(account.id);
+    if (account.id) {
+      try {
+        const response = await whatsappAccountsAPI.getById(account.id);
+        const full = response.data?.data;
+        if (full) {
+          fillForm(full);
+        }
+      } catch {
+        // mantém os dados da lista
+      }
+      if (account.app_id || account.app_secret) {
+        loadMetaApp(account.id);
+      } else {
+        setMetaAppInfo(null);
+        setMetaAppNameEdit('');
+      }
     } else {
       setMetaAppInfo(null);
       setMetaAppNameEdit('');
@@ -1383,10 +1405,12 @@ export default function Configuracoes() {
                     App Secret *
                   </label>
                   <input
-                    type="password"
+                    type="text"
                     required={!editingAccount}
+                    autoComplete="off"
+                    spellCheck={false}
                     className="w-full px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all font-mono"
-                    placeholder={editingAccount ? 'Deixe em branco para manter o atual' : 'App Secret do aplicativo Meta'}
+                    placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                     value={formData.app_secret}
                     onChange={(e) => setFormData({ ...formData, app_secret: e.target.value })}
                   />
