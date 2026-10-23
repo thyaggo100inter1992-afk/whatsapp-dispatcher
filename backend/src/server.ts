@@ -173,6 +173,7 @@ app.use((req, res, next) => {
     path.includes('/upload/media') ||
     path.includes('/profile-photo') ||
     path.includes('/test-profile-photo-upload') ||
+    path.includes('/bulk-profile/update') ||
     path.includes('/integration/v1/images') ||
     path.includes('/integration/v1/whatsapp-accounts') || 
     path.includes('/system-settings/logo') || 

@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { 
   FaUser, FaCheck, FaTimes, FaSearch, FaInfoCircle, 
   FaClock, FaCheckCircle, FaExclamationTriangle, FaSpinner,
-  FaEnvelope, FaMapMarkerAlt, FaGlobe, FaStore, FaPlay, FaSave, FaArrowLeft
+  FaEnvelope, FaMapMarkerAlt, FaGlobe, FaStore, FaPlay, FaSave, FaArrowLeft, FaImage
 } from 'react-icons/fa';
 import api from '@/services/api';
 import { useToast } from '@/hooks/useToast';
@@ -73,6 +73,8 @@ export default function EditarPerfilMassa() {
   });
 
   const [queueInterval, setQueueInterval] = useState(5);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAccounts();
@@ -174,8 +176,13 @@ export default function EditarPerfilMassa() {
       dataToSend.websites = websites;
     }
 
+    if (logoFile) {
+      fieldsToUpdate.push('profile_picture');
+      dataToSend.profile_picture_name = logoFile.name;
+    }
+
     if (fieldsToUpdate.length === 0) {
-      toast.warning('Preencha pelo menos um campo para atualizar!');
+      toast.warning('Preencha pelo menos um campo ou selecione uma logo!');
       return;
     }
 
@@ -231,16 +238,30 @@ export default function EditarPerfilMassa() {
       if (profileData.website2.trim()) websites.push(profileData.website2);
       if (websites.length > 0) dataToSend.websites = websites;
 
-      // Enviar atualização
+      // Enviar atualização (multipart se tiver logo)
       console.log('💾 Enviando atualização em massa...');
       console.log('   Contas:', selectedAccounts);
       console.log('   Dados:', dataToSend);
-      
-      const response = await api.post('/bulk-profile/update', {  // ✅ CORRIGIDO: bulk-profile (singular)
-        account_ids: selectedAccounts,
-        profile_data: dataToSend,
-        fields_to_update: previewData.fieldsToUpdate,
-      });
+      console.log('   Logo:', logoFile?.name || 'não');
+
+      let response;
+      if (logoFile) {
+        const form = new FormData();
+        form.append('account_ids', JSON.stringify(selectedAccounts));
+        form.append('profile_data', JSON.stringify(dataToSend));
+        form.append('fields_to_update', JSON.stringify(previewData.fieldsToUpdate));
+        form.append('logo', logoFile);
+        response = await api.post('/bulk-profile/update', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 120000,
+        });
+      } else {
+        response = await api.post('/bulk-profile/update', {
+          account_ids: selectedAccounts,
+          profile_data: dataToSend,
+          fields_to_update: previewData.fieldsToUpdate,
+        });
+      }
 
       if (response.data.success) {
         toast.success(`${response.data.summary.queued} perfis adicionados à fila! ${response.data.queue.message}`);
@@ -367,6 +388,7 @@ export default function EditarPerfilMassa() {
                     {field === 'address' && '📍 Endereço'}
                     {field === 'vertical' && '🏢 Categoria'}
                     {field === 'websites' && '🌐 Websites'}
+                    {field === 'profile_picture' && '🖼️ Logo / Foto de Perfil'}
                   </span>
                 ))}
               </div>
@@ -665,6 +687,58 @@ export default function EditarPerfilMassa() {
             </div>
 
             <div className="space-y-4">
+              <div className="p-6 bg-pink-500/10 border-2 border-pink-500/40 rounded-xl">
+                <label className="block text-white font-bold text-lg mb-3 flex items-center gap-2">
+                  <FaImage className="text-pink-300" />
+                  Logo / Foto de Perfil
+                </label>
+                <p className="text-white/60 text-sm mb-4">
+                  Opcional. JPG ou PNG, até 5MB. Ideal 640x640. Aplica a mesma logo em todas as contas selecionadas (precisa de App ID na conta).
+                </p>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    if (file && file.size > 5 * 1024 * 1024) {
+                      toast.error('Logo muito grande. Máximo: 5MB');
+                      e.target.value = '';
+                      return;
+                    }
+                    setLogoFile(file);
+                    if (logoPreview) URL.revokeObjectURL(logoPreview);
+                    setLogoPreview(file ? URL.createObjectURL(file) : null);
+                  }}
+                  className="w-full text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-pink-500 file:text-white file:font-bold hover:file:bg-pink-600"
+                />
+                {logoPreview && (
+                  <div className="mt-4 flex items-center gap-4">
+                    <img
+                      src={logoPreview}
+                      alt="Preview da logo"
+                      className="w-28 h-28 rounded-full object-cover border-2 border-pink-400/50"
+                    />
+                    <div className="text-sm text-white/80">
+                      <div className="font-bold">{logoFile?.name}</div>
+                      <div className="text-white/50">
+                        {logoFile ? `${(logoFile.size / 1024).toFixed(0)} KB` : ''}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLogoFile(null);
+                          if (logoPreview) URL.revokeObjectURL(logoPreview);
+                          setLogoPreview(null);
+                        }}
+                        className="mt-2 text-red-300 hover:text-red-200 font-bold underline"
+                      >
+                        Remover logo
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="block text-white/80 font-medium mb-2">📝 Sobre (About)</label>
                 <textarea

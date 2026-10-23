@@ -97,7 +97,10 @@ export class BulkProfileController {
    */
   async updateBulkProfiles(req: Request, res: Response) {
     try {
-      const { account_ids, profile_data, fields_to_update } = req.body;
+      const { account_ids, profile_data } = req.body;
+      let fields_to_update: string[] = Array.isArray(req.body?.fields_to_update)
+        ? [...req.body.fields_to_update]
+        : [];
 
       console.log('\n📋 ========================================');
       console.log('📋 ATUALIZAÇÃO EM MASSA DE PERFIS');
@@ -105,6 +108,7 @@ export class BulkProfileController {
       console.log(`📊 Total de contas: ${account_ids?.length || 0}`);
       console.log(`📝 Campos a atualizar: ${fields_to_update?.join(', ')}`);
       console.log(`📦 Dados do perfil:`, profile_data);
+      console.log(`🖼️ Logo:`, (req as any).file?.originalname || 'não');
 
       // Validações
       if (!account_ids || !Array.isArray(account_ids) || account_ids.length === 0) {
@@ -129,7 +133,7 @@ export class BulkProfileController {
       }
 
       // Validar campos permitidos
-      const allowedFields = ['about', 'description', 'email', 'address', 'vertical', 'websites'];
+      const allowedFields = ['about', 'description', 'email', 'address', 'vertical', 'websites', 'profile_picture'];
       const invalidFields = fields_to_update.filter((field: string) => !allowedFields.includes(field));
 
       if (invalidFields.length > 0) {
@@ -139,10 +143,23 @@ export class BulkProfileController {
         });
       }
 
+      const logoFile = (req as any).file as
+        | { path: string; mimetype: string; originalname: string }
+        | undefined;
+      if (fields_to_update.includes('profile_picture') && !logoFile) {
+        return res.status(400).json({
+          success: false,
+          error: 'Selecione a imagem da logo para atualizar a foto de perfil.',
+        });
+      }
+      if (logoFile && !fields_to_update.includes('profile_picture')) {
+        fields_to_update.push('profile_picture');
+      }
+
       // Buscar contas selecionadas
       const accountsResult = await tenantQuery(
         req,
-        `SELECT id, name, phone_number, access_token, phone_number_id, is_active 
+        `SELECT id, name, phone_number, access_token, phone_number_id, is_active, app_id
          FROM whatsapp_accounts 
          WHERE id = ANY($1::int[])
          ORDER BY name`,
@@ -173,6 +190,30 @@ export class BulkProfileController {
         console.log(`⚠️  ${inactiveCount} conta(s) inativa(s) serão ignorada(s)`);
       }
 
+      if (fields_to_update.includes('profile_picture')) {
+        const withoutAppId = activeAccounts.filter((acc: any) => !String(acc.app_id || '').trim());
+        if (withoutAppId.length > 0) {
+          return res.status(400).json({
+            success: false,
+            error: `Para enviar a logo, todas as contas precisam de App ID. Sem App ID: ${withoutAppId
+              .map((a: any) => a.name)
+              .slice(0, 5)
+              .join(', ')}${withoutAppId.length > 5 ? '...' : ''}`,
+          });
+        }
+      }
+
+      const profilePayload = {
+        ...profile_data,
+        ...(logoFile
+          ? {
+              logoPath: logoFile.path,
+              logoMimeType: logoFile.mimetype,
+              logoFileName: logoFile.originalname,
+            }
+          : {}),
+      };
+
       // Adicionar todas à fila
       const queueIds: string[] = [];
       const results: any[] = [];
@@ -182,7 +223,7 @@ export class BulkProfileController {
           accountId: account.id,
           accountPhone: account.phone_number,
           accountName: account.name,
-          profileData: profile_data,
+          profileData: profilePayload,
           fieldsToUpdate: fields_to_update,
         });
 
@@ -264,6 +305,10 @@ export class BulkProfileController {
       };
 
       fields_to_update.forEach((field: string) => {
+        if (field === 'profile_picture') {
+          dataToSend.profile_picture = profile_data?.profile_picture_name || 'logo selecionada';
+          return;
+        }
         if (profile_data[field] !== undefined && profile_data[field] !== null) {
           dataToSend[field] = profile_data[field];
         }
@@ -280,6 +325,7 @@ export class BulkProfileController {
           inactiveAccounts: inactiveAccounts.length,
           dataToSend,
           fieldsToUpdate: fields_to_update,
+          includesLogo: fields_to_update.includes('profile_picture'),
           queueInterval,
           estimatedTime,
           estimatedTimeFormatted: `${Math.floor(estimatedTime / 60)}m ${estimatedTime % 60}s`,

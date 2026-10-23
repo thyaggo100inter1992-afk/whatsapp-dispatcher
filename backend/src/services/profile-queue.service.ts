@@ -1,7 +1,10 @@
 import { EventEmitter } from 'events';
+import fs from 'fs';
+import path from 'path';
 import { query } from '../database/connection';
 import axios from 'axios';
 import { getProxyConfigFromAccount, applyProxyToRequest, formatProxyInfo } from '../helpers/proxy.helper';
+import { whatsappService } from './whatsapp.service';
 
 interface QueueItem {
   id: string;
@@ -16,6 +19,9 @@ interface QueueItem {
     address?: string;
     vertical?: string;
     websites?: string[];
+    logoPath?: string;
+    logoMimeType?: string;
+    logoFileName?: string;
   };
   fieldsToUpdate: string[]; // Quais campos atualizar
   error?: string;
@@ -140,18 +146,61 @@ class ProfileQueueService extends EventEmitter {
 
     const account = accountResult.rows[0];
 
-    // Preparar dados para envio (apenas campos selecionados)
+    // Preparar dados para envio (apenas campos selecionados, sem logo*)
     const dataToSend: any = {
       messaging_product: 'whatsapp',
     };
 
     item.fieldsToUpdate.forEach((field: any) => {
+      if (field === 'profile_picture') return;
       if (item.profileData[field] !== undefined && item.profileData[field] !== null) {
         dataToSend[field] = item.profileData[field];
       }
     });
 
-    console.log('📤 Enviando para API:', JSON.stringify(dataToSend, null, 2));
+    // Logo / foto de perfil via Resumable Upload → profile_picture_handle
+    if (item.fieldsToUpdate.includes('profile_picture')) {
+      const logoPath = item.profileData.logoPath;
+      if (!logoPath || !fs.existsSync(logoPath)) {
+        throw new Error('Arquivo da logo não encontrado no servidor');
+      }
+      const appId = String(account.app_id || '').trim();
+      if (!appId) {
+        throw new Error('App ID é obrigatório nesta conta para enviar a logo (Resumable Upload)');
+      }
+
+      const fileBuffer = fs.readFileSync(logoPath);
+      const mimeType = item.profileData.logoMimeType || 'image/jpeg';
+      const fileName = item.profileData.logoFileName || path.basename(logoPath);
+
+      console.log(`🖼️ Upload da logo via Resumable API — ${account.name}`);
+      const upload = await whatsappService.uploadMediaWithAppId(
+        appId,
+        account.access_token,
+        fileBuffer,
+        mimeType,
+        fileName,
+        item.accountId,
+        account.name,
+        account.tenant_id
+      );
+
+      if (!upload.success || !upload.mediaHandle) {
+        throw new Error(upload.error || 'Falha no upload da logo (Resumable API)');
+      }
+
+      dataToSend.profile_picture_handle = upload.mediaHandle;
+    }
+
+    const hasProfilePayload = Object.keys(dataToSend).some((k) => k !== 'messaging_product');
+    if (!hasProfilePayload) {
+      throw new Error('Nenhum dado de perfil para enviar');
+    }
+
+    console.log('📤 Enviando para API:', JSON.stringify({
+      ...dataToSend,
+      profile_picture_handle: dataToSend.profile_picture_handle ? '[handle]' : undefined,
+    }, null, 2));
 
     // Configurar requisição com proxy se disponível
     let requestConfig: any = {
@@ -175,6 +224,15 @@ class ProfileQueueService extends EventEmitter {
     );
 
     console.log('✅ Resposta da API:', response.data);
+
+    if (item.fieldsToUpdate.includes('profile_picture') && dataToSend.profile_picture_handle) {
+      await query(
+        `UPDATE whatsapp_accounts
+         SET updated_at = NOW()
+         WHERE id = $1`,
+        [item.accountId]
+      ).catch(() => undefined);
+    }
   }
 
   // Salvar item no histórico
