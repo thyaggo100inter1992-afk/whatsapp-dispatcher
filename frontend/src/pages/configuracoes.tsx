@@ -4,7 +4,7 @@ import Head from 'next/head';
 import { 
   FaCog, FaPlus, FaEdit, FaTrash, FaCheckCircle, FaTimesCircle, 
   FaSpinner, FaFileAlt, FaWhatsapp, FaCheck, FaTimes, FaBan, FaArrowLeft,
-  FaSquare, FaCheckSquare, FaArrowUp, FaArrowDown, FaSearch, FaFilter, FaSync, FaBell
+  FaSquare, FaCheckSquare, FaArrowUp, FaArrowDown, FaSearch, FaFilter, FaSync, FaBell, FaGlobe
 } from 'react-icons/fa';
 import api, { whatsappAccountsAPI } from '@/services/api';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -107,6 +107,8 @@ export default function Configuracoes() {
   const [filterWebhook, setFilterWebhook] = useState<'all' | 'active' | 'inactive'>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'connected' | 'disconnected'>('all');
   const [filterQuality, setFilterQuality] = useState<'all' | 'GREEN' | 'YELLOW' | 'RED' | 'FLAGGED'>('all');
+  const [filterProxy, setFilterProxy] = useState<'all' | 'with' | 'without'>('all');
+  const [removingProxies, setRemovingProxies] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -448,6 +450,12 @@ export default function Configuracoes() {
       const quality = (account as any).quality_rating;
       if (quality !== filterQuality) return false;
     }
+
+    if (filterProxy !== 'all') {
+      const hasProxy = !!(account.proxy_id);
+      if (filterProxy === 'with' && !hasProxy) return false;
+      if (filterProxy === 'without' && hasProxy) return false;
+    }
     
     return true;
   });
@@ -458,6 +466,63 @@ export default function Configuracoes() {
     if (account.is_active === false) return false;
     return !(webhookStatuses[account.id]?.isActive);
   }).length;
+
+  const proxyWithCount = accounts.filter((account) => {
+    const metaStatus = String((account as any).account_status || '').toUpperCase();
+    if (['BANNED', 'FLAGGED', 'RESTRICTED'].includes(metaStatus)) return false;
+    return !!account.proxy_id;
+  }).length;
+
+  const handleRemoveProxiesBulk = async () => {
+    const selectedInView = filteredAccounts.filter((account) => selectedAccounts.has(account.id) && account.proxy_id);
+    const targets = selectedInView.length > 0
+      ? selectedInView
+      : filteredAccounts.filter((account) => account.proxy_id);
+    if (targets.length === 0) {
+      await confirm({
+        title: 'Nenhum proxy',
+        message: 'Nenhuma conta com proxy nas selecionadas/filtradas.',
+        type: 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+      return;
+    }
+    const ok = await confirm({
+      title: 'Remover proxy em massa',
+      message: `Vai retirar o proxy de ${targets.length} conta(s). As contas passam a enviar sem proxy. Continuar?`,
+      type: 'warning',
+      confirmText: 'Remover proxy',
+      cancelText: 'Cancelar',
+    });
+    if (!ok) return;
+    setRemovingProxies(true);
+    try {
+      const response = await api.post(
+        '/whatsapp-accounts/remove-proxies',
+        { account_ids: targets.map((account) => account.id) },
+        { timeout: 60000 }
+      );
+      await confirm({
+        title: response.data.success ? 'Proxy removido' : 'Atenção',
+        message: response.data.message || 'Concluído.',
+        type: response.data.success ? 'info' : 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+      await loadAccounts({ refreshMeta: false });
+    } catch (error: any) {
+      await confirm({
+        title: 'Remover proxy',
+        message: error.response?.data?.error || error.response?.data?.message || error.message,
+        type: 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+    } finally {
+      setRemovingProxies(false);
+    }
+  };
 
   const loadProxies = async () => {
     try {
@@ -1676,10 +1741,35 @@ export default function Configuracoes() {
                     {subscribingAllWebhooks && bulkWebhookMode === 'fields' ? <FaSpinner className="animate-spin" /> : <FaSync />}
                     Assinar todos os campos (App ID/Secret)
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterProxy(filterProxy === 'with' ? 'all' : 'with')}
+                    className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold border-2 transition-all ${
+                      filterProxy === 'with'
+                        ? 'bg-cyan-500/30 text-cyan-100 border-cyan-400 shadow-lg shadow-cyan-500/20'
+                        : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/20'
+                    }`}
+                  >
+                    <FaGlobe className="text-lg" />
+                    {filterProxy === 'with' ? 'Mostrando só com proxy' : 'Filtrar contas com proxy'}
+                    <span className="ml-1 px-2.5 py-0.5 rounded-lg bg-black/30 text-sm">
+                      {proxyWithCount}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRemoveProxiesBulk}
+                    disabled={removingProxies || proxyWithCount === 0}
+                    className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold border-2 border-red-500/50 bg-red-500/20 text-red-200 hover:bg-red-500/30 disabled:opacity-50"
+                    title="Remove o proxy das contas selecionadas; se nenhuma estiver marcada, remove das filtradas com proxy."
+                  >
+                    {removingProxies ? <FaSpinner className="animate-spin" /> : <FaTimes />}
+                    Retirar proxy das selecionadas / filtradas
+                  </button>
                 </div>
 
                 {/* Filtros */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   {/* Filtro Webhook */}
                   <div>
                     <label className="block text-white/80 text-sm font-bold mb-2">🔗 Webhook</label>
@@ -1727,10 +1817,27 @@ export default function Configuracoes() {
                       <option value="FLAGGED">🚫 Restrita</option>
                     </select>
                   </div>
+
+                  <div>
+                    <label className="block text-white/80 text-sm font-bold mb-2">🌐 Proxy</label>
+                    <select
+                      value={filterProxy}
+                      onChange={(e) => setFilterProxy(e.target.value as any)}
+                      className={`w-full px-4 py-3 bg-dark-700/80 border-2 rounded-xl text-white focus:ring-4 focus:ring-primary-500/30 transition-all ${
+                        filterProxy === 'with'
+                          ? 'border-cyan-500 focus:border-cyan-400'
+                          : 'border-white/20 focus:border-primary-500'
+                      }`}
+                    >
+                      <option value="all">Todos</option>
+                      <option value="with">Com proxy ({proxyWithCount})</option>
+                      <option value="without">Sem proxy</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Contador de Resultados */}
-                {(searchTerm || filterWebhook !== 'all' || filterStatus !== 'all' || filterQuality !== 'all') && (
+                {(searchTerm || filterWebhook !== 'all' || filterStatus !== 'all' || filterQuality !== 'all' || filterProxy !== 'all') && (
                   <div className="flex items-center justify-between p-4 bg-primary-500/10 border-2 border-primary-500/30 rounded-xl">
                     <span className="text-white font-bold">
                       📊 Mostrando {filteredAccounts.length} de {accounts.length} conta(s)
@@ -1741,6 +1848,7 @@ export default function Configuracoes() {
                         setFilterWebhook('all');
                         setFilterStatus('all');
                         setFilterQuality('all');
+                        setFilterProxy('all');
                       }}
                       className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg transition-all border border-red-500/40 font-bold text-sm"
                     >

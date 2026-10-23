@@ -79,6 +79,7 @@ router.post('/test-connection', (req, res) => controller.testConnection(req, res
 
 // Inscrever webhook em todas as WABAs ativas do tenant
 router.post('/subscribe-webhooks-all', (req, res) => controller.subscribeAllWebhooks(req, res));
+router.post('/remove-proxies', (req, res) => proxyController.removeProxiesBulk(req, res));
 
 // Buscar detalhes da conta por ID
 router.get('/:id/details', (req, res) => controller.getAccountDetails(req, res));

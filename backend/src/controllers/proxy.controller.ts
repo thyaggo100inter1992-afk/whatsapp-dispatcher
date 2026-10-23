@@ -342,6 +342,55 @@ export class ProxyController {
    * DELETE /api/whatsapp-accounts/:id/proxy
    * Remover configuração de proxy
    */
+  async removeProxiesBulk(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      const requestedIds = Array.isArray(req.body?.account_ids)
+        ? req.body.account_ids.map((id: any) => parseInt(id, 10)).filter((id: number) => Number.isFinite(id))
+        : [];
+
+      let result;
+      if (requestedIds.length > 0) {
+        result = await tenantQuery(
+          req,
+          `UPDATE whatsapp_accounts
+           SET proxy_id = NULL, updated_at = NOW()
+           WHERE tenant_id = $1
+             AND proxy_id IS NOT NULL
+             AND id = ANY($2::int[])
+           RETURNING id, name, phone_number`,
+          [tenantId, requestedIds]
+        );
+      } else {
+        result = await tenantQuery(
+          req,
+          `UPDATE whatsapp_accounts
+           SET proxy_id = NULL, updated_at = NOW()
+           WHERE tenant_id = $1
+             AND proxy_id IS NOT NULL
+           RETURNING id, name, phone_number`,
+          [tenantId]
+        );
+      }
+
+      const removed = result.rows.length;
+      return res.json({
+        success: true,
+        message: removed
+          ? `Proxy removido de ${removed} conta(s).`
+          : 'Nenhuma das contas informadas tinha proxy.',
+        data: { removed, accounts: result.rows },
+      });
+    } catch (error: any) {
+      console.error('Erro ao remover proxies em massa:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
   async deleteProxyConfig(req: Request, res: Response) {
     try {
       const { id } = req.params;

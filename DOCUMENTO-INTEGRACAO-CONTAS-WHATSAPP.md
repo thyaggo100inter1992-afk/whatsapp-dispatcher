@@ -61,6 +61,7 @@ Todas as rotas abaixo estão em:
 | Setar todos os campos de novo + confirmar | `POST` | `/whatsapp-accounts/{id}/webhook-fields/resubscribe` |
 | Status webhook (1 conta) | `GET` | `/webhook/status?account_id={id}&period=24h` |
 | Status webhook (lote) | `GET` | `/webhook/status-batch?period=24h` |
+| Remover proxy em massa | `POST` | `/whatsapp-accounts/remove-proxies` |
 
 ### Inscrever webhook em lote
 
@@ -259,6 +260,17 @@ Query de analytics: use os mesmos filtros de data da tela (`start`, `end` ou per
 | Proxy da conta (salvar) | `POST` | `/whatsapp-accounts/{id}/proxy` |
 | Proxy da conta (testar) | `POST` | `/whatsapp-accounts/{id}/proxy/test` |
 | Proxy da conta (remover) | `DELETE` | `/whatsapp-accounts/{id}/proxy` |
+| Remover proxy em massa | `POST` | `/whatsapp-accounts/remove-proxies` |
+
+`POST /api/integration/v1/whatsapp-accounts/remove-proxies`
+
+```json
+{
+  "account_ids": [8, 9, 25]
+}
+```
+
+Sem `account_ids`, remove o proxy de **todas** as contas do tenant que tiverem proxy.
 
 ---
 

@@ -118,6 +118,7 @@ router.get('/whatsapp-accounts/active', (req, res) => accounts.findActive(req, r
 router.get('/whatsapp-accounts/status', (req, res) => accounts.getAccountsStatus(req, res));
 router.post('/whatsapp-accounts/test-connection', (req, res) => accounts.testConnection(req, res));
 router.post('/whatsapp-accounts/subscribe-webhooks-all', (req, res) => accounts.subscribeAllWebhooks(req, res));
+router.post('/whatsapp-accounts/remove-proxies', (req, res) => accountProxy.removeProxiesBulk(req, res));
 router.post('/whatsapp-accounts/deactivate-multiple', (req, res) => accounts.deactivateMultiple(req, res));
 router.post('/whatsapp-accounts/activate-multiple', (req, res) => accounts.activateMultiple(req, res));
 router.post('/whatsapp-accounts/deactivate-all', (req, res) => accounts.deactivateAll(req, res));
