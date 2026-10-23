@@ -41,6 +41,7 @@ export default function ApiStatus() {
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [hideDisconnected, setHideDisconnected] = useState(false);
+  const [summaryFilter, setSummaryFilter] = useState<'total' | 'active' | 'connected' | 'messages' | null>(null);
 
   useEffect(() => {
     loadAccountsStatus();
@@ -162,6 +163,30 @@ export default function ApiStatus() {
     return badStatus || badQuality || !isApiConnected(account);
   };
 
+  const toggleSummaryFilter = (filter: 'total' | 'active' | 'connected' | 'messages') => {
+    setSummaryFilter((current) => (current === filter ? null : filter));
+  };
+
+  const matchesSummaryFilter = (account: AccountStatus) => {
+    if (!summaryFilter || summaryFilter === 'total') return true;
+    if (summaryFilter === 'active') return account.is_active && !isBannedAccount(account);
+    if (summaryFilter === 'connected') return isApiConnected(account);
+    if (summaryFilter === 'messages') return account.messages_sent_today > 0;
+    return true;
+  };
+
+  const visibleAccounts = accounts.filter((account) => {
+    if (!matchesSummaryFilter(account)) return false;
+    if (!hideDisconnected) return true;
+    const isDisconnected = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'].includes(account.account_status) || !isApiConnected(account);
+    return !isDisconnected;
+  });
+
+  const summaryCardClass = (filter: 'total' | 'active' | 'connected' | 'messages', selectedBorder: string, idleBorder: string) =>
+    `text-left w-full bg-dark-800/60 border-2 rounded-xl p-6 transition-all cursor-pointer hover:scale-[1.02] ${
+      summaryFilter === filter ? `${selectedBorder} ring-2 ring-white/20` : idleBorder
+    }`;
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 flex items-center justify-center">
@@ -240,39 +265,48 @@ export default function ApiStatus() {
           </div>
 
           {/* RESUMO RÁPIDO */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-            <div className="bg-dark-800/60 border-2 border-white/10 rounded-xl p-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <button
+              type="button"
+              onClick={() => toggleSummaryFilter('total')}
+              className={summaryCardClass('total', 'border-white/60', 'border-white/10')}
+            >
               <div className="text-white/60 text-sm font-bold mb-2">TOTAL DE CONTAS</div>
               <div className="text-4xl font-black text-white">{accounts.length}</div>
-            </div>
+            </button>
 
-            <div className="bg-dark-800/60 border-2 border-green-500/40 rounded-xl p-6">
+            <button
+              type="button"
+              onClick={() => toggleSummaryFilter('active')}
+              className={summaryCardClass('active', 'border-green-400', 'border-green-500/40')}
+            >
               <div className="text-green-300 text-sm font-bold mb-2">ATIVAS</div>
               <div className="text-4xl font-black text-green-400">
                 {accounts.filter(a => a.is_active && !isBannedAccount(a)).length}
               </div>
-            </div>
+            </button>
 
-            <div className="bg-dark-800/60 border-2 border-cyan-500/40 rounded-xl p-6">
+            <button
+              type="button"
+              onClick={() => toggleSummaryFilter('connected')}
+              className={summaryCardClass('connected', 'border-cyan-300', 'border-cyan-500/40')}
+            >
               <div className="text-cyan-300 text-sm font-bold mb-2">CONECTADAS</div>
               <div className="text-4xl font-black text-cyan-400">
                 {accounts.filter(a => isApiConnected(a)).length}
               </div>
-            </div>
+            </button>
 
-            <div className="bg-dark-800/60 border-2 border-red-500/40 rounded-xl p-6">
-              <div className="text-red-300 text-sm font-bold mb-2">BANIDAS</div>
-              <div className="text-4xl font-black text-red-400">
-                {accounts.filter(a => isBannedAccount(a)).length}
-              </div>
-            </div>
-
-            <div className="bg-dark-800/60 border-2 border-blue-500/40 rounded-xl p-6">
+            <button
+              type="button"
+              onClick={() => toggleSummaryFilter('messages')}
+              className={summaryCardClass('messages', 'border-blue-300', 'border-blue-500/40')}
+            >
               <div className="text-blue-300 text-sm font-bold mb-2">MENSAGENS HOJE</div>
               <div className="text-4xl font-black text-blue-400">
                 {accounts.reduce((sum, a) => sum + a.messages_sent_today, 0)}
               </div>
-            </div>
+            </button>
           </div>
 
           {/* GRID DE CARDS DAS CONTAS */}
@@ -283,16 +317,23 @@ export default function ApiStatus() {
                 Nenhuma conta configurada ainda
               </p>
             </div>
+          ) : visibleAccounts.length === 0 ? (
+            <div className="bg-dark-800/60 border-2 border-white/10 rounded-2xl p-20 text-center">
+              <div className="text-6xl mb-6">🔍</div>
+              <p className="text-2xl text-white/70 font-medium">
+                Nenhuma conta neste filtro
+              </p>
+              <button
+                type="button"
+                onClick={() => setSummaryFilter(null)}
+                className="mt-6 px-6 py-3 rounded-xl font-bold bg-dark-700 border-2 border-white/20 text-white/80 hover:text-white"
+              >
+                Mostrar todas
+              </button>
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-8">
-              {accounts
-                .filter(account => {
-                  if (!hideDisconnected) return true;
-                  // Ocultar contas com problemas de conexão
-                  const isDisconnected = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'].includes(account.account_status) || !isApiConnected(account);
-                  return !isDisconnected;
-                })
-                .map((account) => {
+              {visibleAccounts.map((account) => {
                 const accountHasProblems = hasProblems(account);
                 
                 return (
