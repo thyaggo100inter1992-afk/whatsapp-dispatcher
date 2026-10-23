@@ -17,10 +17,49 @@ interface WhatsAppAccount {
   phone_number_id: string;
   business_account_id?: string;
   app_id?: string;
+  app_secret?: string;
   webhook_verify_token?: string;
+  webhook_fields_subscribed?: string;
   is_active: boolean;
   proxy_id?: number | null;
 }
+
+/** Campos de webhook Meta — padrão = todos marcados */
+const ALL_WHATSAPP_WEBHOOK_FIELDS = [
+  'account_alerts',
+  'account_review_update',
+  'account_settings_update',
+  'account_update',
+  'automatic_events',
+  'business_capability_update',
+  'business_status_update',
+  'business_username_update',
+  'calls',
+  'flows',
+  'group_lifecycle_update',
+  'group_participant_update',
+  'group_settings_update',
+  'group_status_update',
+  'history',
+  'message_echoes',
+  'message_template_components_update',
+  'message_template_quality_update',
+  'message_template_status_update',
+  'messages',
+  'messaging_handovers',
+  'partner_solutions',
+  'payment_configuration_update',
+  'phone_number_name_update',
+  'phone_number_quality_update',
+  'security',
+  'smb_app_state_sync',
+  'smb_message_echoes',
+  'standby',
+  'template_category_update',
+  'template_correct_category_detection',
+  'tracking_events',
+  'user_preferences',
+];
 
 interface Proxy {
   id: number;
@@ -67,10 +106,14 @@ export default function Configuracoes() {
     phone_number_id: '',
     business_account_id: '',
     app_id: '',
+    app_secret: '',
     webhook_verify_token: '',
     is_active: true,
     proxy_id: null as number | null,
+    subscribe_all_webhooks: true,
+    webhook_fields: [...ALL_WHATSAPP_WEBHOOK_FIELDS] as string[],
   });
+  const [showWebhookFields, setShowWebhookFields] = useState(false);
 
   useEffect(() => {
     loadAccounts();
@@ -659,6 +702,13 @@ export default function Configuracoes() {
 
   const handleEdit = (account: WhatsAppAccount) => {
     setEditingAccount(account);
+    const savedFields = String(account.webhook_fields_subscribed || '')
+      .split(',')
+      .map((f) => f.trim())
+      .filter(Boolean);
+    const fields =
+      savedFields.length > 0 ? savedFields : [...ALL_WHATSAPP_WEBHOOK_FIELDS];
+    const allSelected = fields.length >= ALL_WHATSAPP_WEBHOOK_FIELDS.length;
     setFormData({
       name: account.name,
       phone_number: account.phone_number,
@@ -666,10 +716,14 @@ export default function Configuracoes() {
       phone_number_id: account.phone_number_id,
       business_account_id: account.business_account_id || '',
       app_id: account.app_id || '',
+      app_secret: account.app_secret || '',
       webhook_verify_token: account.webhook_verify_token || '',
       is_active: account.is_active,
       proxy_id: account.proxy_id || null,
+      subscribe_all_webhooks: allSelected,
+      webhook_fields: fields,
     });
+    setShowWebhookFields(!allSelected);
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -786,12 +840,39 @@ export default function Configuracoes() {
       phone_number_id: '',
       business_account_id: '',
       app_id: '',
+      app_secret: '',
       webhook_verify_token: '',
       is_active: true,
       proxy_id: null,
+      subscribe_all_webhooks: true,
+      webhook_fields: [...ALL_WHATSAPP_WEBHOOK_FIELDS],
     });
+    setShowWebhookFields(false);
     setEditingAccount(null);
     setShowForm(false);
+  };
+
+  const toggleWebhookField = (field: string) => {
+    setFormData((prev) => {
+      const has = prev.webhook_fields.includes(field);
+      const next = has
+        ? prev.webhook_fields.filter((f) => f !== field)
+        : [...prev.webhook_fields, field];
+      const allOn = next.length >= ALL_WHATSAPP_WEBHOOK_FIELDS.length;
+      return {
+        ...prev,
+        webhook_fields: next,
+        subscribe_all_webhooks: allOn,
+      };
+    });
+  };
+
+  const selectAllWebhookFields = () => {
+    setFormData((prev) => ({
+      ...prev,
+      subscribe_all_webhooks: true,
+      webhook_fields: [...ALL_WHATSAPP_WEBHOOK_FIELDS],
+    }));
   };
 
   if (loading) {
@@ -977,10 +1058,11 @@ export default function Configuracoes() {
 
                 <div>
                   <label className="block text-lg font-bold mb-3 text-white">
-                    Business Account ID
+                    Business Account ID (WABA) *
                   </label>
                   <input
                     type="text"
+                    required
                     className="w-full px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all font-mono"
                     placeholder="987654321098765"
                     value={formData.business_account_id}
@@ -990,21 +1072,114 @@ export default function Configuracoes() {
 
                 <div>
                   <label className="block text-lg font-bold mb-3 text-white flex items-center gap-2">
-                    📱 Application ID (App ID)
-                    <span className="text-sm font-normal text-yellow-400">
-                      - Necessário para templates com mídia
-                    </span>
+                    Application ID (App ID) *
                   </label>
                   <input
                     type="text"
+                    required
                     className="w-full px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all font-mono"
                     placeholder="123456789012345"
                     value={formData.app_id}
                     onChange={(e) => setFormData({ ...formData, app_id: e.target.value })}
                   />
                   <p className="text-sm text-white/60 mt-2">
-                    💡 Use para criar templates com imagem via Resumable Upload API
+                    Obrigatório para templates com mídia e assinatura de webhooks
                   </p>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-lg font-bold mb-3 text-white">
+                    App Secret *
+                  </label>
+                  <input
+                    type="password"
+                    required={!editingAccount}
+                    className="w-full px-6 py-4 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all font-mono"
+                    placeholder={editingAccount ? 'Deixe em branco para manter o atual' : 'App Secret do aplicativo Meta'}
+                    value={formData.app_secret}
+                    onChange={(e) => setFormData({ ...formData, app_secret: e.target.value })}
+                  />
+                  <p className="text-sm text-white/60 mt-2">
+                    Meta for Developers → Configurações do app → Básico → Chave secreta do app
+                  </p>
+                </div>
+
+                <div className="md:col-span-2 bg-blue-500/10 border-2 border-blue-500/40 rounded-xl p-6 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-xl font-black text-white">Webhooks da Meta</h3>
+                      <p className="text-sm text-blue-200/80 mt-1">
+                        Por padrão <strong>todos</strong> ficam marcados. Só desmarque se quiser ativar alguns.
+                      </p>
+                    </div>
+                    <span className="px-3 py-1 rounded-lg bg-green-500/20 text-green-300 border border-green-500/40 font-bold text-sm">
+                      {formData.subscribe_all_webhooks
+                        ? `Todos (${ALL_WHATSAPP_WEBHOOK_FIELDS.length})`
+                        : `${formData.webhook_fields.length} de ${ALL_WHATSAPP_WEBHOOK_FIELDS.length}`}
+                    </span>
+                  </div>
+
+                  <label className="flex items-center gap-3 cursor-pointer p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={formData.subscribe_all_webhooks}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          selectAllWebhookFields();
+                          setShowWebhookFields(false);
+                        } else {
+                          setFormData({ ...formData, subscribe_all_webhooks: false });
+                          setShowWebhookFields(true);
+                        }
+                      }}
+                      className="w-6 h-6 rounded border-2 border-white/20 focus:ring-2 focus:ring-primary-500"
+                    />
+                    <span className="text-lg font-bold text-white">
+                      Marcar todos os webhooks (padrão)
+                    </span>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowWebhookFields((v) => !v);
+                      if (!showWebhookFields) {
+                        setFormData({ ...formData, subscribe_all_webhooks: false });
+                      }
+                    }}
+                    className="text-blue-300 hover:text-blue-200 font-bold text-sm underline"
+                  >
+                    {showWebhookFields
+                      ? 'Ocultar lista de campos'
+                      : 'Escolher só alguns webhooks'}
+                  </button>
+
+                  {showWebhookFields && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-72 overflow-y-auto p-3 bg-dark-800/80 rounded-xl border border-white/10">
+                      {ALL_WHATSAPP_WEBHOOK_FIELDS.map((field) => (
+                        <label
+                          key={field}
+                          className="flex items-center gap-2 text-sm text-white/90 cursor-pointer hover:bg-white/5 rounded-lg px-2 py-1.5"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.webhook_fields.includes(field)}
+                            onChange={() => toggleWebhookField(field)}
+                            className="w-4 h-4 rounded"
+                          />
+                          <span className="font-mono text-xs">{field}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={selectAllWebhookFields}
+                    className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-200 border border-green-500/40 rounded-lg font-bold text-sm"
+                  >
+                    Remarcar todos
+                  </button>
                 </div>
 
                 <div className="md:col-span-2">

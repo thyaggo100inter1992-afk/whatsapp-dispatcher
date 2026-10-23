@@ -9,7 +9,9 @@ export interface WhatsAppAccount {
   phone_number_id: string;
   business_account_id?: string;
   app_id?: string;
+  app_secret?: string;
   webhook_verify_token?: string;
+  webhook_fields_subscribed?: string;
   is_active: boolean;
   display_order?: number;
   proxy_id?: number | null;
@@ -26,10 +28,13 @@ export class WhatsAppAccountModel {
     );
     const nextOrder = (maxOrderResult.rows[0]?.max_order || 0) + 10;
     
+    await query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS app_secret TEXT`).catch(() => undefined);
+    await query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS webhook_fields_subscribed TEXT`).catch(() => undefined);
+
     const result = await query(
       `INSERT INTO whatsapp_accounts 
-       (name, phone_number, access_token, phone_number_id, business_account_id, app_id, webhook_verify_token, is_active, display_order, proxy_id, tenant_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       (name, phone_number, access_token, phone_number_id, business_account_id, app_id, app_secret, webhook_verify_token, webhook_fields_subscribed, is_active, display_order, proxy_id, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`,
       [
         account.name,
@@ -38,7 +43,9 @@ export class WhatsAppAccountModel {
         account.phone_number_id,
         account.business_account_id,
         account.app_id,
+        account.app_secret || null,
         account.webhook_verify_token,
+        account.webhook_fields_subscribed || null,
         account.is_active,
         nextOrder,
         account.proxy_id || null,

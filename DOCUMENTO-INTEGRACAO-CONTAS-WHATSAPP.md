@@ -99,15 +99,24 @@ Todas as rotas abaixo estão em:
   "phone_number_id": "772680659260321",
   "business_account_id": "2163147244203490",
   "app_id": "4343644755904651",
+  "app_secret": "xxxxxxxx",
+  "subscribe_all_webhooks": true,
   "proxy_id": 4,
   "is_active": true
 }
 ```
 
-Campos obrigatórios: `name`, `phone_number`, `access_token`, `phone_number_id`.  
-Opcionais: `business_account_id`, `app_id`, `webhook_verify_token`, `proxy_id`, `is_active`.
+Campos obrigatórios: `name`, `phone_number`, `access_token`, `phone_number_id`, `business_account_id`, `app_id`, `app_secret`.  
+Opcionais: `webhook_verify_token`, `proxy_id`, `is_active`, `webhook_fields` (lista).
 
-Ao criar/atualizar, o disparador **já inscreve o App na WABA** (webhook na Meta), igual à tela.
+`subscribe_all_webhooks` (padrão **true**): marca **todos** os campos de webhook.  
+Se `false`, envie `webhook_fields: ["messages", "account_update", ...]`.
+
+Ao criar/atualizar, o disparador:
+1. Inscreve o App na WABA (`subscribed_apps`)
+2. Tenta assinar os campos de webhook do App (`/{app-id}/subscriptions`)
+
+Obs.: a Meta pode exigir que os toggles do App Dashboard sejam ligados **uma vez por App**; a inscrição da WABA por conta continua automática.
 
 ### Atualizar conta
 
