@@ -83,6 +83,10 @@ router.post('/subscribe-webhooks-all', (req, res) => controller.subscribeAllWebh
 // Buscar detalhes da conta por ID
 router.get('/:id/details', (req, res) => controller.getAccountDetails(req, res));
 
+// Nome do App Meta (App Dashboard)
+router.get('/:id/meta-app', (req, res) => controller.getMetaApp(req, res));
+router.post('/:id/meta-app', (req, res) => controller.updateMetaApp(req, res));
+
 // Inscrever App Meta na WABA (necessário para webhook de contas novas)
 router.post('/:id/subscribe-webhook', (req, res) => controller.subscribeWebhook(req, res));
 

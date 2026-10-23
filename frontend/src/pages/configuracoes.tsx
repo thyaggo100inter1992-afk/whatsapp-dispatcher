@@ -96,6 +96,11 @@ export default function Configuracoes() {
   const [webhookFieldsStatus, setWebhookFieldsStatus] = useState<{[key: number]: any}>({});
   const [checkingWebhookFieldsId, setCheckingWebhookFieldsId] = useState<number | null>(null);
   const [resubscribingFieldsId, setResubscribingFieldsId] = useState<number | null>(null);
+  const [metaAppInfo, setMetaAppInfo] = useState<{ id: string; name: string; link?: string | null } | null>(null);
+  const [metaAppNameEdit, setMetaAppNameEdit] = useState('');
+  const [loadingMetaApp, setLoadingMetaApp] = useState(false);
+  const [savingMetaApp, setSavingMetaApp] = useState(false);
+  const [metaAppByAccount, setMetaAppByAccount] = useState<{ [key: number]: string }>({});
   
   // 🔍 BUSCA E FILTROS
   const [searchTerm, setSearchTerm] = useState('');
@@ -845,6 +850,106 @@ export default function Configuracoes() {
     setShowWebhookFields(!allSelected);
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (account.id && (account.app_id || account.app_secret)) {
+      loadMetaApp(account.id);
+    } else {
+      setMetaAppInfo(null);
+      setMetaAppNameEdit('');
+    }
+  };
+
+  const loadMetaApp = async (accountId: number) => {
+    setLoadingMetaApp(true);
+    try {
+      const response = await api.get(`/whatsapp-accounts/${accountId}/meta-app`, { timeout: 30000 });
+      if (response.data.success && response.data.data) {
+        setMetaAppInfo(response.data.data);
+        setMetaAppNameEdit(response.data.data.name || '');
+        const appName = response.data.data.name || '';
+        setMetaAppByAccount((prev) => {
+          const next = { ...prev, [accountId]: appName };
+          const source = accounts.find((a) => a.id === accountId);
+          if (source?.app_id && appName) {
+            accounts
+              .filter((a) => a.app_id === source.app_id)
+              .forEach((a) => {
+                next[a.id] = appName;
+              });
+          }
+          return next;
+        });
+      } else {
+        setMetaAppInfo(null);
+        setMetaAppNameEdit('');
+      }
+    } catch {
+      setMetaAppInfo(null);
+    } finally {
+      setLoadingMetaApp(false);
+    }
+  };
+
+  const handleSaveMetaAppName = async () => {
+    if (!editingAccount) return;
+    const nextName = metaAppNameEdit.trim();
+    if (nextName.length < 2) {
+      await confirm({
+        title: 'Nome do App',
+        message: 'Informe o nome do aplicativo (mínimo 2 caracteres).',
+        type: 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+      return;
+    }
+    const ok = await confirm({
+      title: 'Alterar nome do App Meta',
+      message:
+        'Isso muda o nome no App Dashboard da Meta (não é o nome de exibição do WhatsApp). Todas as contas com o mesmo App ID passam a ver o nome novo. Continuar?',
+      type: 'warning',
+      confirmText: 'Alterar na Meta',
+      cancelText: 'Cancelar',
+    });
+    if (!ok) return;
+    setSavingMetaApp(true);
+    try {
+      const response = await api.post(
+        `/whatsapp-accounts/${editingAccount.id}/meta-app`,
+        { app_name: nextName },
+        { timeout: 30000 }
+      );
+      if (response.data.data) {
+        setMetaAppInfo(response.data.data);
+        setMetaAppNameEdit(response.data.data.name || nextName);
+        const appName = response.data.data.name || nextName;
+        setMetaAppByAccount((prev) => {
+          const next = { ...prev, [editingAccount.id]: appName };
+          accounts
+            .filter((a) => a.app_id && a.app_id === editingAccount.app_id)
+            .forEach((a) => {
+              next[a.id] = appName;
+            });
+          return next;
+        });
+      }
+      await confirm({
+        title: response.data.success ? 'Nome do App' : 'Atenção',
+        message: response.data.message || 'Concluído.',
+        type: response.data.success ? 'info' : 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+    } catch (error: any) {
+      await confirm({
+        title: 'Nome do App',
+        message: error.response?.data?.message || error.response?.data?.error || error.message,
+        type: 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+    } finally {
+      setSavingMetaApp(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -969,6 +1074,8 @@ export default function Configuracoes() {
     setShowWebhookFields(false);
     setEditingAccount(null);
     setShowForm(false);
+    setMetaAppInfo(null);
+    setMetaAppNameEdit('');
   };
 
   const toggleWebhookField = (field: string) => {
@@ -1222,6 +1329,51 @@ export default function Configuracoes() {
                     Meta for Developers → Configurações do app → Básico → Chave secreta do app
                   </p>
                 </div>
+
+                {editingAccount && (
+                  <div className="md:col-span-2 bg-violet-500/10 border-2 border-violet-500/40 rounded-xl p-6 space-y-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <h3 className="text-xl font-black text-white">Nome do aplicativo Meta</h3>
+                        <p className="text-sm text-violet-200/80 mt-1">
+                          Nome no App Dashboard (não é o nome de exibição do WhatsApp). Trocar vale para todas as contas com o mesmo App ID.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => loadMetaApp(editingAccount.id)}
+                        disabled={loadingMetaApp}
+                        className="px-4 py-2 rounded-lg bg-violet-500/20 border border-violet-400/40 text-violet-100 font-bold disabled:opacity-50"
+                      >
+                        {loadingMetaApp ? 'Buscando...' : 'Atualizar nome'}
+                      </button>
+                    </div>
+                    <div className="text-white/80 text-sm">
+                      Atual na Meta:{' '}
+                      <span className="font-bold text-white">
+                        {loadingMetaApp ? '...' : metaAppInfo?.name || 'não carregado'}
+                      </span>
+                    </div>
+                    <div className="flex flex-col md:flex-row gap-3">
+                      <input
+                        type="text"
+                        maxLength={32}
+                        className="flex-1 px-6 py-3 text-lg bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-violet-500"
+                        placeholder="Novo nome do App"
+                        value={metaAppNameEdit}
+                        onChange={(e) => setMetaAppNameEdit(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveMetaAppName}
+                        disabled={savingMetaApp || !metaAppNameEdit.trim()}
+                        className="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold disabled:opacity-50"
+                      >
+                        {savingMetaApp ? 'Salvando...' : 'Alterar na Meta'}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="md:col-span-2 bg-blue-500/10 border-2 border-blue-500/40 rounded-xl p-6 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1723,6 +1875,12 @@ export default function Configuracoes() {
                         <div className="text-white font-bold text-sm font-mono truncate">{account.phone_number_id}</div>
                       </div>
                     </div>
+                    {metaAppByAccount[account.id] && (
+                      <div className="bg-violet-500/10 border border-violet-500/30 rounded-xl p-3 mb-6">
+                        <div className="text-violet-200/80 text-xs font-medium mb-1">Aplicativo Meta</div>
+                        <div className="text-white font-bold truncate">{metaAppByAccount[account.id]}</div>
+                      </div>
+                    )}
 
                     {/* BAIXO: BOTÕES - MAIORES E ALINHADOS */}
                     <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">

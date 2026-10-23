@@ -20,6 +20,7 @@ import {
   subscribeWhatsAppWebhookFields,
   WHATSAPP_WEBHOOK_FIELDS,
 } from '../helpers/whatsapp-webhook-fields.helper';
+import { fetchMetaAppInfo, updateMetaAppName } from '../helpers/whatsapp-meta-app.helper';
 
 export class WhatsAppAccountController {
   async create(req: Request, res: Response) {
@@ -648,6 +649,53 @@ export class WhatsAppAccountController {
         message: webhookSubscribe.success
           ? 'Conta atualizada e webhook da Meta verificado.'
           : `Conta atualizada. Atenção no webhook: ${webhookSubscribe.message}`,
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  async getMetaApp(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+      const account = await WhatsAppAccountModel.findById(parseInt(req.params.id), tenantId);
+      if (!account) {
+        return res.status(404).json({ success: false, error: 'Conta não encontrada' });
+      }
+      const appId = String(req.query?.app_id || account.app_id || '').trim();
+      const appSecret = String(req.query?.app_secret || account.app_secret || '').trim();
+      const result = await fetchMetaAppInfo({ appId, appSecret });
+      return res.status(result.success ? 200 : 400).json({
+        success: result.success,
+        message: result.message,
+        data: result.data,
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  async updateMetaApp(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+      const account = await WhatsAppAccountModel.findById(parseInt(req.params.id), tenantId);
+      if (!account) {
+        return res.status(404).json({ success: false, error: 'Conta não encontrada' });
+      }
+      const appId = String(req.body?.app_id || account.app_id || '').trim();
+      const appSecret = String(req.body?.app_secret || account.app_secret || '').trim();
+      const appName = String(req.body?.app_name || req.body?.name || '').trim();
+      const result = await updateMetaAppName({ appId, appSecret, appName });
+      return res.status(result.success ? 200 : 400).json({
+        success: result.success,
+        message: result.message,
+        data: result.data,
       });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });

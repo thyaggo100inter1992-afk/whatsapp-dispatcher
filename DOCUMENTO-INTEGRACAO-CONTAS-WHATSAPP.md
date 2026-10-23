@@ -154,6 +154,39 @@ Mesmo body do criar.
 | Dados da conta | `GET` | `/whatsapp-accounts/{id}` |
 | Atualizar dados | `PUT` | `/whatsapp-accounts/{id}` |
 | Detalhes Meta | `GET` | `/whatsapp-accounts/{id}/details` |
+| Nome do App Meta | `GET` | `/whatsapp-accounts/{id}/meta-app` |
+| Alterar nome do App Meta | `POST` | `/whatsapp-accounts/{id}/meta-app` |
+
+### Nome do aplicativo Meta (App Dashboard)
+
+Não é o **nome de exibição** do WhatsApp. É o nome do App em **Meta for Developers → Configurações → Básico**. Precisa de **App ID + App Secret** na conta. Alterar vale para **todas** as contas/WABAs ligadas ao mesmo App ID. A Meta pode recusar se o App estiver Live ou o nome for inválido.
+
+`GET /api/integration/v1/whatsapp-accounts/{id}/meta-app`
+
+```json
+{
+  "success": true,
+  "message": "App: NettSistemas",
+  "data": {
+    "id": "4343644755904651",
+    "name": "NettSistemas",
+    "app_name": "NettSistemas",
+    "link": "https://www.facebook.com/games/?app_id=4343644755904651"
+  }
+}
+```
+
+`POST /api/integration/v1/whatsapp-accounts/{id}/meta-app`
+
+```json
+{
+  "app_name": "NettSistemas Oficial"
+}
+```
+
+Opcional no POST: `app_id`, `app_secret` (senão usa os gravados na conta). Nome: 2 a 32 caracteres.
+
+---
 
 ### Perfil
 
