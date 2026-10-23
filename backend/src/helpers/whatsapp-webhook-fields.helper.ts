@@ -2,6 +2,13 @@ import axios from 'axios';
 import { pool } from '../database/connection';
 
 /** Campos de webhook WhatsApp (App Dashboard / Meta). Padrão = todos. */
+const GRAPH_VERSION = 'v23.0';
+
+/** Alias quando o nome no Dashboard/API muda (ex.: grupos). */
+const WEBHOOK_FIELD_ALIASES: Record<string, string[]> = {
+  group_participant_update: ['group_participants_update'],
+};
+
 export const WHATSAPP_WEBHOOK_FIELDS = [
   'account_alerts',
   'account_review_update',
@@ -82,7 +89,13 @@ export async function subscribeWhatsAppWebhookFields(opts: {
   callbackUrl: string;
   verifyToken: string;
   fields?: string[] | null;
-}): Promise<{ success: boolean; message: string; fields: string[]; dashboardOnly?: boolean }> {
+}): Promise<{
+  success: boolean;
+  message: string;
+  fields: string[];
+  refused?: Array<{ field: string; error: string }>;
+  dashboardOnly?: boolean;
+}> {
   const appId = String(opts.appId || '').trim();
   const appSecret = String(opts.appSecret || '').trim();
   const callbackUrl = String(opts.callbackUrl || '').trim();
@@ -101,46 +114,106 @@ export async function subscribeWhatsAppWebhookFields(opts: {
 
   const appToken = `${appId}|${appSecret}`;
 
-  try {
+  const postFields = async (list: string[]) => {
     const response = await axios.post(
-      `https://graph.facebook.com/v21.0/${encodeURIComponent(appId)}/subscriptions`,
+      `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(appId)}/subscriptions`,
       null,
       {
         params: {
           object: 'whatsapp_business_account',
           callback_url: callbackUrl,
           verify_token: verifyToken,
-          fields: fields.join(','),
+          fields: list.join(','),
           include_values: true,
           access_token: appToken,
         },
         timeout: 30000,
       }
     );
+    return response.data?.success === true || response.status < 300;
+  };
 
-    const ok = response.data?.success === true || response.status < 300;
+  const metaError = (error: any) => {
+    const fb = error?.response?.data?.error;
+    return {
+      fb,
+      msg: String(fb?.message || error?.message || 'Falha ao assinar campos de webhook'),
+    };
+  };
+
+  try {
+    const ok = await postFields(fields);
     return {
       success: ok,
       fields,
+      refused: [],
       message: ok
         ? `Campos de webhook assinados na Meta (${fields.length}).`
         : 'Meta não confirmou a assinatura dos campos.',
     };
   } catch (error: any) {
-    const fb = error?.response?.data?.error;
-    const msg = String(fb?.message || error?.message || 'Falha ao assinar campos de webhook');
-    // Meta bloqueia WhatsApp em /subscriptions — campos ficam só no Dashboard
-    const dashboardOnly =
-      /not supported|app dashboard|whatsapp/i.test(msg) || Number(fb?.code) === 100;
+    const { fb, msg } = metaError(error);
+    console.warn('⚠️ subscribeWhatsAppWebhookFields lote:', msg, fb || '');
 
-    console.warn('⚠️ subscribeWhatsAppWebhookFields:', msg, fb || '');
+    // Lote com campo inválido faz a Meta recusar TUDO. Regrava o que já está ok e tenta o resto 1 a 1.
+    const current = await fetchWhatsAppWebhookSubscriptions({
+      appId,
+      appSecret,
+      expectedFields: fields,
+    });
+    let working = current.subscribed.filter(Boolean);
+    if (working.length === 0) {
+      working = fields.filter((f) => !['message_echoes', 'messaging_handovers', 'standby'].includes(f));
+      try {
+        await postFields(working);
+      } catch (e: any) {
+        console.warn('⚠️ fallback sem messenger-only:', metaError(e).msg);
+      }
+      const afterCore = await fetchWhatsAppWebhookSubscriptions({ appId, appSecret, expectedFields: fields });
+      working = afterCore.subscribed.filter(Boolean);
+    }
+
+    const refused: Array<{ field: string; error: string }> = [];
+    const missing = fields.filter((f) => !working.includes(f));
+
+    for (const field of missing) {
+      const candidates = [field, ...(WEBHOOK_FIELD_ALIASES[field] || [])];
+      let added = false;
+      let lastErr = msg;
+      for (const candidate of candidates) {
+        if (working.includes(candidate)) {
+          added = true;
+          break;
+        }
+        try {
+          await postFields([...working, candidate]);
+          working.push(candidate);
+          added = true;
+          break;
+        } catch (e: any) {
+          lastErr = metaError(e).msg;
+          console.warn(`⚠️ campo recusado ${candidate}:`, lastErr);
+        }
+      }
+      if (!added) {
+        refused.push({ field, error: lastErr });
+      }
+    }
+
+    const subscribedCount = working.length;
+    const dashboardOnly = /not supported|app dashboard/i.test(msg) || Number(fb?.code) === 100;
+
     return {
-      success: false,
+      success: refused.length === 0,
       fields,
+      refused,
       dashboardOnly,
-      message: dashboardOnly
-        ? `A Meta exige marcar os campos no App Dashboard (uma vez por App). Tentativa API: ${msg}`
-        : msg,
+      message:
+        refused.length === 0
+          ? `Campos assinados na Meta (${subscribedCount}).`
+          : `A Meta recusou ${refused.length} campo(s) no lote (erro: ${msg}). Assinados: ${subscribedCount}. Recusados: ${refused
+              .map((r) => r.field)
+              .join(', ')}.`,
     };
   }
 }
@@ -213,7 +286,7 @@ export async function fetchWhatsAppWebhookSubscriptions(opts: {
 
   try {
     const response = await axios.get(
-      `https://graph.facebook.com/v21.0/${encodeURIComponent(appId)}/subscriptions`,
+      `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(appId)}/subscriptions`,
       {
         params: { access_token: appToken },
         timeout: 30000,
@@ -244,8 +317,10 @@ export async function fetchWhatsAppWebhookSubscriptions(opts: {
       : [];
     const subscribedSet = new Set(subscribed);
     const expectedSet = new Set(expected);
-    const missing = expected.filter((f) => !subscribedSet.has(f));
-    const extra = subscribed.filter((f) => !expectedSet.has(f));
+    const fieldCovered = (f: string) =>
+      subscribedSet.has(f) || (WEBHOOK_FIELD_ALIASES[f] || []).some((alias) => subscribedSet.has(alias));
+    const missing = expected.filter((f) => !fieldCovered(f));
+    const extra = subscribed.filter((f) => !expectedSet.has(f) && !Object.values(WEBHOOK_FIELD_ALIASES).some((a) => a.includes(f)));
 
     return {
       success: true,
@@ -297,12 +372,23 @@ export async function resubscribeAndVerifyWebhookFields(opts: {
     expectedFields: fields,
   });
 
+  const refusedFields = (subscribe.refused || []).map((r) => r.field);
+  const remainingMissing = (status.missing || []).filter((f) => !refusedFields.includes(f));
+  const allPossibleOk = remainingMissing.length === 0;
+
   return {
     subscribe,
-    status,
-    success: subscribe.success && status.success && status.all_ok,
-    message: status.all_ok
-      ? 'Todos os campos foram setados e confirmados na Meta.'
+    status: {
+      ...status,
+      refused: subscribe.refused || [],
+      missing: remainingMissing,
+      all_ok: allPossibleOk && status.success,
+    },
+    success: allPossibleOk && status.success,
+    message: allPossibleOk
+      ? refusedFields.length
+        ? `Os campos que a Meta aceita neste App foram assinados (${status.subscribed.length}). Recusados pela API: ${refusedFields.join(', ')}.`
+        : 'Todos os campos foram setados e confirmados na Meta.'
       : `Regravar: ${subscribe.message} | Verificação: ${status.message}`,
   };
 }

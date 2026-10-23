@@ -732,7 +732,7 @@ export default function Configuracoes() {
       const response = await api.post(
         `/whatsapp-accounts/${account.id}/webhook-fields/resubscribe`,
         { subscribe_all_webhooks: true },
-        { timeout: 60000 }
+        { timeout: 180000 }
       );
       const status = response.data?.data?.status;
       if (status) {
@@ -2088,6 +2088,22 @@ export default function Configuracoes() {
                                   {webhookFieldsStatus[account.id].callback_url && (
                                     <div className="text-white/50 break-all">
                                       URL: {webhookFieldsStatus[account.id].callback_url}
+                                    </div>
+                                  )}
+                                  {Array.isArray(webhookFieldsStatus[account.id].refused) &&
+                                    webhookFieldsStatus[account.id].refused.length > 0 && (
+                                    <div className="text-orange-300">
+                                      <div className="font-bold mb-1">Recusados pela Meta neste App:</div>
+                                      <div className="flex flex-wrap gap-1">
+                                        {webhookFieldsStatus[account.id].refused.map((r: any) => (
+                                          <span key={r.field || r} className="px-1.5 py-0.5 rounded bg-orange-500/20 border border-orange-500/40 font-mono" title={r.error || ''}>
+                                            {r.field || r}
+                                          </span>
+                                        ))}
+                                      </div>
+                                      <div className="mt-1 text-white/50">
+                                        Esses campos não entram no objeto WhatsApp deste aplicativo (vários são do Messenger). Por isso o lote inteiro falhava antes.
+                                      </div>
                                     </div>
                                   )}
                                   {Array.isArray(webhookFieldsStatus[account.id].missing) &&

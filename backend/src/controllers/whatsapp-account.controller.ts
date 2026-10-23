@@ -782,7 +782,7 @@ export class WhatsAppAccountController {
         accountId: account.id,
         tenantId,
         appSecret,
-        fields,
+        fields: (result.status?.subscribed?.length ? result.status.subscribed : fields) as string[],
       });
 
       // Também reinscreve a WABA
