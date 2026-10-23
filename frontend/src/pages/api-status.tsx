@@ -143,8 +143,14 @@ export default function ApiStatus() {
   const isBannedAccount = (account: AccountStatus) =>
     ['BANNED', 'FLAGGED', 'RESTRICTED'].includes(account.account_status);
 
+  const hasKnownQuality = (account: AccountStatus) =>
+    ['GREEN', 'YELLOW', 'RED'].includes(String(account.quality_score || '').toUpperCase());
+
   const isApiConnected = (account: AccountStatus) => {
     if (isBannedAccount(account) || account.account_status === 'DISCONNECTED') {
+      return false;
+    }
+    if (!hasKnownQuality(account)) {
       return false;
     }
     return account.api_connected === true;
@@ -383,7 +389,11 @@ export default function ApiStatus() {
                           <>
                             <FaTimesCircle className="text-gray-400 text-sm" />
                             <span className="text-xs font-bold text-gray-400">
-                              {account.api_last_check ? 'API sem status' : 'Verificando...'}
+                              {!hasKnownQuality(account)
+                                ? 'Qualidade desconhecida'
+                                : account.api_last_check
+                                  ? 'API sem status'
+                                  : 'Verificando...'}
                             </span>
                           </>
                         )}

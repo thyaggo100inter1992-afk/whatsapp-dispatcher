@@ -1570,7 +1570,8 @@ export class WhatsAppAccountController {
               config
             );
 
-            qualityScore = response.data.quality_rating || qualityScore || 'UNKNOWN';
+            qualityScore = String(response.data.quality_rating || qualityScore || 'UNKNOWN').toUpperCase();
+            const knownQuality = ['GREEN', 'YELLOW', 'RED'].includes(qualityScore);
             const metaStatus = String(response.data.status || response.data.account_status || '').toUpperCase();
             apiLastCheck = new Date().toISOString();
 
@@ -1580,9 +1581,12 @@ export class WhatsAppAccountController {
             } else if (storedBan) {
               accountStatus = storedBan;
               apiConnected = false;
-            } else {
+            } else if (knownQuality) {
               accountStatus = metaStatus || 'CONNECTED';
               apiConnected = true;
+            } else {
+              accountStatus = metaStatus || 'UNKNOWN';
+              apiConnected = false;
             }
 
             console.log(`   ✅ Quality: ${qualityScore}, Status: ${accountStatus}, Conectada: ${apiConnected}`);
@@ -1649,7 +1653,10 @@ export class WhatsAppAccountController {
                 accountStatus,
               });
               account.is_active = false;
-            } else if (account.quality_rating && accountStatus !== 'DISCONNECTED') {
+            } else if (
+              ['GREEN', 'YELLOW', 'RED'].includes(String(account.quality_rating || '').toUpperCase()) &&
+              accountStatus !== 'DISCONNECTED'
+            ) {
               apiConnected = true;
               accountStatus = accountStatus === 'UNKNOWN' ? 'CONNECTED' : accountStatus;
               qualityScore = account.quality_rating;
