@@ -1516,7 +1516,7 @@ export class WhatsAppAccountController {
 
           // 2. Buscar quality rating e status da conta (da Meta ou do cache no banco)
           let qualityScore = account.quality_rating || 'UNKNOWN';
-          let accountStatus = 'UNKNOWN'; // CONNECTED, DISCONNECTED, FLAGGED, RESTRICTED, BANNED
+          let accountStatus = String(account.account_status || 'UNKNOWN').toUpperCase();
           let apiConnected = false;
           let apiLastCheck = null;
           let profilePictureUrl = account.profile_picture_url || null; // Buscar do cache primeiro
@@ -1524,9 +1524,9 @@ export class WhatsAppAccountController {
           try {
             // Buscar quality rating E status da conta da Meta
             let config: AxiosRequestConfig = {
-              params: { fields: 'quality_rating,status' },
+              params: { fields: 'quality_rating,status,code_verification_status' },
               headers: { 'Authorization': `Bearer ${account.access_token}` },
-              timeout: 5000
+              timeout: 8000
             };
 
             const proxyConfig = await getProxyConfigFromAccount(account.id, tenantId);
@@ -1535,13 +1535,18 @@ export class WhatsAppAccountController {
             }
 
             const response = await axios.get(
-              `https://graph.facebook.com/v18.0/${account.phone_number_id}`,
+              `https://graph.facebook.com/v21.0/${account.phone_number_id}`,
               config
             );
 
-            qualityScore = response.data.quality_rating || 'UNKNOWN';
-            accountStatus = response.data.status || 'UNKNOWN';
-            apiConnected = accountStatus === 'CONNECTED';
+            qualityScore = response.data.quality_rating || qualityScore || 'UNKNOWN';
+            const rawStatus = String(
+              response.data.status || response.data.account_status || account.account_status || ''
+            ).toUpperCase();
+            const disconnected = ['DISCONNECTED', 'BANNED', 'FLAGGED', 'RESTRICTED'].includes(rawStatus);
+            // Graph respondeu = API conectada, mesmo se o campo status não vier como CONNECTED
+            apiConnected = !disconnected;
+            accountStatus = rawStatus || (apiConnected ? 'CONNECTED' : 'UNKNOWN');
             apiLastCheck = new Date().toISOString();
 
             console.log(`   ✅ Quality: ${qualityScore}, Status: ${accountStatus}`);
@@ -1593,7 +1598,18 @@ export class WhatsAppAccountController {
             }
           } catch (error) {
             console.error(`❌ Erro ao buscar quality rating da conta ${account.id}:`, error);
-            apiConnected = false;
+            // Fallback: se já tem qualidade em cache, a conta estava conectada recentemente
+            const cachedStatus = String(account.account_status || '').toUpperCase();
+            if (
+              account.quality_rating &&
+              !['DISCONNECTED', 'BANNED', 'FLAGGED', 'RESTRICTED'].includes(cachedStatus)
+            ) {
+              apiConnected = true;
+              accountStatus = cachedStatus || 'CONNECTED';
+              qualityScore = account.quality_rating;
+            } else {
+              apiConnected = false;
+            }
           }
 
           // 3. Buscar status do webhook (ativo se recebido nas últimas 12 horas)

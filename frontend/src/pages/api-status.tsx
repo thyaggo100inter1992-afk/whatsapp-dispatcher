@@ -143,10 +143,18 @@ export default function ApiStatus() {
     return `Há ${diffDays}d`;
   };
 
+  const isApiConnected = (account: AccountStatus) => {
+    if (['DISCONNECTED', 'BANNED', 'FLAGGED', 'RESTRICTED'].includes(account.account_status)) {
+      return false;
+    }
+    if (account.api_connected) return true;
+    return ['GREEN', 'YELLOW', 'RED'].includes(account.quality_score);
+  };
+
   const hasProblems = (account: AccountStatus) => {
     const badStatus = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'].includes(account.account_status);
     const badQuality = ['RED', 'YELLOW', 'FLAGGED'].includes(account.quality_score);
-    return badStatus || badQuality || !account.api_connected;
+    return badStatus || badQuality || !isApiConnected(account);
   };
 
   if (loading) {
@@ -243,7 +251,7 @@ export default function ApiStatus() {
             <div className="bg-dark-800/60 border-2 border-cyan-500/40 rounded-xl p-6">
               <div className="text-cyan-300 text-sm font-bold mb-2">CONECTADAS</div>
               <div className="text-4xl font-black text-cyan-400">
-                {accounts.filter(a => a.api_connected).length}
+                {accounts.filter(a => isApiConnected(a)).length}
               </div>
             </div>
 
@@ -269,7 +277,7 @@ export default function ApiStatus() {
                 .filter(account => {
                   if (!hideDisconnected) return true;
                   // Ocultar contas com problemas de conexão
-                  const isDisconnected = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'].includes(account.account_status) || !account.api_connected;
+                  const isDisconnected = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'].includes(account.account_status) || !isApiConnected(account);
                   return !isDisconnected;
                 })
                 .map((account) => {
@@ -355,7 +363,7 @@ export default function ApiStatus() {
                             <FaTimesCircle className="text-red-400 text-sm" />
                             <span className="text-xs font-bold text-red-400">Desconectada</span>
                           </>
-                        ) : account.api_connected ? (
+                        ) : isApiConnected(account) ? (
                           <>
                             <FaCheckCircle className="text-green-400 text-sm" />
                             <span className="text-xs font-bold text-green-400">API Conectada</span>
@@ -363,7 +371,9 @@ export default function ApiStatus() {
                         ) : (
                           <>
                             <FaTimesCircle className="text-gray-400 text-sm" />
-                            <span className="text-xs font-bold text-gray-400">Verificando...</span>
+                            <span className="text-xs font-bold text-gray-400">
+                              {account.api_last_check ? 'API sem status' : 'Verificando...'}
+                            </span>
                           </>
                         )}
                         {account.api_last_check && (
