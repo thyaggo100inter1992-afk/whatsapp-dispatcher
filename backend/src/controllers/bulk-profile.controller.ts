@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { tenantQuery } from '../database/tenant-query';
-import { profileQueueService } from '../services/profile-queue.service';
+import { profileQueueService, ProfileQueueService } from '../services/profile-queue.service';
 
 export class BulkProfileController {
   /**
@@ -133,7 +133,16 @@ export class BulkProfileController {
       }
 
       // Validar campos permitidos
-      const allowedFields = ['about', 'description', 'email', 'address', 'vertical', 'websites', 'profile_picture'];
+      const allowedFields = [
+        'about',
+        'description',
+        'email',
+        'address',
+        'vertical',
+        'websites',
+        'profile_picture',
+        'username',
+      ];
       const invalidFields = fields_to_update.filter((field: string) => !allowedFields.includes(field));
 
       if (invalidFields.length > 0) {
@@ -141,6 +150,27 @@ export class BulkProfileController {
           success: false,
           error: `Campos inválidos: ${invalidFields.join(', ')}. Campos permitidos: ${allowedFields.join(', ')}`,
         });
+      }
+
+      if (fields_to_update.includes('username')) {
+        const baseUser = String(profile_data?.username || '')
+          .trim()
+          .replace(/^@+/, '');
+        if (!baseUser) {
+          return res.status(400).json({
+            success: false,
+            error: 'Informe o nome de usuário (@) para atualizar.',
+          });
+        }
+        // Em massa o @ é único: com append/{last4} valida um exemplo; senão o valor literal
+        const sampleForValidation =
+          profile_data?.username_append_last4 || baseUser.includes('{last4}')
+            ? `${baseUser.replace(/\{last4\}/g, '').replace(/_+$/, '').slice(0, 30)}_1234`
+            : baseUser;
+        const validated = ProfileQueueService.validateBusinessUsername(sampleForValidation);
+        if (!validated.ok) {
+          return res.status(400).json({ success: false, error: validated.error });
+        }
       }
 
       const logoFile = (req as any).file as
@@ -307,6 +337,15 @@ export class BulkProfileController {
       fields_to_update.forEach((field: string) => {
         if (field === 'profile_picture') {
           dataToSend.profile_picture = profile_data?.profile_picture_name || 'logo selecionada';
+          return;
+        }
+        if (field === 'username') {
+          dataToSend.username = profile_data?.username;
+          if (profile_data?.username_append_last4) {
+            dataToSend.username_append_last4 = true;
+            dataToSend.username_note =
+              'Em várias contas, cada @ recebe o sufixo _XXXX (4 últimos dígitos do número)';
+          }
           return;
         }
         if (profile_data[field] !== undefined && profile_data[field] !== null) {

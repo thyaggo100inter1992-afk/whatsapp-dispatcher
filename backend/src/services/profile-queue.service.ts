@@ -19,6 +19,8 @@ interface QueueItem {
     address?: string;
     vertical?: string;
     websites?: string[];
+    username?: string;
+    username_append_last4?: boolean;
     logoPath?: string;
     logoMimeType?: string;
     logoFileName?: string;
@@ -29,7 +31,7 @@ interface QueueItem {
   processedAt?: Date;
 }
 
-class ProfileQueueService extends EventEmitter {
+export class ProfileQueueService extends EventEmitter {
   private queue: QueueItem[] = [];
   private isProcessing = false;
   private intervalSeconds = 5; // Intervalo padrão de 5 segundos
@@ -134,13 +136,87 @@ class ProfileQueueService extends EventEmitter {
 
   private metaErrorMessage(error: any): string {
     const data = error?.response?.data;
+    const details = data?.error?.error_data?.details;
     return (
+      details ||
       data?.error?.error_user_msg ||
       data?.error?.message ||
       (typeof data === 'string' ? data : null) ||
       error?.message ||
       'Erro desconhecido na Meta'
     );
+  }
+
+  /** Regras oficiais de business username da Meta. */
+  static validateBusinessUsername(raw: string): { ok: true; username: string } | { ok: false; error: string } {
+    const username = String(raw || '').trim().replace(/^@+/, '');
+    if (username.length < 3 || username.length > 35) {
+      return { ok: false, error: 'Nome de usuário deve ter entre 3 e 35 caracteres' };
+    }
+    if (!/^[a-zA-Z0-9._]+$/.test(username)) {
+      return { ok: false, error: 'Use apenas letras (a-z), números, ponto (.) e underscore (_)' };
+    }
+    if (!/[a-zA-Z]/.test(username)) {
+      return { ok: false, error: 'Nome de usuário precisa ter pelo menos uma letra' };
+    }
+    if (username.startsWith('.') || username.endsWith('.') || username.includes('..')) {
+      return { ok: false, error: 'Não pode começar/terminar com ponto nem ter dois pontos seguidos' };
+    }
+    if (/^www\./i.test(username)) {
+      return { ok: false, error: 'Não pode começar com www.' };
+    }
+    if (/\.(com|org|net|int|edu|gov|mil|arpa|html|htm|txt|xml)$/i.test(username)) {
+      return { ok: false, error: 'Não pode terminar com domínio (.com, .org, etc.)' };
+    }
+    return { ok: true, username };
+  }
+
+  private resolveUsernameForAccount(base: string, phoneNumber: string, appendLast4?: boolean): string {
+    let username = String(base || '').trim().replace(/^@+/, '');
+    const digits = String(phoneNumber || '').replace(/\D/g, '');
+    const last4 = digits.slice(-4) || '0000';
+
+    if (username.includes('{last4}')) {
+      username = username.replace(/\{last4\}/g, last4);
+    } else if (appendLast4) {
+      const suffix = `_${last4}`;
+      if (!username.toLowerCase().endsWith(suffix.toLowerCase())) {
+        const maxBase = Math.max(1, 35 - suffix.length);
+        username = `${username.slice(0, maxBase)}${suffix}`;
+      }
+    }
+    return username;
+  }
+
+  private async postBusinessUsername(account: any, accountId: number, username: string) {
+    let requestConfig: any = {
+      headers: {
+        Authorization: `Bearer ${account.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    };
+
+    const proxyConfig = account.tenant_id
+      ? await getProxyConfigFromAccount(accountId, account.tenant_id)
+      : null;
+    if (proxyConfig) {
+      console.log(`🌐 Proxy username: ${formatProxyInfo(proxyConfig)} - ${account.name}`);
+      requestConfig = applyProxyToRequest(requestConfig, proxyConfig, account.name);
+    }
+
+    console.log(`👤 Definindo username @${username} — ${account.name}`);
+    try {
+      const response = await axios.post(
+        `https://graph.facebook.com/v21.0/${account.phone_number_id}/username`,
+        { username, transfer_action: 'none' },
+        requestConfig
+      );
+      console.log('✅ Username API:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Meta username:', error.response?.data || error.message);
+      throw new Error(this.metaErrorMessage(error));
+    }
   }
 
   /** Meta aceita só JPEG na foto de perfil; normaliza PNG/etc para JPG quadrado. */
@@ -214,13 +290,13 @@ class ProfileQueueService extends EventEmitter {
 
     const account = accountResult.rows[0];
 
-    // Campos de texto (sem logo) — aplicados mesmo se a foto falhar depois
+    // Campos de texto do business profile (sem logo / username)
     const textPayload: any = {
       messaging_product: 'whatsapp',
     };
 
     item.fieldsToUpdate.forEach((field: any) => {
-      if (field === 'profile_picture') return;
+      if (field === 'profile_picture' || field === 'username') return;
       if (item.profileData[field] !== undefined && item.profileData[field] !== null && item.profileData[field] !== '') {
         textPayload[field] = item.profileData[field];
       }
@@ -229,6 +305,24 @@ class ProfileQueueService extends EventEmitter {
     const hasText = Object.keys(textPayload).some((k) => k !== 'messaging_product');
     if (hasText) {
       await this.postBusinessProfile(account, item.accountId, textPayload);
+    }
+
+    // Nome de usuário (@) — endpoint separado da Meta
+    if (item.fieldsToUpdate.includes('username')) {
+      const base = String(item.profileData.username || '').trim();
+      if (!base) {
+        throw new Error('Nome de usuário não informado');
+      }
+      const resolved = this.resolveUsernameForAccount(
+        base,
+        account.phone_number || item.accountPhone,
+        !!item.profileData.username_append_last4
+      );
+      const validated = ProfileQueueService.validateBusinessUsername(resolved);
+      if (!validated.ok) {
+        throw new Error(validated.error);
+      }
+      await this.postBusinessUsername(account, item.accountId, validated.username);
     }
 
     // Logo / foto de perfil: JPEG via Resumable Upload → profile_picture_handle
@@ -272,7 +366,11 @@ class ProfileQueueService extends EventEmitter {
       ).catch(() => undefined);
     }
 
-    if (!hasText && !item.fieldsToUpdate.includes('profile_picture')) {
+    if (
+      !hasText &&
+      !item.fieldsToUpdate.includes('profile_picture') &&
+      !item.fieldsToUpdate.includes('username')
+    ) {
       throw new Error('Nenhum dado de perfil para enviar');
     }
   }

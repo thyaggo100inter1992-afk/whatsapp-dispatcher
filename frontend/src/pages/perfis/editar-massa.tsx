@@ -70,11 +70,17 @@ export default function EditarPerfilMassa() {
     vertical: '',
     website1: '',
     website2: '',
+    username: '',
   });
 
   const [queueInterval, setQueueInterval] = useState(5);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  /** Em várias contas o @ precisa ser único — acrescenta _XXXX do telefone */
+  const [usernameAppendLast4, setUsernameAppendLast4] = useState(true);
+
+  const normalizeUsernameInput = (value: string) =>
+    value.replace(/^@+/, '').replace(/[^a-zA-Z0-9._]/g, '').slice(0, 35);
 
   useEffect(() => {
     fetchAccounts();
@@ -181,8 +187,20 @@ export default function EditarPerfilMassa() {
       dataToSend.profile_picture_name = logoFile.name;
     }
 
+    const username = normalizeUsernameInput(profileData.username.trim());
+    if (username) {
+      if (username.length < 3) {
+        toast.warning('Nome de usuário deve ter no mínimo 3 caracteres');
+        return;
+      }
+      fieldsToUpdate.push('username');
+      dataToSend.username = username;
+      dataToSend.username_append_last4 =
+        usernameAppendLast4 || selectedAccounts.length > 1;
+    }
+
     if (fieldsToUpdate.length === 0) {
-      toast.warning('Preencha pelo menos um campo ou selecione uma logo!');
+      toast.warning('Preencha pelo menos um campo, logo ou nome de usuário!');
       return;
     }
 
@@ -237,6 +255,13 @@ export default function EditarPerfilMassa() {
       if (profileData.website1.trim()) websites.push(profileData.website1);
       if (profileData.website2.trim()) websites.push(profileData.website2);
       if (websites.length > 0) dataToSend.websites = websites;
+
+      const username = normalizeUsernameInput(profileData.username.trim());
+      if (username) {
+        dataToSend.username = username;
+        dataToSend.username_append_last4 =
+          usernameAppendLast4 || selectedAccounts.length > 1;
+      }
 
       // Enviar atualização (multipart se tiver logo)
       console.log('💾 Enviando atualização em massa...');
@@ -389,6 +414,7 @@ export default function EditarPerfilMassa() {
                     {field === 'vertical' && '🏢 Categoria'}
                     {field === 'websites' && '🌐 Websites'}
                     {field === 'profile_picture' && '🖼️ Logo / Foto de Perfil'}
+                    {field === 'username' && '👤 Nome de usuário (@)'}
                   </span>
                 ))}
               </div>
@@ -687,6 +713,58 @@ export default function EditarPerfilMassa() {
             </div>
 
             <div className="space-y-4">
+              <div className="p-6 bg-cyan-500/10 border-2 border-cyan-500/40 rounded-xl">
+                <label className="block text-white font-bold text-lg mb-3 flex items-center gap-2">
+                  <FaUser className="text-cyan-300" />
+                  Nome de usuário (@)
+                </label>
+                <p className="text-white/60 text-sm mb-4">
+                  Opcional. Clientes podem falar com a empresa pelo @ sem usar o número. 3–35 caracteres (letras, números, . e _).
+                  Em várias contas o @ precisa ser único — use o sufixo automático.
+                </p>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-white/70 font-bold text-lg">@</span>
+                  <input
+                    type="text"
+                    value={profileData.username}
+                    onChange={(e) =>
+                      setProfileData({
+                        ...profileData,
+                        username: normalizeUsernameInput(e.target.value),
+                      })
+                    }
+                    maxLength={35}
+                    className="flex-1 px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50"
+                    placeholder="ex: nettcred (deixe vazio para não alterar)"
+                  />
+                </div>
+                <p className="text-white/50 text-sm mb-3">
+                  {profileData.username.length}/35
+                  {profileData.username
+                    ? ` → @${profileData.username}${
+                        usernameAppendLast4 || selectedAccounts.length > 1
+                          ? '_XXXX'
+                          : ''
+                      }`
+                    : ''}
+                </p>
+                <label className="flex items-start gap-3 text-white/80 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={usernameAppendLast4 || selectedAccounts.length > 1}
+                    disabled={selectedAccounts.length > 1}
+                    onChange={(e) => setUsernameAppendLast4(e.target.checked)}
+                    className="mt-1"
+                  />
+                  <span>
+                    Acrescentar os 4 últimos dígitos do telefone (ex: nettcred_2836).
+                    {selectedAccounts.length > 1
+                      ? ' Obrigatório com várias contas selecionadas.'
+                      : ' Recomendado se for aplicar em mais de uma conta.'}
+                  </span>
+                </label>
+              </div>
+
               <div className="p-6 bg-pink-500/10 border-2 border-pink-500/40 rounded-xl">
                 <label className="block text-white font-bold text-lg mb-3 flex items-center gap-2">
                   <FaImage className="text-pink-300" />
