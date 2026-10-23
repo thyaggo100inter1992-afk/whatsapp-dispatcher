@@ -141,11 +141,23 @@ Mesmo body do criar.
 
 | Ação | Método | Endpoint |
 |------|--------|----------|
-| Definir PIN 2 etapas | `POST` | `/whatsapp-accounts/{id}/two-step-pin` |
+| Registrar / alterar PIN 2 etapas | `POST` | `/whatsapp-accounts/{id}/two-step-pin` |
 
 ```json
-{ "pin": "123456" }
+{
+  "pin": "123456",
+  "action": "set"
+}
 ```
+
+`action`:
+- `set` — registrar PIN novo na Meta  
+- `change` — alterar PIN existente  
+- `register` — gravar PIN **e** registrar o número na Cloud API (`/{phone_number_id}/register`) — use quando o PIN “não pega”
+
+Também aceita `"also_register": true` com `action: "set"` ou `"change"`.
+
+O disparador grava o PIN e a data (`two_step_pin`, `two_step_pin_set_at`) na conta.
 
 ### Webhooks
 

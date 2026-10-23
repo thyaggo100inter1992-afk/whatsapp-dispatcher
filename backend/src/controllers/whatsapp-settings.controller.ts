@@ -891,23 +891,52 @@ export class WhatsAppSettingsController {
   }
 
   /**
+   * Garante colunas de status do PIN 2FA na conta.
+   */
+  private async ensureTwoStepPinColumns() {
+    const { pool } = require('../database/connection');
+    await pool.query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS two_step_pin VARCHAR(6)`).catch(() => undefined);
+    await pool.query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS two_step_pin_set_at TIMESTAMPTZ`).catch(() => undefined);
+    await pool.query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS two_step_pin_last_action VARCHAR(20)`).catch(() => undefined);
+    await pool.query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS cloud_api_registered_at TIMESTAMPTZ`).catch(() => undefined);
+  }
+
+  /**
    * POST /api/whatsapp-accounts/:id/two-step-pin
-   * Configurar PIN de verificação em duas etapas
+   * Registrar PIN novo, alterar PIN e/ou registrar o número na Cloud API.
+   * body: { pin, action?: 'set' | 'change' | 'register', also_register?: boolean }
+   * - set/change: POST /{phone_number_id} { pin } (API Meta Two-Step Verification)
+   * - register: também POST /{phone_number_id}/register { messaging_product, pin }
    */
   async setTwoStepPin(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { pin } = req.body;
+      const pin = String(req.body?.pin || '').trim();
+      const actionRaw = String(req.body?.action || 'set').toLowerCase();
+      const action = ['set', 'change', 'register'].includes(actionRaw) ? actionRaw : 'set';
+      const alsoRegister =
+        action === 'register' ||
+        req.body?.also_register === true ||
+        req.body?.also_register === 'true' ||
+        req.body?.register === true;
 
-      if (!pin || pin.length !== 6 || !/^\d{6}$/.test(pin)) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'PIN deve ter exatamente 6 dígitos numéricos' 
+      // @ts-ignore
+      const tenantId = req.tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      if (!/^\d{6}$/.test(pin)) {
+        return res.status(400).json({
+          success: false,
+          error: 'PIN deve ter exatamente 6 dígitos numéricos',
         });
       }
 
-      // Buscar conta no banco
-      const accountResult = await tenantQuery(req, 
+      await this.ensureTwoStepPinColumns();
+
+      const accountResult = await tenantQuery(
+        req,
         'SELECT * FROM whatsapp_accounts WHERE id = $1',
         [id]
       );
@@ -917,29 +946,148 @@ export class WhatsAppSettingsController {
       }
 
       const account = accountResult.rows[0];
+      if (!account.phone_number_id || !account.access_token) {
+        return res.status(400).json({
+          success: false,
+          error: 'Conta sem Phone Number ID ou token de acesso',
+        });
+      }
 
-      // Configurar PIN via WhatsApp API (com proxy se configurado)
-      const response = await this.makeProxyRequest(
-        'post',
-        `https://graph.facebook.com/v18.0/${account.phone_number_id}`,
-        account,
-        {
-          headers: {
-            'Authorization': `Bearer ${account.access_token}`,
-            'Content-Type': 'application/json'
-          }
-        },
-        {
-          pin: pin
+      const headers = {
+        Authorization: `Bearer ${account.access_token}`,
+        'Content-Type': 'application/json',
+      };
+
+      const steps: Array<{ step: string; success: boolean; data?: any; error?: string }> = [];
+
+      // 1) Definir ou alterar o PIN na Meta (mesmo endpoint para novo e alteração)
+      try {
+        console.log(`🔐 PIN (${action}) na Meta — conta ${account.name} (${account.phone_number_id})`);
+        const pinResponse = await this.makeProxyRequest(
+          'post',
+          `https://graph.facebook.com/v21.0/${encodeURIComponent(account.phone_number_id)}`,
+          account,
+          { headers, timeout: 30000 },
+          { pin }
+        );
+        const pinOk = pinResponse.data?.success === true || pinResponse.status < 300;
+        steps.push({ step: action === 'change' ? 'change_pin' : 'set_pin', success: pinOk, data: pinResponse.data });
+        if (!pinOk) {
+          return res.status(400).json({
+            success: false,
+            error: 'A Meta não confirmou o PIN (success != true).',
+            steps,
+          });
         }
+      } catch (error: any) {
+        const fb = error?.response?.data?.error;
+        const msg = String(fb?.message || error?.message || 'Falha ao gravar PIN na Meta');
+        console.error('❌ setTwoStepPin (PIN):', fb || error?.message);
+        steps.push({ step: action === 'change' ? 'change_pin' : 'set_pin', success: false, error: msg });
+        return res.status(error?.response?.status || 500).json({
+          success: false,
+          error: msg,
+          error_code: fb?.code,
+          error_subcode: fb?.error_subcode,
+          steps,
+        });
+      }
+
+      // 2) Registrar o número na Cloud API com o mesmo PIN (garante que o PIN “entra” de verdade)
+      let registered = false;
+      if (alsoRegister) {
+        try {
+          console.log(`📱 Register Cloud API com PIN — conta ${account.name}`);
+          const regResponse = await this.makeProxyRequest(
+            'post',
+            `https://graph.facebook.com/v21.0/${encodeURIComponent(account.phone_number_id)}/register`,
+            account,
+            { headers, timeout: 30000 },
+            { messaging_product: 'whatsapp', pin }
+          );
+          registered =
+            regResponse.data?.success === true ||
+            String(regResponse.data?.account_mode || '').length > 0 ||
+            regResponse.status < 300;
+          steps.push({ step: 'register', success: registered, data: regResponse.data });
+        } catch (error: any) {
+          const fb = error?.response?.data?.error;
+          const msg = String(fb?.message || error?.message || 'Falha ao registrar número');
+          const code = Number(fb?.code || 0);
+          // Já registrado / sem mudança — não trata como falha fatal se o PIN já foi gravado
+          const already =
+            code === 100 ||
+            /already|registered|exist/i.test(msg);
+          steps.push({
+            step: 'register',
+            success: already,
+            error: already ? undefined : msg,
+            data: already ? { already: true, message: msg } : fb,
+          });
+          if (!already) {
+            await tenantQuery(
+              req,
+              `UPDATE whatsapp_accounts
+               SET two_step_pin = $1,
+                   two_step_pin_set_at = NOW(),
+                   two_step_pin_last_action = $2,
+                   updated_at = NOW()
+               WHERE id = $3 AND tenant_id = $4`,
+              [pin, action === 'change' ? 'change' : 'set', id, tenantId]
+            ).catch(() => undefined);
+
+            return res.status(error?.response?.status || 500).json({
+              success: false,
+              error: `PIN gravado na Meta, mas o registro Cloud API falhou: ${msg}`,
+              error_code: fb?.code,
+              pin_saved: true,
+              steps,
+            });
+          }
+          registered = true;
+        }
+      }
+
+      await tenantQuery(
+        req,
+        `UPDATE whatsapp_accounts
+         SET two_step_pin = $1,
+             two_step_pin_set_at = NOW(),
+             two_step_pin_last_action = $2,
+             cloud_api_registered_at = CASE WHEN $3::boolean THEN NOW() ELSE cloud_api_registered_at END,
+             updated_at = NOW()
+         WHERE id = $4 AND tenant_id = $5`,
+        [
+          pin,
+          alsoRegister ? 'register' : action === 'change' ? 'change' : 'set',
+          alsoRegister && registered,
+          id,
+          tenantId,
+        ]
       );
 
-      res.json({ success: true, data: response.data });
+      const label =
+        alsoRegister
+          ? 'PIN definido e número registrado na Cloud API.'
+          : action === 'change'
+            ? 'PIN alterado com sucesso na Meta.'
+            : 'PIN registrado com sucesso na Meta.';
+
+      return res.json({
+        success: true,
+        message: label,
+        data: {
+          action: alsoRegister ? 'register' : action,
+          pin_set: true,
+          registered: alsoRegister ? registered : undefined,
+          steps,
+        },
+      });
     } catch (error: any) {
       console.error('Erro ao configurar PIN:', error.response?.data || error.message);
-      res.status(500).json({ 
-        success: false, 
-        error: error.response?.data?.error?.message || error.message 
+      res.status(500).json({
+        success: false,
+        error: error.response?.data?.error?.message || error.message,
       });
     }
   }

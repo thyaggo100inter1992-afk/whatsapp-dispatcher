@@ -52,6 +52,7 @@ export default function ConfigurarConta() {
   // Estados para cada aba
   const [twoStepPin, setTwoStepPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
+  const [pinAction, setPinAction] = useState<'set' | 'change' | 'register'>('set');
   const [facebookToken, setFacebookToken] = useState('');
   const [facebookAdAccount, setFacebookAdAccount] = useState('');
   const [facebookBusiness, setFacebookBusiness] = useState('');
@@ -137,7 +138,9 @@ const [singleDate, setSingleDate] = useState('');
     try {
       const response = await api.get(`/whatsapp-accounts/${id}`);
       if (response.data.success) {
-        setAccount(response.data.data);
+        const data = response.data.data;
+        setAccount(data);
+        setPinAction(data?.two_step_pin_set_at ? 'change' : 'set');
       }
     } catch (error) {
       console.error('Erro ao carregar conta:', error);
@@ -720,17 +723,41 @@ const [singleDate, setSingleDate] = useState('');
 
     setSaving(true);
     try {
-      const response = await api.post(`/whatsapp-accounts/${id}/two-step-pin`, { pin: twoStepPin });
+      const response = await api.post(`/whatsapp-accounts/${id}/two-step-pin`, {
+        pin: twoStepPin,
+        action: pinAction,
+        also_register: pinAction === 'register',
+      });
 
       if (response.data.success) {
-        toast.success('✅ PIN configurado com sucesso!');
+        toast.success(response.data.message || '✅ PIN configurado com sucesso!');
         setTwoStepPin('');
         setConfirmPin('');
+        // Atualiza status local da conta
+        setAccount((prev: any) =>
+          prev
+            ? {
+                ...prev,
+                two_step_pin: twoStepPin,
+                two_step_pin_set_at: new Date().toISOString(),
+                two_step_pin_last_action: pinAction,
+                cloud_api_registered_at:
+                  pinAction === 'register'
+                    ? new Date().toISOString()
+                    : prev.cloud_api_registered_at,
+              }
+            : prev
+        );
       } else {
-        toast.error('❌ Erro: ' + response.data.error);
+        toast.error('❌ ' + (response.data.error || 'Falha ao configurar PIN'));
       }
     } catch (error: any) {
-      toast.error('❌ Erro: ' + error.message);
+      const msg =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        error.message ||
+        'Erro ao configurar PIN';
+      toast.error('❌ ' + msg);
     } finally {
       setSaving(false);
     }
@@ -1322,9 +1349,47 @@ const [singleDate, setSingleDate] = useState('');
                     Configurações de Segurança
                   </h2>
                   <p className="text-lg text-white/60 mt-1">
-                    Proteja sua conta com verificação em duas etapas
+                    Registrar PIN novo ou alterar o PIN na Meta
                   </p>
                 </div>
+              </div>
+
+              {/* Status atual do PIN */}
+              <div
+                className={`rounded-xl p-6 border-2 ${
+                  (account as any)?.two_step_pin_set_at
+                    ? 'bg-green-500/10 border-green-500/40'
+                    : 'bg-red-500/10 border-red-500/40'
+                }`}
+              >
+                <p className="text-white font-bold text-lg mb-2">
+                  {(account as any)?.two_step_pin_set_at
+                    ? '✅ PIN já registrado neste sistema'
+                    : '⚠️ PIN ainda não registrado neste sistema'}
+                </p>
+                {(account as any)?.two_step_pin_set_at && (
+                  <p className="text-white/70 text-sm">
+                    Última ação:{' '}
+                    <strong>
+                      {(account as any)?.two_step_pin_last_action === 'change'
+                        ? 'Alterar PIN'
+                        : (account as any)?.two_step_pin_last_action === 'register'
+                          ? 'Registrar PIN + Cloud API'
+                          : 'Registrar PIN'}
+                    </strong>
+                    {' · '}
+                    {new Date((account as any).two_step_pin_set_at).toLocaleString('pt-BR')}
+                    {(account as any)?.two_step_pin
+                      ? ` · PIN salvo: ${(account as any).two_step_pin}`
+                      : ''}
+                  </p>
+                )}
+                {(account as any)?.cloud_api_registered_at && (
+                  <p className="text-green-200/80 text-sm mt-1">
+                    Cloud API registrada em{' '}
+                    {new Date((account as any).cloud_api_registered_at).toLocaleString('pt-BR')}
+                  </p>
+                )}
               </div>
 
               {/* Card de Verificação em Duas Etapas */}
@@ -1338,16 +1403,57 @@ const [singleDate, setSingleDate] = useState('');
                       🔒 Verificação em Duas Etapas (2FA)
                     </h3>
                     <p className="text-orange-200/70 text-sm">
-                      Configure um PIN de 6 dígitos para proteger sua conta
+                      PIN de 6 dígitos — escolha registrar novo, alterar ou registrar na Cloud API
                     </p>
                   </div>
                 </div>
 
                 <div className="space-y-6">
+                  {/* Escolha da ação */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setPinAction('set')}
+                      className={`px-4 py-4 rounded-xl font-bold border-2 transition-all text-left ${
+                        pinAction === 'set'
+                          ? 'bg-orange-500/30 border-orange-400 text-white'
+                          : 'bg-dark-700/60 border-white/20 text-white/70 hover:border-orange-500/40'
+                      }`}
+                    >
+                      <div className="text-lg">Registrar PIN novo</div>
+                      <div className="text-xs opacity-80 mt-1">Grava o PIN na Meta (2FA)</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPinAction('change')}
+                      className={`px-4 py-4 rounded-xl font-bold border-2 transition-all text-left ${
+                        pinAction === 'change'
+                          ? 'bg-blue-500/30 border-blue-400 text-white'
+                          : 'bg-dark-700/60 border-white/20 text-white/70 hover:border-blue-500/40'
+                      }`}
+                    >
+                      <div className="text-lg">Alterar PIN</div>
+                      <div className="text-xs opacity-80 mt-1">Troca o PIN já existente na Meta</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPinAction('register')}
+                      className={`px-4 py-4 rounded-xl font-bold border-2 transition-all text-left ${
+                        pinAction === 'register'
+                          ? 'bg-green-500/30 border-green-400 text-white'
+                          : 'bg-dark-700/60 border-white/20 text-white/70 hover:border-green-500/40'
+                      }`}
+                    >
+                      <div className="text-lg">PIN + Registrar Cloud API</div>
+                      <div className="text-xs opacity-80 mt-1">Recomendado se o PIN “não pega”</div>
+                    </button>
+                  </div>
+
                   {/* Input Novo PIN */}
                   <div className="bg-gradient-to-br from-white/10 to-white/5 border-2 border-white/20 rounded-xl p-6">
                     <label className="block text-white font-bold text-lg mb-4 flex items-center gap-2">
-                      <span className="text-2xl">🔐</span> Novo PIN (6 dígitos)
+                      <span className="text-2xl">🔐</span>{' '}
+                      {pinAction === 'change' ? 'Novo PIN (alteração)' : 'PIN (6 dígitos)'}
                     </label>
                     <input
                       type="password"
@@ -1423,15 +1529,15 @@ const [singleDate, setSingleDate] = useState('');
                           </li>
                           <li className="flex items-start gap-2">
                             <span className="text-yellow-400 mt-1">•</span>
+                            <span>Se o PIN “não registra”, use <strong>PIN + Registrar Cloud API</strong></span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-yellow-400 mt-1">•</span>
                             <span><strong>Não compartilhe</strong> este PIN com ninguém</span>
                           </li>
                           <li className="flex items-start gap-2">
                             <span className="text-yellow-400 mt-1">•</span>
-                            <span>Anote em um <strong>local seguro e privado</strong></span>
-                          </li>
-                          <li className="flex items-start gap-2">
-                            <span className="text-yellow-400 mt-1">•</span>
-                            <span>Se perder o PIN, você terá que <strong>aguardar 7 dias</strong> para redefini-lo</span>
+                            <span>Se perder o PIN, você pode <strong>alterar pela API</strong> nesta mesma tela</span>
                           </li>
                         </ul>
                       </div>
@@ -1446,16 +1552,21 @@ const [singleDate, setSingleDate] = useState('');
                   >
                     {saving ? (
                       <>
-                        <span className="animate-spin">⏳</span> Configurando PIN...
+                        <span className="animate-spin">⏳</span> Enviando para a Meta...
                       </>
                     ) : (
                       <>
-                        <FaLock className="text-2xl" /> Configurar PIN de Segurança
+                        <FaLock className="text-2xl" />
+                        {pinAction === 'change'
+                          ? 'Alterar PIN na Meta'
+                          : pinAction === 'register'
+                            ? 'Registrar PIN + Cloud API'
+                            : 'Registrar PIN novo na Meta'}
                       </>
                     )}
                   </button>
                   <p className="text-orange-200/70 text-sm text-center">
-                    Configure agora para proteger sua conta com uma camada extra de segurança
+                    O sistema confirma o retorno da Meta e salva o status do PIN nesta conta
                   </p>
                 </div>
               </div>
