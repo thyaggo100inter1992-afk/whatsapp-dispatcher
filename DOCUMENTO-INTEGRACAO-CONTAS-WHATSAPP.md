@@ -56,11 +56,28 @@ Todas as rotas abaixo estão em:
 | Subir ordem | `POST` | `/whatsapp-accounts/{id}/move-up` |
 | Descer ordem | `POST` | `/whatsapp-accounts/{id}/move-down` |
 | Inscrever webhook nesta WABA | `POST` | `/whatsapp-accounts/{id}/subscribe-webhook` |
-| Inscrever webhook em todas | `POST` | `/whatsapp-accounts/subscribe-webhooks-all` |
+| Inscrever webhook em lote | `POST` | `/whatsapp-accounts/subscribe-webhooks-all` |
 | Ver campos realmente assinados na Meta | `GET` | `/whatsapp-accounts/{id}/webhook-fields` |
 | Setar todos os campos de novo + confirmar | `POST` | `/whatsapp-accounts/{id}/webhook-fields/resubscribe` |
 | Status webhook (1 conta) | `GET` | `/webhook/status?account_id={id}&period=24h` |
 | Status webhook (lote) | `GET` | `/webhook/status-batch?period=24h` |
+
+### Inscrever webhook em lote
+
+`POST /api/integration/v1/whatsapp-accounts/subscribe-webhooks-all`
+
+```json
+{
+  "mode": "waba",
+  "account_ids": [8, 9, 25]
+}
+```
+
+- `mode: "waba"` (padrão) — inscreve o App na WABA (`subscribed_apps`). **Não precisa de App Secret.**
+- `mode: "fields"` — assina **todos** os campos de webhook do App. **Precisa de App ID + App Secret** em cada conta; as que não tiverem falham.
+- Sem `account_ids`, aplica em todas as contas ativas do tenant.
+
+---
 
 ### Testar conexão
 

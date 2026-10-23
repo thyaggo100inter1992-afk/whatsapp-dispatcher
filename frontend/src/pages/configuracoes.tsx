@@ -92,6 +92,7 @@ export default function Configuracoes() {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [subscribingWebhookId, setSubscribingWebhookId] = useState<number | null>(null);
   const [subscribingAllWebhooks, setSubscribingAllWebhooks] = useState(false);
+  const [bulkWebhookMode, setBulkWebhookMode] = useState<'waba' | 'fields' | null>(null);
   const [webhookFieldsStatus, setWebhookFieldsStatus] = useState<{[key: number]: any}>({});
   const [checkingWebhookFieldsId, setCheckingWebhookFieldsId] = useState<number | null>(null);
   const [resubscribingFieldsId, setResubscribingFieldsId] = useState<number | null>(null);
@@ -608,23 +609,64 @@ export default function Configuracoes() {
     }
   };
 
-  const handleSubscribeAllWebhooks = async () => {
+  const getBulkWebhookTargets = () => {
+    const selectedInView = filteredAccounts.filter((account) => selectedAccounts.has(account.id));
+    if (selectedInView.length > 0) return selectedInView;
+    return filteredAccounts;
+  };
+
+  const handleSubscribeAllWebhooks = async (mode: 'waba' | 'fields', scope: 'all' | 'targets' = 'all') => {
     if (subscribingAllWebhooks || accounts.length === 0) return;
+
+    const targets = scope === 'targets' ? getBulkWebhookTargets() : accounts.filter((a) => a.is_active !== false);
+    if (targets.length === 0) {
+      await confirm({
+        title: 'Nenhuma conta',
+        message: scope === 'targets'
+          ? 'Selecione contas ou ajuste o filtro para inscrever.'
+          : 'Não há contas ativas para inscrever.',
+        type: 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+      return;
+    }
+
+    const selectedCount = filteredAccounts.filter((account) => selectedAccounts.has(account.id)).length;
+    const scopeLabel = scope === 'targets'
+      ? (selectedCount > 0 ? `${targets.length} conta(s) selecionada(s)` : `${targets.length} conta(s) filtrada(s)`)
+      : `todas as ${targets.length} conta(s) ativas`;
+
     const ok = await confirm({
-      title: 'Inscrever webhook em todas',
-      message: `Vai inscrever o App nas WABAs de todas as contas ativas${webhookInactiveCount > 0 ? ` (${webhookInactiveCount} com webhook desativado agora)` : ''}. Continuar?`,
+      title: mode === 'waba' ? 'Inscrever webhook na WABA' : 'Assinar todos os campos do App',
+      message:
+        mode === 'waba'
+          ? `Inscreve o App na WABA (mesmo botão “Inscrever Webhook nesta WABA”). Não precisa de App Secret.\n\nVai aplicar em ${scopeLabel}. Continuar?`
+          : `Assina TODOS os campos de webhook do aplicativo. Precisa de App ID + App Secret em cada conta.\nContas sem isso vão falhar.\n\nVai aplicar em ${scopeLabel}. Continuar?`,
       type: 'warning',
-      confirmText: 'Inscrever todas',
+      confirmText: mode === 'waba' ? 'Inscrever WABA' : 'Assinar campos',
       cancelText: 'Cancelar',
     });
     if (!ok) return;
 
     setSubscribingAllWebhooks(true);
+    setBulkWebhookMode(mode);
     try {
-      const response = await api.post('/whatsapp-accounts/subscribe-webhooks-all', {}, { timeout: 180000 });
+      const response = await api.post(
+        '/whatsapp-accounts/subscribe-webhooks-all',
+        {
+          mode,
+          account_ids: targets.map((account) => account.id),
+        },
+        { timeout: 180000 }
+      );
+      const fails = (response.data?.data?.results || []).filter((r: any) => !r.success).slice(0, 8);
+      const failHint = fails.length
+        ? `\n\nExemplos:\n${fails.map((r: any) => `• ${r.name}: ${r.message}`).join('\n')}`
+        : '';
       await confirm({
         title: response.data.success ? 'Webhooks inscritos' : 'Atenção em algumas contas',
-        message: response.data.message || 'Processo concluído.',
+        message: (response.data.message || 'Processo concluído.') + failHint,
         type: response.data.success ? 'info' : 'danger',
         confirmText: 'OK',
         showCancel: false,
@@ -640,6 +682,7 @@ export default function Configuracoes() {
       });
     } finally {
       setSubscribingAllWebhooks(false);
+      setBulkWebhookMode(null);
     }
   };
 
@@ -1037,13 +1080,13 @@ export default function Configuracoes() {
                   {refreshingAll ? 'Atualizando...' : 'Atualizar Todas Agora'}
                 </button>
                 <button
-                  onClick={handleSubscribeAllWebhooks}
+                  onClick={() => handleSubscribeAllWebhooks('waba', 'all')}
                   disabled={subscribingAllWebhooks || accounts.length === 0}
                   className="flex items-center gap-3 px-6 py-4 bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-2 border-blue-500/40 rounded-xl font-bold transition-all duration-200 shadow-lg hover:shadow-blue-500/30 disabled:opacity-50"
-                  title="Inscrever o App no webhook de todas as WABAs de uma vez"
+                  title="Inscrever o App na WABA de todas as contas (não precisa de App Secret)"
                 >
-                  {subscribingAllWebhooks ? <FaSpinner className="text-xl animate-spin" /> : <FaBell className="text-xl" />}
-                  {subscribingAllWebhooks ? 'Inscrevendo...' : 'Inscrever Webhook em Todas'}
+                  {subscribingAllWebhooks && bulkWebhookMode === 'waba' ? <FaSpinner className="text-xl animate-spin" /> : <FaBell className="text-xl" />}
+                  {subscribingAllWebhooks && bulkWebhookMode === 'waba' ? 'Inscrevendo...' : 'Inscrever WABA em Todas'}
                 </button>
                 <button
                   onClick={() => setShowForm(!showForm)}
@@ -1461,17 +1504,26 @@ export default function Configuracoes() {
                       {webhookInactiveCount}
                     </span>
                   </button>
-                  {filterWebhook === 'inactive' && webhookInactiveCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleSubscribeAllWebhooks}
-                      disabled={subscribingAllWebhooks}
-                      className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold border-2 border-blue-500/50 bg-blue-500/20 text-blue-200 hover:bg-blue-500/30 disabled:opacity-50"
-                    >
-                      {subscribingAllWebhooks ? <FaSpinner className="animate-spin" /> : <FaBell />}
-                      Inscrever nas filtradas / todas
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleSubscribeAllWebhooks('waba', 'targets')}
+                    disabled={subscribingAllWebhooks || filteredAccounts.length === 0}
+                    className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold border-2 border-blue-500/50 bg-blue-500/20 text-blue-200 hover:bg-blue-500/30 disabled:opacity-50"
+                    title="Igual a “Inscrever Webhook nesta WABA”. Não precisa de App ID/Secret. Usa as selecionadas; se nenhuma estiver marcada, usa as filtradas."
+                  >
+                    {subscribingAllWebhooks && bulkWebhookMode === 'waba' ? <FaSpinner className="animate-spin" /> : <FaBell />}
+                    Inscrever WABA nas selecionadas / filtradas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSubscribeAllWebhooks('fields', 'targets')}
+                    disabled={subscribingAllWebhooks || filteredAccounts.length === 0}
+                    className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold border-2 border-orange-500/50 bg-orange-500/20 text-orange-200 hover:bg-orange-500/30 disabled:opacity-50"
+                    title="Assina todos os campos do aplicativo. Precisa de App ID + App Secret em cada conta."
+                  >
+                    {subscribingAllWebhooks && bulkWebhookMode === 'fields' ? <FaSpinner className="animate-spin" /> : <FaSync />}
+                    Assinar todos os campos (App ID/Secret)
+                  </button>
                 </div>
 
                 {/* Filtros */}

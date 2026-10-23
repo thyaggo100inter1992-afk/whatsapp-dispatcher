@@ -817,17 +817,95 @@ export class WhatsAppAccountController {
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
       }
 
-      const accounts = await WhatsAppAccountModel.findAll(tenantId);
+      const mode = String(req.body?.mode || 'waba').toLowerCase() === 'fields' ? 'fields' : 'waba';
+      const requestedIds = Array.isArray(req.body?.account_ids)
+        ? req.body.account_ids.map((id: any) => parseInt(id, 10)).filter((id: number) => Number.isFinite(id))
+        : [];
+
+      const allAccounts = await WhatsAppAccountModel.findAll(tenantId);
+      const allowed = allAccounts.filter((account) => {
+        if (account.is_active === false) return false;
+        const status = String(account.account_status || '').toUpperCase();
+        if (['BANNED', 'FLAGGED', 'RESTRICTED'].includes(status)) return false;
+        if (requestedIds.length > 0 && !requestedIds.includes(account.id)) return false;
+        return true;
+      });
+
+      if (allowed.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: requestedIds.length
+            ? 'Nenhuma das contas informadas está ativa e disponível para inscrição.'
+            : 'Nenhuma conta ativa disponível para inscrição.',
+        });
+      }
+
       const results: Array<{ id: number; name: string; success: boolean; message: string }> = [];
       let ok = 0;
       let fail = 0;
 
-      for (const account of accounts) {
-        if (account.is_active === false) continue;
-        const status = String(account.account_status || '').toUpperCase();
-        if (['BANNED', 'FLAGGED', 'RESTRICTED'].includes(status)) continue;
+      let callbackUrl = '';
+      let verifyToken = '';
+      if (mode === 'fields') {
+        const cfg = await getTenantWebhookConfig(tenantId);
+        callbackUrl = cfg.callbackUrl;
+        verifyToken = cfg.verifyToken;
+      }
 
-        const result = await subscribeWhatsAppAppToWaba({
+      for (const account of allowed) {
+        if (mode === 'waba') {
+          const result = await subscribeWhatsAppAppToWaba({
+            accessToken: account.access_token,
+            businessAccountId: account.business_account_id,
+            phoneNumberId: account.phone_number_id,
+            accountId: account.id,
+            accountName: account.name,
+            tenantId,
+            persistWaba: true,
+          });
+          results.push({
+            id: account.id,
+            name: account.name,
+            success: result.success,
+            message: result.message,
+          });
+          if (result.success) ok += 1;
+          else fail += 1;
+          continue;
+        }
+
+        const appId = String(account.app_id || '').trim();
+        const appSecret = String(account.app_secret || '').trim();
+        if (!appId || !appSecret) {
+          results.push({
+            id: account.id,
+            name: account.name,
+            success: false,
+            message: 'Sem App ID/Secret nesta conta — não dá para assinar os campos do App.',
+          });
+          fail += 1;
+          continue;
+        }
+
+        const fields = normalizeWebhookFields(
+          account.webhook_fields_subscribed
+            ? String(account.webhook_fields_subscribed).split(',')
+            : null
+        );
+        const result = await resubscribeAndVerifyWebhookFields({
+          appId,
+          appSecret,
+          callbackUrl,
+          verifyToken,
+          fields,
+        });
+        await persistAccountWebhookMeta({
+          accountId: account.id,
+          tenantId,
+          appSecret,
+          fields,
+        });
+        const waba = await subscribeWhatsAppAppToWaba({
           accessToken: account.access_token,
           businessAccountId: account.business_account_id,
           phoneNumberId: account.phone_number_id,
@@ -836,22 +914,26 @@ export class WhatsAppAccountController {
           tenantId,
           persistWaba: true,
         });
+        const success = !!(result.success || result.status?.success);
         results.push({
           id: account.id,
           name: account.name,
-          success: result.success,
-          message: result.message,
+          success,
+          message: success
+            ? `${result.message || 'Campos assinados.'} WABA: ${waba.message}`
+            : result.message || 'Falha ao assinar campos do App.',
         });
-        if (result.success) ok += 1;
+        if (success) ok += 1;
         else fail += 1;
       }
 
+      const actionLabel = mode === 'fields' ? 'Campos do App' : 'WABA';
       return res.json({
         success: fail === 0,
         message: fail === 0
-          ? `Webhook inscrito em ${ok} conta(s).`
-          : `Inscritas: ${ok}. Com atenção: ${fail}.`,
-        data: { ok, fail, results },
+          ? `${actionLabel}: inscrito em ${ok} conta(s).`
+          : `${actionLabel} — ok: ${ok}. Com atenção: ${fail}.`,
+        data: { ok, fail, mode, results },
       });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
