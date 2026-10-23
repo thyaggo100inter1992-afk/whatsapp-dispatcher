@@ -31,17 +31,22 @@ export class WhatsAppAccountController {
       const webhookSubscribe = await subscribeWhatsAppAppToWaba({
         accessToken: account.access_token,
         businessAccountId: account.business_account_id,
+        phoneNumberId: account.phone_number_id,
         accountId: account.id,
         accountName: account.name,
         tenantId,
+        persistWaba: true,
       });
+      const refreshed = webhookSubscribe.wabaId
+        ? await WhatsAppAccountModel.findById(account.id, tenantId)
+        : account;
 
       res.status(201).json({
         success: true,
-        data: account,
+        data: refreshed || account,
         webhook_subscribe: webhookSubscribe,
         message: webhookSubscribe.success
-          ? 'Conta criada e App inscrito na WABA para receber webhook.'
+          ? 'Conta criada e já inscrita no webhook da Meta.'
           : `Conta criada. Atenção no webhook: ${webhookSubscribe.message}`,
       });
     } catch (error: any) {
@@ -535,17 +540,22 @@ export class WhatsAppAccountController {
       const webhookSubscribe = await subscribeWhatsAppAppToWaba({
         accessToken: account.access_token,
         businessAccountId: account.business_account_id,
+        phoneNumberId: account.phone_number_id,
         accountId: account.id,
         accountName: account.name,
         tenantId,
+        persistWaba: true,
       });
+      const refreshed = webhookSubscribe.wabaId
+        ? await WhatsAppAccountModel.findById(account.id, tenantId)
+        : account;
 
       res.json({
         success: true,
-        data: account,
+        data: refreshed || account,
         webhook_subscribe: webhookSubscribe,
         message: webhookSubscribe.success
-          ? 'Conta atualizada e webhook da WABA verificado.'
+          ? 'Conta atualizada e webhook da Meta verificado.'
           : `Conta atualizada. Atenção no webhook: ${webhookSubscribe.message}`,
       });
     } catch (error: any) {
@@ -566,14 +576,64 @@ export class WhatsAppAccountController {
       const result = await subscribeWhatsAppAppToWaba({
         accessToken: account.access_token,
         businessAccountId: account.business_account_id,
+        phoneNumberId: account.phone_number_id,
         accountId: account.id,
         accountName: account.name,
         tenantId,
+        persistWaba: true,
       });
       return res.status(result.success ? 200 : 400).json({
         success: result.success,
         message: result.message,
         data: result,
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  async subscribeAllWebhooks(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      const accounts = await WhatsAppAccountModel.findAll(tenantId);
+      const results: Array<{ id: number; name: string; success: boolean; message: string }> = [];
+      let ok = 0;
+      let fail = 0;
+
+      for (const account of accounts) {
+        if (account.is_active === false) continue;
+        const status = String(account.account_status || '').toUpperCase();
+        if (['BANNED', 'FLAGGED', 'RESTRICTED'].includes(status)) continue;
+
+        const result = await subscribeWhatsAppAppToWaba({
+          accessToken: account.access_token,
+          businessAccountId: account.business_account_id,
+          phoneNumberId: account.phone_number_id,
+          accountId: account.id,
+          accountName: account.name,
+          tenantId,
+          persistWaba: true,
+        });
+        results.push({
+          id: account.id,
+          name: account.name,
+          success: result.success,
+          message: result.message,
+        });
+        if (result.success) ok += 1;
+        else fail += 1;
+      }
+
+      return res.json({
+        success: fail === 0,
+        message: fail === 0
+          ? `Webhook inscrito em ${ok} conta(s).`
+          : `Inscritas: ${ok}. Com atenção: ${fail}.`,
+        data: { ok, fail, results },
       });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });

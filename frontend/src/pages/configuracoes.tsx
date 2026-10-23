@@ -52,6 +52,7 @@ export default function Configuracoes() {
   const [loadingDetails, setLoadingDetails] = useState<{[key: number]: boolean}>({});
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [subscribingWebhookId, setSubscribingWebhookId] = useState<number | null>(null);
+  const [subscribingAllWebhooks, setSubscribingAllWebhooks] = useState(false);
   
   // 🔍 BUSCA E FILTROS
   const [searchTerm, setSearchTerm] = useState('');
@@ -399,6 +400,13 @@ export default function Configuracoes() {
     return true;
   });
 
+  const webhookInactiveCount = accounts.filter((account) => {
+    const metaStatus = String((account as any).account_status || '').toUpperCase();
+    if (['BANNED', 'FLAGGED', 'RESTRICTED'].includes(metaStatus)) return false;
+    if (account.is_active === false) return false;
+    return !(webhookStatuses[account.id]?.isActive);
+  }).length;
+
   const loadProxies = async () => {
     try {
       const response = await api.get('/proxies/active');
@@ -551,6 +559,41 @@ export default function Configuracoes() {
       });
     } finally {
       setSubscribingWebhookId(null);
+    }
+  };
+
+  const handleSubscribeAllWebhooks = async () => {
+    if (subscribingAllWebhooks || accounts.length === 0) return;
+    const ok = await confirm({
+      title: 'Inscrever webhook em todas',
+      message: `Vai inscrever o App nas WABAs de todas as contas ativas${webhookInactiveCount > 0 ? ` (${webhookInactiveCount} com webhook desativado agora)` : ''}. Continuar?`,
+      type: 'warning',
+      confirmText: 'Inscrever todas',
+      cancelText: 'Cancelar',
+    });
+    if (!ok) return;
+
+    setSubscribingAllWebhooks(true);
+    try {
+      const response = await api.post('/whatsapp-accounts/subscribe-webhooks-all', {}, { timeout: 180000 });
+      await confirm({
+        title: response.data.success ? 'Webhooks inscritos' : 'Atenção em algumas contas',
+        message: response.data.message || 'Processo concluído.',
+        type: response.data.success ? 'info' : 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+      await loadWebhookStatusesBatch(accounts);
+    } catch (error: any) {
+      await confirm({
+        title: 'Webhook em lote',
+        message: error.response?.data?.message || error.response?.data?.error || error.message,
+        type: 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+    } finally {
+      setSubscribingAllWebhooks(false);
     }
   };
 
@@ -835,6 +878,15 @@ export default function Configuracoes() {
                 >
                   {refreshingAll ? <FaSpinner className="text-xl animate-spin" /> : <FaSync className="text-xl" />}
                   {refreshingAll ? 'Atualizando...' : 'Atualizar Todas Agora'}
+                </button>
+                <button
+                  onClick={handleSubscribeAllWebhooks}
+                  disabled={subscribingAllWebhooks || accounts.length === 0}
+                  className="flex items-center gap-3 px-6 py-4 bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-2 border-blue-500/40 rounded-xl font-bold transition-all duration-200 shadow-lg hover:shadow-blue-500/30 disabled:opacity-50"
+                  title="Inscrever o App no webhook de todas as WABAs de uma vez"
+                >
+                  {subscribingAllWebhooks ? <FaSpinner className="text-xl animate-spin" /> : <FaBell className="text-xl" />}
+                  {subscribingAllWebhooks ? 'Inscrevendo...' : 'Inscrever Webhook em Todas'}
                 </button>
                 <button
                   onClick={() => setShowForm(!showForm)}
@@ -1141,6 +1193,36 @@ export default function Configuracoes() {
                   />
                 </div>
 
+                {/* Atalho Webhook Desativado */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFilterWebhook(filterWebhook === 'inactive' ? 'all' : 'inactive')}
+                    className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold border-2 transition-all ${
+                      filterWebhook === 'inactive'
+                        ? 'bg-red-500/30 text-red-100 border-red-400 shadow-lg shadow-red-500/20'
+                        : 'bg-red-500/10 text-red-300 border-red-500/40 hover:bg-red-500/20'
+                    }`}
+                  >
+                    <FaBell className="text-lg" />
+                    {filterWebhook === 'inactive' ? 'Mostrando só Webhook Desativado' : 'Filtrar Webhook Desativado'}
+                    <span className="ml-1 px-2.5 py-0.5 rounded-lg bg-black/30 text-sm">
+                      {webhookInactiveCount}
+                    </span>
+                  </button>
+                  {filterWebhook === 'inactive' && webhookInactiveCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleSubscribeAllWebhooks}
+                      disabled={subscribingAllWebhooks}
+                      className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold border-2 border-blue-500/50 bg-blue-500/20 text-blue-200 hover:bg-blue-500/30 disabled:opacity-50"
+                    >
+                      {subscribingAllWebhooks ? <FaSpinner className="animate-spin" /> : <FaBell />}
+                      Inscrever nas filtradas / todas
+                    </button>
+                  )}
+                </div>
+
                 {/* Filtros */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Filtro Webhook */}
@@ -1149,11 +1231,15 @@ export default function Configuracoes() {
                     <select
                       value={filterWebhook}
                       onChange={(e) => setFilterWebhook(e.target.value as any)}
-                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-white/20 rounded-xl text-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/30 transition-all"
+                      className={`w-full px-4 py-3 bg-dark-700/80 border-2 rounded-xl text-white focus:ring-4 focus:ring-primary-500/30 transition-all ${
+                        filterWebhook === 'inactive'
+                          ? 'border-red-500 focus:border-red-400'
+                          : 'border-white/20 focus:border-primary-500'
+                      }`}
                     >
                       <option value="all">Todos</option>
                       <option value="active">✅ Ativado</option>
-                      <option value="inactive">❌ Desativado</option>
+                      <option value="inactive">❌ Desativado ({webhookInactiveCount})</option>
                     </select>
                   </div>
 

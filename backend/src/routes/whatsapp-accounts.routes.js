@@ -77,6 +77,9 @@ router.get('/status', (req, res) => controller.getAccountsStatus(req, res));
 // Testar conexão com credenciais (sem salvar)
 router.post('/test-connection', (req, res) => controller.testConnection(req, res));
 
+// Inscrever webhook em todas as WABAs ativas do tenant
+router.post('/subscribe-webhooks-all', (req, res) => controller.subscribeAllWebhooks(req, res));
+
 // Buscar detalhes da conta por ID
 router.get('/:id/details', (req, res) => controller.getAccountDetails(req, res));
 
