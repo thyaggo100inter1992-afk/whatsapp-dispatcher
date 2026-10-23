@@ -271,77 +271,84 @@ export class WhatsAppService {
       console.log('📱 Usando Resumable Upload API com App ID');
       console.log(`   App ID: ${appId}`);
       console.log(`   Arquivo: ${fileName}`);
+      console.log(`   Tipo: ${mimeType}`);
       console.log(`   Tamanho: ${fileBuffer.length} bytes`);
-      
-      // Passo 1: Criar sessão de upload
-      const sessionUrl = `https://graph.facebook.com/v18.0/${appId}/uploads`;
-      const sessionPayload = {
+
+      // Meta exige query params (não JSON body) para criar a sessão
+      const sessionUrl = `https://graph.facebook.com/v21.0/${appId}/uploads`;
+      const sessionParams = {
         file_length: fileBuffer.length,
-        file_type: mimeType,
-        file_name: fileName
+        file_type: mimeType || 'image/jpeg',
+        file_name: fileName || 'profile.jpg',
+        access_token: accessToken,
       };
-      
+
       let requestConfig: AxiosRequestConfig = {
+        params: sessionParams,
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
+          Authorization: `Bearer ${accessToken}`,
+        },
       };
-      
-      // Aplicar proxy se configurado
+
       const proxyConfig = accountId && tenantId ? await getProxyConfigFromAccount(accountId, tenantId) : null;
       if (proxyConfig) {
         console.log(`🌐 Aplicando proxy: ${formatProxyInfo(proxyConfig)}`);
         requestConfig = applyProxyToRequest(requestConfig, proxyConfig, accountName || 'WhatsApp Service');
       }
-      
+
       console.log('📤 Passo 1: Criando sessão de upload...');
-      const sessionResponse = await axios.post(sessionUrl, sessionPayload, requestConfig);
+      const sessionResponse = await axios.post(sessionUrl, null, requestConfig);
       const uploadSessionId = sessionResponse.data.id;
-      
+
+      if (!uploadSessionId) {
+        throw new Error('Sessão de upload sem ID na resposta da Meta');
+      }
+
       console.log(`✅ Sessão criada: ${uploadSessionId}`);
-      
-      // Passo 2: Fazer upload do arquivo
-      const uploadUrl = `https://graph.facebook.com/v18.0/${uploadSessionId}`;
-      const FormData = require('form-data');
-      const form = new FormData();
-      form.append('file', fileBuffer, {
-        contentType: mimeType,
-        filename: fileName,
-      });
-      
+
+      // Passo 2: upload binário cru (não multipart) — exigência do Resumable Upload
+      const uploadUrl = `https://graph.facebook.com/v21.0/${uploadSessionId}`;
       let uploadConfig: AxiosRequestConfig = {
         headers: {
-          ...form.getHeaders(),
-          'Authorization': `OAuth ${accessToken}`,
-          'file_offset': '0'
+          Authorization: `OAuth ${accessToken}`,
+          file_offset: '0',
+          'Content-Type': mimeType || 'application/octet-stream',
         },
         maxBodyLength: Infinity,
-        maxContentLength: Infinity
+        maxContentLength: Infinity,
       };
-      
+
       if (proxyConfig) {
         uploadConfig = applyProxyToRequest(uploadConfig, proxyConfig, accountName || 'WhatsApp Service');
       }
-      
-      console.log('📤 Passo 2: Fazendo upload do arquivo...');
-      const uploadResponse = await axios.post(uploadUrl, form, uploadConfig);
-      const mediaHandle = uploadResponse.data.h;
-      
-      console.log(`✅ Upload concluído! Handle: ${mediaHandle}`);
-      
+
+      console.log('📤 Passo 2: Enviando bytes do arquivo...');
+      const uploadResponse = await axios.post(uploadUrl, fileBuffer, uploadConfig);
+      const mediaHandle = uploadResponse.data?.h;
+
+      if (!mediaHandle) {
+        console.error('❌ Resposta sem handle h:', uploadResponse.data);
+        throw new Error('Meta não retornou handle (h) do upload');
+      }
+
+      console.log(`✅ Upload concluído! Handle: ${String(mediaHandle).slice(0, 24)}...`);
+
       return {
         success: true,
-        mediaHandle: mediaHandle, // Handle no formato 4::xxx
-        uploadSessionId: uploadSessionId,
-        proxyUsed: !!proxyConfig
+        mediaHandle,
+        uploadSessionId,
+        proxyUsed: !!proxyConfig,
       };
-      
     } catch (error: any) {
+      const metaMsg =
+        error.response?.data?.error?.message ||
+        error.response?.data?.error?.error_user_msg ||
+        (typeof error.response?.data === 'string' ? error.response.data : null) ||
+        error.message;
       console.error('❌ Erro na Resumable Upload API:', error.response?.data || error.message);
       return {
         success: false,
-        error: error.response?.data?.error?.message || error.message,
+        error: metaMsg,
       };
     }
   }

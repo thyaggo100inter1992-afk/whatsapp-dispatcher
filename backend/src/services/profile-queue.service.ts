@@ -132,9 +132,77 @@ class ProfileQueueService extends EventEmitter {
     console.log('\n✅ Fila de perfis processada completamente');
   }
 
+  private metaErrorMessage(error: any): string {
+    const data = error?.response?.data;
+    return (
+      data?.error?.error_user_msg ||
+      data?.error?.message ||
+      (typeof data === 'string' ? data : null) ||
+      error?.message ||
+      'Erro desconhecido na Meta'
+    );
+  }
+
+  /** Meta aceita só JPEG na foto de perfil; normaliza PNG/etc para JPG quadrado. */
+  private async prepareProfileJpeg(logoPath: string): Promise<{ buffer: Buffer; fileName: string }> {
+    const sharp = require('sharp');
+    const meta = await sharp(logoPath).metadata();
+    const side = Math.min(meta.width || 640, meta.height || 640, 640);
+    const size = Math.max(side, 192);
+
+    const buffer: Buffer = await sharp(logoPath)
+      .rotate()
+      .resize(size, size, { fit: 'cover', position: 'centre' })
+      .jpeg({ quality: 90, mozjpeg: true })
+      .toBuffer();
+
+    return { buffer, fileName: 'profile.jpg' };
+  }
+
+  private async postBusinessProfile(account: any, accountId: number, dataToSend: any) {
+    let requestConfig: any = {
+      headers: {
+        Authorization: `Bearer ${account.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    };
+
+    const proxyConfig = account.tenant_id
+      ? await getProxyConfigFromAccount(accountId, account.tenant_id)
+      : null;
+    if (proxyConfig) {
+      console.log(`🌐 Aplicando proxy: ${formatProxyInfo(proxyConfig)} - Conta: ${account.name}`);
+      requestConfig = applyProxyToRequest(requestConfig, proxyConfig, account.name);
+    }
+
+    console.log(
+      '📤 Enviando para API:',
+      JSON.stringify(
+        {
+          ...dataToSend,
+          profile_picture_handle: dataToSend.profile_picture_handle ? '[handle]' : undefined,
+        },
+        null,
+        2
+      )
+    );
+
+    try {
+      const response = await axios.post(
+        `https://graph.facebook.com/v21.0/${account.phone_number_id}/whatsapp_business_profile`,
+        dataToSend,
+        requestConfig
+      );
+      console.log('✅ Resposta da API:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Meta business_profile:', error.response?.data || error.message);
+      throw new Error(this.metaErrorMessage(error));
+    }
+  }
+
   // Processar atualização
   private async processUpdate(item: QueueItem) {
-    // Buscar dados completos da conta
     const accountResult = await query(
       'SELECT * FROM whatsapp_accounts WHERE id = $1',
       [item.accountId]
@@ -146,19 +214,24 @@ class ProfileQueueService extends EventEmitter {
 
     const account = accountResult.rows[0];
 
-    // Preparar dados para envio (apenas campos selecionados, sem logo*)
-    const dataToSend: any = {
+    // Campos de texto (sem logo) — aplicados mesmo se a foto falhar depois
+    const textPayload: any = {
       messaging_product: 'whatsapp',
     };
 
     item.fieldsToUpdate.forEach((field: any) => {
       if (field === 'profile_picture') return;
-      if (item.profileData[field] !== undefined && item.profileData[field] !== null) {
-        dataToSend[field] = item.profileData[field];
+      if (item.profileData[field] !== undefined && item.profileData[field] !== null && item.profileData[field] !== '') {
+        textPayload[field] = item.profileData[field];
       }
     });
 
-    // Logo / foto de perfil via Resumable Upload → profile_picture_handle
+    const hasText = Object.keys(textPayload).some((k) => k !== 'messaging_product');
+    if (hasText) {
+      await this.postBusinessProfile(account, item.accountId, textPayload);
+    }
+
+    // Logo / foto de perfil: JPEG via Resumable Upload → profile_picture_handle
     if (item.fieldsToUpdate.includes('profile_picture')) {
       const logoPath = item.profileData.logoPath;
       if (!logoPath || !fs.existsSync(logoPath)) {
@@ -169,17 +242,16 @@ class ProfileQueueService extends EventEmitter {
         throw new Error('App ID é obrigatório nesta conta para enviar a logo (Resumable Upload)');
       }
 
-      const fileBuffer = fs.readFileSync(logoPath);
-      const mimeType = item.profileData.logoMimeType || 'image/jpeg';
-      const fileName = item.profileData.logoFileName || path.basename(logoPath);
+      console.log(`🖼️ Preparando JPEG da logo — ${account.name}`);
+      const prepared = await this.prepareProfileJpeg(logoPath);
 
-      console.log(`🖼️ Upload da logo via Resumable API — ${account.name}`);
+      console.log(`🖼️ Upload Resumable — ${account.name} (${prepared.buffer.length} bytes JPEG)`);
       const upload = await whatsappService.uploadMediaWithAppId(
         appId,
         account.access_token,
-        fileBuffer,
-        mimeType,
-        fileName,
+        prepared.buffer,
+        'image/jpeg',
+        prepared.fileName,
         item.accountId,
         account.name,
         account.tenant_id
@@ -189,49 +261,19 @@ class ProfileQueueService extends EventEmitter {
         throw new Error(upload.error || 'Falha no upload da logo (Resumable API)');
       }
 
-      dataToSend.profile_picture_handle = upload.mediaHandle;
-    }
+      await this.postBusinessProfile(account, item.accountId, {
+        messaging_product: 'whatsapp',
+        profile_picture_handle: upload.mediaHandle,
+      });
 
-    const hasProfilePayload = Object.keys(dataToSend).some((k) => k !== 'messaging_product');
-    if (!hasProfilePayload) {
-      throw new Error('Nenhum dado de perfil para enviar');
-    }
-
-    console.log('📤 Enviando para API:', JSON.stringify({
-      ...dataToSend,
-      profile_picture_handle: dataToSend.profile_picture_handle ? '[handle]' : undefined,
-    }, null, 2));
-
-    // Configurar requisição com proxy se disponível
-    let requestConfig: any = {
-      headers: {
-        'Authorization': `Bearer ${account.access_token}`,
-        'Content-Type': 'application/json'
-      }
-    };
-
-    const proxyConfig = account.tenant_id ? await getProxyConfigFromAccount(item.accountId, account.tenant_id) : null;
-    if (proxyConfig) {
-      console.log(`🌐 Aplicando proxy: ${formatProxyInfo(proxyConfig)} - Conta: ${account.name}`);
-      requestConfig = applyProxyToRequest(requestConfig, proxyConfig, account.name);
-    }
-
-    // Atualizar perfil via WhatsApp API
-    const response = await axios.post(
-      `https://graph.facebook.com/v18.0/${account.phone_number_id}/whatsapp_business_profile`,
-      dataToSend,
-      requestConfig
-    );
-
-    console.log('✅ Resposta da API:', response.data);
-
-    if (item.fieldsToUpdate.includes('profile_picture') && dataToSend.profile_picture_handle) {
       await query(
-        `UPDATE whatsapp_accounts
-         SET updated_at = NOW()
-         WHERE id = $1`,
+        `UPDATE whatsapp_accounts SET updated_at = NOW() WHERE id = $1`,
         [item.accountId]
       ).catch(() => undefined);
+    }
+
+    if (!hasText && !item.fieldsToUpdate.includes('profile_picture')) {
+      throw new Error('Nenhum dado de perfil para enviar');
     }
   }
 

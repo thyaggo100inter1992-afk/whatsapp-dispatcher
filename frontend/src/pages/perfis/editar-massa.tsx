@@ -693,7 +693,7 @@ export default function EditarPerfilMassa() {
                   Logo / Foto de Perfil
                 </label>
                 <p className="text-white/60 text-sm mb-4">
-                  Opcional. JPG ou PNG, até 5MB. Ideal 640x640. Aplica a mesma logo em todas as contas selecionadas (precisa de App ID na conta).
+                  Opcional. JPG ou PNG (PNG é convertido automaticamente para JPG). Até 5MB, ideal 640x640 quadrado. Mesma logo em todas as contas (precisa de App ID).
                 </p>
                 <input
                   type="file"
