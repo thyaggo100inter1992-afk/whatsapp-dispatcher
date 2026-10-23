@@ -20,16 +20,25 @@ export interface WhatsAppAccount {
 }
 
 export class WhatsAppAccountModel {
+  private static appSecretColumnsReady = false;
+
+  /** Garante colunas usadas no cadastro (App Secret / webhooks). */
+  static async ensureAppSecretColumns() {
+    if (this.appSecretColumnsReady) return;
+    await query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS app_secret TEXT`);
+    await query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS webhook_fields_subscribed TEXT`);
+    this.appSecretColumnsReady = true;
+  }
+
   static async create(account: WhatsAppAccount, tenantId: number) {
+    await this.ensureAppSecretColumns();
+
     // Buscar o maior display_order atual para este tenant
     const maxOrderResult = await query(
       'SELECT COALESCE(MAX(display_order), 0) as max_order FROM whatsapp_accounts WHERE tenant_id = $1',
       [tenantId]
     );
     const nextOrder = (maxOrderResult.rows[0]?.max_order || 0) + 10;
-    
-    await query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS app_secret TEXT`).catch(() => undefined);
-    await query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS webhook_fields_subscribed TEXT`).catch(() => undefined);
 
     const result = await query(
       `INSERT INTO whatsapp_accounts 
@@ -97,17 +106,43 @@ export class WhatsAppAccountModel {
   }
 
   static async update(id: number, account: Partial<WhatsAppAccount>, tenantId?: number) {
+    await this.ensureAppSecretColumns();
+
+    const allowedKeys = new Set([
+      'name',
+      'phone_number',
+      'access_token',
+      'phone_number_id',
+      'business_account_id',
+      'app_id',
+      'app_secret',
+      'webhook_verify_token',
+      'webhook_fields_subscribed',
+      'is_active',
+      'display_order',
+      'proxy_id',
+      'account_status',
+      'quality_rating',
+      'profile_picture_url',
+      'display_name',
+      'whatsapp_display_name',
+    ]);
+
     const fields: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
 
     Object.entries(account).forEach(([key, value]) => {
-      if (value !== undefined) {
+      if (value !== undefined && allowedKeys.has(key)) {
         fields.push(`${key} = $${paramCount}`);
         values.push(value);
         paramCount++;
       }
     });
+
+    if (fields.length === 0) {
+      throw new Error('Nenhum campo válido para atualizar');
+    }
 
     fields.push(`updated_at = CURRENT_TIMESTAMP`);
     values.push(id);
