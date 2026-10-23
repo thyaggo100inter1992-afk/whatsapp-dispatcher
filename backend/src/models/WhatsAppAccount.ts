@@ -1,4 +1,5 @@
 import { query } from '../database/connection';
+import { ensureWhatsAppAccountStatusColumn } from '../helpers/whatsapp-banned.helper';
 
 export interface WhatsAppAccount {
   id?: number;
@@ -64,8 +65,13 @@ export class WhatsAppAccountModel {
     if (!tenantId) {
       throw new Error('tenantId é obrigatório para findActive');
     }
+    await ensureWhatsAppAccountStatusColumn();
     const result = await query(
-      'SELECT * FROM whatsapp_accounts WHERE is_active = true AND tenant_id = $1 ORDER BY display_order ASC, created_at DESC',
+      `SELECT * FROM whatsapp_accounts
+       WHERE is_active = true
+         AND tenant_id = $1
+         AND COALESCE(UPPER(account_status), '') NOT IN ('BANNED', 'FLAGGED', 'RESTRICTED')
+       ORDER BY display_order ASC, created_at DESC`,
       [tenantId]
     );
     return result.rows;

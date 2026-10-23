@@ -66,20 +66,17 @@ export default function ApiStatus() {
 
     try {
       const response = await api.get('/whatsapp-accounts/status');
-      const accountsData = response.data.accounts || [];
+      const accountsData = (response.data.accounts || []).filter((account: AccountStatus) => {
+        const status = String(account.account_status || '').toUpperCase();
+        return !['BANNED', 'FLAGGED', 'RESTRICTED'].includes(status);
+      });
       
       // Ordenar contas: primeiro as com problemas, depois por mensagens enviadas
       const sortedAccounts = accountsData.sort((a: AccountStatus, b: AccountStatus) => {
         // Verificar se tem problemas (incluindo status da conta)
-        const badStatuses = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'];
-        const aHasProblems = badStatuses.includes(a.account_status) || !a.api_connected || ['RED', 'YELLOW', 'FLAGGED'].includes(a.quality_score);
-        const bHasProblems = badStatuses.includes(b.account_status) || !b.api_connected || ['RED', 'YELLOW', 'FLAGGED'].includes(b.quality_score);
-        
-        // Contas banidas/flagged vêm primeiro
-        const aBanned = a.account_status === 'BANNED';
-        const bBanned = b.account_status === 'BANNED';
-        if (aBanned && !bBanned) return -1;
-        if (!aBanned && bBanned) return 1;
+        const badStatuses = ['DISCONNECTED'];
+        const aHasProblems = badStatuses.includes(a.account_status) || !a.api_connected || ['RED', 'YELLOW'].includes(a.quality_score);
+        const bHasProblems = badStatuses.includes(b.account_status) || !b.api_connected || ['RED', 'YELLOW'].includes(b.quality_score);
         
         // Se apenas A tem problemas, A vem primeiro
         if (aHasProblems && !bHasProblems) return -1;

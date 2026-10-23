@@ -2,6 +2,7 @@ import { query } from '../database/connection';
 import { queryWithTenantId } from '../database/tenant-query';
 import { whatsappService } from '../services/whatsapp.service';
 import { whatsappHealthService } from '../services/whatsapp-health.service';
+import { isBannedMetaStatus, syncWhatsAppAccountMetaStatus } from '../helpers/whatsapp-banned.helper';
 import { RestrictionListController } from '../controllers/restriction-list.controller';
 import { getBrazilNow } from '../utils/timezone';
 import { query as queryNoTenant } from '../database/connection';
@@ -340,9 +341,20 @@ class CampaignWorker {
         console.log(`🚨 Conta: ${account_name || whatsapp_account_id}`);
         console.log(`🚨 Motivo: ${reason}`);
         console.log(`🚨 Quality Rating: ${health.quality_rating}`);
+        console.log(`🚨 Status Meta: ${health.status}`);
         console.log(`🚨 AÇÃO: Removendo da campanha automaticamente`);
         console.log('🚨 ═══════════════════════════════════════════════════');
         console.log('');
+
+        // Conta banida/sinalizada/restrita: desativa no sistema e some dos envios
+        if (isBannedMetaStatus(health.status) && tenant_id) {
+          await syncWhatsAppAccountMetaStatus({
+            accountId: whatsapp_account_id,
+            tenantId: Number(tenant_id),
+            qualityRating: health.quality_rating,
+            accountStatus: health.status,
+          });
+        }
 
         // Buscar todas as campanhas que usam esta conta e desativá-la
         const campaignsResult = await query(
@@ -363,7 +375,11 @@ class CampaignWorker {
           console.log(`   ⚠️ Conta ${whatsapp_account_id} desativada da campanha ${row.campaign_id}`);
         }
         
-        console.log(`🔄 Conta será reativada automaticamente quando a qualidade melhorar (GREEN)`);
+        if (!isBannedMetaStatus(health.status)) {
+          console.log(`🔄 Conta será reativada automaticamente quando a qualidade melhorar (GREEN)`);
+        } else {
+          console.log(`🚫 Conta banida: permanece desativada e oculta dos envios/status.`);
+        }
       } else {
         console.log(`✅ Conta ${whatsapp_account_id} com health OK (${health.quality_rating})`);
       }
@@ -385,12 +401,23 @@ class CampaignWorker {
           let reactivationReason = '';
 
           // Verificar tipo de remoção
+          // Banidas/sinalizadas/restritas NÃO voltam sozinhas
+          if (
+            last_error &&
+            (last_error.includes('Conta BANNED') ||
+              last_error.includes('Conta FLAGGED') ||
+              last_error.includes('Conta RESTRICTED') ||
+              last_error.includes('CONTA BANIDA') ||
+              last_error.includes('SINALIZADA') ||
+              last_error.includes('RESTRITA'))
+          ) {
+            console.log(`🚫 Conta ${whatsapp_account_id} banida/sinalizada — sem reativação automática`);
+            return;
+          }
+
           const isHealthRemoval = last_error && (
             last_error.includes('Qualidade') || 
-            last_error.includes('Conta DISCONNECTED') ||
-            last_error.includes('Conta FLAGGED') ||
-            last_error.includes('Conta RESTRICTED') ||
-            last_error.includes('Conta BANNED')
+            last_error.includes('Conta DISCONNECTED')
           );
 
           const isFailureRemoval = last_error && last_error.includes('5 falhas');
@@ -596,6 +623,7 @@ class CampaignWorker {
        WHERE ct.campaign_id = $1 
          AND ct.is_active = true 
          AND w.is_active = true
+         AND COALESCE(UPPER(w.account_status), '') NOT IN ('BANNED', 'FLAGGED', 'RESTRICTED')
        ORDER BY ct.order_index`,
       [campaign.id]
     );

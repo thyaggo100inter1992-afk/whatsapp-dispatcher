@@ -6,6 +6,11 @@ import axios, { AxiosRequestConfig } from 'axios';
 import { getProxyConfigFromAccount, applyProxyToRequest, formatProxyInfo } from '../helpers/proxy.helper';
 import { cloudinaryService } from '../services/cloudinary.service';
 import { subscribeWhatsAppAppToWaba } from '../helpers/whatsapp-waba-subscribe.helper';
+import {
+  ensureWhatsAppAccountStatusColumn,
+  isBannedMetaStatus,
+  syncWhatsAppAccountMetaStatus,
+} from '../helpers/whatsapp-banned.helper';
 
 export class WhatsAppAccountController {
   async create(req: Request, res: Response) {
@@ -106,7 +111,7 @@ export class WhatsAppAccountController {
       // Buscar nome e quality rating
       try {
         let accountInfoConfig: AxiosRequestConfig = {
-          params: { fields: 'verified_name,quality_rating' },
+          params: { fields: 'verified_name,quality_rating,status' },
           headers: { 'Authorization': `Bearer ${account.access_token}` },
           timeout: 10000
         };
@@ -124,20 +129,19 @@ export class WhatsAppAccountController {
         );
         whatsappDisplayName = accountInfoResponse.data.verified_name || account.name;
         qualityRating = accountInfoResponse.data.quality_rating || null;
-        
+        const metaStatus = accountInfoResponse.data.status || null;
+
         console.log(`✅ Quality Rating obtido com sucesso para conta ${accountId}: ${qualityRating}`);
-        
-        // Salvar quality_rating no banco para cache
-        if (qualityRating) {
-          try {
-            await tenantQuery(req,
-              'UPDATE whatsapp_accounts SET quality_rating = $1, updated_at = NOW() WHERE id = $2',
-              [qualityRating, accountId]
-            );
-            console.log(`💾 Quality Rating salvo em cache: ${qualityRating}`);
-          } catch (dbError) {
-            console.error('❌ Erro ao salvar quality_rating no banco:', dbError);
-          }
+
+        try {
+          await syncWhatsAppAccountMetaStatus({
+            accountId,
+            tenantId,
+            qualityRating,
+            accountStatus: metaStatus,
+          });
+        } catch (dbError) {
+          console.error('❌ Erro ao salvar status Meta no banco:', dbError);
         }
       } catch (err: any) {
         console.error(`❌ Erro ao buscar info da conta ${accountId}:`, {
@@ -444,6 +448,7 @@ export class WhatsAppAccountController {
         
         // Buscar contas API autorizadas (se solicitado)
         if (connectionType === 'api' || connectionType === 'all') {
+          await ensureWhatsAppAccountStatusColumn();
           const apiAccountsResult = await tenantQuery(req, `
             SELECT wa.* 
             FROM whatsapp_accounts wa
@@ -451,6 +456,7 @@ export class WhatsAppAccountController {
             WHERE uwa.user_id = $1 
               AND uwa.tenant_id = $2 
               AND wa.is_active = true
+              AND COALESCE(UPPER(wa.account_status), '') NOT IN ('BANNED', 'FLAGGED', 'RESTRICTED')
             ORDER BY wa.display_order ASC, wa.created_at DESC
           `, [userId, tenantId]);
           apiAccounts = apiAccountsResult.rows;
@@ -1132,12 +1138,15 @@ export class WhatsAppAccountController {
 
             console.log(`   ✅ Quality: ${qualityScore}, Status: ${accountStatus}`);
 
-            // Atualizar cache no banco
-            await tenantQuery(
-              req,
-              'UPDATE whatsapp_accounts SET quality_rating = $1 WHERE id = $2',
-              [qualityScore, account.id]
-            );
+            const banSync = await syncWhatsAppAccountMetaStatus({
+              accountId: account.id,
+              tenantId,
+              qualityRating: qualityScore,
+              accountStatus,
+            });
+            if (banSync.banned) {
+              account.is_active = false;
+            }
             
             // Tentar buscar foto de perfil da API (se não tiver em cache)
             if (!profilePictureUrl) {
@@ -1227,11 +1236,18 @@ export class WhatsAppAccountController {
         }
       }));
 
-      console.log(`✅ Status de ${accountsStatus.length} conta(s) processado(s)`);
+      const visibleAccounts = accountsStatus.filter(
+        (item: any) => !isBannedMetaStatus(item.account_status)
+      );
+
+      console.log(
+        `✅ Status de ${visibleAccounts.length} conta(s) visível(is) ` +
+        `(${accountsStatus.length - visibleAccounts.length} banida(s) ocultada(s))`
+      );
       
       res.json({ 
         success: true, 
-        accounts: accountsStatus 
+        accounts: visibleAccounts 
       });
     } catch (error: any) {
       console.error('❌ Erro ao buscar status das contas:', error);

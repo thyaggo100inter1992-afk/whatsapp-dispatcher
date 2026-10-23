@@ -362,6 +362,10 @@ export default function Configuracoes() {
 
   // 🔍 FILTRAR CONTAS
   const filteredAccounts = accounts.filter((account) => {
+    // Contas banidas/sinalizadas/restritas não aparecem em lugar nenhum
+    const metaStatus = String((account as any).account_status || '').toUpperCase();
+    if (['BANNED', 'FLAGGED', 'RESTRICTED'].includes(metaStatus)) return false;
+
     // Busca por nome ou telefone
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
