@@ -50,12 +50,25 @@ export function normalizeWebhookFields(input?: string[] | null): string[] {
 }
 
 async function ensureAppSecretColumn() {
-  await pool
-    .query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS app_secret TEXT`)
-    .catch(() => undefined);
-  await pool
-    .query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS webhook_fields_subscribed TEXT`)
-    .catch(() => undefined);
+  // Só verifica existência — não faz ALTER (whatsapp_user não é owner)
+  const result = await pool.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'whatsapp_accounts'
+       AND column_name IN ('app_secret', 'webhook_fields_subscribed')`
+  );
+  const found = new Set(result.rows.map((r: any) => r.column_name));
+  if (found.has('app_secret') && found.has('webhook_fields_subscribed')) return;
+  // Se faltarem, tenta ALTER e ignora falha de permissão (migração manual já cobre)
+  if (!found.has('app_secret')) {
+    await pool.query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS app_secret TEXT`).catch(() => undefined);
+  }
+  if (!found.has('webhook_fields_subscribed')) {
+    await pool
+      .query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS webhook_fields_subscribed TEXT`)
+      .catch(() => undefined);
+  }
 }
 
 /**

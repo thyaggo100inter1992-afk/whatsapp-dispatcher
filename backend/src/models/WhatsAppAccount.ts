@@ -22,12 +22,44 @@ export interface WhatsAppAccount {
 export class WhatsAppAccountModel {
   private static appSecretColumnsReady = false;
 
-  /** Garante colunas usadas no cadastro (App Secret / webhooks). */
+  /**
+   * Confirma colunas app_secret / webhook_fields_subscribed.
+   * Não usa ALTER em runtime (whatsapp_user não é owner da tabela).
+   */
   static async ensureAppSecretColumns() {
     if (this.appSecretColumnsReady) return;
-    await query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS app_secret TEXT`);
-    await query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS webhook_fields_subscribed TEXT`);
-    this.appSecretColumnsReady = true;
+
+    const result = await query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'whatsapp_accounts'
+         AND column_name IN ('app_secret', 'webhook_fields_subscribed')`
+    );
+    const found = new Set(result.rows.map((r: any) => r.column_name));
+    if (found.has('app_secret') && found.has('webhook_fields_subscribed')) {
+      this.appSecretColumnsReady = true;
+      return;
+    }
+
+    // Tenta criar (só funciona se o role for owner/superuser)
+    try {
+      if (!found.has('app_secret')) {
+        await query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS app_secret TEXT`);
+      }
+      if (!found.has('webhook_fields_subscribed')) {
+        await query(`ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS webhook_fields_subscribed TEXT`);
+      }
+      this.appSecretColumnsReady = true;
+    } catch (error: any) {
+      const msg = String(error?.message || error);
+      if (/must be owner/i.test(msg)) {
+        throw new Error(
+          'Colunas app_secret/webhook_fields_subscribed ausentes e o usuário do banco não pode alterá-las. Rode como postgres: ALTER TABLE whatsapp_accounts ADD COLUMN IF NOT EXISTS app_secret TEXT; ADD COLUMN IF NOT EXISTS webhook_fields_subscribed TEXT;'
+        );
+      }
+      throw error;
+    }
   }
 
   static async create(account: WhatsAppAccount, tenantId: number) {
