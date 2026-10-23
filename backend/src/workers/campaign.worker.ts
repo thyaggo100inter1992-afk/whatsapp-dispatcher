@@ -346,8 +346,7 @@ class CampaignWorker {
         console.log('🚨 ═══════════════════════════════════════════════════');
         console.log('');
 
-        // Conta banida/sinalizada/restrita: desativa no sistema e some dos envios
-        if (isBannedMetaStatus(health.status) && tenant_id) {
+        if (tenant_id) {
           await syncWhatsAppAccountMetaStatus({
             accountId: whatsapp_account_id,
             tenantId: Number(tenant_id),
@@ -382,6 +381,14 @@ class CampaignWorker {
         }
       } else {
         console.log(`✅ Conta ${whatsapp_account_id} com health OK (${health.quality_rating})`);
+        if (tenant_id) {
+          await syncWhatsAppAccountMetaStatus({
+            accountId: whatsapp_account_id,
+            tenantId: Number(tenant_id),
+            qualityRating: health.quality_rating,
+            accountStatus: health.status,
+          });
+        }
       }
 
       // ====== REATIVAÇÃO ======
@@ -400,19 +407,24 @@ class CampaignWorker {
           let canReactivate = false;
           let reactivationReason = '';
 
-          // Verificar tipo de remoção
-          // Banidas/sinalizadas/restritas NÃO voltam sozinhas
-          if (
+          const wasBannedRemoval =
             last_error &&
             (last_error.includes('Conta BANNED') ||
               last_error.includes('Conta FLAGGED') ||
               last_error.includes('Conta RESTRICTED') ||
               last_error.includes('CONTA BANIDA') ||
               last_error.includes('SINALIZADA') ||
-              last_error.includes('RESTRITA'))
-          ) {
-            console.log(`🚫 Conta ${whatsapp_account_id} banida/sinalizada — sem reativação automática`);
-            return;
+              last_error.includes('RESTRITA'));
+
+          if (wasBannedRemoval) {
+            if (!isBannedMetaStatus(health.status) && health.status === 'CONNECTED') {
+              canReactivate = true;
+              reactivationReason = 'Meta desbaniu a conta (status CONNECTED)';
+              console.log(`✅ Conta ${whatsapp_account_id} desbanida na Meta — reativando campanhas.`);
+            } else {
+              console.log(`🚫 Conta ${whatsapp_account_id} ainda banida na Meta — permanece fora das funcionalidades`);
+              return;
+            }
           }
 
           const isHealthRemoval = last_error && (

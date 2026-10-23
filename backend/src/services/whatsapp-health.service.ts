@@ -1,5 +1,6 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import { getProxyConfigFromAccount, applyProxyToRequest, formatProxyInfo } from '../helpers/proxy.helper';
+import { extractBanFromMetaPhonePayload } from '../helpers/whatsapp-banned.helper';
 
 export interface PhoneNumberHealth {
   phone_number_id: string;
@@ -23,7 +24,7 @@ class WhatsAppHealthService {
     try {
       let requestConfig: AxiosRequestConfig = {
         params: {
-          fields: 'quality_rating,code_verification_status,status,display_phone_number,verified_name,platform_type,throughput',
+          fields: 'quality_rating,code_verification_status,status,display_phone_number,verified_name,platform_type,throughput,health_status',
         },
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -45,11 +46,12 @@ class WhatsAppHealthService {
         requestConfig
       );
 
+      const banFromMeta = extractBanFromMetaPhonePayload(response.data);
       return {
         phone_number_id: phoneNumberId,
         quality_rating: response.data.quality_rating || 'UNKNOWN',
         code_verification_status: response.data.code_verification_status || 'UNKNOWN',
-        status: response.data.status || 'UNKNOWN',
+        status: banFromMeta || response.data.status || 'UNKNOWN',
         display_phone_number: response.data.display_phone_number,
         verified_name: response.data.verified_name,
         platform_type: response.data.platform_type,

@@ -1577,15 +1577,21 @@ export class WhatsAppAccountController {
             const banFromMeta = extractBanFromMetaPhonePayload(response.data);
             apiLastCheck = new Date().toISOString();
 
-            if (banFromMeta || metaStatus === 'DISCONNECTED') {
-              accountStatus = banFromMeta || metaStatus;
+            if (banFromMeta) {
+              accountStatus = banFromMeta;
               apiConnected = false;
+            } else if (metaStatus === 'DISCONNECTED') {
+              accountStatus = 'DISCONNECTED';
+              apiConnected = false;
+            } else if (metaStatus === 'CONNECTED') {
+              accountStatus = 'CONNECTED';
+              apiConnected = true;
             } else if (storedBan) {
               accountStatus = storedBan;
               apiConnected = false;
-            } else if (knownQuality && metaStatus !== 'DISCONNECTED') {
+            } else if (knownQuality) {
               accountStatus = metaStatus || 'CONNECTED';
-              apiConnected = metaStatus ? metaStatus === 'CONNECTED' : true;
+              apiConnected = !metaStatus || metaStatus === 'CONNECTED';
             } else {
               accountStatus = metaStatus || 'UNKNOWN';
               apiConnected = false;
@@ -1605,6 +1611,10 @@ export class WhatsAppAccountController {
               if (!isBannedMetaStatus(accountStatus) && storedBan) {
                 accountStatus = storedBan;
               }
+            } else if (banSync.reactivated) {
+              account.is_active = true;
+              accountStatus = 'CONNECTED';
+              apiConnected = true;
             }
             
             // Tentar buscar foto de perfil da API (se não tiver em cache)

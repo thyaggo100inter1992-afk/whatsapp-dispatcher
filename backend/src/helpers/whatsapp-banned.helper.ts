@@ -78,20 +78,54 @@ export function extractBanFromMetaPhonePayload(data: any): string | null {
   return null;
 }
 
+async function pauseCampaignsForBannedAccount(accountId: number, status: string) {
+  await pool.query(
+    `UPDATE campaign_templates
+     SET is_active = false,
+         removed_at = NOW(),
+         last_error = $1
+     WHERE whatsapp_account_id = $2
+       AND is_active = true`,
+    [`CONTA BANIDA pela Meta (${status})`, accountId]
+  ).catch(() => undefined);
+}
+
+async function restoreCampaignsAfterUnban(accountId: number) {
+  await pool.query(
+    `UPDATE campaign_templates
+     SET is_active = true,
+         consecutive_failures = 0,
+         last_error = NULL,
+         removed_at = NULL
+     WHERE whatsapp_account_id = $1
+       AND (
+         last_error ILIKE '%BANID%'
+         OR last_error ILIKE '%BANNED%'
+         OR last_error ILIKE '%FLAGGED%'
+         OR last_error ILIKE '%SINALIZ%'
+         OR last_error ILIKE '%RESTRICT%'
+         OR last_error ILIKE '%RESTRITA%'
+       )`,
+    [accountId]
+  ).catch(() => undefined);
+}
+
 /**
- * Grava status da Meta e, se banida/sinalizada/restrita, desativa a conta.
- * Retorna se a conta ficou banida.
+ * Grava status da Meta:
+ * - Banida → desativa a conta e tira das campanhas/funcionalidades.
+ * - Meta devolve CONNECTED depois do banimento → reativa automaticamente.
  */
 export async function syncWhatsAppAccountMetaStatus(opts: {
   accountId: number;
   tenantId: number;
   qualityRating?: string | null;
   accountStatus?: string | null;
-}): Promise<{ banned: boolean; deactivated: boolean }> {
+}): Promise<{ banned: boolean; deactivated: boolean; reactivated: boolean }> {
   await ensureWhatsAppAccountStatusColumn();
   const quality = opts.qualityRating ? String(opts.qualityRating).toUpperCase() : null;
   const status = opts.accountStatus ? String(opts.accountStatus).toUpperCase() : null;
   const banned = isBannedMetaStatus(status);
+  const confirmedConnected = status === 'CONNECTED';
 
   let currentStatus = '';
   try {
@@ -127,11 +161,39 @@ export async function syncWhatsAppAccountMetaStatus(opts: {
       ).catch(() => undefined);
       console.warn(`⚠️ Não persistiu account_status=${status} na conta ${opts.accountId}: ${error?.message}`);
     }
-    console.log(`🚫 Conta ${opts.accountId} banida/sinalizada (${status}) — desativada e oculta dos envios.`);
-    return { banned: true, deactivated: true };
+    await pauseCampaignsForBannedAccount(opts.accountId, status || 'BANNED');
+    console.log(`🚫 Conta ${opts.accountId} banida (${status}) — desativada e oculta das funcionalidades.`);
+    return { banned: true, deactivated: true, reactivated: false };
   }
 
-  // GET da Meta sem status (ou CONNECTED) não pode apagar banimento já gravado
+  // Só desbloqueia se a Meta confirmar CONNECTED. Status vazio não tira o banimento.
+  if (isBannedMetaStatus(currentStatus) && confirmedConnected) {
+    try {
+      await pool.query(
+        `UPDATE whatsapp_accounts
+         SET is_active = TRUE,
+             account_status = 'CONNECTED',
+             quality_rating = COALESCE($1, quality_rating),
+             updated_at = NOW()
+         WHERE id = $2 AND tenant_id = $3`,
+        [quality, opts.accountId, opts.tenantId]
+      );
+    } catch (error: any) {
+      await pool.query(
+        `UPDATE whatsapp_accounts
+         SET is_active = TRUE,
+             quality_rating = COALESCE($1, quality_rating),
+             updated_at = NOW()
+         WHERE id = $2 AND tenant_id = $3`,
+        [quality, opts.accountId, opts.tenantId]
+      ).catch(() => undefined);
+      console.warn(`⚠️ Reativou a conta ${opts.accountId} sem gravar account_status: ${error?.message}`);
+    }
+    await restoreCampaignsAfterUnban(opts.accountId);
+    console.log(`✅ Conta ${opts.accountId} desbanida pela Meta — reativada no sistema.`);
+    return { banned: false, deactivated: false, reactivated: true };
+  }
+
   if (isBannedMetaStatus(currentStatus)) {
     if (quality) {
       await pool.query(
@@ -139,9 +201,9 @@ export async function syncWhatsAppAccountMetaStatus(opts: {
          SET quality_rating = COALESCE($1, quality_rating), updated_at = NOW()
          WHERE id = $2 AND tenant_id = $3`,
         [quality, opts.accountId, opts.tenantId]
-      );
+      ).catch(() => undefined);
     }
-    return { banned: true, deactivated: true };
+    return { banned: true, deactivated: true, reactivated: false };
   }
 
   try {
@@ -164,7 +226,7 @@ export async function syncWhatsAppAccountMetaStatus(opts: {
     }
     if (!/account_status/i.test(String(error?.message || ''))) throw error;
   }
-  return { banned: false, deactivated: false };
+  return { banned: false, deactivated: false, reactivated: false };
 }
 
 export function bannedAccountsSqlFilter(alias = 'wa') {
