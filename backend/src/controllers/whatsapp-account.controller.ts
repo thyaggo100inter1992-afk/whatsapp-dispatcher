@@ -5,6 +5,7 @@ import { tenantQuery } from '../database/tenant-query';
 import axios, { AxiosRequestConfig } from 'axios';
 import { getProxyConfigFromAccount, applyProxyToRequest, formatProxyInfo } from '../helpers/proxy.helper';
 import { cloudinaryService } from '../services/cloudinary.service';
+import { subscribeWhatsAppAppToWaba } from '../helpers/whatsapp-waba-subscribe.helper';
 
 export class WhatsAppAccountController {
   async create(req: Request, res: Response) {
@@ -13,9 +14,31 @@ export class WhatsAppAccountController {
       if (!tenantId) {
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
       }
-      
-      const account = await WhatsAppAccountModel.create(req.body, tenantId);
-      res.status(201).json({ success: true, data: account });
+
+      const body = {
+        ...req.body,
+        phone_number_id: String(req.body?.phone_number_id || '').trim(),
+        business_account_id: String(req.body?.business_account_id || '').trim() || undefined,
+        access_token: String(req.body?.access_token || '').trim(),
+      };
+
+      const account = await WhatsAppAccountModel.create(body, tenantId);
+      const webhookSubscribe = await subscribeWhatsAppAppToWaba({
+        accessToken: account.access_token,
+        businessAccountId: account.business_account_id,
+        accountId: account.id,
+        accountName: account.name,
+        tenantId,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: account,
+        webhook_subscribe: webhookSubscribe,
+        message: webhookSubscribe.success
+          ? 'Conta criada e App inscrito na WABA para receber webhook.'
+          : `Conta criada. Atenção no webhook: ${webhookSubscribe.message}`,
+      });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
     }
@@ -57,6 +80,7 @@ export class WhatsAppAccountController {
     try {
       const accountId = parseInt(req.params.id);
       const { start_date, end_date } = req.query;
+      const light = String(req.query.light || '') === '1' || String(req.query.light || '') === 'true';
       
       // @ts-ignore - tenant é injetado pelo middleware
       const tenantId = req.tenant?.id;
@@ -71,6 +95,7 @@ export class WhatsAppAccountController {
       }
 
       console.log(`   Filtro de data: ${start_date || 'hoje'} até ${end_date || 'hoje'}`);
+      console.log(`   Modo leve (só Meta): ${light}`);
 
       let whatsappDisplayName = account.name;
       let whatsappProfilePicture = null;
@@ -184,6 +209,25 @@ export class WhatsAppAccountController {
 
       // Taxa de conversão USD para BRL (aproximada) - global para uso em todo o método
       const USD_TO_BRL = 5.0;
+
+      if (light) {
+        return res.json({
+          success: true,
+          data: {
+            ...account,
+            whatsapp_display_name: whatsappDisplayName,
+            whatsapp_profile_picture: whatsappProfilePicture,
+            quality_rating: qualityRating,
+            stats_utility: 0,
+            stats_marketing: 0,
+            total_cost: 0,
+            cost_utility: 0,
+            cost_marketing: 0,
+            cost_authentication: 0,
+            cost_service: 0,
+          },
+        });
+      }
 
       try {
         // Usar as datas fornecidas ou hoje como padrão
@@ -472,11 +516,59 @@ export class WhatsAppAccountController {
       if (!tenantId) {
         return res.status(401).json({ success: false, error: 'Tenant não identificado' });
       }
-      const account = await WhatsAppAccountModel.update(parseInt(req.params.id), req.body, tenantId);
+      const body = { ...req.body };
+      if (body.phone_number_id != null) body.phone_number_id = String(body.phone_number_id).trim();
+      if (body.business_account_id != null) body.business_account_id = String(body.business_account_id).trim();
+      if (body.access_token != null) body.access_token = String(body.access_token).trim();
+
+      const account = await WhatsAppAccountModel.update(parseInt(req.params.id), body, tenantId);
       if (!account) {
         return res.status(404).json({ success: false, error: 'Account not found' });
       }
-      res.json({ success: true, data: account });
+
+      const webhookSubscribe = await subscribeWhatsAppAppToWaba({
+        accessToken: account.access_token,
+        businessAccountId: account.business_account_id,
+        accountId: account.id,
+        accountName: account.name,
+        tenantId,
+      });
+
+      res.json({
+        success: true,
+        data: account,
+        webhook_subscribe: webhookSubscribe,
+        message: webhookSubscribe.success
+          ? 'Conta atualizada e webhook da WABA verificado.'
+          : `Conta atualizada. Atenção no webhook: ${webhookSubscribe.message}`,
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  async subscribeWebhook(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+      const account = await WhatsAppAccountModel.findById(parseInt(req.params.id), tenantId);
+      if (!account) {
+        return res.status(404).json({ success: false, error: 'Conta não encontrada' });
+      }
+      const result = await subscribeWhatsAppAppToWaba({
+        accessToken: account.access_token,
+        businessAccountId: account.business_account_id,
+        accountId: account.id,
+        accountName: account.name,
+        tenantId,
+      });
+      return res.status(result.success ? 200 : 400).json({
+        success: result.success,
+        message: result.message,
+        data: result,
+      });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
     }

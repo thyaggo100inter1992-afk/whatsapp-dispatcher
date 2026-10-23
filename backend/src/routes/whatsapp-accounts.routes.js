@@ -80,6 +80,9 @@ router.post('/test-connection', (req, res) => controller.testConnection(req, res
 // Buscar detalhes da conta por ID
 router.get('/:id/details', (req, res) => controller.getAccountDetails(req, res));
 
+// Inscrever App Meta na WABA (necessário para webhook de contas novas)
+router.post('/:id/subscribe-webhook', (req, res) => controller.subscribeWebhook(req, res));
+
 // Buscar templates de uma conta específica
 router.get('/:id/templates', (req, res) => controller.getTemplates(req, res));
 

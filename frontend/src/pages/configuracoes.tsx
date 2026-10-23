@@ -4,7 +4,7 @@ import Head from 'next/head';
 import { 
   FaCog, FaPlus, FaEdit, FaTrash, FaCheckCircle, FaTimesCircle, 
   FaSpinner, FaFileAlt, FaWhatsapp, FaCheck, FaTimes, FaBan, FaArrowLeft,
-  FaSquare, FaCheckSquare, FaArrowUp, FaArrowDown, FaSearch, FaFilter
+  FaSquare, FaCheckSquare, FaArrowUp, FaArrowDown, FaSearch, FaFilter, FaSync, FaBell
 } from 'react-icons/fa';
 import api, { whatsappAccountsAPI } from '@/services/api';
 import { useConfirm } from '@/hooks/useConfirm';
@@ -47,9 +47,11 @@ export default function Configuracoes() {
     lastEventAt?: string;
   }}>({});
   
-  // 🔄 CARREGAMENTO PROGRESSIVO
+  // 🔄 CARREGAMENTO PROGRESSIVO / ATUALIZAÇÃO META
   const [accountsDetails, setAccountsDetails] = useState<{[key: number]: any}>({});
   const [loadingDetails, setLoadingDetails] = useState<{[key: number]: boolean}>({});
+  const [refreshingAll, setRefreshingAll] = useState(false);
+  const [subscribingWebhookId, setSubscribingWebhookId] = useState<number | null>(null);
   
   // 🔍 BUSCA E FILTROS
   const [searchTerm, setSearchTerm] = useState('');
@@ -404,43 +406,98 @@ export default function Configuracoes() {
     }
   };
 
-  const loadAccounts = async () => {
+  const applyCachedDetails = (basicAccounts: any[]) => {
+    const cached: {[key: number]: any} = {};
+    for (const account of basicAccounts) {
+      cached[account.id] = {
+        whatsapp_profile_picture: account.profile_picture_url || account.whatsapp_profile_picture || null,
+        whatsapp_display_name: account.whatsapp_display_name || account.name,
+        quality_rating: account.quality_rating || null,
+        from_cache: true,
+      };
+    }
+    setAccountsDetails((prev) => ({ ...cached, ...prev }));
+  };
+
+  const loadWebhookStatusesBatch = async (basicAccounts: any[]) => {
+    const webhookStatusMap: {[key: number]: {isActive: boolean; lastEventAt?: string}} = {};
+    basicAccounts.forEach((account: any) => {
+      webhookStatusMap[account.id] = { isActive: false };
+    });
     try {
-      console.log('⚡ Carregando contas - Modo Rápido (apenas dados básicos)');
+      const statusResponse = await api.get('/webhook/status-batch', { params: { period: '24h' } });
+      const batch = statusResponse.data?.data || {};
+      for (const account of basicAccounts) {
+        const row = batch[String(account.id)] || batch[account.id];
+        webhookStatusMap[account.id] = {
+          isActive: !!row?.isActive,
+          lastEventAt: row?.lastEventAt || undefined,
+        };
+      }
+    } catch (error) {
+      console.error('Erro ao carregar status de webhook em lote:', error);
+    }
+    setWebhookStatuses(webhookStatusMap);
+  };
+
+  const fetchAccountMetaDetails = async (accountId: number, options?: { light?: boolean }) => {
+    setLoadingDetails((prev) => ({ ...prev, [accountId]: true }));
+    try {
+      const detailsResponse = await api.get(`/whatsapp-accounts/${accountId}/details`, {
+        params: options?.light === false ? undefined : { light: 1 },
+        timeout: 45000,
+      });
+      if (detailsResponse.data.success) {
+        const details = detailsResponse.data.data;
+        setAccountsDetails((prev) => ({
+          ...prev,
+          [accountId]: {
+            whatsapp_profile_picture: details.whatsapp_profile_picture,
+            whatsapp_display_name: details.whatsapp_display_name,
+            quality_rating: details.quality_rating,
+            stats_utility: details.stats_utility,
+            stats_marketing: details.stats_marketing,
+            total_cost: details.total_cost,
+            cost_utility: details.cost_utility,
+            cost_marketing: details.cost_marketing,
+            from_cache: false,
+          },
+        }));
+        setAccounts((prev) => prev.map((item) => (
+          item.id === accountId
+            ? {
+                ...item,
+                quality_rating: details.quality_rating,
+                profile_picture_url: details.whatsapp_profile_picture,
+              } as any
+            : item
+        )));
+      }
+    } catch (error) {
+      console.error(`Erro ao atualizar conta ${accountId}:`, error);
+    } finally {
+      setLoadingDetails((prev) => ({ ...prev, [accountId]: false }));
+    }
+  };
+
+  const loadAccountsDetailsProgressively = async (basicAccounts: any[]) => {
+    const queue = 2;
+    for (let i = 0; i < basicAccounts.length; i += queue) {
+      const slice = basicAccounts.slice(i, i + queue);
+      await Promise.all(slice.map((account) => fetchAccountMetaDetails(account.id, { light: true })));
+    }
+  };
+
+  const loadAccounts = async (options?: { refreshMeta?: boolean }) => {
+    try {
       const response = await whatsappAccountsAPI.getAll();
-      const basicAccounts = response.data.data;
-      
-      // ✅ OTIMIZAÇÃO: Carregar apenas dados básicos (sem detalhes pesados)
-      // As estatísticas detalhadas são carregadas apenas na página de configuração individual
+      const basicAccounts = response.data.data || [];
       setAccounts(basicAccounts);
-      
-      // Buscar status do webhook para cada conta (leve e rápido)
-      const webhookStatusMap: {[key: number]: {isActive: boolean; lastEventAt?: string}} = {};
-      await Promise.all(
-        basicAccounts.map(async (account: any) => {
-          try {
-            const statusResponse = await api.get(`/webhook/status?account_id=${account.id}&period=24h`);
-            if (statusResponse.data.success && statusResponse.data.data) {
-              webhookStatusMap[account.id] = {
-                isActive: statusResponse.data.data.isActive || false,
-                lastEventAt: statusResponse.data.data.lastEventAt || undefined
-              };
-            } else {
-              webhookStatusMap[account.id] = { isActive: false };
-            }
-          } catch (error) {
-            webhookStatusMap[account.id] = { isActive: false };
-          }
-        })
-      );
-      setWebhookStatuses(webhookStatusMap);
-      
-      console.log(`✅ ${basicAccounts.length} conta(s) carregada(s) rapidamente!`);
-      
-      // 🔄 CARREGAMENTO PROGRESSIVO: Buscar detalhes em background
-      console.log('🔄 Iniciando carregamento progressivo de detalhes...');
-      loadAccountsDetailsProgressively(basicAccounts);
-      
+      applyCachedDetails(basicAccounts);
+      await loadWebhookStatusesBatch(basicAccounts);
+      if (options?.refreshMeta !== false) {
+        loadAccountsDetailsProgressively(basicAccounts);
+      }
     } catch (error) {
       console.error('Erro ao carregar contas:', error);
     } finally {
@@ -448,66 +505,81 @@ export default function Configuracoes() {
     }
   };
 
-  // 🔄 Função para carregar detalhes progressivamente em background
-  const loadAccountsDetailsProgressively = async (basicAccounts: any[]) => {
-    // Carregar detalhes de cada conta sequencialmente para não sobrecarregar
-    for (const account of basicAccounts) {
-      try {
-        // Marcar como carregando
-        setLoadingDetails(prev => ({ ...prev, [account.id]: true }));
-        
-        // Buscar detalhes da conta
-        const detailsResponse = await api.get(`/whatsapp-accounts/${account.id}/details`);
-        
-        if (detailsResponse.data.success) {
-          const details = detailsResponse.data.data;
-          
-          // Atualizar detalhes da conta
-          setAccountsDetails(prev => ({
-            ...prev,
-            [account.id]: {
-              whatsapp_profile_picture: details.whatsapp_profile_picture,
-              whatsapp_display_name: details.whatsapp_display_name,
-              quality_rating: details.quality_rating,
-              stats_utility: details.stats_utility,
-              stats_marketing: details.stats_marketing,
-              total_cost: details.total_cost,
-              cost_utility: details.cost_utility,
-              cost_marketing: details.cost_marketing
-            }
-          }));
-          
-          console.log(`✅ Detalhes carregados para conta ${account.name} (${account.id})`);
-        }
-      } catch (error) {
-        console.error(`❌ Erro ao carregar detalhes da conta ${account.id}:`, error);
-      } finally {
-        // Marcar como não carregando mais
-        setLoadingDetails(prev => ({ ...prev, [account.id]: false }));
+  const handleRefreshAccountNow = async (accountId: number) => {
+    await fetchAccountMetaDetails(accountId, { light: true });
+    await loadWebhookStatusesBatch(accounts);
+  };
+
+  const handleRefreshAllNow = async () => {
+    if (refreshingAll || accounts.length === 0) return;
+    setRefreshingAll(true);
+    try {
+      await loadWebhookStatusesBatch(accounts);
+      const queue = 3;
+      for (let i = 0; i < accounts.length; i += queue) {
+        const slice = accounts.slice(i, i + queue);
+        await Promise.all(slice.map((account) => fetchAccountMetaDetails(account.id, { light: true })));
       }
-      
-      // Pequeno delay entre requisições para não sobrecarregar (300ms)
-      await new Promise(resolve => setTimeout(resolve, 300));
+    } finally {
+      setRefreshingAll(false);
     }
-    
-    console.log('✅ Carregamento progressivo concluído!');
+  };
+
+  const handleSubscribeWebhook = async (account: WhatsAppAccount) => {
+    setSubscribingWebhookId(account.id);
+    try {
+      const response = await api.post(`/whatsapp-accounts/${account.id}/subscribe-webhook`, {}, { timeout: 30000 });
+      await confirm({
+        title: response.data.success ? 'Webhook' : 'Atenção no webhook',
+        message: response.data.message || 'Inscrição na WABA concluída.',
+        type: response.data.success ? 'info' : 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+      await loadWebhookStatusesBatch(accounts);
+    } catch (error: any) {
+      await confirm({
+        title: 'Webhook',
+        message: error.response?.data?.message || error.response?.data?.error || error.message,
+        type: 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+    } finally {
+      setSubscribingWebhookId(null);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     try {
+      let savedId: number | null = null;
+      let webhookMessage = '';
       if (editingAccount) {
-        await whatsappAccountsAPI.update(editingAccount.id, formData);
+        const response = await whatsappAccountsAPI.update(editingAccount.id, formData);
+        savedId = editingAccount.id;
+        webhookMessage = response.data?.message || '';
       } else {
-        await whatsappAccountsAPI.create(formData);
+        const response = await whatsappAccountsAPI.create(formData);
+        savedId = response.data?.data?.id || null;
+        webhookMessage = response.data?.message || '';
       }
-      
-      await loadAccounts();
+
+      const listResponse = await whatsappAccountsAPI.getAll();
+      const basicAccounts = listResponse.data.data || [];
+      setAccounts(basicAccounts);
+      applyCachedDetails(basicAccounts);
+      await loadWebhookStatusesBatch(basicAccounts);
       resetForm();
+
+      if (savedId) {
+        fetchAccountMetaDetails(savedId, { light: true });
+      }
+
       await confirm({
         title: '✅ Sucesso!',
-        message: 'Conta salva com sucesso!',
+        message: webhookMessage || 'Conta salva com sucesso!',
         type: 'info',
         confirmText: 'OK',
         showCancel: false
@@ -577,7 +649,7 @@ export default function Configuracoes() {
     
     try {
       await whatsappAccountsAPI.delete(id);
-      await loadAccounts();
+      await loadAccounts({ refreshMeta: false });
       
       // Show success with another confirm modal
       await confirm({
@@ -601,7 +673,7 @@ export default function Configuracoes() {
   const handleToggleActive = async (id: number) => {
     try {
       await whatsappAccountsAPI.toggleActive(id);
-      await loadAccounts();
+      await loadAccounts({ refreshMeta: false });
       await confirm({
         title: '✅ Sucesso!',
         message: 'Status alterado com sucesso!',
@@ -750,6 +822,15 @@ export default function Configuracoes() {
                 >
                   <FaCog className="text-xl animate-spin-slow" />
                   Status das Contas
+                </button>
+                <button
+                  onClick={handleRefreshAllNow}
+                  disabled={refreshingAll || accounts.length === 0}
+                  className="flex items-center gap-3 px-6 py-4 bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 border-2 border-orange-500/40 rounded-xl font-bold transition-all duration-200 shadow-lg hover:shadow-orange-500/30 disabled:opacity-50"
+                  title="Buscar qualidade, foto e webhook de todas as contas agora"
+                >
+                  {refreshingAll ? <FaSpinner className="text-xl animate-spin" /> : <FaSync className="text-xl" />}
+                  {refreshingAll ? 'Atualizando...' : 'Atualizar Todas Agora'}
                 </button>
                 <button
                   onClick={() => setShowForm(!showForm)}
@@ -1253,6 +1334,25 @@ export default function Configuracoes() {
                     {/* BAIXO: BOTÕES - MAIORES E ALINHADOS */}
                     <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
                       <button
+                        onClick={() => handleRefreshAccountNow(account.id)}
+                        disabled={!!loadingDetails[account.id]}
+                        className="w-full px-6 py-4 bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 border-2 border-orange-500/40 hover:border-orange-500/60 rounded-xl font-bold text-base transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
+                        title="Atualizar qualidade e foto desta conta agora"
+                      >
+                        {loadingDetails[account.id] ? (
+                          <>
+                            <FaSpinner className="animate-spin text-xl" />
+                            <span>Atualizando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <FaSync className="text-xl" />
+                            <span>Atualizar Agora</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
                         onClick={() => handleTestConnection(account)}
                         disabled={testingConnection === account.id}
                         className="w-full px-6 py-4 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border-2 border-blue-500/40 hover:border-blue-500/60 rounded-xl font-bold text-base transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
@@ -1508,8 +1608,8 @@ export default function Configuracoes() {
                             ? 'from-blue-500/20 to-cyan-600/10 border-blue-500/40' 
                             : 'from-red-500/20 to-orange-600/10 border-red-500/40'
                         } border-2 rounded-xl p-4`}>
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex-1 min-w-0">
                               <div className={`${
                                 webhookStatuses[account.id]?.isActive ? 'text-blue-300' : 'text-red-300'
                               } text-xs font-bold mb-2`}>🔗 WEBHOOK</div>
@@ -1535,6 +1635,22 @@ export default function Configuracoes() {
                                     })}
                                   </span>
                                 </div>
+                              )}
+                              {!webhookStatuses[account.id]?.isActive && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSubscribeWebhook(account)}
+                                  disabled={subscribingWebhookId === account.id}
+                                  className="mt-3 w-full px-3 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/40 text-blue-100 text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                                  title="Inscrever o App Meta nesta WABA para a conta nova passar a receber eventos"
+                                >
+                                  {subscribingWebhookId === account.id ? (
+                                    <FaSpinner className="animate-spin" />
+                                  ) : (
+                                    <FaBell />
+                                  )}
+                                  Inscrever Webhook nesta WABA
+                                </button>
                               )}
                             </div>
                             <div className={`text-4xl ${

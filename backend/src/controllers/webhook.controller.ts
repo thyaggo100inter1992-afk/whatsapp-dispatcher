@@ -92,18 +92,33 @@ export class WebhookController {
             if (phoneNumberId) {
               const accountByIdQuery = `
                 SELECT id FROM whatsapp_accounts 
-                WHERE tenant_id = $1 AND phone_number_id = $2
+                WHERE tenant_id = $1 AND TRIM(phone_number_id) = TRIM($2::text)
                 LIMIT 1
               `;
               
               const accountByIdResult = await queryNoTenant(accountByIdQuery, [
                 tenantId,
-                phoneNumberId
+                String(phoneNumberId).trim()
               ]);
               
               if (accountByIdResult.rows.length > 0) {
                 whatsappAccountId = accountByIdResult.rows[0].id;
                 console.log('✅ Conta encontrada por phone_number_id:', whatsappAccountId);
+                break;
+              }
+
+              // Fallback: phone_number_id único no tenant mesmo com espaços/formatação
+              const loose = await queryNoTenant(
+                `SELECT id FROM whatsapp_accounts
+                 WHERE tenant_id = $1
+                   AND regexp_replace(COALESCE(phone_number_id, ''), '\\D', '', 'g')
+                     = regexp_replace($2::text, '\\D', '', 'g')
+                 LIMIT 1`,
+                [tenantId, String(phoneNumberId)]
+              );
+              if (loose.rows.length > 0) {
+                whatsappAccountId = loose.rows[0].id;
+                console.log('✅ Conta encontrada por phone_number_id (normalizado):', whatsappAccountId);
                 break;
               }
             }
@@ -1821,6 +1836,52 @@ export class WebhookController {
   /**
    * GET /webhook/status - Status simplificado (ativo/inativo)
    */
+  async getStatusBatch(req: Request, res: Response) {
+    try {
+      const period = String(req.query.period || '24h');
+      const periodMap: Record<string, number> = {
+        '1h': 1,
+        '6h': 6,
+        '24h': 24,
+        '7d': 24 * 7,
+        '30d': 24 * 30,
+      };
+      const periodHours = periodMap[period] || 24;
+      const cutoffMs = periodHours * 60 * 60 * 1000;
+      const tenantId = (req as any).tenant?.id || (req as any).tenantId;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
+      const result = await queryNoTenant(
+        `SELECT whatsapp_account_id,
+                MAX(received_at) AS last_event_at,
+                MAX(received_at) FILTER (WHERE processing_status = 'success') AS last_success_at
+         FROM webhook_logs
+         WHERE tenant_id = $1
+           AND whatsapp_account_id IS NOT NULL
+           AND received_at >= NOW() - make_interval(hours => $2::int)
+         GROUP BY whatsapp_account_id`,
+        [tenantId, periodHours]
+      );
+
+      const now = Date.now();
+      const data: Record<string, { isActive: boolean; lastEventAt?: string }> = {};
+      for (const row of result.rows) {
+        const lastSuccessAt = row.last_success_at ? new Date(row.last_success_at).getTime() : null;
+        data[String(row.whatsapp_account_id)] = {
+          isActive: lastSuccessAt != null ? now - lastSuccessAt <= cutoffMs : false,
+          lastEventAt: row.last_event_at || undefined,
+        };
+      }
+
+      return res.json({ success: true, data, periodHours });
+    } catch (error: any) {
+      console.error('Erro ao buscar status do webhook em lote:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
   async getStatus(req: Request, res: Response) {
     try {
       const { account_id, period = '24h' } = req.query;
@@ -1840,7 +1901,7 @@ export class WebhookController {
       const params: any[] = [];
 
       // SEMPRE filtrar por tenant_id (do contexto do usuário logado)
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenant?.id || (req as any).tenantId;
       if (tenantId) {
         baseConditions.push(`tenant_id = $${params.length + 1}`);
         params.push(tenantId);
