@@ -7,7 +7,15 @@ function appToken(appId: string, appSecret: string) {
 }
 
 function metaError(error: any): string {
-  return String(error?.response?.data?.error?.message || error?.message || 'Erro na Meta');
+  const msg = String(error?.response?.data?.error?.message || error?.message || 'Erro na Meta');
+  if (/Changing app settings through API calls has been disabled/i.test(msg) || /\(#10\)/.test(msg)) {
+    return (
+      'A Meta bloqueou alteração de configurações deste App via API. ' +
+      'No App Dashboard: Configurações → Avançado → Segurança → ligue “Allow API Access to App Settings” (Permitir acesso da API às configurações do app) → Salvar. ' +
+      'Depois tente alterar o nome de novo. Ler o nome continua funcionando mesmo com essa opção desligada.'
+    );
+  }
+  return msg;
 }
 
 export async function fetchMetaAppInfo(opts: { appId: string; appSecret: string }) {

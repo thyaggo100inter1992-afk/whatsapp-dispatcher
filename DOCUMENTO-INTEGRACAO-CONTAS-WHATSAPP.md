@@ -160,7 +160,13 @@ Mesmo body do criar.
 
 ### Nome do aplicativo Meta (App Dashboard)
 
-Não é o **nome de exibição** do WhatsApp. É o nome do App em **Meta for Developers → Configurações → Básico**. Precisa de **App ID + App Secret** na conta. Alterar vale para **todas** as contas/WABAs ligadas ao mesmo App ID. A Meta pode recusar se o App estiver Live ou o nome for inválido.
+Não é o **nome de exibição** do WhatsApp. É o nome do App em **Meta for Developers → Configurações → Básico**. Precisa de **App ID + App Secret** na conta. Alterar vale para **todas** as contas/WABAs ligadas ao mesmo App ID.
+
+Para o `POST` funcionar, no App Dashboard ligue:
+
+**Configurações → Avançado → Segurança → Allow API Access to App Settings = Yes** (e Salvar).
+
+Sem isso a Meta responde `(#10) Changing app settings through API calls has been disabled`. O `GET` (ler o nome) funciona mesmo com a opção desligada.
 
 `GET /api/integration/v1/whatsapp-accounts/{id}/meta-app`
 

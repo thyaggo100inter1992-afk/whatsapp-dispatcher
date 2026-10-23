@@ -1402,6 +1402,7 @@ export default function Configuracoes() {
                         <h3 className="text-xl font-black text-white">Nome do aplicativo Meta</h3>
                         <p className="text-sm text-violet-200/80 mt-1">
                           Nome no App Dashboard (não é o nome de exibição do WhatsApp). Trocar vale para todas as contas com o mesmo App ID.
+                          Para a alteração funcionar, no App Meta ligue Configurações → Avançado → “Allow API Access to App Settings”.
                         </p>
                       </div>
                       <button
