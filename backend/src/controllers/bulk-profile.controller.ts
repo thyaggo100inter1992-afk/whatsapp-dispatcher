@@ -168,7 +168,7 @@ export class BulkProfileController {
             ? `${baseUser.replace(/\{last4\}/g, '').replace(/_+$/, '').slice(0, 30)}_1234`
             : baseUser;
         const validated = ProfileQueueService.validateBusinessUsername(sampleForValidation);
-        if (!validated.ok) {
+        if (validated.ok === false) {
           return res.status(400).json({ success: false, error: validated.error });
         }
       }

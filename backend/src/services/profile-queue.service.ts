@@ -319,7 +319,7 @@ export class ProfileQueueService extends EventEmitter {
         !!item.profileData.username_append_last4
       );
       const validated = ProfileQueueService.validateBusinessUsername(resolved);
-      if (!validated.ok) {
+      if (validated.ok === false) {
         throw new Error(validated.error);
       }
       await this.postBusinessUsername(account, item.accountId, validated.username);
