@@ -8,6 +8,8 @@ import { cloudinaryService } from '../services/cloudinary.service';
 import { subscribeWhatsAppAppToWaba } from '../helpers/whatsapp-waba-subscribe.helper';
 import {
   ensureWhatsAppAccountStatusColumn,
+  extractBanStatusFromMetaError,
+  inferBanStatusFromText,
   isBannedMetaStatus,
   syncWhatsAppAccountMetaStatus,
 } from '../helpers/whatsapp-banned.helper';
@@ -1485,8 +1487,31 @@ export class WhatsAppAccountController {
 
       console.log(`\n📊 ===== BUSCANDO STATUS DAS CONTAS (Tenant ${tenantId}) =====`);
 
-      // Buscar todas as contas do tenant
       const accounts = await WhatsAppAccountModel.findAll(tenantId);
+
+      const campaignBanHints = await tenantQuery(
+        req,
+        `SELECT whatsapp_account_id, MAX(last_error) as last_error
+         FROM campaign_templates
+         WHERE last_error IS NOT NULL
+           AND (
+             last_error ILIKE '%BANID%'
+             OR last_error ILIKE '%BANNED%'
+             OR last_error ILIKE '%FLAGGED%'
+             OR last_error ILIKE '%SINALIZ%'
+             OR last_error ILIKE '%RESTRICT%'
+             OR last_error ILIKE '%RESTRITA%'
+           )
+         GROUP BY whatsapp_account_id`,
+        []
+      ).catch(() => ({ rows: [] as any[] }));
+      const banHintByAccount = new Map<number, string>();
+      for (const row of campaignBanHints.rows || []) {
+        const inferred = inferBanStatusFromText(row.last_error);
+        if (inferred) {
+          banHintByAccount.set(Number(row.whatsapp_account_id), inferred);
+        }
+      }
       
       const accountsStatus = await Promise.all(accounts.map(async (account: any) => {
         try {
@@ -1516,7 +1541,13 @@ export class WhatsAppAccountController {
 
           // 2. Buscar quality rating e status da conta (da Meta ou do cache no banco)
           let qualityScore = account.quality_rating || 'UNKNOWN';
-          let accountStatus = String(account.account_status || 'UNKNOWN').toUpperCase();
+          let accountStatus = String(account.account_status || '').toUpperCase() || 'UNKNOWN';
+          const storedBan = isBannedMetaStatus(accountStatus)
+            ? accountStatus
+            : banHintByAccount.get(Number(account.id)) || null;
+          if (storedBan) {
+            accountStatus = storedBan;
+          }
           let apiConnected = false;
           let apiLastCheck = null;
           let profilePictureUrl = account.profile_picture_url || null; // Buscar do cache primeiro
@@ -1540,16 +1571,21 @@ export class WhatsAppAccountController {
             );
 
             qualityScore = response.data.quality_rating || qualityScore || 'UNKNOWN';
-            const rawStatus = String(
-              response.data.status || response.data.account_status || account.account_status || ''
-            ).toUpperCase();
-            const disconnected = ['DISCONNECTED', 'BANNED', 'FLAGGED', 'RESTRICTED'].includes(rawStatus);
-            // Graph respondeu = API conectada, mesmo se o campo status não vier como CONNECTED
-            apiConnected = !disconnected;
-            accountStatus = rawStatus || (apiConnected ? 'CONNECTED' : 'UNKNOWN');
+            const metaStatus = String(response.data.status || response.data.account_status || '').toUpperCase();
             apiLastCheck = new Date().toISOString();
 
-            console.log(`   ✅ Quality: ${qualityScore}, Status: ${accountStatus}`);
+            if (isBannedMetaStatus(metaStatus) || metaStatus === 'DISCONNECTED') {
+              accountStatus = metaStatus;
+              apiConnected = false;
+            } else if (storedBan) {
+              accountStatus = storedBan;
+              apiConnected = false;
+            } else {
+              accountStatus = metaStatus || 'CONNECTED';
+              apiConnected = true;
+            }
+
+            console.log(`   ✅ Quality: ${qualityScore}, Status: ${accountStatus}, Conectada: ${apiConnected}`);
 
             const banSync = await syncWhatsAppAccountMetaStatus({
               accountId: account.id,
@@ -1559,6 +1595,10 @@ export class WhatsAppAccountController {
             });
             if (banSync.banned) {
               account.is_active = false;
+              apiConnected = false;
+              if (!isBannedMetaStatus(accountStatus) && storedBan) {
+                accountStatus = storedBan;
+              }
             }
             
             // Tentar buscar foto de perfil da API (se não tiver em cache)
@@ -1598,14 +1638,20 @@ export class WhatsAppAccountController {
             }
           } catch (error) {
             console.error(`❌ Erro ao buscar quality rating da conta ${account.id}:`, error);
-            // Fallback: se já tem qualidade em cache, a conta estava conectada recentemente
-            const cachedStatus = String(account.account_status || '').toUpperCase();
-            if (
-              account.quality_rating &&
-              !['DISCONNECTED', 'BANNED', 'FLAGGED', 'RESTRICTED'].includes(cachedStatus)
-            ) {
+            const errorBan = extractBanStatusFromMetaError(error);
+            if (errorBan || storedBan) {
+              accountStatus = errorBan || storedBan || 'BANNED';
+              apiConnected = false;
+              await syncWhatsAppAccountMetaStatus({
+                accountId: account.id,
+                tenantId,
+                qualityRating: qualityScore,
+                accountStatus,
+              });
+              account.is_active = false;
+            } else if (account.quality_rating && accountStatus !== 'DISCONNECTED') {
               apiConnected = true;
-              accountStatus = cachedStatus || 'CONNECTED';
+              accountStatus = accountStatus === 'UNKNOWN' ? 'CONNECTED' : accountStatus;
               qualityScore = account.quality_rating;
             } else {
               apiConnected = false;
@@ -1660,18 +1706,16 @@ export class WhatsAppAccountController {
         }
       }));
 
-      const visibleAccounts = accountsStatus.filter(
-        (item: any) => !isBannedMetaStatus(item.account_status)
-      );
+      const bannedCount = accountsStatus.filter((item: any) => isBannedMetaStatus(item.account_status)).length;
 
       console.log(
-        `✅ Status de ${visibleAccounts.length} conta(s) visível(is) ` +
-        `(${accountsStatus.length - visibleAccounts.length} banida(s) ocultada(s))`
+        `✅ Status de ${accountsStatus.length} conta(s) ` +
+        `(${bannedCount} banida(s)/sinalizada(s)/restrita(s) visível(is) nesta tela)`
       );
       
       res.json({ 
         success: true, 
-        accounts: visibleAccounts 
+        accounts: accountsStatus 
       });
     } catch (error: any) {
       console.error('❌ Erro ao buscar status das contas:', error);

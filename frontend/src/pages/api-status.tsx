@@ -66,15 +66,12 @@ export default function ApiStatus() {
 
     try {
       const response = await api.get('/whatsapp-accounts/status');
-      const accountsData = (response.data.accounts || []).filter((account: AccountStatus) => {
-        const status = String(account.account_status || '').toUpperCase();
-        return !['BANNED', 'FLAGGED', 'RESTRICTED'].includes(status);
-      });
+      const accountsData = response.data.accounts || [];
       
       // Ordenar contas: primeiro as com problemas, depois por mensagens enviadas
       const sortedAccounts = accountsData.sort((a: AccountStatus, b: AccountStatus) => {
         // Verificar se tem problemas (incluindo status da conta)
-        const badStatuses = ['DISCONNECTED'];
+        const badStatuses = ['BANNED', 'FLAGGED', 'RESTRICTED', 'DISCONNECTED'];
         const aHasProblems = badStatuses.includes(a.account_status) || !a.api_connected || ['RED', 'YELLOW'].includes(a.quality_score);
         const bHasProblems = badStatuses.includes(b.account_status) || !b.api_connected || ['RED', 'YELLOW'].includes(b.quality_score);
         
@@ -143,12 +140,14 @@ export default function ApiStatus() {
     return `Há ${diffDays}d`;
   };
 
+  const isBannedAccount = (account: AccountStatus) =>
+    ['BANNED', 'FLAGGED', 'RESTRICTED'].includes(account.account_status);
+
   const isApiConnected = (account: AccountStatus) => {
-    if (['DISCONNECTED', 'BANNED', 'FLAGGED', 'RESTRICTED'].includes(account.account_status)) {
+    if (isBannedAccount(account) || account.account_status === 'DISCONNECTED') {
       return false;
     }
-    if (account.api_connected) return true;
-    return ['GREEN', 'YELLOW', 'RED'].includes(account.quality_score);
+    return account.api_connected === true;
   };
 
   const hasProblems = (account: AccountStatus) => {
@@ -235,7 +234,7 @@ export default function ApiStatus() {
           </div>
 
           {/* RESUMO RÁPIDO */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
             <div className="bg-dark-800/60 border-2 border-white/10 rounded-xl p-6">
               <div className="text-white/60 text-sm font-bold mb-2">TOTAL DE CONTAS</div>
               <div className="text-4xl font-black text-white">{accounts.length}</div>
@@ -244,7 +243,7 @@ export default function ApiStatus() {
             <div className="bg-dark-800/60 border-2 border-green-500/40 rounded-xl p-6">
               <div className="text-green-300 text-sm font-bold mb-2">ATIVAS</div>
               <div className="text-4xl font-black text-green-400">
-                {accounts.filter(a => a.is_active).length}
+                {accounts.filter(a => a.is_active && !isBannedAccount(a)).length}
               </div>
             </div>
 
@@ -252,6 +251,13 @@ export default function ApiStatus() {
               <div className="text-cyan-300 text-sm font-bold mb-2">CONECTADAS</div>
               <div className="text-4xl font-black text-cyan-400">
                 {accounts.filter(a => isApiConnected(a)).length}
+              </div>
+            </div>
+
+            <div className="bg-dark-800/60 border-2 border-red-500/40 rounded-xl p-6">
+              <div className="text-red-300 text-sm font-bold mb-2">BANIDAS</div>
+              <div className="text-4xl font-black text-red-400">
+                {accounts.filter(a => isBannedAccount(a)).length}
               </div>
             </div>
 
@@ -296,7 +302,12 @@ export default function ApiStatus() {
                     }`}></div>
                     
                     {/* Badge de Alerta */}
-                    {accountHasProblems && (
+                    {account.account_status === 'BANNED' ? (
+                      <div className="absolute -top-3 -right-3 z-10 bg-red-600 text-white px-4 py-2 rounded-full font-black text-xs shadow-lg shadow-red-500/50 animate-pulse flex items-center gap-2">
+                        <span className="text-lg">🚫</span>
+                        BANIDA
+                      </div>
+                    ) : accountHasProblems && (
                       <div className="absolute -top-3 -right-3 z-10 bg-red-500 text-white px-4 py-2 rounded-full font-black text-xs shadow-lg shadow-red-500/50 animate-pulse flex items-center gap-2">
                         <span className="text-lg">⚠️</span>
                         ALERTA
