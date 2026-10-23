@@ -2,11 +2,12 @@ import axios from 'axios';
 import { pool } from '../database/connection';
 
 /** Campos de webhook WhatsApp (App Dashboard / Meta). Padrão = todos. */
-const GRAPH_VERSION = 'v23.0';
+const GRAPH_VERSION = 'v26.0';
 
-/** Alias quando o nome no Dashboard/API muda (ex.: grupos). */
-const WEBHOOK_FIELD_ALIASES: Record<string, string[]> = {
-  group_participant_update: ['group_participants_update'],
+/** Nomes antigos (lista interna) → nome real no App Dashboard / Graph. */
+const WEBHOOK_FIELD_CANONICAL: Record<string, string> = {
+  business_username_update: 'business_username_updates',
+  group_participant_update: 'group_participants_update',
 };
 
 export const WHATSAPP_WEBHOOK_FIELDS = [
@@ -17,11 +18,11 @@ export const WHATSAPP_WEBHOOK_FIELDS = [
   'automatic_events',
   'business_capability_update',
   'business_status_update',
-  'business_username_update',
+  'business_username_updates',
   'calls',
   'flows',
   'group_lifecycle_update',
-  'group_participant_update',
+  'group_participants_update',
   'group_settings_update',
   'group_status_update',
   'history',
@@ -48,11 +49,17 @@ export const WHATSAPP_WEBHOOK_FIELDS = [
 export type WhatsAppWebhookField = (typeof WHATSAPP_WEBHOOK_FIELDS)[number];
 
 export function normalizeWebhookFields(input?: string[] | null): string[] {
+  const allowed = new Set<string>(WHATSAPP_WEBHOOK_FIELDS as unknown as string[]);
+  const toCanonical = (raw: string) => {
+    const name = String(raw || '').trim();
+    const mapped = WEBHOOK_FIELD_CANONICAL[name] || name;
+    return allowed.has(mapped) ? mapped : '';
+  };
+
   if (!Array.isArray(input) || input.length === 0) {
     return [...WHATSAPP_WEBHOOK_FIELDS];
   }
-  const allowed = new Set<string>(WHATSAPP_WEBHOOK_FIELDS as unknown as string[]);
-  const picked = input.map((f) => String(f || '').trim()).filter((f) => allowed.has(f));
+  const picked = input.map(toCanonical).filter(Boolean);
   return picked.length > 0 ? Array.from(new Set(picked)) : [...WHATSAPP_WEBHOOK_FIELDS];
 }
 
@@ -177,7 +184,7 @@ export async function subscribeWhatsAppWebhookFields(opts: {
     const missing = fields.filter((f) => !working.includes(f));
 
     for (const field of missing) {
-      const candidates = [field, ...(WEBHOOK_FIELD_ALIASES[field] || [])];
+      const candidates = [field];
       let added = false;
       let lastErr = msg;
       for (const candidate of candidates) {
@@ -317,10 +324,9 @@ export async function fetchWhatsAppWebhookSubscriptions(opts: {
       : [];
     const subscribedSet = new Set(subscribed);
     const expectedSet = new Set(expected);
-    const fieldCovered = (f: string) =>
-      subscribedSet.has(f) || (WEBHOOK_FIELD_ALIASES[f] || []).some((alias) => subscribedSet.has(alias));
+    const fieldCovered = (f: string) => subscribedSet.has(f);
     const missing = expected.filter((f) => !fieldCovered(f));
-    const extra = subscribed.filter((f) => !expectedSet.has(f) && !Object.values(WEBHOOK_FIELD_ALIASES).some((a) => a.includes(f)));
+    const extra = subscribed.filter((f) => !expectedSet.has(f));
 
     return {
       success: true,
