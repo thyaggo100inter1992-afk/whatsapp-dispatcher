@@ -171,7 +171,10 @@ app.use((req, res, next) => {
   if (
     path.includes('/upload-media') || 
     path.includes('/upload/media') ||
-    path.includes('/integration/v1/images') || 
+    path.includes('/profile-photo') ||
+    path.includes('/test-profile-photo-upload') ||
+    path.includes('/integration/v1/images') ||
+    path.includes('/integration/v1/whatsapp-accounts') || 
     path.includes('/system-settings/logo') || 
     path.includes('/tutorials/upload') || 
     path.includes('/screenshots') ||

@@ -651,4 +651,6 @@ Devolve JWT. Só precisa se forem chamar as rotas internas do painel. **Para as 
 | Envio QR via API | `POST /api/integration/v1/qr/send` | token + user_id |
 | Hospedar imagem do e-mail | `POST /api/integration/v1/images` | token (`X-Api-Key`) |
 
+**Gestão completa de contas WhatsApp** (criar/editar/configurar como no painel — para o sistema de múltiplas contas Facebook): ver `DOCUMENTO-INTEGRACAO-CONTAS-WHATSAPP.md`.
+
 Dúvida de payload: copiem os JSON desta página. Não inventem campos. Se algo falhar, mandem status HTTP + body da resposta.

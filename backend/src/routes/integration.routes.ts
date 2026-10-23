@@ -4,6 +4,7 @@ import { publicImageUpload, savePublicImage } from '../controllers/public-image.
 import { authenticateIntegrationKey } from '../middleware/integration-auth.middleware';
 
 const multer = require('multer');
+const integrationWhatsAppAccountsRoutes = require('./integration-whatsapp-accounts.routes');
 
 const { authenticate } = require('../middleware/auth.middleware');
 const { setTenantContext } = require('../middleware/tenant.middleware');
@@ -39,5 +40,8 @@ router.post('/v1/images', authenticateIntegrationKey, (req, res, next) => {
     return res.status(400).json({ success: false, error: err.message || 'Não foi possível receber a imagem.' });
   });
 }, savePublicImage);
+
+// Gestão completa de contas WhatsApp (mesmo poder das telas Configurações / Editar / Configurar)
+router.use('/v1', authenticateIntegrationKey, integrationWhatsAppAccountsRoutes);
 
 export default router;
