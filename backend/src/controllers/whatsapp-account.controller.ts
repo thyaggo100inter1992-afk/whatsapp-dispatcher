@@ -8,6 +8,7 @@ import { cloudinaryService } from '../services/cloudinary.service';
 import { subscribeWhatsAppAppToWaba } from '../helpers/whatsapp-waba-subscribe.helper';
 import {
   ensureWhatsAppAccountStatusColumn,
+  extractBanFromMetaPhonePayload,
   extractBanStatusFromMetaError,
   inferBanStatusFromText,
   isBannedMetaStatus,
@@ -1555,9 +1556,9 @@ export class WhatsAppAccountController {
           try {
             // Buscar quality rating E status da conta da Meta
             let config: AxiosRequestConfig = {
-              params: { fields: 'quality_rating,status,code_verification_status' },
+              params: { fields: 'quality_rating,status,code_verification_status,health_status' },
               headers: { 'Authorization': `Bearer ${account.access_token}` },
-              timeout: 8000
+              timeout: 12000
             };
 
             const proxyConfig = await getProxyConfigFromAccount(account.id, tenantId);
@@ -1571,19 +1572,20 @@ export class WhatsAppAccountController {
             );
 
             qualityScore = String(response.data.quality_rating || qualityScore || 'UNKNOWN').toUpperCase();
-            const knownQuality = ['GREEN', 'YELLOW', 'RED'].includes(qualityScore);
+            const knownQuality = ['GREEN', 'YELLOW', 'RED', 'NA'].includes(qualityScore);
             const metaStatus = String(response.data.status || response.data.account_status || '').toUpperCase();
+            const banFromMeta = extractBanFromMetaPhonePayload(response.data);
             apiLastCheck = new Date().toISOString();
 
-            if (isBannedMetaStatus(metaStatus) || metaStatus === 'DISCONNECTED') {
-              accountStatus = metaStatus;
+            if (banFromMeta || metaStatus === 'DISCONNECTED') {
+              accountStatus = banFromMeta || metaStatus;
               apiConnected = false;
             } else if (storedBan) {
               accountStatus = storedBan;
               apiConnected = false;
-            } else if (knownQuality) {
+            } else if (knownQuality && metaStatus !== 'DISCONNECTED') {
               accountStatus = metaStatus || 'CONNECTED';
-              apiConnected = true;
+              apiConnected = metaStatus ? metaStatus === 'CONNECTED' : true;
             } else {
               accountStatus = metaStatus || 'UNKNOWN';
               apiConnected = false;

@@ -47,6 +47,38 @@ export function inferBanStatusFromText(text?: string | null): string | null {
 }
 
 /**
+ * O que a Meta usa de fato para "Banido" no WhatsApp Manager:
+ * 1) GET /{phone-number-id}?fields=status → status = BANNED
+ *    (qualidade pode continuar GREEN / "Alta")
+ * 2) GET ?fields=health_status → entity WABA/PHONE com error_code 141014
+ *    ("The WABA is banned.")
+ * Qualidade NÃO decreta banimento. health_status.can_send_message=BLOCKED sozinho
+ * também não (pode ser nome, SIP, template, etc.).
+ */
+export function extractBanFromMetaPhonePayload(data: any): string | null {
+  const status = String(data?.status || data?.account_status || '').toUpperCase();
+  if (status === 'BANNED') return 'BANNED';
+  if (status === 'FLAGGED' || status === 'RESTRICTED') return status;
+
+  const entities = data?.health_status?.entities || [];
+  for (const entity of entities) {
+    for (const err of entity.errors || []) {
+      const code = Number(err.error_code || 0);
+      const desc = String(err.error_description || '').toLowerCase();
+      if (
+        code === 141014 ||
+        desc.includes('waba is banned') ||
+        desc.includes('phone number is banned') ||
+        desc.includes('the account is banned')
+      ) {
+        return 'BANNED';
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Grava status da Meta e, se banida/sinalizada/restrita, desativa a conta.
  * Retorna se a conta ficou banida.
  */
@@ -61,22 +93,40 @@ export async function syncWhatsAppAccountMetaStatus(opts: {
   const status = opts.accountStatus ? String(opts.accountStatus).toUpperCase() : null;
   const banned = isBannedMetaStatus(status);
 
-  const current = await pool.query(
-    `SELECT account_status FROM whatsapp_accounts WHERE id = $1 AND tenant_id = $2`,
-    [opts.accountId, opts.tenantId]
-  );
-  const currentStatus = String(current.rows[0]?.account_status || '').toUpperCase();
+  let currentStatus = '';
+  try {
+    const current = await pool.query(
+      `SELECT account_status FROM whatsapp_accounts WHERE id = $1 AND tenant_id = $2`,
+      [opts.accountId, opts.tenantId]
+    );
+    currentStatus = String(current.rows[0]?.account_status || '').toUpperCase();
+  } catch (error: any) {
+    if (!/account_status/i.test(String(error?.message || ''))) throw error;
+    console.warn('⚠️ Coluna account_status ausente — status Meta não será persistido.');
+  }
 
   if (banned) {
-    await pool.query(
-      `UPDATE whatsapp_accounts
-       SET is_active = FALSE,
-           account_status = $1,
-           quality_rating = COALESCE($2, quality_rating),
-           updated_at = NOW()
-       WHERE id = $3 AND tenant_id = $4`,
-      [status, quality, opts.accountId, opts.tenantId]
-    );
+    try {
+      await pool.query(
+        `UPDATE whatsapp_accounts
+         SET is_active = FALSE,
+             account_status = $1,
+             quality_rating = COALESCE($2, quality_rating),
+             updated_at = NOW()
+         WHERE id = $3 AND tenant_id = $4`,
+        [status, quality, opts.accountId, opts.tenantId]
+      );
+    } catch (error: any) {
+      await pool.query(
+        `UPDATE whatsapp_accounts
+         SET is_active = FALSE,
+             quality_rating = COALESCE($1, quality_rating),
+             updated_at = NOW()
+         WHERE id = $2 AND tenant_id = $3`,
+        [quality, opts.accountId, opts.tenantId]
+      ).catch(() => undefined);
+      console.warn(`⚠️ Não persistiu account_status=${status} na conta ${opts.accountId}: ${error?.message}`);
+    }
     console.log(`🚫 Conta ${opts.accountId} banida/sinalizada (${status}) — desativada e oculta dos envios.`);
     return { banned: true, deactivated: true };
   }
@@ -94,14 +144,26 @@ export async function syncWhatsAppAccountMetaStatus(opts: {
     return { banned: true, deactivated: true };
   }
 
-  await pool.query(
-    `UPDATE whatsapp_accounts
-     SET account_status = COALESCE($1, account_status),
-         quality_rating = COALESCE($2, quality_rating),
-         updated_at = NOW()
-     WHERE id = $3 AND tenant_id = $4`,
-    [status, quality, opts.accountId, opts.tenantId]
-  );
+  try {
+    await pool.query(
+      `UPDATE whatsapp_accounts
+       SET account_status = COALESCE($1, account_status),
+           quality_rating = COALESCE($2, quality_rating),
+           updated_at = NOW()
+       WHERE id = $3 AND tenant_id = $4`,
+      [status, quality, opts.accountId, opts.tenantId]
+    );
+  } catch (error: any) {
+    if (quality) {
+      await pool.query(
+        `UPDATE whatsapp_accounts
+         SET quality_rating = COALESCE($1, quality_rating), updated_at = NOW()
+         WHERE id = $2 AND tenant_id = $3`,
+        [quality, opts.accountId, opts.tenantId]
+      ).catch(() => undefined);
+    }
+    if (!/account_status/i.test(String(error?.message || ''))) throw error;
+  }
   return { banned: false, deactivated: false };
 }
 
