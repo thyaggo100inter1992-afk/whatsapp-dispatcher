@@ -105,7 +105,7 @@ export default function Configuracoes() {
   // 🔍 BUSCA E FILTROS
   const [searchTerm, setSearchTerm] = useState('');
   const [filterWebhook, setFilterWebhook] = useState<'all' | 'active' | 'inactive'>('all');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'connected' | 'disconnected'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'connected' | 'disconnected' | 'banned'>('all');
   const [filterQuality, setFilterQuality] = useState<'all' | 'GREEN' | 'YELLOW' | 'RED' | 'FLAGGED'>('all');
   const [filterProxy, setFilterProxy] = useState<'all' | 'with' | 'without'>('all');
   const [removingProxies, setRemovingProxies] = useState(false);
@@ -415,11 +415,14 @@ export default function Configuracoes() {
     }
   };
 
+  const isBannedAccount = (account: WhatsAppAccount) =>
+    ['BANNED', 'FLAGGED', 'RESTRICTED'].includes(String((account as any).account_status || '').toUpperCase());
+
+  const bannedCount = accounts.filter((account) => isBannedAccount(account)).length;
+
   // 🔍 FILTRAR CONTAS
   const filteredAccounts = accounts.filter((account) => {
-    // Contas banidas/sinalizadas/restritas não aparecem em lugar nenhum
-    const metaStatus = String((account as any).account_status || '').toUpperCase();
-    if (['BANNED', 'FLAGGED', 'RESTRICTED'].includes(metaStatus)) return false;
+    const banned = isBannedAccount(account);
 
     // Busca por nome ou telefone
     if (searchTerm) {
@@ -436,13 +439,13 @@ export default function Configuracoes() {
       if (filterWebhook === 'inactive' && isWebhookActive) return false;
     }
     
-    // Filtro de Status (Conectada/Desconectada)
-    // Considera "conectada" se a conta está ativa E tem quality_rating (conseguiu comunicar com API)
+    // Filtro de Status (Conectada/Desconectada/Banida)
     if (filterStatus !== 'all') {
       const hasQualityRating = (account as any).quality_rating != null && (account as any).quality_rating !== undefined;
-      const isConnected = account.is_active && hasQualityRating;
+      const isConnected = account.is_active && hasQualityRating && !banned;
+      if (filterStatus === 'banned' && !banned) return false;
       if (filterStatus === 'connected' && !isConnected) return false;
-      if (filterStatus === 'disconnected' && isConnected) return false;
+      if (filterStatus === 'disconnected' && (isConnected || banned)) return false;
     }
     
     // Filtro de Qualidade
@@ -461,15 +464,13 @@ export default function Configuracoes() {
   });
 
   const webhookInactiveCount = accounts.filter((account) => {
-    const metaStatus = String((account as any).account_status || '').toUpperCase();
-    if (['BANNED', 'FLAGGED', 'RESTRICTED'].includes(metaStatus)) return false;
+    if (isBannedAccount(account)) return false;
     if (account.is_active === false) return false;
     return !(webhookStatuses[account.id]?.isActive);
   }).length;
 
   const proxyWithCount = accounts.filter((account) => {
-    const metaStatus = String((account as any).account_status || '').toUpperCase();
-    if (['BANNED', 'FLAGGED', 'RESTRICTED'].includes(metaStatus)) return false;
+    if (isBannedAccount(account)) return false;
     return !!account.proxy_id;
   }).length;
 
@@ -1748,6 +1749,21 @@ export default function Configuracoes() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => setFilterStatus(filterStatus === 'banned' ? 'all' : 'banned')}
+                    className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold border-2 transition-all ${
+                      filterStatus === 'banned'
+                        ? 'bg-red-600/40 text-red-100 border-red-400 shadow-lg shadow-red-500/20'
+                        : 'bg-red-500/10 text-red-300 border-red-500/40 hover:bg-red-500/20'
+                    }`}
+                  >
+                    <FaBan className="text-lg" />
+                    {filterStatus === 'banned' ? 'Mostrando só banidas' : 'Filtrar contas banidas'}
+                    <span className="ml-1 px-2.5 py-0.5 rounded-lg bg-black/30 text-sm">
+                      {bannedCount}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleSubscribeAllWebhooks('waba', 'targets')}
                     disabled={subscribingAllWebhooks || filteredAccounts.length === 0}
                     className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold border-2 border-blue-500/50 bg-blue-500/20 text-blue-200 hover:bg-blue-500/30 disabled:opacity-50"
@@ -1824,6 +1840,7 @@ export default function Configuracoes() {
                       <option value="all">Todos</option>
                       <option value="connected">✅ Conectada</option>
                       <option value="disconnected">❌ Desconectada</option>
+                      <option value="banned">🚫 Banida ({bannedCount})</option>
                     </select>
                   </div>
 
@@ -1889,7 +1906,12 @@ export default function Configuracoes() {
               <div key={account.id} className="bg-dark-800/60 backdrop-blur-xl border-2 border-primary-500/30 rounded-2xl p-8 shadow-xl hover:border-primary-500/50 transition-all duration-300 relative">
                 {/* Tag de Status no Canto Direito Superior */}
                 <div className="absolute top-4 right-4 z-10">
-                  {account.is_active ? (
+                  {isBannedAccount(account) ? (
+                    <span className="px-5 py-3 rounded-xl text-base font-bold border-2 bg-red-500/20 text-red-300 border-red-500/50 inline-flex items-center gap-2 shadow-xl">
+                      <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></span>
+                      BANIDA
+                    </span>
+                  ) : account.is_active ? (
                     <span className="px-5 py-3 rounded-xl text-base font-bold border-2 bg-green-500/20 text-green-300 border-green-500/40 inline-flex items-center gap-2 shadow-xl">
                       <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
                       ATIVO
