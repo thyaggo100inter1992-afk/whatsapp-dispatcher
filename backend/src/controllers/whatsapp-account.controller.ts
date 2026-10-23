@@ -12,8 +12,11 @@ import {
   syncWhatsAppAccountMetaStatus,
 } from '../helpers/whatsapp-banned.helper';
 import {
+  fetchWhatsAppWebhookSubscriptions,
   getTenantWebhookConfig,
   normalizeWebhookFields,
+  persistAccountWebhookMeta,
+  resubscribeAndVerifyWebhookFields,
   subscribeWhatsAppWebhookFields,
   WHATSAPP_WEBHOOK_FIELDS,
 } from '../helpers/whatsapp-webhook-fields.helper';
@@ -674,6 +677,133 @@ export class WhatsAppAccountController {
         success: result.success,
         message: result.message,
         data: result,
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /** Verifica na Meta quais campos de webhook do App estão realmente assinados. */
+  async getWebhookFieldsStatus(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+      const account = await WhatsAppAccountModel.findById(parseInt(req.params.id), tenantId);
+      if (!account) {
+        return res.status(404).json({ success: false, error: 'Conta não encontrada' });
+      }
+
+      const appId = String(account.app_id || '').trim();
+      const appSecret = String(account.app_secret || '').trim();
+      if (!appId || !appSecret) {
+        return res.status(400).json({
+          success: false,
+          error: 'Cadastre App ID e App Secret nesta conta para verificar os campos na Meta.',
+        });
+      }
+
+      const expected = account.webhook_fields_subscribed
+        ? normalizeWebhookFields(String(account.webhook_fields_subscribed).split(','))
+        : [...WHATSAPP_WEBHOOK_FIELDS];
+
+      const status = await fetchWhatsAppWebhookSubscriptions({
+        appId,
+        appSecret,
+        expectedFields: expected,
+      });
+
+      return res.status(status.success ? 200 : 400).json({
+        success: status.success,
+        message: status.message,
+        data: {
+          ...status,
+          all_fields: WHATSAPP_WEBHOOK_FIELDS,
+          account_id: account.id,
+          app_id: appId,
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /** Seta todos os campos de webhook de novo e confirma o que a Meta gravou. */
+  async resubscribeWebhookFields(req: Request, res: Response) {
+    try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+      const account = await WhatsAppAccountModel.findById(parseInt(req.params.id), tenantId);
+      if (!account) {
+        return res.status(404).json({ success: false, error: 'Conta não encontrada' });
+      }
+
+      const appId = String(account.app_id || req.body?.app_id || '').trim();
+      const appSecret = String(account.app_secret || req.body?.app_secret || '').trim();
+      if (!appId || !appSecret) {
+        return res.status(400).json({
+          success: false,
+          error: 'App ID e App Secret são obrigatórios para setar os campos novamente.',
+        });
+      }
+
+      // Se veio secret novo no body, grava
+      if (req.body?.app_secret && String(req.body.app_secret).trim()) {
+        await WhatsAppAccountModel.update(
+          account.id,
+          { app_id: appId, app_secret: appSecret } as any,
+          tenantId
+        );
+      }
+
+      const wantAll = req.body?.subscribe_all_webhooks !== false;
+      const fields = normalizeWebhookFields(
+        wantAll
+          ? null
+          : req.body?.webhook_fields ||
+              (account.webhook_fields_subscribed
+                ? String(account.webhook_fields_subscribed).split(',')
+                : null)
+      );
+
+      const { callbackUrl, verifyToken } = await getTenantWebhookConfig(tenantId);
+      const result = await resubscribeAndVerifyWebhookFields({
+        appId,
+        appSecret,
+        callbackUrl,
+        verifyToken,
+        fields,
+      });
+
+      await persistAccountWebhookMeta({
+        accountId: account.id,
+        tenantId,
+        appSecret,
+        fields,
+      });
+
+      // Também reinscreve a WABA
+      const waba = await subscribeWhatsAppAppToWaba({
+        accessToken: account.access_token,
+        businessAccountId: account.business_account_id,
+        phoneNumberId: account.phone_number_id,
+        accountId: account.id,
+        accountName: account.name,
+        tenantId,
+        persistWaba: true,
+      });
+
+      return res.status(result.success || result.status?.success ? 200 : 400).json({
+        success: result.success,
+        message: result.message,
+        data: {
+          ...result,
+          waba_subscribe: waba,
+          all_fields: WHATSAPP_WEBHOOK_FIELDS,
+        },
       });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });

@@ -57,6 +57,8 @@ Todas as rotas abaixo estão em:
 | Descer ordem | `POST` | `/whatsapp-accounts/{id}/move-down` |
 | Inscrever webhook nesta WABA | `POST` | `/whatsapp-accounts/{id}/subscribe-webhook` |
 | Inscrever webhook em todas | `POST` | `/whatsapp-accounts/subscribe-webhooks-all` |
+| Ver campos realmente assinados na Meta | `GET` | `/whatsapp-accounts/{id}/webhook-fields` |
+| Setar todos os campos de novo + confirmar | `POST` | `/whatsapp-accounts/{id}/webhook-fields/resubscribe` |
 | Status webhook (1 conta) | `GET` | `/webhook/status?account_id={id}&period=24h` |
 | Status webhook (lote) | `GET` | `/webhook/status-batch?period=24h` |
 

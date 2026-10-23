@@ -159,3 +159,137 @@ export async function getTenantWebhookConfig(tenantId: number): Promise<{
   const verifyToken = String(process.env.WEBHOOK_VERIFY_TOKEN || 'seu_token_secreto_aqui').trim();
   return { callbackUrl, verifyToken };
 }
+
+/**
+ * Lê na Meta quais campos de webhook do App estão realmente assinados.
+ * GET /{app-id}/subscriptions com token app_id|app_secret
+ */
+export async function fetchWhatsAppWebhookSubscriptions(opts: {
+  appId: string;
+  appSecret: string;
+  expectedFields?: string[] | null;
+}): Promise<{
+  success: boolean;
+  message: string;
+  callback_url?: string;
+  active?: boolean;
+  subscribed: string[];
+  missing: string[];
+  extra: string[];
+  expected: string[];
+  all_ok: boolean;
+  raw?: any;
+}> {
+  const appId = String(opts.appId || '').trim();
+  const appSecret = String(opts.appSecret || '').trim();
+  const expected = normalizeWebhookFields(opts.expectedFields);
+
+  if (!appId || !appSecret) {
+    return {
+      success: false,
+      message: 'App ID e App Secret são obrigatórios para verificar os campos.',
+      subscribed: [],
+      missing: expected,
+      extra: [],
+      expected,
+      all_ok: false,
+    };
+  }
+
+  const appToken = `${appId}|${appSecret}`;
+
+  try {
+    const response = await axios.get(
+      `https://graph.facebook.com/v21.0/${encodeURIComponent(appId)}/subscriptions`,
+      {
+        params: { access_token: appToken },
+        timeout: 30000,
+      }
+    );
+
+    const list = Array.isArray(response.data?.data) ? response.data.data : [];
+    const wa =
+      list.find((item: any) => String(item?.object || '') === 'whatsapp_business_account') ||
+      list.find((item: any) => /whatsapp/i.test(String(item?.object || ''))) ||
+      null;
+
+    if (!wa) {
+      return {
+        success: true,
+        message: 'Nenhuma assinatura whatsapp_business_account encontrada neste App.',
+        subscribed: [],
+        missing: expected,
+        extra: [],
+        expected,
+        all_ok: false,
+        raw: list,
+      };
+    }
+
+    const subscribed = Array.isArray(wa.fields)
+      ? wa.fields.map((f: any) => String(f?.name || f || '').trim()).filter(Boolean)
+      : [];
+    const subscribedSet = new Set(subscribed);
+    const expectedSet = new Set(expected);
+    const missing = expected.filter((f) => !subscribedSet.has(f));
+    const extra = subscribed.filter((f) => !expectedSet.has(f));
+
+    return {
+      success: true,
+      message:
+        missing.length === 0
+          ? `Todos os ${expected.length} campos esperados estão assinados na Meta.`
+          : `Faltam ${missing.length} campo(s) na Meta. Assinados: ${subscribed.length}.`,
+      callback_url: wa.callback_url || undefined,
+      active: wa.active !== false,
+      subscribed,
+      missing,
+      extra,
+      expected,
+      all_ok: missing.length === 0,
+      raw: wa,
+    };
+  } catch (error: any) {
+    const fb = error?.response?.data?.error;
+    const msg = String(fb?.message || error?.message || 'Falha ao consultar subscriptions');
+    console.warn('⚠️ fetchWhatsAppWebhookSubscriptions:', msg, fb || '');
+    return {
+      success: false,
+      message: msg,
+      subscribed: [],
+      missing: expected,
+      extra: [],
+      expected,
+      all_ok: false,
+    };
+  }
+}
+
+/** Seta todos (ou a lista) de novo e depois consulta o que a Meta realmente gravou. */
+export async function resubscribeAndVerifyWebhookFields(opts: {
+  appId: string;
+  appSecret: string;
+  callbackUrl: string;
+  verifyToken: string;
+  fields?: string[] | null;
+}) {
+  const fields = normalizeWebhookFields(opts.fields);
+  const subscribe = await subscribeWhatsAppWebhookFields({
+    ...opts,
+    fields,
+  });
+  const status = await fetchWhatsAppWebhookSubscriptions({
+    appId: opts.appId,
+    appSecret: opts.appSecret,
+    expectedFields: fields,
+  });
+
+  return {
+    subscribe,
+    status,
+    success: subscribe.success && status.success && status.all_ok,
+    message: status.all_ok
+      ? 'Todos os campos foram setados e confirmados na Meta.'
+      : `Regravar: ${subscribe.message} | Verificação: ${status.message}`,
+  };
+}

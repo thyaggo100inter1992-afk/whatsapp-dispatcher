@@ -140,6 +140,10 @@ router.post('/whatsapp-accounts/:id/move-down', (req, res) => accounts.moveDown(
 // ---------- Contas — card / Meta / webhook ----------
 router.get('/whatsapp-accounts/:id/details', (req, res) => accounts.getAccountDetails(req, res));
 router.post('/whatsapp-accounts/:id/subscribe-webhook', (req, res) => accounts.subscribeWebhook(req, res));
+router.get('/whatsapp-accounts/:id/webhook-fields', (req, res) => accounts.getWebhookFieldsStatus(req, res));
+router.post('/whatsapp-accounts/:id/webhook-fields/resubscribe', (req, res) =>
+  accounts.resubscribeWebhookFields(req, res)
+);
 router.get('/whatsapp-accounts/:id/templates', (req, res) => accounts.getTemplates(req, res));
 router.post(
   '/whatsapp-accounts/:id/upload-media',

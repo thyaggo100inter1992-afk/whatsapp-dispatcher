@@ -86,6 +86,12 @@ router.get('/:id/details', (req, res) => controller.getAccountDetails(req, res))
 // Inscrever App Meta na WABA (necessário para webhook de contas novas)
 router.post('/:id/subscribe-webhook', (req, res) => controller.subscribeWebhook(req, res));
 
+// Verificar quais campos de webhook estão realmente assinados na Meta
+router.get('/:id/webhook-fields', (req, res) => controller.getWebhookFieldsStatus(req, res));
+
+// Setar todos os campos de webhook novamente e confirmar na Meta
+router.post('/:id/webhook-fields/resubscribe', (req, res) => controller.resubscribeWebhookFields(req, res));
+
 // Buscar templates de uma conta específica
 router.get('/:id/templates', (req, res) => controller.getTemplates(req, res));
 

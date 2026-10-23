@@ -92,6 +92,9 @@ export default function Configuracoes() {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [subscribingWebhookId, setSubscribingWebhookId] = useState<number | null>(null);
   const [subscribingAllWebhooks, setSubscribingAllWebhooks] = useState(false);
+  const [webhookFieldsStatus, setWebhookFieldsStatus] = useState<{[key: number]: any}>({});
+  const [checkingWebhookFieldsId, setCheckingWebhookFieldsId] = useState<number | null>(null);
+  const [resubscribingFieldsId, setResubscribingFieldsId] = useState<number | null>(null);
   
   // 🔍 BUSCA E FILTROS
   const [searchTerm, setSearchTerm] = useState('');
@@ -637,6 +640,79 @@ export default function Configuracoes() {
       });
     } finally {
       setSubscribingAllWebhooks(false);
+    }
+  };
+
+  const handleCheckWebhookFields = async (account: WhatsAppAccount) => {
+    setCheckingWebhookFieldsId(account.id);
+    try {
+      const response = await api.get(`/whatsapp-accounts/${account.id}/webhook-fields`, { timeout: 30000 });
+      setWebhookFieldsStatus((prev) => ({
+        ...prev,
+        [account.id]: response.data.data || response.data,
+      }));
+      if (!response.data.success) {
+        await confirm({
+          title: 'Campos de webhook',
+          message: response.data.message || response.data.error || 'Não foi possível verificar.',
+          type: 'danger',
+          confirmText: 'OK',
+          showCancel: false,
+        });
+      }
+    } catch (error: any) {
+      await confirm({
+        title: 'Verificar campos',
+        message: error.response?.data?.error || error.response?.data?.message || error.message,
+        type: 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+    } finally {
+      setCheckingWebhookFieldsId(null);
+    }
+  };
+
+  const handleResubscribeWebhookFields = async (account: WhatsAppAccount) => {
+    const ok = await confirm({
+      title: 'Setar todos os webhooks de novo',
+      message:
+        'Vai gravar novamente TODOS os campos de webhook na Meta e depois conferir o que ficou assinado. Continuar?',
+      type: 'warning',
+      confirmText: 'Setar todos de novo',
+      cancelText: 'Cancelar',
+    });
+    if (!ok) return;
+
+    setResubscribingFieldsId(account.id);
+    try {
+      const response = await api.post(
+        `/whatsapp-accounts/${account.id}/webhook-fields/resubscribe`,
+        { subscribe_all_webhooks: true },
+        { timeout: 60000 }
+      );
+      const status = response.data?.data?.status;
+      if (status) {
+        setWebhookFieldsStatus((prev) => ({ ...prev, [account.id]: status }));
+      }
+      await confirm({
+        title: response.data.success ? 'Campos setados' : 'Atenção nos campos',
+        message: response.data.message || 'Concluído.',
+        type: response.data.success ? 'info' : 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+      await loadWebhookStatusesBatch(accounts);
+    } catch (error: any) {
+      await confirm({
+        title: 'Setar webhooks',
+        message: error.response?.data?.error || error.response?.data?.message || error.message,
+        type: 'danger',
+        confirmText: 'OK',
+        showCancel: false,
+      });
+    } finally {
+      setResubscribingFieldsId(null);
     }
   };
 
@@ -1901,21 +1977,96 @@ export default function Configuracoes() {
                                   </span>
                                 </div>
                               )}
-                              {!webhookStatuses[account.id]?.isActive && (
+                              <div className="mt-3 space-y-2">
+                                {!webhookStatuses[account.id]?.isActive && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSubscribeWebhook(account)}
+                                    disabled={subscribingWebhookId === account.id}
+                                    className="w-full px-3 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/40 text-blue-100 text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                                    title="Inscrever o App Meta nesta WABA para a conta nova passar a receber eventos"
+                                  >
+                                    {subscribingWebhookId === account.id ? (
+                                      <FaSpinner className="animate-spin" />
+                                    ) : (
+                                      <FaBell />
+                                    )}
+                                    Inscrever Webhook nesta WABA
+                                  </button>
+                                )}
                                 <button
                                   type="button"
-                                  onClick={() => handleSubscribeWebhook(account)}
-                                  disabled={subscribingWebhookId === account.id}
-                                  className="mt-3 w-full px-3 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/40 text-blue-100 text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-                                  title="Inscrever o App Meta nesta WABA para a conta nova passar a receber eventos"
+                                  onClick={() => handleCheckWebhookFields(account)}
+                                  disabled={checkingWebhookFieldsId === account.id}
+                                  className="w-full px-3 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-100 text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                                  title="Consultar na Meta quais campos de webhook estão realmente assinados"
                                 >
-                                  {subscribingWebhookId === account.id ? (
+                                  {checkingWebhookFieldsId === account.id ? (
                                     <FaSpinner className="animate-spin" />
                                   ) : (
-                                    <FaBell />
+                                    <FaSearch />
                                   )}
-                                  Inscrever Webhook nesta WABA
+                                  Ver campos assinados na Meta
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleResubscribeWebhookFields(account)}
+                                  disabled={resubscribingFieldsId === account.id}
+                                  className="w-full px-3 py-2 rounded-lg bg-orange-500/20 hover:bg-orange-500/30 border border-orange-400/40 text-orange-100 text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                                  title="Setar todos os campos de webhook novamente e confirmar"
+                                >
+                                  {resubscribingFieldsId === account.id ? (
+                                    <FaSpinner className="animate-spin" />
+                                  ) : (
+                                    <FaSync />
+                                  )}
+                                  Setar todos os webhooks de novo
+                                </button>
+                              </div>
+
+                              {webhookFieldsStatus[account.id] && (
+                                <div className="mt-3 p-3 rounded-lg bg-black/30 border border-white/10 text-xs space-y-2">
+                                  <div className={`font-bold ${
+                                    webhookFieldsStatus[account.id].all_ok ? 'text-green-300' : 'text-yellow-300'
+                                  }`}>
+                                    {webhookFieldsStatus[account.id].all_ok
+                                      ? `✅ Todos ok (${webhookFieldsStatus[account.id].subscribed?.length || 0})`
+                                      : `⚠️ Faltam ${webhookFieldsStatus[account.id].missing?.length || 0} · Assinados: ${webhookFieldsStatus[account.id].subscribed?.length || 0}`}
+                                  </div>
+                                  {webhookFieldsStatus[account.id].callback_url && (
+                                    <div className="text-white/50 break-all">
+                                      URL: {webhookFieldsStatus[account.id].callback_url}
+                                    </div>
+                                  )}
+                                  {Array.isArray(webhookFieldsStatus[account.id].missing) &&
+                                    webhookFieldsStatus[account.id].missing.length > 0 && (
+                                    <div className="text-red-300">
+                                      <div className="font-bold mb-1">Faltando:</div>
+                                      <div className="flex flex-wrap gap-1">
+                                        {webhookFieldsStatus[account.id].missing.map((f: string) => (
+                                          <span key={f} className="px-1.5 py-0.5 rounded bg-red-500/20 border border-red-500/40 font-mono">
+                                            {f}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {Array.isArray(webhookFieldsStatus[account.id].subscribed) &&
+                                    webhookFieldsStatus[account.id].subscribed.length > 0 && (
+                                    <details className="text-white/70">
+                                      <summary className="cursor-pointer font-bold text-blue-200">
+                                        Ver assinados ({webhookFieldsStatus[account.id].subscribed.length})
+                                      </summary>
+                                      <div className="mt-2 flex flex-wrap gap-1 max-h-28 overflow-y-auto">
+                                        {webhookFieldsStatus[account.id].subscribed.map((f: string) => (
+                                          <span key={f} className="px-1.5 py-0.5 rounded bg-blue-500/20 border border-blue-500/40 font-mono">
+                                            {f}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </details>
+                                  )}
+                                </div>
                               )}
                             </div>
                             <div className={`text-4xl ${
