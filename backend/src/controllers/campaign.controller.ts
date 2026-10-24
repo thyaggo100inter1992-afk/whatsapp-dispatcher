@@ -3,6 +3,7 @@ import { CampaignModel } from '../models/Campaign';
 import { ContactModel } from '../models/Contact';
 import { MessageModel } from '../models/Message';
 import { tenantQuery } from '../database/tenant-query';
+import { query } from '../database/connection';
 import { campaignWorker } from '../workers/campaign.worker';
 import { whatsappHealthService } from '../services/whatsapp-health.service';
 import { reportService } from '../services/report.service';
@@ -856,16 +857,10 @@ export class CampaignController {
         return res.status(404).json({ success: false, error: 'Campanha não encontrada' });
       }
 
-      // Excluir mensagens associadas
-      await tenantQuery(req, 'DELETE FROM messages WHERE campaign_id = $1', [campaignId]);
-      
-      // Excluir templates da campanha
-      await tenantQuery(req, 'DELETE FROM campaign_templates WHERE campaign_id = $1', [campaignId]);
-      
-      // Excluir associações de contatos
-      await tenantQuery(req, 'DELETE FROM campaign_contacts WHERE campaign_id = $1', [campaignId]);
-      
-      // Excluir a campanha
+      await query('DELETE FROM button_clicks WHERE campaign_id = $1', [campaignId]);
+      await query('DELETE FROM messages WHERE campaign_id = $1', [campaignId]);
+      await query('DELETE FROM campaign_templates WHERE campaign_id = $1', [campaignId]);
+      await query('DELETE FROM campaign_contacts WHERE campaign_id = $1', [campaignId]);
       await CampaignModel.delete(campaignId, tenantId);
 
       console.log(`✅ Campanha ${campaignId} excluída com sucesso`);
@@ -878,19 +873,24 @@ export class CampaignController {
   }
 
   /**
-   * Excluir todas as campanhas finalizadas (concluídas ou canceladas)
+   * Excluir todas as campanhas finalizadas (concluídas, canceladas ou falhas)
    */
   async deleteFinished(req: Request, res: Response) {
     try {
+      const tenantId = (req as any).tenant?.id;
+      if (!tenantId) {
+        return res.status(401).json({ success: false, error: 'Tenant não identificado' });
+      }
+
       console.log('🗑️ Excluindo todas as campanhas finalizadas...');
 
-      // Buscar campanhas finalizadas
-      const campaignsResult = await tenantQuery(req, 
-        `SELECT id, name, status, completed_at 
-         FROM campaigns 
-         WHERE status IN ('completed', 'cancelled')
-         ORDER BY completed_at DESC`,
-        []
+      const campaignsResult = await query(
+        `SELECT id, name, status, completed_at
+         FROM campaigns
+         WHERE tenant_id = $1
+           AND status IN ('completed', 'cancelled', 'failed')
+         ORDER BY completed_at DESC NULLS LAST`,
+        [tenantId]
       );
 
       const campaigns = campaignsResult.rows;
@@ -905,37 +905,40 @@ export class CampaignController {
 
       console.log(`📋 Encontradas ${campaigns.length} campanhas finalizadas`);
 
-      let deletedCount = 0;
       const campaignIds = campaigns.map((c) => c.id);
 
-      // Excluir em batch para melhor performance
-      // 1. Excluir mensagens
-      const messagesResult = await tenantQuery(req, 
+      const clicksResult = await query(
+        'DELETE FROM button_clicks WHERE campaign_id = ANY($1::int[])',
+        [campaignIds]
+      );
+      console.log(`🗑️ ${clicksResult.rowCount} cliques excluídos`);
+
+      const messagesResult = await query(
         'DELETE FROM messages WHERE campaign_id = ANY($1::int[])',
         [campaignIds]
       );
       console.log(`🗑️ ${messagesResult.rowCount} mensagens excluídas`);
 
-      // 2. Excluir templates das campanhas
-      const templatesResult = await tenantQuery(req, 
+      const templatesResult = await query(
         'DELETE FROM campaign_templates WHERE campaign_id = ANY($1::int[])',
         [campaignIds]
       );
       console.log(`🗑️ ${templatesResult.rowCount} templates excluídos`);
 
-      // 3. Excluir associações de contatos
-      const contactsResult = await tenantQuery(req, 
+      const contactsResult = await query(
         'DELETE FROM campaign_contacts WHERE campaign_id = ANY($1::int[])',
         [campaignIds]
       );
       console.log(`🗑️ ${contactsResult.rowCount} associações de contatos excluídas`);
 
-      // 4. Excluir as campanhas
-      const campaignsDeleteResult = await tenantQuery(req, 
-        'DELETE FROM campaigns WHERE id = ANY($1::int[])',
-        [campaignIds]
+      const campaignsDeleteResult = await query(
+        `DELETE FROM campaigns
+         WHERE tenant_id = $1
+           AND id = ANY($2::int[])
+           AND status IN ('completed', 'cancelled', 'failed')`,
+        [tenantId, campaignIds]
       );
-      deletedCount = campaignsDeleteResult.rowCount || 0;
+      const deletedCount = campaignsDeleteResult.rowCount || 0;
 
       console.log(`✅ ${deletedCount} campanhas excluídas com sucesso`);
 

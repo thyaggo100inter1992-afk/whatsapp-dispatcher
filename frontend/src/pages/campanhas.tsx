@@ -16,6 +16,10 @@ import ToastContainer from '@/components/ToastContainer';
 import { useToast } from '@/hooks/useToast';
 import { useConfirm } from '@/hooks/useConfirm';
 
+const FINISHED_CAMPAIGN_STATUSES = ['completed', 'cancelled', 'failed'];
+const isFinishedCampaign = (campaign: { status: string }) =>
+  FINISHED_CAMPAIGN_STATUSES.includes(campaign.status);
+
 interface Campaign {
   id: number;
   name: string;
@@ -212,7 +216,7 @@ export default function Campanhas() {
   };
 
   const handleDeleteAllFinished = async () => {
-    const finishedCampaigns = campaigns.filter(c => c.status === 'completed' || c.status === 'cancelled');
+    const finishedCampaigns = campaigns.filter(isFinishedCampaign);
     
     if (finishedCampaigns.length === 0) {
       toast.info('ℹ️ Nenhuma campanha finalizada para excluir');
@@ -418,13 +422,13 @@ export default function Campanhas() {
               </div>
               
               <div className="flex gap-4">
-                {campaigns.filter(c => c.status === 'completed' || c.status === 'cancelled').length > 0 && (
+                {campaigns.filter(isFinishedCampaign).length > 0 && (
                   <button
                     onClick={handleDeleteAllFinished}
                     className="flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-lg font-bold rounded-xl transition-all duration-200 shadow-lg shadow-red-500/30 hover:shadow-red-500/50 transform hover:scale-105"
                   >
                     <FaTrashAlt className="text-xl" />
-                    Excluir Finalizadas ({campaigns.filter(c => c.status === 'completed' || c.status === 'cancelled').length})
+                    Excluir Finalizadas ({campaigns.filter(isFinishedCampaign).length})
                   </button>
                 )}
                 
