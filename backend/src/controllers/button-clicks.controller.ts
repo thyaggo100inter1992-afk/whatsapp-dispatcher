@@ -1,6 +1,11 @@
 import { Request, Response } from 'express';
 import { queryNoTenant } from '../database/tenant-query';
 import ExcelJS from 'exceljs';
+import {
+  brasiliaTodayYmd,
+  sqlBrasiliaDayEndExclusive,
+  sqlBrasiliaDayStart,
+} from '../helpers/brasilia-time.helper';
 
 export class ButtonClicksController {
   /**
@@ -8,7 +13,9 @@ export class ButtonClicksController {
    */
   async listClicks(req: Request, res: Response) {
     try {
-      const { page = 1, limit = 20, button_text, date_from, date_to } = req.query;
+      const { page = 1, limit = 20, button_text } = req.query;
+      const date_from = (req.query.date_from as string) || brasiliaTodayYmd();
+      const date_to = (req.query.date_to as string) || date_from;
       const tenantId = (req as any).tenant?.id;
       
       const offset = (Number(page) - 1) * Number(limit);
@@ -25,14 +32,13 @@ export class ButtonClicksController {
       }
       
       if (date_from) {
-        filters.push(`bc.clicked_at >= $${paramIndex}::date`);
+        filters.push(`bc.clicked_at >= ${sqlBrasiliaDayStart(`$${paramIndex}`)}`);
         params.push(date_from);
         paramIndex++;
       }
       
       if (date_to) {
-        // Adiciona 1 dia e compara com < (ao invés de <=) para incluir todo o dia final
-        filters.push(`bc.clicked_at < ($${paramIndex}::date + interval '1 day')`);
+        filters.push(`bc.clicked_at < ${sqlBrasiliaDayEndExclusive(`$${paramIndex}`)}`);
         params.push(date_to);
         paramIndex++;
       }
@@ -123,7 +129,9 @@ export class ButtonClicksController {
    */
   async getRanking(req: Request, res: Response) {
     try {
-      const { date_from, date_to, limit = 5 } = req.query;
+      const { limit = 5 } = req.query;
+      const date_from = (req.query.date_from as string) || brasiliaTodayYmd();
+      const date_to = (req.query.date_to as string) || date_from;
       const tenantId = (req as any).tenant?.id;
       
       // Construir filtros de data
@@ -132,14 +140,13 @@ export class ButtonClicksController {
       let paramIndex = 2;
       
       if (date_from) {
-        filters.push(`bc.clicked_at >= $${paramIndex}::date`);
+        filters.push(`bc.clicked_at >= ${sqlBrasiliaDayStart(`$${paramIndex}`)}`);
         params.push(date_from);
         paramIndex++;
       }
       
       if (date_to) {
-        // Adiciona 1 dia e compara com < (ao invés de <=) para incluir todo o dia final
-        filters.push(`bc.clicked_at < ($${paramIndex}::date + interval '1 day')`);
+        filters.push(`bc.clicked_at < ${sqlBrasiliaDayEndExclusive(`$${paramIndex}`)}`);
         params.push(date_to);
         paramIndex++;
       }
@@ -197,7 +204,8 @@ export class ButtonClicksController {
    */
   async getStats(req: Request, res: Response) {
     try {
-      const { date_from, date_to } = req.query;
+      const date_from = (req.query.date_from as string) || brasiliaTodayYmd();
+      const date_to = (req.query.date_to as string) || date_from;
       const tenantId = (req as any).tenant?.id;
       
       // Construir filtros de data
@@ -206,14 +214,13 @@ export class ButtonClicksController {
       let paramIndex = 2;
       
       if (date_from) {
-        filters.push(`bc.clicked_at >= $${paramIndex}::date`);
+        filters.push(`bc.clicked_at >= ${sqlBrasiliaDayStart(`$${paramIndex}`)}`);
         params.push(date_from);
         paramIndex++;
       }
       
       if (date_to) {
-        // Adiciona 1 dia e compara com < (ao invés de <=) para incluir todo o dia final
-        filters.push(`bc.clicked_at < ($${paramIndex}::date + interval '1 day')`);
+        filters.push(`bc.clicked_at < ${sqlBrasiliaDayEndExclusive(`$${paramIndex}`)}`);
         params.push(date_to);
         paramIndex++;
       }
@@ -226,7 +233,7 @@ export class ButtonClicksController {
           COUNT(DISTINCT bc.button_text) as unique_buttons,
           COUNT(DISTINCT bc.phone_number) as unique_contacts,
           COUNT(DISTINCT bc.campaign_id) as campaigns_with_clicks,
-          COUNT(DISTINCT DATE(bc.clicked_at)) as days_with_clicks
+          COUNT(DISTINCT (bc.clicked_at AT TIME ZONE 'America/Sao_Paulo')::date) as days_with_clicks
         FROM button_clicks bc
         INNER JOIN messages m ON bc.message_id = m.id
         ${whereClause}
@@ -260,7 +267,9 @@ export class ButtonClicksController {
    */
   async exportToExcel(req: Request, res: Response) {
     try {
-      const { button_text, date_from, date_to } = req.query;
+      const { button_text } = req.query;
+      const date_from = (req.query.date_from as string) || brasiliaTodayYmd();
+      const date_to = (req.query.date_to as string) || date_from;
       const tenantId = (req as any).tenant?.id;
       
       console.log('📊 Exportando relatório de cliques para Excel...');
@@ -277,13 +286,13 @@ export class ButtonClicksController {
       }
       
       if (date_from) {
-        filters.push(`bc.clicked_at >= $${paramIndex}::date`);
+        filters.push(`bc.clicked_at >= ${sqlBrasiliaDayStart(`$${paramIndex}`)}`);
         params.push(date_from);
         paramIndex++;
       }
       
       if (date_to) {
-        filters.push(`bc.clicked_at < ($${paramIndex}::date + interval '1 day')`);
+        filters.push(`bc.clicked_at < ${sqlBrasiliaDayEndExclusive(`$${paramIndex}`)}`);
         params.push(date_to);
         paramIndex++;
       }

@@ -3,6 +3,11 @@ import { ContactModel } from '../models/Contact';
 import { MessageModel } from '../models/Message';
 import { RestrictionListController } from './restriction-list.controller';
 import { query as queryNoTenant } from '../database/connection';
+import {
+  brasiliaTodayYmd,
+  sqlBrasiliaDayEndExclusive,
+  sqlBrasiliaDayStart,
+} from '../helpers/brasilia-time.helper';
 
 export class MessageController {
   async sendImmediate(req: Request, res: Response) {
@@ -393,8 +398,8 @@ export class MessageController {
       const limit = parseInt(req.query.limit as string) || 100;
       const offset = parseInt(req.query.offset as string) || 0;
       const campaign_id = req.query.campaign_id ? parseInt(req.query.campaign_id as string) : null;
-      const date_start = req.query.date_start as string;
-      const date_end = req.query.date_end as string;
+      const date_start = (req.query.date_start as string) || brasiliaTodayYmd();
+      const date_end = (req.query.date_end as string) || date_start;
       const user_id = req.query.user_id ? parseInt(req.query.user_id as string) : null;
 
       console.log(`📋 [Mensagens] Listando para tenant ${tenantId} (limit: ${limit}, offset: ${offset})`);
@@ -439,14 +444,13 @@ export class MessageController {
 
         // Filtro por data de início
         if (date_start) {
-          query_text += ` AND m.created_at >= $${paramIndex}::date`;
+          query_text += ` AND COALESCE(m.sent_at, m.created_at) >= ${sqlBrasiliaDayStart(`$${paramIndex}`)}`;
           query_params.push(date_start);
           paramIndex++;
         }
 
-        // Filtro por data de fim (inclui o dia inteiro)
         if (date_end) {
-          query_text += ` AND m.created_at < ($${paramIndex}::date + INTERVAL '1 day')`;
+          query_text += ` AND COALESCE(m.sent_at, m.created_at) < ${sqlBrasiliaDayEndExclusive(`$${paramIndex}`)}`;
           query_params.push(date_end);
           paramIndex++;
         }
@@ -467,13 +471,13 @@ export class MessageController {
         let countIndex = 2;
 
         if (date_start) {
-          countQuery += ` AND m.created_at >= $${countIndex}::date`;
+          countQuery += ` AND COALESCE(m.sent_at, m.created_at) >= ${sqlBrasiliaDayStart(`$${countIndex}`)}`;
           countParams.push(date_start);
           countIndex++;
         }
 
         if (date_end) {
-          countQuery += ` AND m.created_at < ($${countIndex}::date + INTERVAL '1 day')`;
+          countQuery += ` AND COALESCE(m.sent_at, m.created_at) < ${sqlBrasiliaDayEndExclusive(`$${countIndex}`)}`;
           countParams.push(date_end);
           countIndex++;
         }

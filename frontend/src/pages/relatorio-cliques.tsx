@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import { FaDownload, FaTrash, FaTimes, FaCheck } from 'react-icons/fa';
 import { useToast } from '../hooks/useToast';
 import { useConfirm } from '../hooks/useConfirm';
 import ToastContainer from '@/components/ToastContainer';
+import { brasiliaTodayYmd, formatBrasiliaDateTime } from '@/utils/timezone';
 
 interface ButtonClick {
   id: number;
@@ -53,12 +54,15 @@ export default function RelatorioCliques() {
   const [total, setTotal] = useState(0);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [selectAll, setSelectAll] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const todayYmd = brasiliaTodayYmd();
   const [filters, setFilters] = useState({
     button_text: '',
-    date_from: '',
-    date_to: '',
+    date_from: todayYmd,
+    date_to: todayYmd,
   });
+  const hasLoadedOnce = useRef(false);
 
   useEffect(() => {
     loadData();
@@ -76,22 +80,27 @@ export default function RelatorioCliques() {
     if (!autoRefresh) return;
 
     const interval = setInterval(() => {
-      console.log('🔄 Auto-atualizando relatório de cliques...');
-      loadData();
+      loadData(true);
       loadRanking();
       loadStats();
-    }, 10000); // 10 segundos
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [autoRefresh, page, filters]);
 
-  const loadData = async () => {
+  const loadData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent && !hasLoadedOnce.current) {
+        setLoading(true);
+      } else if (silent) {
+        setRefreshing(true);
+      }
       const params = new URLSearchParams({
         page: page.toString(),
         limit: '20',
-        ...filters,
+        button_text: filters.button_text || '',
+        date_from: filters.date_from || brasiliaTodayYmd(),
+        date_to: filters.date_to || filters.date_from || brasiliaTodayYmd(),
       });
 
       const response = await api.get(`/button-clicks?${params}`);
@@ -111,15 +120,17 @@ export default function RelatorioCliques() {
       toast.error(error.response?.data?.error || 'Erro ao carregar cliques');
       setClicks([]);
     } finally {
+      hasLoadedOnce.current = true;
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   const loadRanking = async () => {
     try {
       const params = new URLSearchParams({
-        date_from: filters.date_from,
-        date_to: filters.date_to,
+        date_from: filters.date_from || brasiliaTodayYmd(),
+        date_to: filters.date_to || filters.date_from || brasiliaTodayYmd(),
       });
 
       const response = await api.get(`/button-clicks/ranking?${params}`);
@@ -138,8 +149,8 @@ export default function RelatorioCliques() {
   const loadStats = async () => {
     try {
       const params = new URLSearchParams({
-        date_from: filters.date_from,
-        date_to: filters.date_to,
+        date_from: filters.date_from || brasiliaTodayYmd(),
+        date_to: filters.date_to || filters.date_from || brasiliaTodayYmd(),
       });
 
       const response = await api.get(`/button-clicks/stats?${params}`);
@@ -155,20 +166,21 @@ export default function RelatorioCliques() {
   };
 
   const handleFilterToday = () => {
-    const today = new Date().toISOString().split('T')[0]; // Formato: YYYY-MM-DD
+    const today = brasiliaTodayYmd();
     setFilters({
       ...filters,
       date_from: today,
       date_to: today,
     });
-    setPage(1); // Voltar para primeira página
+    setPage(1);
   };
 
   const handleClearFilters = () => {
+    const today = brasiliaTodayYmd();
     setFilters({
       button_text: '',
-      date_from: '',
-      date_to: '',
+      date_from: today,
+      date_to: today,
     });
     setPage(1);
   };
@@ -272,16 +284,7 @@ export default function RelatorioCliques() {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const formatDate = (dateString: string) => formatBrasiliaDateTime(dateString);
 
   const getRankingIcon = (index: number) => {
     const icons = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
@@ -338,10 +341,10 @@ export default function RelatorioCliques() {
                     : 'bg-gray-500/20 text-gray-300 border-2 border-gray-500/40 hover:bg-gray-500/30'
                 }`}
               >
-                <span className="text-2xl">{autoRefresh ? '🔄' : '⏸️'}</span>
+                <span className={`text-2xl ${autoRefresh && refreshing ? 'inline-block animate-spin' : ''}`}>{autoRefresh ? '🔄' : '⏸️'}</span>
                 <div className="text-left">
                   <div className="text-lg">{autoRefresh ? 'Auto-Atualizar' : 'Atualizar Manual'}</div>
-                  <div className="text-xs opacity-70">{autoRefresh ? 'A cada 10s' : 'Clique para ativar'}</div>
+                  <div className="text-xs opacity-70">{autoRefresh ? (refreshing ? 'Atualizando...' : 'A cada 10s • Horário de Brasília') : 'Clique para ativar'}</div>
                 </div>
               </button>
             </div>

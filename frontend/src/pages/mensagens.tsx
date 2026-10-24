@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { FaEnvelope, FaCheckCircle, FaTimesCircle, FaClock, FaGlobe, FaFilter, FaSearch, FaArrowLeft } from 'react-icons/fa';
-import { format } from 'date-fns';
 import { useToast } from '@/hooks/useToast';
 import ToastContainer from '@/components/ToastContainer';
 import api from '@/services/api';
+import { brasiliaTodayYmd, formatBrasiliaDateTime } from '@/utils/timezone';
 
 interface Message {
   id: number;
@@ -40,8 +40,9 @@ export default function MensagensPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [proxyFilter, setProxyFilter] = useState('all');
   const [userFilter, setUserFilter] = useState('all');
-  const [dateStart, setDateStart] = useState('');
-  const [dateEnd, setDateEnd] = useState('');
+  const todayYmd = brasiliaTodayYmd();
+  const [dateStart, setDateStart] = useState(todayYmd);
+  const [dateEnd, setDateEnd] = useState(todayYmd);
   const [users, setUsers] = useState<Array<{ id: number; nome: string }>>([]);
   const [page, setPage] = useState(1);
   const [totalMessages, setTotalMessages] = useState(0);
@@ -66,14 +67,16 @@ export default function MensagensPage() {
     }
   };
 
-  const loadMessages = async () => {
+  const loadMessages = async (override?: { dateStart?: string; dateEnd?: string }) => {
     setLoading(true);
     try {
       const offset = (page - 1) * limit;
+      const start = override?.dateStart || dateStart || brasiliaTodayYmd();
+      const end = override?.dateEnd || dateEnd || start;
       let url = `/messages?limit=${limit}&offset=${offset}`;
       
-      if (dateStart) url += `&date_start=${dateStart}`;
-      if (dateEnd) url += `&date_end=${dateEnd}`;
+      url += `&date_start=${start}`;
+      url += `&date_end=${end}`;
       if (userFilter !== 'all') url += `&user_id=${userFilter}`;
       
       const response = await api.get(url);
@@ -93,18 +96,19 @@ export default function MensagensPage() {
   };
 
   const handleApplyFilters = () => {
-    setPage(1); // Reset para primeira página
+    setPage(1);
     loadMessages();
   };
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '-';
-    try {
-      return format(new Date(dateString), 'dd/MM/yyyy HH:mm:ss');
-    } catch {
-      return '-';
-    }
+  const handleFilterToday = () => {
+    const today = brasiliaTodayYmd();
+    setDateStart(today);
+    setDateEnd(today);
+    setPage(1);
+    loadMessages({ dateStart: today, dateEnd: today });
   };
+
+  const formatDate = (dateString?: string) => formatBrasiliaDateTime(dateString, true);
 
   const getStatusBadge = (status: string) => {
     const badges: { [key: string]: JSX.Element } = {
@@ -311,11 +315,16 @@ export default function MensagensPage() {
                 />
               </div>
 
-              {/* Botão Aplicar Filtros */}
-              <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4 flex items-end">
+              <div className="bg-white/5 border-2 border-white/10 rounded-xl p-4 flex items-end gap-3">
+                <button
+                  onClick={handleFilterToday}
+                  className="px-6 py-4 bg-cyan-600/30 hover:bg-cyan-600/40 border-2 border-cyan-500/50 text-cyan-100 font-bold text-base rounded-xl transition-all"
+                >
+                  Hoje
+                </button>
                 <button
                   onClick={handleApplyFilters}
-                  className="w-full px-6 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold text-base rounded-xl transition-all shadow-lg"
+                  className="flex-1 px-6 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold text-base rounded-xl transition-all shadow-lg"
                 >
                   🔍 Aplicar Filtros
                 </button>
