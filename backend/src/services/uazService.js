@@ -1,6 +1,47 @@
 const axios = require('axios');
 const https = require('https');
 const { HttpsProxyAgent } = require('hpagent');
+const { SocksProxyAgent } = require('socks-proxy-agent');
+
+function buildUazProxyUrl(scheme, proxyConfig) {
+  const host = String(proxyConfig.host || '').trim();
+  const port = Number(proxyConfig.port);
+  if (proxyConfig.username && proxyConfig.password) {
+    const user = encodeURIComponent(proxyConfig.username);
+    const pass = encodeURIComponent(proxyConfig.password);
+    return `${scheme}://${user}:${pass}@${host}:${port}`;
+  }
+  return `${scheme}://${host}:${port}`;
+}
+
+function isRetryableProxyError(error) {
+  const msg = String(error?.message || error?.code || '');
+  return /socket hang up|ECONNRESET|ETIMEDOUT|ECONNREFUSED|EPROTO|ECONNABORTED|timeout|Proxy connection ended|SOCKS|socket disconnected/i.test(msg)
+    || ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'ECONNABORTED', 'EPROTO'].includes(error?.code);
+}
+
+function createUazProxyAgent(proxyConfig, timeout = 15000) {
+  if (!proxyConfig || !proxyConfig.host || !proxyConfig.port) return null;
+
+  const type = String(proxyConfig.type || 'socks5').toLowerCase();
+  const opts = { timeout, keepAlive: false, rejectUnauthorized: false };
+
+  if (type === 'socks5' || type === 'socks' || type === 'socks5h') {
+    const proxyUrl = buildUazProxyUrl('socks5h', proxyConfig);
+    console.log(`🌐 [UAZ Service] SOCKS5h ${proxyConfig.host}:${proxyConfig.port}`);
+    return new SocksProxyAgent(proxyUrl, opts);
+  }
+
+  const scheme = type === 'https' ? 'https' : 'http';
+  const proxyUrl = buildUazProxyUrl(scheme, proxyConfig);
+  console.log(`🌐 [UAZ Service] ${scheme.toUpperCase()} proxy ${proxyConfig.host}:${proxyConfig.port}`);
+  return new HttpsProxyAgent({
+    proxy: proxyUrl,
+    keepAlive: false,
+    keepAliveMsecs: 30000,
+    rejectUnauthorized: false
+  });
+}
 
 class UazService {
   constructor(serverUrl, adminToken) {
@@ -41,21 +82,14 @@ class UazService {
     
     if (proxyConfig && proxyConfig.host && !isLocalhost) {
       try {
-        const proxyUrl = proxyConfig.username && proxyConfig.password
-          ? `http://${proxyConfig.username}:${proxyConfig.password}@${proxyConfig.host}:${proxyConfig.port}`
-          : `http://${proxyConfig.host}:${proxyConfig.port}`;
-        
-        console.log(`🌐 [UAZ Service] Configurando proxy: ${proxyConfig.host}:${proxyConfig.port} para ${this.serverUrl}`);
-        
-        config.httpsAgent = new HttpsProxyAgent({
-          proxy: proxyUrl,
-          keepAlive: true,
-          keepAliveMsecs: 30000,
-          rejectUnauthorized: false
-        });
+        const agent = createUazProxyAgent(proxyConfig, timeout);
+        if (agent) {
+          config.httpsAgent = agent;
+          config.httpAgent = agent;
+          config.proxy = false;
+        }
       } catch (error) {
         console.error('⚠️  [UAZ Service] Erro ao configurar proxy, usando conexão direta:', error.message);
-        // Mantém o httpsAgent padrão sem proxy
       }
     } else if (isLocalhost && proxyConfig) {
       console.log('📡 [UAZ Service] Conexão LOCAL detectada (localhost), IGNORANDO proxy configurado');
@@ -64,7 +98,33 @@ class UazService {
       console.log('📡 [UAZ Service] Usando conexão direta (sem proxy)');
     }
 
-    return axios.create(config);
+    const client = axios.create(config);
+
+    if (proxyConfig && proxyConfig.host && !isLocalhost) {
+      client.interceptors.response.use(
+        (response) => response,
+        async (error) => {
+          if (error.config?.__uazDirectRetry || !isRetryableProxyError(error)) {
+            return Promise.reject(error);
+          }
+          console.warn(`⚠️ [UAZ Service] Proxy falhou (${error.message}). Tentando conexão DIRETA com a UAZ API...`);
+          const directClient = this.createHttpClient(instanceToken, useAdminToken, null, timeout);
+          return directClient.request({
+            ...error.config,
+            httpsAgent: new https.Agent({
+              rejectUnauthorized: false,
+              keepAlive: true,
+              keepAliveMsecs: 30000
+            }),
+            httpAgent: undefined,
+            proxy: false,
+            __uazDirectRetry: true
+          });
+        }
+      );
+    }
+
+    return client;
   }
 
   /**
@@ -572,8 +632,13 @@ class UazService {
       
       // Verificar se houve erro na resposta da UAZ (mesmo com status 200)
       if (response.data?.error || response.data?.status === false || response.data?.status === 'error') {
-        const errorMsg = response.data?.error || response.data?.message || 'Erro desconhecido na UAZ API';
-        console.error('❌ UAZ API retornou erro:', errorMsg);
+        const rawError = response.data?.error;
+        const errorMsg = (typeof rawError === 'string' && rawError)
+          ? rawError
+          : (rawError === true ? 'Instância desconectada ou sem resposta do WhatsApp. Verifique a conexão.' : null)
+          || (response.data?.message ? String(response.data.message) : null)
+          || 'Erro desconhecido na UAZ API';
+        console.error('❌ UAZ API retornou erro:', rawError, '→ Mensagem:', errorMsg);
         return {
           success: false,
           error: errorMsg,
@@ -582,7 +647,7 @@ class UazService {
       }
       
       // Extrair o messageId da resposta da UAZ
-      const messageId = response.data?.key?.id || response.data?.messageId || response.data?.id || null;
+      const messageId = response.data?.key?.id || response.data?.messageId || response.data?.messageid || response.data?.id || null;
       
       // Se não conseguiu extrair messageId, pode ser um problema
       if (!messageId) {
@@ -655,8 +720,13 @@ class UazService {
       
       // Verificar se houve erro na resposta da UAZ (mesmo com status 200)
       if (response.data?.error || response.data?.status === false || response.data?.status === 'error') {
-        const errorMsg = response.data?.error || response.data?.message || 'Erro desconhecido na UAZ API';
-        console.error('❌ UAZ API retornou erro:', errorMsg);
+        const rawError = response.data?.error;
+        const errorMsg = (typeof rawError === 'string' && rawError)
+          ? rawError
+          : (rawError === true ? 'Instância desconectada ou sem resposta do WhatsApp. Verifique a conexão.' : null)
+          || (response.data?.message ? String(response.data.message) : null)
+          || 'Erro desconhecido na UAZ API';
+        console.error('❌ UAZ API retornou erro:', rawError, '→ Mensagem:', errorMsg);
         return {
           success: false,
           error: errorMsg,
@@ -665,7 +735,7 @@ class UazService {
       }
       
       // Extrair o messageId da resposta da UAZ
-      const messageId = response.data?.key?.id || response.data?.messageId || response.data?.id || null;
+      const messageId = response.data?.key?.id || response.data?.messageId || response.data?.messageid || response.data?.id || null;
       
       // Se não conseguiu extrair messageId, pode ser um problema
       if (!messageId) {
@@ -831,31 +901,53 @@ class UazService {
   async sendMenu(instanceToken, menuData, proxyConfig = null) {
     try {
       const client = this.createHttpClient(instanceToken, false, proxyConfig);
+      const payload = {
+        ...menuData,
+        text: (menuData.text && String(menuData.text).trim()) ? menuData.text : 'Mensagem com botões',
+        readchat: menuData.readchat !== false
+      };
+      if (!payload.footerText) {
+        delete payload.footerText;
+      }
       
-      console.log('📤 Enviando menu via UAZ API:', JSON.stringify(menuData, null, 2));
+      console.log('📤 Enviando menu via UAZ API:', JSON.stringify({
+        ...payload,
+        imageButton: payload.imageButton
+          ? `[${String(payload.imageButton).startsWith('data:') ? 'base64' : 'url'} ${Math.round(String(payload.imageButton).length / 1024)} KB]`
+          : undefined
+      }, null, 2));
       console.log(`🔗 URL: ${this.serverUrl}/send/menu`);
-      console.log(`🎯 Tipo: ${menuData.type}`);
-      console.log(`📝 Choices: ${menuData.choices?.length || 0} itens`);
+      console.log(`🎯 Tipo: ${payload.type}`);
+      console.log(`📝 Choices: ${payload.choices?.length || 0} itens`);
       
-      if (menuData.type === 'list' && menuData.choices) {
-        const sections = menuData.choices.filter(c => c.startsWith('[')).length;
-        const items = menuData.choices.filter(c => !c.startsWith('[')).length;
+      if (payload.type === 'list' && payload.choices) {
+        const sections = payload.choices.filter(c => c.startsWith('[')).length;
+        const items = payload.choices.filter(c => !c.startsWith('[')).length;
         console.log(`   └─ Seções: ${sections}, Itens: ${items}`);
       }
       
-      const response = await client.post(`/send/menu`, menuData);
+      const response = await client.post(`/send/menu`, payload);
       
       console.log('✅ Resposta da UAZ API:', JSON.stringify(response.data, null, 2));
       
       // Verificar se houve erro na resposta da UAZ (mesmo com status 200)
       if (response.data?.error || response.data?.status === false || response.data?.status === 'error') {
-        const errorMsg = response.data?.error || response.data?.message || 'Erro desconhecido na UAZ API';
-        console.error('❌ UAZ API retornou erro:', errorMsg);
+        const rawError = response.data?.error;
+        // Tratar error:true (boolean) - geralmente significa instância desconectada
+        let errorMsg;
+        if (typeof rawError === 'string' && rawError) {
+          errorMsg = rawError;
+        } else if (rawError === true) {
+          errorMsg = 'Instância desconectada ou sem resposta do WhatsApp. Verifique a conexão em "Gerenciar Conexões".';
+        } else {
+          errorMsg = (response.data?.message ? String(response.data.message) : null) || 'Erro desconhecido na UAZ API';
+        }
+        console.error('❌ UAZ API retornou erro:', rawError, '→ Mensagem:', errorMsg);
         throw new Error(errorMsg);
       }
       
       // Extrair o messageId da resposta da UAZ
-      const messageId = response.data?.key?.id || response.data?.messageId || response.data?.id || null;
+      const messageId = response.data?.key?.id || response.data?.messageId || response.data?.messageid || response.data?.id || null;
       
       console.log('📊 Content da resposta:', JSON.stringify(response.data.content, null, 2));
       
@@ -876,7 +968,17 @@ class UazService {
       if (error.response?.data) {
         console.error('📋 Payload que causou erro:', JSON.stringify(menuData, null, 2));
       }
-      throw new Error(error.response?.data?.error || error.response?.data?.message || error.message);
+      // Preservar mensagem de erro já formatada (lançada internamente)
+      if (!error.response) {
+        throw error; // Relancar erro interno sem re-wrap
+      }
+      const rawErrData = error.response?.data?.error;
+      const errMsg = (typeof rawErrData === 'string' && rawErrData)
+        ? rawErrData
+        : (rawErrData === true ? 'Instância desconectada ou sem resposta do WhatsApp.' : null)
+        || error.response?.data?.message
+        || error.message;
+      throw new Error(errMsg);
     }
   }
 
